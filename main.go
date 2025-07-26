@@ -82,11 +82,11 @@ func main() {
 	var input string
 
 	if len(os.Args) > 1 {
-		wd, _ := os.Getwd()
-		ptf := path.Join(wd, os.Args[1])
-		fmt.Println("trying out:", ptf)
-
-		data, err := os.ReadFile(ptf)
+		var (
+			wd, _     = os.Getwd()
+			ptf       = path.Join(wd, os.Args[1])
+			data, err = os.ReadFile(ptf)
+		)
 		if err != nil {
 			log.Fatal("Could not find file.")
 		}
