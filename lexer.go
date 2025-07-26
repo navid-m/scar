@@ -214,11 +214,12 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 		if len(parts) < 2 || !strings.HasSuffix(line, ":") {
 			return nil, lineNum + 1, fmt.Errorf("if statement format error at line %d", lineNum+1)
 		}
-		colonIndex := strings.LastIndex(line, ":")
-		conditionPart := strings.TrimSpace(line[2:colonIndex]) // Skip "if" (2 chars)
-		condition := conditionPart
-
-		expectedBodyIndent := currentIndent + 4
+		var (
+			colonIndex         = strings.LastIndex(line, ":")
+			conditionPart      = strings.TrimSpace(line[2:colonIndex])
+			condition          = conditionPart
+			expectedBodyIndent = currentIndent + 4
+		)
 		if currentIndent == 0 {
 			bodyStartLine := lineNum + 1
 			for bodyStartLine < len(lines) {
