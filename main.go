@@ -19,6 +19,8 @@ var dslLexer = lexer.MustSimple([]lexer.SimpleRule{
 	{Name: "Colon", Pattern: `:`},
 	{Name: "Newline", Pattern: `\n`},
 	{Name: "Whitespace", Pattern: `[ \t\r]+`},
+	{Name: "Assign", Pattern: `=`},
+	{Name: "To", Pattern: `to`},
 })
 
 type Program struct {
@@ -29,6 +31,7 @@ type Statement struct {
 	Print *PrintStmt `  @@`
 	Sleep *SleepStmt `| @@`
 	While *WhileStmt `| @@`
+	For   *ForStmt   `| @@`
 }
 
 type PrintStmt struct {
@@ -42,6 +45,13 @@ type SleepStmt struct {
 type WhileStmt struct {
 	Condition string       `"while" @(Ident | Number) ":" Newline+`
 	Body      []*Statement `{ @@ Newline+ }`
+}
+
+type ForStmt struct {
+	Var   string       `"for" @Ident`
+	Start string       `"=" @Number`
+	End   string       `"to" @Number ":" Newline+`
+	Body  []*Statement `{ @@ Newline+ }`
 }
 
 var parser = participle.MustBuild[Program](
@@ -73,6 +83,13 @@ func renderStatements(b *strings.Builder, stmts []*Statement, indent string) {
 		case stmt.While != nil:
 			fmt.Fprintf(b, "%swhile (%s) {\n", indent, stmt.While.Condition)
 			renderStatements(b, stmt.While.Body, indent+"    ")
+			fmt.Fprintf(b, "%s}\n", indent)
+		case stmt.For != nil:
+			varName := stmt.For.Var
+			start := stmt.For.Start
+			end := stmt.For.End
+			fmt.Fprintf(b, "%sfor (int %s = %s; %s <= %s; %s++) {\n", indent, varName, start, varName, end, varName)
+			renderStatements(b, stmt.For.Body, indent+"    ")
 			fmt.Fprintf(b, "%s}\n", indent)
 		}
 	}
