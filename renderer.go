@@ -77,6 +77,7 @@ func renderVarDecl(b *strings.Builder, varDecl *VarDeclStmt, indent string) {
 		fmt.Fprintf(b, "%s%s %s = %s;\n", indent, cType, varDecl.Name, value)
 	}
 }
+
 func renderVarAssign(b *strings.Builder, varAssign *VarAssignStmt, indent string) {
 	value := varAssign.Value
 	if strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"") {
