@@ -78,12 +78,16 @@ func parseStatements(lines []string, startLine, expectedIndent int) ([]*Statemen
 
 		indent := getIndentation(line)
 
+		if expectedIndent == 0 && len(statements) == 0 {
+			expectedIndent = indent // Set the baseline indentation
+		}
+
 		if indent < expectedIndent {
 			break
 		}
 
 		if indent > expectedIndent {
-			return nil, fmt.Errorf("unexpected indentation at line %d", i+1)
+			return nil, fmt.Errorf("unexpected indentation at line %d (expected %d, got %d)", i+1, expectedIndent, indent)
 		}
 
 		stmt, nextLine, err := parseStatement(lines, i, indent)
@@ -99,10 +103,8 @@ func parseStatements(lines []string, startLine, expectedIndent int) ([]*Statemen
 }
 
 func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int, error) {
-	var (
-		line  = strings.TrimSpace(lines[lineNum])
-		parts = strings.Fields(line)
-	)
+	line := strings.TrimSpace(lines[lineNum])
+	parts := strings.Fields(line)
 
 	if len(parts) == 0 {
 		return nil, lineNum + 1, fmt.Errorf("empty statement at line %d", lineNum+1)
@@ -129,35 +131,52 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 		if len(parts) < 2 || !strings.HasSuffix(line, ":") {
 			return nil, lineNum + 1, fmt.Errorf("while statement format error at line %d", lineNum+1)
 		}
-		var (
-			colonIndex    = strings.LastIndex(line, ":")
-			conditionPart = strings.TrimSpace(line[5:colonIndex])
-			condition     = conditionPart
-			body, err     = parseStatements(lines, lineNum+1, currentIndent+4)
-		)
+		colonIndex := strings.LastIndex(line, ":")
+		conditionPart := strings.TrimSpace(line[5:colonIndex]) // Skip "while" (5 chars)
+		condition := conditionPart
+
+		expectedBodyIndent := currentIndent + 4
+		if currentIndent == 0 {
+			bodyStartLine := lineNum + 1
+			for bodyStartLine < len(lines) {
+				bodyLine := lines[bodyStartLine]
+				if strings.TrimSpace(bodyLine) != "" && !strings.HasPrefix(strings.TrimSpace(bodyLine), "#") {
+					expectedBodyIndent = getIndentation(bodyLine)
+					break
+				}
+				bodyStartLine++
+			}
+			if expectedBodyIndent <= currentIndent {
+				expectedBodyIndent = currentIndent + 4
+			}
+		}
+
+		body, err := parseStatements(lines, lineNum+1, expectedBodyIndent)
 		if err != nil {
 			return nil, lineNum + 1, err
 		}
 
-		nextLine := findEndOfBlock(lines, lineNum+1, currentIndent+4)
+		nextLine := findEndOfBlock(lines, lineNum+1, expectedBodyIndent)
+
 		return &Statement{While: &WhileStmt{Condition: condition, Body: body}}, nextLine, nil
 
 	case "for":
 		if len(parts) < 6 || parts[2] != "=" || parts[4] != "to" || !strings.HasSuffix(line, ":") {
 			return nil, lineNum + 1, fmt.Errorf("for statement format error at line %d", lineNum+1)
 		}
-		var (
-			varName = parts[1]
-			start   = parts[3]
-			end     = parts[5]
-		)
+
+		varName := parts[1]
+		start := parts[3]
+		end := parts[5]
 		if strings.HasSuffix(end, ":") {
 			end = end[:len(end)-1]
 		}
+
 		body, err := parseStatements(lines, lineNum+1, currentIndent+4)
 		if err != nil {
 			return nil, lineNum + 1, err
 		}
+
 		nextLine := findEndOfBlock(lines, lineNum+1, currentIndent+4)
 
 		return &Statement{For: &ForStmt{Var: varName, Start: start, End: end, Body: body}}, nextLine, nil
@@ -170,12 +189,11 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 func getIndentation(line string) int {
 	indent := 0
 	for _, char := range line {
-		switch char {
-		case ' ':
+		if char == ' ' {
 			indent++
-		case '\t':
-			indent += 4
-		default:
+		} else if char == '\t' {
+			indent += 4 // Treat tab as 4 spaces
+		} else {
 			break
 		}
 	}
@@ -186,9 +204,11 @@ func findEndOfBlock(lines []string, startLine, blockIndent int) int {
 	for i := startLine; i < len(lines); i++ {
 		line := lines[i]
 		trimmed := strings.TrimSpace(line)
+
 		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
 			continue
 		}
+
 		if getIndentation(line) < blockIndent {
 			return i
 		}
