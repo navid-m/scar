@@ -1,0 +1,93 @@
+package main
+
+import (
+	"fmt"
+	"log"
+	"strings"
+
+	"github.com/alecthomas/participle/v2"
+	"github.com/alecthomas/participle/v2/lexer"
+)
+
+var dslLexer = lexer.MustSimple([]lexer.SimpleRule{
+	{Name: "Comment", Pattern: `#[^\n]*`},
+	{Name: "Number", Pattern: `\d+`},
+	{Name: "String", Pattern: `"[^"]*"`},
+	{Name: "Ident", Pattern: `[a-zA-Z_][a-zA-Z0-9_]*`},
+	{Name: "Colon", Pattern: `:`},
+	{Name: "Newline", Pattern: `\n`},
+	{Name: "Indent", Pattern: `[ \t]+`},
+	{Name: "Whitespace", Pattern: `[ \t\r]+`},
+})
+
+type Program struct {
+	Statements []*Statement `{ @@ ( Newline+ @@ )* Newline* }`
+}
+
+type Statement struct {
+	Print *PrintStmt `  @@`
+	Sleep *SleepStmt `| @@`
+	While *WhileStmt `| @@`
+}
+
+type PrintStmt struct {
+	Print string `"print" @String`
+}
+
+type SleepStmt struct {
+	Duration string `"sleep" @Number`
+}
+
+type WhileStmt struct {
+	Condition string       `"while" @Ident ":" Newline+`
+	Body      []*Statement `Indent { @@ Newline+ }`
+}
+
+var parser = participle.MustBuild[Program](
+	participle.Lexer(dslLexer),
+	participle.Elide("Whitespace", "Comment"),
+	participle.Unquote("String"),
+)
+
+func renderC(program *Program) string {
+	var b strings.Builder
+	b.WriteString(`#include <stdio.h>
+#include <unistd.h>
+
+int main() {
+`)
+	renderStatements(&b, program.Statements, "    ")
+	b.WriteString("    return 0;\n")
+	b.WriteString("}\n")
+	return b.String()
+}
+
+func renderStatements(b *strings.Builder, stmts []*Statement, indent string) {
+	for _, stmt := range stmts {
+		switch {
+		case stmt.Print != nil:
+			fmt.Fprintf(b, "%sfprintf(stdout, \"%s\\n\");\n", indent, stmt.Print.Print)
+		case stmt.Sleep != nil:
+			fmt.Fprintf(b, "%ssleep(%s);\n", indent, stmt.Sleep.Duration)
+		case stmt.While != nil:
+			fmt.Fprintf(b, "%swhile (%s) {\n", indent, stmt.While.Condition)
+			renderStatements(b, stmt.While.Body, indent+"    ")
+			fmt.Fprintf(b, "%s}\n", indent)
+		}
+	}
+}
+
+func main() {
+	input := `print "This will print forever: "
+sleep 3
+while 1:
+    print "Hello"
+`
+
+	program, err := parser.ParseString("", input)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	fmt.Println(renderC(program))
+}
