@@ -284,8 +284,10 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 	}
 }
 
+var vdt = []string{"int", "float", "double", "char", "string", "bool"}
+
 func isValidType(s string) bool {
-	return slices.Contains([]string{"int", "float", "double", "char", "string", "bool"}, s)
+	return slices.Contains(vdt, s)
 }
 
 func getIndentation(line string) int {
