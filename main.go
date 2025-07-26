@@ -99,8 +99,10 @@ func parseStatements(lines []string, startLine, expectedIndent int) ([]*Statemen
 }
 
 func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int, error) {
-	line := strings.TrimSpace(lines[lineNum])
-	parts := strings.Fields(line)
+	var (
+		line  = strings.TrimSpace(lines[lineNum])
+		parts = strings.Fields(line)
+	)
 
 	if len(parts) == 0 {
 		return nil, lineNum + 1, fmt.Errorf("empty statement at line %d", lineNum+1)
@@ -144,10 +146,11 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 		if len(parts) < 6 || parts[2] != "=" || parts[4] != "to" || !strings.HasSuffix(line, ":") {
 			return nil, lineNum + 1, fmt.Errorf("for statement format error at line %d", lineNum+1)
 		}
-
-		varName := parts[1]
-		start := parts[3]
-		end := parts[5]
+		var (
+			varName = parts[1]
+			start   = parts[3]
+			end     = parts[5]
+		)
 		if strings.HasSuffix(end, ":") {
 			end = end[:len(end)-1]
 		}
