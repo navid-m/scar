@@ -18,6 +18,8 @@ var dslLexer = lexer.MustSimple([]lexer.SimpleRule{
 	{Name: "Whitespace", Pattern: `[ \t\r]+`},
 	{Name: "Assign", Pattern: `=`},
 	{Name: "To", Pattern: `to`},
+	{Name: "If", Pattern: `if`},
+	{Name: "Break", Pattern: `break`},
 })
 
 type Program struct {
@@ -29,6 +31,8 @@ type Statement struct {
 	Sleep *SleepStmt `| @@`
 	While *WhileStmt `| @@`
 	For   *ForStmt   `| @@`
+	If    *IfStmt    `| @@`
+	Break *BreakStmt `| @@`
 }
 
 type PrintStmt struct {
@@ -49,6 +53,15 @@ type ForStmt struct {
 	Start string       `"=" @Number`
 	End   string       `"to" @Number ":" Newline+`
 	Body  []*Statement `@@*`
+}
+
+type IfStmt struct {
+	Condition string       `"if" @(Ident | Number | String) ":" Newline+`
+	Body      []*Statement `@@*`
+}
+
+type BreakStmt struct {
+	Break string `"break"`
 }
 
 func parseWithIndentation(input string) (*Program, error) {
@@ -124,6 +137,9 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 		}
 		return &Statement{Sleep: &SleepStmt{Duration: parts[1]}}, lineNum + 1, nil
 
+	case "break":
+		return &Statement{Break: &BreakStmt{Break: "break"}}, lineNum + 1, nil
+
 	case "while":
 		if len(parts) < 2 || !strings.HasSuffix(line, ":") {
 			return nil, lineNum + 1, fmt.Errorf("while statement format error at line %d", lineNum+1)
@@ -169,14 +185,63 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 			end = end[:len(end)-1]
 		}
 
-		body, err := parseStatements(lines, lineNum+1, currentIndent+4)
+		expectedBodyIndent := currentIndent + 4
+		if currentIndent == 0 {
+			bodyStartLine := lineNum + 1
+			for bodyStartLine < len(lines) {
+				bodyLine := lines[bodyStartLine]
+				if strings.TrimSpace(bodyLine) != "" && !strings.HasPrefix(strings.TrimSpace(bodyLine), "#") {
+					expectedBodyIndent = getIndentation(bodyLine)
+					break
+				}
+				bodyStartLine++
+			}
+			if expectedBodyIndent <= currentIndent {
+				expectedBodyIndent = currentIndent + 4
+			}
+		}
+
+		body, err := parseStatements(lines, lineNum+1, expectedBodyIndent)
 		if err != nil {
 			return nil, lineNum + 1, err
 		}
 
-		nextLine := findEndOfBlock(lines, lineNum+1, currentIndent+4)
+		nextLine := findEndOfBlock(lines, lineNum+1, expectedBodyIndent)
 
 		return &Statement{For: &ForStmt{Var: varName, Start: start, End: end, Body: body}}, nextLine, nil
+
+	case "if":
+		if len(parts) < 2 || !strings.HasSuffix(line, ":") {
+			return nil, lineNum + 1, fmt.Errorf("if statement format error at line %d", lineNum+1)
+		}
+		colonIndex := strings.LastIndex(line, ":")
+		conditionPart := strings.TrimSpace(line[2:colonIndex]) // Skip "if" (2 chars)
+		condition := conditionPart
+
+		expectedBodyIndent := currentIndent + 4
+		if currentIndent == 0 {
+			bodyStartLine := lineNum + 1
+			for bodyStartLine < len(lines) {
+				bodyLine := lines[bodyStartLine]
+				if strings.TrimSpace(bodyLine) != "" && !strings.HasPrefix(strings.TrimSpace(bodyLine), "#") {
+					expectedBodyIndent = getIndentation(bodyLine)
+					break
+				}
+				bodyStartLine++
+			}
+			if expectedBodyIndent <= currentIndent {
+				expectedBodyIndent = currentIndent + 4
+			}
+		}
+
+		body, err := parseStatements(lines, lineNum+1, expectedBodyIndent)
+		if err != nil {
+			return nil, lineNum + 1, err
+		}
+
+		nextLine := findEndOfBlock(lines, lineNum+1, expectedBodyIndent)
+
+		return &Statement{If: &IfStmt{Condition: condition, Body: body}}, nextLine, nil
 
 	default:
 		return nil, lineNum + 1, fmt.Errorf("unknown statement type '%s' at line %d", parts[0], lineNum+1)

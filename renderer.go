@@ -25,6 +25,8 @@ func renderStatements(b *strings.Builder, stmts []*Statement, indent string) {
 			fmt.Fprintf(b, "%sprintf(\"%s\\n\");\n", indent, stmt.Print.Print)
 		case stmt.Sleep != nil:
 			fmt.Fprintf(b, "%ssleep(%s);\n", indent, stmt.Sleep.Duration)
+		case stmt.Break != nil:
+			fmt.Fprintf(b, "%sbreak;\n", indent)
 		case stmt.While != nil:
 			fmt.Fprintf(b, "%swhile (%s) {\n", indent, stmt.While.Condition)
 			renderStatements(b, stmt.While.Body, indent+"    ")
@@ -35,6 +37,10 @@ func renderStatements(b *strings.Builder, stmts []*Statement, indent string) {
 			end := stmt.For.End
 			fmt.Fprintf(b, "%sfor (int %s = %s; %s <= %s; %s++) {\n", indent, varName, start, varName, end, varName)
 			renderStatements(b, stmt.For.Body, indent+"    ")
+			fmt.Fprintf(b, "%s}\n", indent)
+		case stmt.If != nil:
+			fmt.Fprintf(b, "%sif (%s) {\n", indent, stmt.If.Condition)
+			renderStatements(b, stmt.If.Body, indent+"    ")
 			fmt.Fprintf(b, "%s}\n", indent)
 		}
 	}
