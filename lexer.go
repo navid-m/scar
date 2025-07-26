@@ -22,6 +22,7 @@ var dslLexer = lexer.MustSimple([]lexer.SimpleRule{
 	{Name: "If", Pattern: `if`},
 	{Name: "Elif", Pattern: `elif`},
 	{Name: "Else", Pattern: `else`},
+	{Name: "Reassign", Pattern: `reassign`},
 	{Name: "Break", Pattern: `break`},
 })
 
@@ -30,19 +31,20 @@ type Program struct {
 }
 
 type Statement struct {
-	Print   *PrintStmt   `  @@`
-	Sleep   *SleepStmt   `| @@`
-	While   *WhileStmt   `| @@`
-	For     *ForStmt     `| @@`
-	If      *IfStmt      `| @@`
-	Break   *BreakStmt   `| @@`
-	VarDecl *VarDeclStmt `| @@`
+	Print     *PrintStmt     `  @@`
+	Sleep     *SleepStmt     `| @@`
+	While     *WhileStmt     `| @@`
+	For       *ForStmt       `| @@`
+	If        *IfStmt        `| @@`
+	Break     *BreakStmt     `| @@`
+	VarDecl   *VarDeclStmt   `| @@`
+	VarAssign *VarAssignStmt `| @@`
 }
 
 type PrintStmt struct {
-	Print    string `"print" @String`
-	Format   string `| "print" @String`
-	Variable string `"|" @Ident`
+	Print     string   `"print" @String`
+	Format    string   `| "print" @String`
+	Variables []string `"|" @Ident ( "," @Ident )*`
 }
 
 type SleepStmt struct {
@@ -85,6 +87,17 @@ type VarDeclStmt struct {
 	Type  string `@Ident`
 	Name  string `@Ident`
 	Value string `"=" @(Number | String | Ident)`
+}
+
+type VarAssignStmt struct {
+	Name  string `@Ident`
+	Value string `"=" @(Number | String | Ident | Expression)`
+}
+
+type Expression struct {
+	Left     string `@(Ident | Number)`
+	Operator string `@("+" | "-" | "*" | "/" | "%")`
+	Right    string `@(Ident | Number)`
 }
 
 func parseWithIndentation(input string) (*Program, error) {
@@ -158,7 +171,15 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 				formatPart = formatPart[1 : len(formatPart)-1]
 			}
 
-			return &Statement{Print: &PrintStmt{Format: formatPart, Variable: varPart}}, lineNum + 1, nil
+			var variables []string
+			if varPart != "" {
+				varList := strings.Split(varPart, ",")
+				for _, v := range varList {
+					variables = append(variables, strings.TrimSpace(v))
+				}
+			}
+
+			return &Statement{Print: &PrintStmt{Format: formatPart, Variables: variables}}, lineNum + 1, nil
 		} else {
 			str := strings.Join(parts[1:], " ")
 			if strings.HasPrefix(str, "\"") && strings.HasSuffix(str, "\"") {
@@ -321,6 +342,25 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 
 		return &Statement{If: &IfStmt{Condition: condition, Body: body, ElseIfs: elseIfs, Else: elseStmt}}, nextLine, nil
 
+	case "reassign":
+		if len(parts) < 4 || parts[2] != "=" {
+			return nil, lineNum + 1, fmt.Errorf("reassign statement format error at line %d (expected: reassign var = value)", lineNum+1)
+		}
+
+		varName := parts[1]
+		value := strings.Join(parts[3:], " ")
+
+		if len(parts) >= 6 && isOperator(parts[4]) {
+			left := parts[3]
+			operator := parts[4]
+			right := parts[5]
+			value = left + " " + operator + " " + right
+		} else if strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"") {
+			value = value[1 : len(value)-1]
+		}
+
+		return &Statement{VarAssign: &VarAssignStmt{Name: varName, Value: value}}, lineNum + 1, nil
+
 	case "elif":
 		return nil, lineNum + 1, fmt.Errorf("elif statement must follow an if statement at line %d", lineNum+1)
 
@@ -422,6 +462,11 @@ var vdt = []string{"int", "float", "double", "char", "string", "bool"}
 
 func isValidType(s string) bool {
 	return slices.Contains(vdt, s)
+}
+
+func isOperator(s string) bool {
+	operators := []string{"+", "-", "*", "/", "%"}
+	return slices.Contains(operators, s)
 }
 
 func getIndentation(line string) int {

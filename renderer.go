@@ -21,14 +21,9 @@ func renderStatements(b *strings.Builder, stmts []*Statement, indent string) {
 	for _, stmt := range stmts {
 		switch {
 		case stmt.Print != nil:
-			if stmt.Print.Format != "" && stmt.Print.Variable != "" {
-				if strings.Contains(stmt.Print.Format, "%s") {
-					fmt.Fprintf(b, "%sprintf(\"%s\\n\", %s);\n", indent, stmt.Print.Format, stmt.Print.Variable)
-				} else if strings.Contains(stmt.Print.Format, "%d") {
-					fmt.Fprintf(b, "%sprintf(\"%s\\n\", %s);\n", indent, stmt.Print.Format, stmt.Print.Variable)
-				} else {
-					fmt.Fprintf(b, "%sprintf(\"%s %s\\n\");\n", indent, stmt.Print.Format, stmt.Print.Variable)
-				}
+			if stmt.Print.Format != "" && len(stmt.Print.Variables) > 0 {
+				args := strings.Join(stmt.Print.Variables, ", ")
+				fmt.Fprintf(b, "%sprintf(\"%s\\n\", %s);\n", indent, stmt.Print.Format, args)
 			} else {
 				fmt.Fprintf(b, "%sprintf(\"%s\\n\");\n", indent, stmt.Print.Print)
 			}
@@ -64,6 +59,8 @@ func renderStatements(b *strings.Builder, stmts []*Statement, indent string) {
 			fmt.Fprintf(b, "%s}\n", indent)
 		case stmt.VarDecl != nil:
 			renderVarDecl(b, stmt.VarDecl, indent)
+		case stmt.VarAssign != nil:
+			renderVarAssign(b, stmt.VarAssign, indent)
 		}
 	}
 }
@@ -80,6 +77,15 @@ func renderVarDecl(b *strings.Builder, varDecl *VarDeclStmt, indent string) {
 		fmt.Fprintf(b, "%s%s %s = %s;\n", indent, cType, varDecl.Name, value)
 	}
 }
+func renderVarAssign(b *strings.Builder, varAssign *VarAssignStmt, indent string) {
+	value := varAssign.Value
+	if strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"") {
+		fmt.Fprintf(b, "%sstrcpy(%s, %s);\n", indent, varAssign.Name, value)
+	} else {
+		fmt.Fprintf(b, "%s%s = %s;\n", indent, varAssign.Name, value)
+	}
+}
+
 func mapTypeToCType(dslType string) string {
 	switch dslType {
 	case "int":
