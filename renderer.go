@@ -10,7 +10,6 @@ func renderC(program *Program) string {
 	b.WriteString(`#include <stdio.h>
 #include <unistd.h>
 #include <string.h>
-
 int main() {
 `)
 	renderStatements(&b, program.Statements, "    ")
@@ -18,7 +17,6 @@ int main() {
 	b.WriteString("}\n")
 	return b.String()
 }
-
 func renderStatements(b *strings.Builder, stmts []*Statement, indent string) {
 	for _, stmt := range stmts {
 		switch {
@@ -52,13 +50,23 @@ func renderStatements(b *strings.Builder, stmts []*Statement, indent string) {
 		case stmt.If != nil:
 			fmt.Fprintf(b, "%sif (%s) {\n", indent, stmt.If.Condition)
 			renderStatements(b, stmt.If.Body, indent+"    ")
+
+			for _, elif := range stmt.If.ElseIfs {
+				fmt.Fprintf(b, "%s} else if (%s) {\n", indent, elif.Condition)
+				renderStatements(b, elif.Body, indent+"    ")
+			}
+
+			if stmt.If.Else != nil {
+				fmt.Fprintf(b, "%s} else {\n", indent)
+				renderStatements(b, stmt.If.Else.Body, indent+"    ")
+			}
+
 			fmt.Fprintf(b, "%s}\n", indent)
 		case stmt.VarDecl != nil:
 			renderVarDecl(b, stmt.VarDecl, indent)
 		}
 	}
 }
-
 func renderVarDecl(b *strings.Builder, varDecl *VarDeclStmt, indent string) {
 	cType := mapTypeToCType(varDecl.Type)
 	value := varDecl.Value
@@ -72,7 +80,6 @@ func renderVarDecl(b *strings.Builder, varDecl *VarDeclStmt, indent string) {
 		fmt.Fprintf(b, "%s%s %s = %s;\n", indent, cType, varDecl.Name, value)
 	}
 }
-
 func mapTypeToCType(dslType string) string {
 	switch dslType {
 	case "int":

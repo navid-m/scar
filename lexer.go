@@ -20,6 +20,8 @@ var dslLexer = lexer.MustSimple([]lexer.SimpleRule{
 	{Name: "Assign", Pattern: `=`},
 	{Name: "To", Pattern: `to`},
 	{Name: "If", Pattern: `if`},
+	{Name: "Elif", Pattern: `elif`},
+	{Name: "Else", Pattern: `else`},
 	{Name: "Break", Pattern: `break`},
 })
 
@@ -62,6 +64,17 @@ type ForStmt struct {
 type IfStmt struct {
 	Condition string       `"if" @(Ident | Number | String) ":" Newline+`
 	Body      []*Statement `@@*`
+	ElseIfs   []*ElifStmt  `@@*`
+	Else      *ElseStmt    `@@?`
+}
+
+type ElifStmt struct {
+	Condition string       `"elif" @(Ident | Number | String) ":" Newline+`
+	Body      []*Statement `@@*`
+}
+
+type ElseStmt struct {
+	Body []*Statement `"else" ":" Newline+ @@*`
 }
 
 type BreakStmt struct {
@@ -265,7 +278,54 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 
 		nextLine := findEndOfBlock(lines, lineNum+1, expectedBodyIndent)
 
-		return &Statement{If: &IfStmt{Condition: condition, Body: body}}, nextLine, nil
+		var elseIfs []*ElifStmt
+		for nextLine < len(lines) {
+			nextTrimmed := strings.TrimSpace(lines[nextLine])
+			if nextTrimmed == "" || strings.HasPrefix(nextTrimmed, "#") {
+				nextLine++
+				continue
+			}
+
+			nextIndent := getIndentation(lines[nextLine])
+			if nextIndent != currentIndent {
+				break
+			}
+
+			if !strings.HasPrefix(nextTrimmed, "elif ") {
+				break
+			}
+
+			elifStmt, newNextLine, err := parseElifStatement(lines, nextLine, currentIndent)
+			if err != nil {
+				return nil, nextLine, err
+			}
+
+			elseIfs = append(elseIfs, elifStmt)
+			nextLine = newNextLine
+		}
+
+		var elseStmt *ElseStmt
+		if nextLine < len(lines) {
+			nextTrimmed := strings.TrimSpace(lines[nextLine])
+			if nextTrimmed != "" && !strings.HasPrefix(nextTrimmed, "#") {
+				nextIndent := getIndentation(lines[nextLine])
+				if nextIndent == currentIndent && strings.HasPrefix(nextTrimmed, "else:") {
+					var err error
+					elseStmt, nextLine, err = parseElseStatement(lines, nextLine, currentIndent)
+					if err != nil {
+						return nil, nextLine, err
+					}
+				}
+			}
+		}
+
+		return &Statement{If: &IfStmt{Condition: condition, Body: body, ElseIfs: elseIfs, Else: elseStmt}}, nextLine, nil
+
+	case "elif":
+		return nil, lineNum + 1, fmt.Errorf("elif statement must follow an if statement at line %d", lineNum+1)
+
+	case "else":
+		return nil, lineNum + 1, fmt.Errorf("else statement must follow an if statement at line %d", lineNum+1)
 
 	default:
 		if len(parts) >= 4 && parts[2] == "=" && isValidType(parts[0]) {
@@ -282,6 +342,80 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 
 		return nil, lineNum + 1, fmt.Errorf("unknown statement type '%s' at line %d", parts[0], lineNum+1)
 	}
+}
+
+func parseElifStatement(lines []string, lineNum, currentIndent int) (*ElifStmt, int, error) {
+	line := strings.TrimSpace(lines[lineNum])
+	parts := strings.Fields(line)
+
+	if len(parts) < 2 || !strings.HasSuffix(line, ":") {
+		return nil, lineNum + 1, fmt.Errorf("elif statement format error at line %d", lineNum+1)
+	}
+
+	var (
+		colonIndex         = strings.LastIndex(line, ":")
+		conditionPart      = strings.TrimSpace(line[4:colonIndex])
+		condition          = conditionPart
+		expectedBodyIndent = currentIndent + 4
+	)
+
+	if currentIndent == 0 {
+		bodyStartLine := lineNum + 1
+		for bodyStartLine < len(lines) {
+			bodyLine := lines[bodyStartLine]
+			if strings.TrimSpace(bodyLine) != "" && !strings.HasPrefix(strings.TrimSpace(bodyLine), "#") {
+				expectedBodyIndent = getIndentation(bodyLine)
+				break
+			}
+			bodyStartLine++
+		}
+		if expectedBodyIndent <= currentIndent {
+			expectedBodyIndent = currentIndent + 4
+		}
+	}
+
+	body, err := parseStatements(lines, lineNum+1, expectedBodyIndent)
+	if err != nil {
+		return nil, lineNum + 1, err
+	}
+
+	nextLine := findEndOfBlock(lines, lineNum+1, expectedBodyIndent)
+
+	return &ElifStmt{Condition: condition, Body: body}, nextLine, nil
+}
+
+func parseElseStatement(lines []string, lineNum, currentIndent int) (*ElseStmt, int, error) {
+	line := strings.TrimSpace(lines[lineNum])
+
+	if line != "else:" {
+		return nil, lineNum + 1, fmt.Errorf("else statement format error at line %d", lineNum+1)
+	}
+
+	var expectedBodyIndent = currentIndent + 4
+
+	if currentIndent == 0 {
+		bodyStartLine := lineNum + 1
+		for bodyStartLine < len(lines) {
+			bodyLine := lines[bodyStartLine]
+			if strings.TrimSpace(bodyLine) != "" && !strings.HasPrefix(strings.TrimSpace(bodyLine), "#") {
+				expectedBodyIndent = getIndentation(bodyLine)
+				break
+			}
+			bodyStartLine++
+		}
+		if expectedBodyIndent <= currentIndent {
+			expectedBodyIndent = currentIndent + 4
+		}
+	}
+
+	body, err := parseStatements(lines, lineNum+1, expectedBodyIndent)
+	if err != nil {
+		return nil, lineNum + 1, err
+	}
+
+	nextLine := findEndOfBlock(lines, lineNum+1, expectedBodyIndent)
+
+	return &ElseStmt{Body: body}, nextLine, nil
 }
 
 var vdt = []string{"int", "float", "double", "char", "string", "bool"}
