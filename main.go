@@ -16,7 +16,6 @@ var dslLexer = lexer.MustSimple([]lexer.SimpleRule{
 	{Name: "Ident", Pattern: `[a-zA-Z_][a-zA-Z0-9_]*`},
 	{Name: "Colon", Pattern: `:`},
 	{Name: "Newline", Pattern: `\n`},
-	{Name: "Indent", Pattern: `[ \t]+`},
 	{Name: "Whitespace", Pattern: `[ \t\r]+`},
 })
 
@@ -39,8 +38,8 @@ type SleepStmt struct {
 }
 
 type WhileStmt struct {
-	Condition string       `"while" @Ident ":" Newline+`
-	Body      []*Statement `Indent { @@ Newline+ }`
+	Condition string       `"while" @(Ident | Number) ":" Newline+`
+	Body      []*Statement `{ @@ Newline+ }`
 }
 
 var parser = participle.MustBuild[Program](
