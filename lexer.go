@@ -163,10 +163,11 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 		}
 
 		if strings.Contains(line, "|") {
-			pipeIndex := strings.Index(line, "|")
-			formatPart := strings.TrimSpace(line[5:pipeIndex])
-			varPart := strings.TrimSpace(line[pipeIndex+1:])
-
+			var (
+				pipeIndex  = strings.Index(line, "|")
+				formatPart = strings.TrimSpace(line[5:pipeIndex])
+				varPart    = strings.TrimSpace(line[pipeIndex+1:])
+			)
 			if strings.HasPrefix(formatPart, "\"") && strings.HasSuffix(formatPart, "\"") {
 				formatPart = formatPart[1 : len(formatPart)-1]
 			}
