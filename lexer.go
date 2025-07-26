@@ -202,10 +202,11 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 		if len(parts) < 2 || !strings.HasSuffix(line, ":") {
 			return nil, lineNum + 1, fmt.Errorf("while statement format error at line %d", lineNum+1)
 		}
-		colonIndex := strings.LastIndex(line, ":")
-		conditionPart := strings.TrimSpace(line[5:colonIndex])
-		condition := conditionPart
-
+		var (
+			colonIndex    = strings.LastIndex(line, ":")
+			conditionPart = strings.TrimSpace(line[5:colonIndex])
+			condition     = conditionPart
+		)
 		expectedBodyIndent := currentIndent + 4
 		if currentIndent == 0 {
 			bodyStartLine := lineNum + 1
