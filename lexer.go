@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/alecthomas/participle/v2/lexer"
@@ -285,12 +286,7 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 
 func isValidType(s string) bool {
 	validTypes := []string{"int", "float", "double", "char", "string", "bool"}
-	for _, t := range validTypes {
-		if s == t {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(validTypes, s)
 }
 
 func getIndentation(line string) int {
