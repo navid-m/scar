@@ -173,8 +173,8 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 
 			var variables []string
 			if varPart != "" {
-				varList := strings.Split(varPart, ",")
-				for _, v := range varList {
+				varList := strings.SplitSeq(varPart, ",")
+				for v := range varList {
 					variables = append(variables, strings.TrimSpace(v))
 				}
 			}
