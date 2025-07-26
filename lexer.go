@@ -24,6 +24,9 @@ var dslLexer = lexer.MustSimple([]lexer.SimpleRule{
 	{Name: "Else", Pattern: `else`},
 	{Name: "Reassign", Pattern: `reassign`},
 	{Name: "Break", Pattern: `break`},
+	{Name: "LeftBracket", Pattern: `\[`},
+	{Name: "RightBracket", Pattern: `\]`},
+	{Name: "Comma", Pattern: `,`},
 })
 
 type Program struct {
@@ -39,6 +42,7 @@ type Statement struct {
 	Break     *BreakStmt     `| @@`
 	VarDecl   *VarDeclStmt   `| @@`
 	VarAssign *VarAssignStmt `| @@`
+	ListDecl  *ListDeclStmt  `| @@`
 }
 
 type PrintStmt struct {
@@ -94,10 +98,21 @@ type VarAssignStmt struct {
 	Value string `"=" @(Number | String | Ident | Expression)`
 }
 
+type ListDeclStmt struct {
+	Type     string   `"list" "[" @Ident "]"`
+	Name     string   `@Ident`
+	Elements []string `"=" "[" ( @(Number | String) ( "," @(Number | String) )* )? "]"`
+}
+
 type Expression struct {
 	Left     string `@(Ident | Number)`
 	Operator string `@("+" | "-" | "*" | "/" | "%")`
 	Right    string `@(Ident | Number)`
+}
+
+type IndexAccess struct {
+	ListName string `@Ident`
+	Index    string `"[" @(Number | Ident) "]"`
 }
 
 func parseWithIndentation(input string) (*Program, error) {
@@ -174,8 +189,8 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 
 			var variables []string
 			if varPart != "" {
-				varList := strings.SplitSeq(varPart, ",")
-				for v := range varList {
+				varList := strings.Split(varPart, ",")
+				for _, v := range varList {
 					variables = append(variables, strings.TrimSpace(v))
 				}
 			}
@@ -352,7 +367,9 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 		varName := parts[1]
 		value := strings.Join(parts[3:], " ")
 
-		if len(parts) >= 6 && isOperator(parts[4]) {
+		if strings.Contains(varName, "[") && strings.Contains(varName, "]") {
+			value = handleIndexAssignment(line, varName, value)
+		} else if len(parts) >= 6 && isOperator(parts[4]) {
 			left := parts[3]
 			operator := parts[4]
 			right := parts[5]
@@ -370,6 +387,52 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 		return nil, lineNum + 1, fmt.Errorf("else statement must follow an if statement at line %d", lineNum+1)
 
 	default:
+		if strings.HasPrefix(parts[0], "list[") && strings.Contains(parts[0], "]") {
+			if len(parts) < 4 || parts[2] != "=" {
+				return nil, lineNum + 1, fmt.Errorf("list declaration format error at line %d (expected: list[type] name = [elements])", lineNum+1)
+			}
+
+			typeStart := strings.Index(parts[0], "[")
+			typeEnd := strings.Index(parts[0], "]")
+			if typeStart == -1 || typeEnd == -1 || typeEnd <= typeStart {
+				return nil, lineNum + 1, fmt.Errorf("invalid list type declaration at line %d", lineNum+1)
+			}
+
+			listType := parts[0][typeStart+1 : typeEnd]
+			listName := parts[1]
+
+			elementsStart := strings.Index(line, "[")
+			secondBracketPos := strings.Index(line[elementsStart+1:], "[")
+			if secondBracketPos != -1 {
+				elementsStart = elementsStart + 1 + secondBracketPos
+			} else {
+				return nil, lineNum + 1, fmt.Errorf("list declaration missing elements at line %d", lineNum+1)
+			}
+
+			elementsEnd := strings.LastIndex(line, "]")
+			if elementsEnd == -1 || elementsEnd <= elementsStart {
+				return nil, lineNum + 1, fmt.Errorf("list declaration missing closing bracket at line %d", lineNum+1)
+			}
+
+			elementsStr := strings.TrimSpace(line[elementsStart+1 : elementsEnd])
+			var elements []string
+
+			if elementsStr != "" {
+				elementsList := strings.Split(elementsStr, ",")
+				for _, elem := range elementsList {
+					elem = strings.TrimSpace(elem)
+					if elem != "" {
+						if strings.HasPrefix(elem, "\"") && strings.HasSuffix(elem, "\"") {
+							elem = elem[1 : len(elem)-1]
+						}
+						elements = append(elements, elem)
+					}
+				}
+			}
+
+			return &Statement{ListDecl: &ListDeclStmt{Type: listType, Name: listName, Elements: elements}}, lineNum + 1, nil
+		}
+
 		if len(parts) >= 4 && parts[2] == "=" && isValidType(parts[0]) {
 			varType := parts[0]
 			varName := parts[1]
@@ -384,6 +447,10 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 
 		return nil, lineNum + 1, fmt.Errorf("unknown statement type '%s' at line %d", parts[0], lineNum+1)
 	}
+}
+
+func handleIndexAssignment(line, varName, value string) string {
+	return value
 }
 
 func parseElifStatement(lines []string, lineNum, currentIndent int) (*ElifStmt, int, error) {

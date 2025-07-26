@@ -17,13 +17,22 @@ int main() {
 	b.WriteString("}\n")
 	return b.String()
 }
+
 func renderStatements(b *strings.Builder, stmts []*Statement, indent string) {
 	for _, stmt := range stmts {
 		switch {
 		case stmt.Print != nil:
 			if stmt.Print.Format != "" && len(stmt.Print.Variables) > 0 {
-				args := strings.Join(stmt.Print.Variables, ", ")
-				fmt.Fprintf(b, "%sprintf(\"%s\\n\", %s);\n", indent, stmt.Print.Format, args)
+				args := make([]string, len(stmt.Print.Variables))
+				for i, v := range stmt.Print.Variables {
+					if strings.Contains(v, "[") && strings.Contains(v, "]") {
+						args[i] = v // Use as-is for index access
+					} else {
+						args[i] = v
+					}
+				}
+				argsStr := strings.Join(args, ", ")
+				fmt.Fprintf(b, "%sprintf(\"%s\\n\", %s);\n", indent, stmt.Print.Format, argsStr)
 			} else {
 				fmt.Fprintf(b, "%sprintf(\"%s\\n\");\n", indent, stmt.Print.Print)
 			}
@@ -61,9 +70,12 @@ func renderStatements(b *strings.Builder, stmts []*Statement, indent string) {
 			renderVarDecl(b, stmt.VarDecl, indent)
 		case stmt.VarAssign != nil:
 			renderVarAssign(b, stmt.VarAssign, indent)
+		case stmt.ListDecl != nil:
+			renderListDecl(b, stmt.ListDecl, indent)
 		}
 	}
 }
+
 func renderVarDecl(b *strings.Builder, varDecl *VarDeclStmt, indent string) {
 	cType := mapTypeToCType(varDecl.Type)
 	value := varDecl.Value
@@ -80,10 +92,59 @@ func renderVarDecl(b *strings.Builder, varDecl *VarDeclStmt, indent string) {
 
 func renderVarAssign(b *strings.Builder, varAssign *VarAssignStmt, indent string) {
 	value := varAssign.Value
-	if strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"") {
-		fmt.Fprintf(b, "%sstrcpy(%s, %s);\n", indent, varAssign.Name, value)
+	name := varAssign.Name
+
+	if strings.Contains(name, "[") && strings.Contains(name, "]") {
+		if strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"") {
+			bracketStart := strings.Index(name, "[")
+			listName := name[:bracketStart]
+			indexPart := name[bracketStart:]
+			fmt.Fprintf(b, "%sstrcpy(%s%s, %s);\n", indent, listName, indexPart, value)
+		} else {
+			fmt.Fprintf(b, "%s%s = %s;\n", indent, name, value)
+		}
 	} else {
-		fmt.Fprintf(b, "%s%s = %s;\n", indent, varAssign.Name, value)
+		if strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"") {
+			fmt.Fprintf(b, "%sstrcpy(%s, %s);\n", indent, name, value)
+		} else {
+			fmt.Fprintf(b, "%s%s = %s;\n", indent, name, value)
+		}
+	}
+}
+
+func renderListDecl(b *strings.Builder, listDecl *ListDeclStmt, indent string) {
+	cType := mapTypeToCType(listDecl.Type)
+	listName := listDecl.Name
+	elements := listDecl.Elements
+	arraySize := len(elements)
+	if arraySize == 0 {
+		arraySize = 100
+	} else if arraySize < 10 {
+		arraySize = 10
+	}
+
+	if listDecl.Type == "string" {
+		fmt.Fprintf(b, "%s%s %s[%d][256];\n", indent, cType, listName, arraySize)
+		for i, elem := range elements {
+			if !strings.HasPrefix(elem, "\"") {
+				elem = fmt.Sprintf("\"%s\"", elem)
+			}
+			fmt.Fprintf(b, "%sstrcpy(%s[%d], %s);\n", indent, listName, i, elem)
+		}
+	} else {
+		fmt.Fprintf(b, "%s%s %s[%d]", indent, cType, listName, arraySize)
+
+		if len(elements) > 0 {
+			fmt.Fprintf(b, " = {")
+			for i, elem := range elements {
+				if i > 0 {
+					fmt.Fprintf(b, ", ")
+				}
+				fmt.Fprintf(b, "%s", elem)
+			}
+			fmt.Fprintf(b, "}")
+		}
+		fmt.Fprintf(b, ";\n")
 	}
 }
 

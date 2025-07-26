@@ -1,0 +1,23 @@
+list[int] numbers = [1, 2, 3, 4, 5]
+print "First number: %d" | numbers[0]
+print "Third number: %d" | numbers[2]
+
+list[string] names = ["Alice", "Bob", "Charlie"]
+print "First name: %s" | names[0]
+print "Second name: %s" | names[1]
+
+list[int] empty_list = []
+
+reassign numbers[1] = 10
+print "Modified second number: %d" | numbers[1]
+reassign names[2] = "David"
+print "Modified third name: %s" | names[2]
+
+for i = 0 to 4:
+    print "Number at index %d is %d" | i, numbers[i]
+
+if numbers[0]:
+    print "First number is non-zero"
+
+list[float] scores = [95.5, 87.2, 92.8]
+print "First score: %.1f" | scores[0]
