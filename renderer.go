@@ -23,7 +23,17 @@ func renderStatements(b *strings.Builder, stmts []*Statement, indent string) {
 	for _, stmt := range stmts {
 		switch {
 		case stmt.Print != nil:
-			fmt.Fprintf(b, "%sprintf(\"%s\\n\");\n", indent, stmt.Print.Print)
+			if stmt.Print.Format != "" && stmt.Print.Variable != "" {
+				if strings.Contains(stmt.Print.Format, "%s") {
+					fmt.Fprintf(b, "%sprintf(\"%s\\n\", %s);\n", indent, stmt.Print.Format, stmt.Print.Variable)
+				} else if strings.Contains(stmt.Print.Format, "%d") {
+					fmt.Fprintf(b, "%sprintf(\"%s\\n\", %s);\n", indent, stmt.Print.Format, stmt.Print.Variable)
+				} else {
+					fmt.Fprintf(b, "%sprintf(\"%s %s\\n\");\n", indent, stmt.Print.Format, stmt.Print.Variable)
+				}
+			} else {
+				fmt.Fprintf(b, "%sprintf(\"%s\\n\");\n", indent, stmt.Print.Print)
+			}
 		case stmt.Sleep != nil:
 			fmt.Fprintf(b, "%ssleep(%s);\n", indent, stmt.Sleep.Duration)
 		case stmt.Break != nil:

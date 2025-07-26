@@ -37,7 +37,9 @@ type Statement struct {
 }
 
 type PrintStmt struct {
-	Print string `"print" @String`
+	Print    string `"print" @String`
+	Format   string `| "print" @String`
+	Variable string `"|" @Ident`
 }
 
 type SleepStmt struct {
@@ -132,11 +134,24 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 		if len(parts) < 2 {
 			return nil, lineNum + 1, fmt.Errorf("print statement requires a string at line %d", lineNum+1)
 		}
-		str := strings.Join(parts[1:], " ")
-		if strings.HasPrefix(str, "\"") && strings.HasSuffix(str, "\"") {
-			str = str[1 : len(str)-1]
+
+		if strings.Contains(line, "|") {
+			pipeIndex := strings.Index(line, "|")
+			formatPart := strings.TrimSpace(line[5:pipeIndex])
+			varPart := strings.TrimSpace(line[pipeIndex+1:])
+
+			if strings.HasPrefix(formatPart, "\"") && strings.HasSuffix(formatPart, "\"") {
+				formatPart = formatPart[1 : len(formatPart)-1]
+			}
+
+			return &Statement{Print: &PrintStmt{Format: formatPart, Variable: varPart}}, lineNum + 1, nil
+		} else {
+			str := strings.Join(parts[1:], " ")
+			if strings.HasPrefix(str, "\"") && strings.HasSuffix(str, "\"") {
+				str = str[1 : len(str)-1]
+			}
+			return &Statement{Print: &PrintStmt{Print: str}}, lineNum + 1, nil
 		}
-		return &Statement{Print: &PrintStmt{Print: str}}, lineNum + 1, nil
 
 	case "sleep":
 		if len(parts) < 2 {
