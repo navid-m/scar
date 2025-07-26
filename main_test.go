@@ -13,6 +13,7 @@ while 1:
 
 	expected := `#include <stdio.h>
 #include <unistd.h>
+#include <string.h>
 
 int main() {
     printf("This will print forever: \n");
@@ -51,6 +52,7 @@ print "done..."`
 
 	expected := `#include <stdio.h>
 #include <unistd.h>
+#include <string.h>
 
 int main() {
     printf("start...\n");
@@ -90,6 +92,7 @@ print "All done"`
 
 	expected := `#include <stdio.h>
 #include <unistd.h>
+#include <string.h>
 
 int main() {
     printf("Starting nested test\n");

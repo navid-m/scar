@@ -27,12 +27,13 @@ type Program struct {
 }
 
 type Statement struct {
-	Print *PrintStmt `  @@`
-	Sleep *SleepStmt `| @@`
-	While *WhileStmt `| @@`
-	For   *ForStmt   `| @@`
-	If    *IfStmt    `| @@`
-	Break *BreakStmt `| @@`
+	Print   *PrintStmt   `  @@`
+	Sleep   *SleepStmt   `| @@`
+	While   *WhileStmt   `| @@`
+	For     *ForStmt     `| @@`
+	If      *IfStmt      `| @@`
+	Break   *BreakStmt   `| @@`
+	VarDecl *VarDeclStmt `| @@`
 }
 
 type PrintStmt struct {
@@ -62,6 +63,12 @@ type IfStmt struct {
 
 type BreakStmt struct {
 	Break string `"break"`
+}
+
+type VarDeclStmt struct {
+	Type  string `@Ident`
+	Name  string `@Ident`
+	Value string `"=" @(Number | String | Ident)`
 }
 
 func parseWithIndentation(input string) (*Program, error) {
@@ -245,8 +252,30 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 		return &Statement{If: &IfStmt{Condition: condition, Body: body}}, nextLine, nil
 
 	default:
+		if len(parts) >= 4 && parts[2] == "=" && isValidType(parts[0]) {
+			varType := parts[0]
+			varName := parts[1]
+			value := strings.Join(parts[3:], " ")
+
+			if strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"") {
+				value = value[1 : len(value)-1]
+			}
+
+			return &Statement{VarDecl: &VarDeclStmt{Type: varType, Name: varName, Value: value}}, lineNum + 1, nil
+		}
+
 		return nil, lineNum + 1, fmt.Errorf("unknown statement type '%s' at line %d", parts[0], lineNum+1)
 	}
+}
+
+func isValidType(s string) bool {
+	validTypes := []string{"int", "float", "double", "char", "string", "bool"}
+	for _, t := range validTypes {
+		if s == t {
+			return true
+		}
+	}
+	return false
 }
 
 func getIndentation(line string) int {

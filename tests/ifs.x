@@ -1,2 +1,4 @@
-if 1 == 1:
+int x = 1
+
+if x == 1:
     print "hello"

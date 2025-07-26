@@ -9,6 +9,7 @@ func renderC(program *Program) string {
 	var b strings.Builder
 	b.WriteString(`#include <stdio.h>
 #include <unistd.h>
+#include <string.h>
 
 int main() {
 `)
@@ -42,6 +43,41 @@ func renderStatements(b *strings.Builder, stmts []*Statement, indent string) {
 			fmt.Fprintf(b, "%sif (%s) {\n", indent, stmt.If.Condition)
 			renderStatements(b, stmt.If.Body, indent+"    ")
 			fmt.Fprintf(b, "%s}\n", indent)
+		case stmt.VarDecl != nil:
+			renderVarDecl(b, stmt.VarDecl, indent)
 		}
+	}
+}
+
+func renderVarDecl(b *strings.Builder, varDecl *VarDeclStmt, indent string) {
+	cType := mapTypeToCType(varDecl.Type)
+	value := varDecl.Value
+	if varDecl.Type == "string" {
+		if !strings.HasPrefix(value, "\"") {
+			value = fmt.Sprintf("\"%s\"", value)
+		}
+		fmt.Fprintf(b, "%s%s %s[256];\n", indent, cType, varDecl.Name)
+		fmt.Fprintf(b, "%sstrcpy(%s, %s);\n", indent, varDecl.Name, value)
+	} else {
+		fmt.Fprintf(b, "%s%s %s = %s;\n", indent, cType, varDecl.Name, value)
+	}
+}
+
+func mapTypeToCType(dslType string) string {
+	switch dslType {
+	case "int":
+		return "int"
+	case "float":
+		return "float"
+	case "double":
+		return "double"
+	case "char":
+		return "char"
+	case "string":
+		return "char"
+	case "bool":
+		return "int"
+	default:
+		return "int"
 	}
 }
