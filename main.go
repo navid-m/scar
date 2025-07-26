@@ -3,6 +3,8 @@ package main
 import (
 	"fmt"
 	"log"
+	"os"
+	"path"
 	"strings"
 
 	"github.com/alecthomas/participle/v2"
@@ -77,11 +79,19 @@ func renderStatements(b *strings.Builder, stmts []*Statement, indent string) {
 }
 
 func main() {
-	input := `print "This will print forever: "
-sleep 3
-while 1:
-    print "Hello"
-`
+	var input string
+
+	if len(os.Args) > 1 {
+		wd, _ := os.Getwd()
+		ptf := path.Join(wd, os.Args[1])
+		fmt.Println("trying out:", ptf)
+
+		data, err := os.ReadFile(ptf)
+		if err != nil {
+			log.Fatal("Could not find file.")
+		}
+		input = string(data)
+	}
 
 	program, err := parser.ParseString("", input)
 	if err != nil {
