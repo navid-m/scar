@@ -127,28 +127,22 @@ func TestIndentationHandling(t *testing.T) {
 for i = 1 to 1:
     print "inside"
 print "after"`
-
 	program, err := parseWithIndentation(input)
 	if err != nil {
 		t.Fatalf("Failed to parse input: %v", err)
 	}
-
 	if len(program.Statements) != 3 {
 		t.Errorf("Expected 3 top-level statements, got %d", len(program.Statements))
 	}
-
 	if program.Statements[0].Print == nil {
 		t.Error("First statement should be print")
 	}
-
 	if program.Statements[1].For == nil {
 		t.Error("Second statement should be for loop")
 	}
-
 	if len(program.Statements[1].For.Body) != 1 {
 		t.Errorf("For loop body should have 1 statement, got %d", len(program.Statements[1].For.Body))
 	}
-
 	if program.Statements[2].Print == nil {
 		t.Error("Third statement should be print")
 	}
