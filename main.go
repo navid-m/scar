@@ -188,12 +188,17 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 
 func getIndentation(line string) int {
 	indent := 0
+	shouldBreak := false
 	for _, char := range line {
-		if char == ' ' {
+		switch char {
+		case ' ':
 			indent++
-		} else if char == '\t' {
-			indent += 4 // Treat tab as 4 spaces
-		} else {
+		case '\t':
+			indent += 4
+		default:
+			shouldBreak = true
+		}
+		if shouldBreak {
 			break
 		}
 	}
