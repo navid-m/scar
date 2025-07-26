@@ -111,10 +111,11 @@ int main() {
 		t.Fatalf("Failed to parse input: %v", err)
 	}
 
-	result := renderC(program)
-
-	expectedNorm := normalizeWhitespace(expected)
-	resultNorm := normalizeWhitespace(result)
+	var (
+		result       = renderC(program)
+		expectedNorm = normalizeWhitespace(expected)
+		resultNorm   = normalizeWhitespace(result)
+	)
 
 	if expectedNorm != resultNorm {
 		t.Errorf("Output mismatch\nExpected:\n%s\nGot:\n%s", expected, result)
