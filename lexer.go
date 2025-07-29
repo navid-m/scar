@@ -323,15 +323,20 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 		return &Statement{While: &WhileStmt{Condition: condition, Body: body}}, nextLine, nil
 
 	case "for":
-		if len(parts) < 6 || parts[2] != "=" || parts[4] != "to" || !strings.HasSuffix(line, ":") {
+		equalsIndex := strings.Index(line, "=")
+		toIndex := strings.Index(line, "to")
+		colonIndex := strings.LastIndex(line, ":")
+		if equalsIndex == -1 || toIndex == -1 || colonIndex == -1 ||
+			!(equalsIndex > strings.Index(line, "for") && equalsIndex < toIndex && toIndex < colonIndex) {
 			return nil, lineNum + 1, fmt.Errorf("for statement format error at line %d", lineNum+1)
 		}
 
-		varName := parts[1]
-		start := parts[3]
-		end := parts[5]
-		if strings.HasSuffix(end, ":") {
-			end = end[:len(end)-1]
+		varName := strings.TrimSpace(line[strings.Index(line, "for")+len("for") : equalsIndex])
+		start := strings.TrimSpace(line[equalsIndex+1 : toIndex])
+		end := strings.TrimSpace(line[toIndex+len("to") : colonIndex])
+
+		if varName == "" || start == "" || end == "" {
+			return nil, lineNum + 1, fmt.Errorf("for statement missing variable, start, or end expression at line %d", lineNum+1)
 		}
 
 		expectedBodyIndent := currentIndent + 4
