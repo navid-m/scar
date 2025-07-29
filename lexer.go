@@ -44,18 +44,32 @@ type Program struct {
 }
 
 type Statement struct {
-	Print      *PrintStmt      `  @@`
-	Sleep      *SleepStmt      `| @@`
-	While      *WhileStmt      `| @@`
-	For        *ForStmt        `| @@`
-	If         *IfStmt         `| @@`
-	Break      *BreakStmt      `| @@`
-	VarDecl    *VarDeclStmt    `| @@`
-	VarAssign  *VarAssignStmt  `| @@`
-	ListDecl   *ListDeclStmt   `| @@`
-	ClassDecl  *ClassDeclStmt  `| @@`
-	MethodCall *MethodCallStmt `| @@`
-	ObjectDecl *ObjectDeclStmt `| @@`
+	Print             *PrintStmt             `  @@`
+	Sleep             *SleepStmt             `| @@`
+	While             *WhileStmt             `| @@`
+	For               *ForStmt               `| @@`
+	If                *IfStmt                `| @@`
+	Break             *BreakStmt             `| @@`
+	VarDecl           *VarDeclStmt           `| @@`
+	VarAssign         *VarAssignStmt         `| @@`
+	ListDecl          *ListDeclStmt          `| @@`
+	ClassDecl         *ClassDeclStmt         `| @@`
+	MethodCall        *MethodCallStmt        `| @@`
+	ObjectDecl        *ObjectDeclStmt        `| @@`
+	Return            *ReturnStmt            `| @@`
+	VarDeclMethodCall *VarDeclMethodCallStmt `| @@`
+}
+
+type VarDeclMethodCallStmt struct {
+	Type   string   `@Ident`
+	Name   string   `@Ident`
+	Object string   `"=" @Ident`
+	Method string   `"." @Ident`
+	Args   []string `"(" ( @(Ident | Number | String) ( "," @(Ident | Number | String) )* )? ")"`
+}
+
+type ReturnStmt struct {
+	Value string `"return" @(Ident | Number | String)`
 }
 
 type PrintStmt struct {
@@ -219,6 +233,17 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 	}
 
 	switch parts[0] {
+	case "return":
+		if len(parts) < 2 {
+			return nil, lineNum + 1, fmt.Errorf("return statement requires a value at line %d", lineNum+1)
+		}
+		value := strings.Join(parts[1:], " ")
+		if strings.HasPrefix(value, "this.") {
+			fieldName := value[5:]
+			value = "this->" + fieldName
+		}
+		return &Statement{Return: &ReturnStmt{Value: value}}, lineNum + 1, nil
+
 	case "class":
 		return parseClassStatement(lines, lineNum, currentIndent)
 
@@ -437,7 +462,7 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 		return nil, lineNum + 1, fmt.Errorf("else statement must follow an if statement at line %d", lineNum+1)
 
 	default:
-		if strings.Contains(line, ".") && strings.Contains(line, "(") && strings.Contains(line, ")") {
+		if strings.Contains(line, ".") && strings.Contains(line, "(") && strings.Contains(line, ")") && !strings.Contains(line, "=") {
 			dotIndex := strings.Index(line, ".")
 			parenIndex := strings.Index(line, "(")
 			if dotIndex < parenIndex {
@@ -538,6 +563,37 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 			varType := parts[0]
 			varName := parts[1]
 			value := strings.Join(parts[3:], " ")
+			if strings.Contains(value, ".") && strings.Contains(value, "(") && strings.Contains(value, ")") {
+				dotIndex := strings.Index(value, ".")
+				parenIndex := strings.Index(value, "(")
+				if dotIndex < parenIndex {
+					objectName := strings.TrimSpace(value[:dotIndex])
+					methodPart := strings.TrimSpace(value[dotIndex+1:])
+					methodEndIndex := strings.Index(methodPart, "(")
+					methodName := strings.TrimSpace(methodPart[:methodEndIndex])
+
+					argsStart := strings.Index(value, "(")
+					argsEnd := strings.LastIndex(value, ")")
+					var args []string
+					if argsEnd > argsStart+1 {
+						argsStr := strings.TrimSpace(value[argsStart+1 : argsEnd])
+						if argsStr != "" {
+							argsList := strings.Split(argsStr, ",")
+							for _, arg := range argsList {
+								args = append(args, strings.TrimSpace(arg))
+							}
+						}
+					}
+
+					return &Statement{VarDeclMethodCall: &VarDeclMethodCallStmt{
+						Type:   varType,
+						Name:   varName,
+						Object: objectName,
+						Method: methodName,
+						Args:   args,
+					}}, lineNum + 1, nil
+				}
+			}
 
 			if strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"") {
 				value = value[1 : len(value)-1]
@@ -663,8 +719,8 @@ func parseMethodStatement(lines []string, lineNum, currentIndent int) (*MethodDe
 	paramsStr := strings.TrimSpace(signature[parenStart+1 : parenEnd])
 	var parameters []*MethodParameter
 	if paramsStr != "" {
-		paramList := strings.Split(paramsStr, ",")
-		for _, paramStr := range paramList {
+		paramList := strings.SplitSeq(paramsStr, ",")
+		for paramStr := range paramList {
 			paramStr = strings.TrimSpace(paramStr)
 			paramParts := strings.Fields(paramStr)
 			if len(paramParts) == 2 {

@@ -210,7 +210,7 @@ func renderStatements(b *strings.Builder, stmts []*Statement, indent string) {
 						fieldName := v[5:]
 						args[i] = fmt.Sprintf("this->%s", fieldName)
 					} else if strings.Contains(v, "[") && strings.Contains(v, "]") {
-						args[i] = v // Use as-is for index access
+						args[i] = v
 					} else {
 						args[i] = v
 					}
@@ -224,6 +224,8 @@ func renderStatements(b *strings.Builder, stmts []*Statement, indent string) {
 			fmt.Fprintf(b, "%ssleep(%s);\n", indent, stmt.Sleep.Duration)
 		case stmt.Break != nil:
 			fmt.Fprintf(b, "%sbreak;\n", indent)
+		case stmt.Return != nil:
+			fmt.Fprintf(b, "%sreturn %s;\n", indent, stmt.Return.Value)
 		case stmt.While != nil:
 			fmt.Fprintf(b, "%swhile (%s) {\n", indent, stmt.While.Condition)
 			renderStatements(b, stmt.While.Body, indent+"    ")
@@ -250,8 +252,6 @@ func renderStatements(b *strings.Builder, stmts []*Statement, indent string) {
 			}
 
 			fmt.Fprintf(b, "%s}\n", indent)
-		case stmt.VarDecl != nil:
-			renderVarDecl(b, stmt.VarDecl, indent)
 		case stmt.VarAssign != nil:
 			renderVarAssign(b, stmt.VarAssign, indent)
 		case stmt.ListDecl != nil:
@@ -260,6 +260,8 @@ func renderStatements(b *strings.Builder, stmts []*Statement, indent string) {
 			renderObjectDecl(b, stmt.ObjectDecl, indent)
 		case stmt.MethodCall != nil:
 			renderMethodCall(b, stmt.MethodCall, indent)
+		case stmt.VarDeclMethodCall != nil:
+			renderVarDeclMethodCall(b, stmt.VarDeclMethodCall, indent)
 		case stmt.ClassDecl != nil:
 			continue
 		}
@@ -282,6 +284,19 @@ func renderMethodCall(b *strings.Builder, methodCall *MethodCallStmt, indent str
 	fmt.Fprintf(b, "%s%s_%s(%s", indent, objectType, methodCall.Method, methodCall.Object)
 
 	for _, arg := range methodCall.Args {
+		fmt.Fprintf(b, ", %s", arg)
+	}
+
+	b.WriteString(");\n")
+}
+
+func renderVarDeclMethodCall(b *strings.Builder, varDecl *VarDeclMethodCallStmt, indent string) {
+	objectType := getObjectType(varDecl.Object)
+	cType := mapTypeToCType(varDecl.Type)
+
+	fmt.Fprintf(b, "%s%s %s = %s_%s(%s", indent, cType, varDecl.Name, objectType, varDecl.Method, varDecl.Object)
+
+	for _, arg := range varDecl.Args {
 		fmt.Fprintf(b, ", %s", arg)
 	}
 
