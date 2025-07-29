@@ -252,6 +252,8 @@ func renderStatements(b *strings.Builder, stmts []*Statement, indent string) {
 			}
 
 			fmt.Fprintf(b, "%s}\n", indent)
+		case stmt.VarDecl != nil:
+			renderVarDecl(b, stmt.VarDecl, indent)
 		case stmt.VarAssign != nil:
 			renderVarAssign(b, stmt.VarAssign, indent)
 		case stmt.ListDecl != nil:
