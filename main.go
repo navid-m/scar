@@ -6,6 +6,8 @@ import (
 	"os"
 	"os/exec"
 	"path"
+	"runtime"
+	"strings"
 )
 
 func main() {
@@ -24,20 +26,21 @@ func main() {
 		input = string(data)
 	}
 
+	cleanedName := strings.ReplaceAll(os.Args[1], ".x", "")
 	program, err := parseWithIndentation(input)
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	cCode := renderC(program)
-	fmt.Println(cCode)
-	tmpCPath := "temp_program.c"
+	// fmt.Println(cCode)
+	tmpCPath := cleanedName + ".c"
 	err = os.WriteFile(tmpCPath, []byte(cCode), 0644)
 	if err != nil {
 		log.Fatalf("Failed to write temp C file: %v", err)
 	}
 	defer os.Remove(tmpCPath)
-	outputBinary := "./output_program"
+	outputBinary := "./" + cleanedName
 	compilers := []string{"clang", "gcc"}
 	var success bool
 
@@ -46,10 +49,12 @@ func main() {
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 
-		fmt.Printf("Trying to compile with %s...\n", compiler)
 		err := cmd.Run()
+		if runtime.GOOS == "windows" {
+			outputBinary += ".exe"
+		}
 		if err == nil {
-			fmt.Printf("Compiled successfully with %s. Executable: %s\n", compiler, outputBinary)
+			fmt.Printf("Compiled %s\n", outputBinary)
 			success = true
 			break
 		} else {
