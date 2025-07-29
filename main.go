@@ -32,7 +32,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	cCode := renderC(program)
+	cCode := InsertMacros(renderC(program))
 	// fmt.Println(cCode)
 	tmpCPath := cleanedName + ".c"
 	err = os.WriteFile(tmpCPath, []byte(cCode), 0644)
