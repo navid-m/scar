@@ -26,7 +26,17 @@ var dslLexer = lexer.MustSimple([]lexer.SimpleRule{
 	{Name: "Break", Pattern: `break`},
 	{Name: "LeftBracket", Pattern: `\[`},
 	{Name: "RightBracket", Pattern: `\]`},
+	{Name: "LeftParen", Pattern: `\(`},
+	{Name: "RightParen", Pattern: `\)`},
 	{Name: "Comma", Pattern: `,`},
+	{Name: "Dot", Pattern: `\.`},
+	{Name: "Arrow", Pattern: `->`},
+	{Name: "Class", Pattern: `class`},
+	{Name: "Init", Pattern: `init`},
+	{Name: "Fn", Pattern: `fn`},
+	{Name: "This", Pattern: `this`},
+	{Name: "New", Pattern: `new`},
+	{Name: "Void", Pattern: `void`},
 })
 
 type Program struct {
@@ -34,15 +44,18 @@ type Program struct {
 }
 
 type Statement struct {
-	Print     *PrintStmt     `  @@`
-	Sleep     *SleepStmt     `| @@`
-	While     *WhileStmt     `| @@`
-	For       *ForStmt       `| @@`
-	If        *IfStmt        `| @@`
-	Break     *BreakStmt     `| @@`
-	VarDecl   *VarDeclStmt   `| @@`
-	VarAssign *VarAssignStmt `| @@`
-	ListDecl  *ListDeclStmt  `| @@`
+	Print      *PrintStmt      `  @@`
+	Sleep      *SleepStmt      `| @@`
+	While      *WhileStmt      `| @@`
+	For        *ForStmt        `| @@`
+	If         *IfStmt         `| @@`
+	Break      *BreakStmt      `| @@`
+	VarDecl    *VarDeclStmt    `| @@`
+	VarAssign  *VarAssignStmt  `| @@`
+	ListDecl   *ListDeclStmt   `| @@`
+	ClassDecl  *ClassDeclStmt  `| @@`
+	MethodCall *MethodCallStmt `| @@`
+	ObjectDecl *ObjectDeclStmt `| @@`
 }
 
 type PrintStmt struct {
@@ -102,6 +115,40 @@ type ListDeclStmt struct {
 	Type     string   `"list" "[" @Ident "]"`
 	Name     string   `@Ident`
 	Elements []string `"=" "[" ( @(Number | String) ( "," @(Number | String) )* )? "]"`
+}
+
+type ClassDeclStmt struct {
+	Name        string            `"class" @Ident ":"`
+	Constructor *ConstructorStmt  `@@?`
+	Methods     []*MethodDeclStmt `@@*`
+}
+
+type ConstructorStmt struct {
+	Fields []*Statement `"init" ":" Newline+ @@*`
+}
+
+type MethodParameter struct {
+	Type string `@Ident`
+	Name string `@Ident`
+}
+
+type MethodDeclStmt struct {
+	Name       string             `"fn" @Ident`
+	Parameters []*MethodParameter `"(" ( @@ ( "," @@ )* )? ")"`
+	ReturnType string             `"->" @(Ident | "void") ":"`
+	Body       []*Statement       `Newline+ @@*`
+}
+
+type MethodCallStmt struct {
+	Object string   `@Ident`
+	Method string   `"." @Ident`
+	Args   []string `"(" ( @(Ident | Number | String) ( "," @(Ident | Number | String) )* )? ")"`
+}
+
+type ObjectDeclStmt struct {
+	Type string   `@Ident`
+	Name string   `@Ident`
+	Args []string `"=" "new" @Ident "(" ( @(Ident | Number | String) ( "," @(Ident | Number | String) )* )? ")"`
 }
 
 type Expression struct {
@@ -172,6 +219,9 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 	}
 
 	switch parts[0] {
+	case "class":
+		return parseClassStatement(lines, lineNum, currentIndent)
+
 	case "print":
 		if len(parts) < 2 {
 			return nil, lineNum + 1, fmt.Errorf("print statement requires a string at line %d", lineNum+1)
@@ -387,6 +437,57 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 		return nil, lineNum + 1, fmt.Errorf("else statement must follow an if statement at line %d", lineNum+1)
 
 	default:
+		if strings.Contains(line, ".") && strings.Contains(line, "(") && strings.Contains(line, ")") {
+			dotIndex := strings.Index(line, ".")
+			parenIndex := strings.Index(line, "(")
+			if dotIndex < parenIndex {
+				objectName := strings.TrimSpace(line[:dotIndex])
+				methodPart := strings.TrimSpace(line[dotIndex+1:])
+
+				methodEndIndex := strings.Index(methodPart, "(")
+				if methodEndIndex == -1 {
+					return nil, lineNum + 1, fmt.Errorf("invalid method call syntax at line %d", lineNum+1)
+				}
+
+				methodName := strings.TrimSpace(methodPart[:methodEndIndex])
+				argsStart := strings.Index(line, "(")
+				argsEnd := strings.LastIndex(line, ")")
+
+				var args []string
+				if argsEnd > argsStart+1 {
+					argsStr := strings.TrimSpace(line[argsStart+1 : argsEnd])
+					if argsStr != "" {
+						argsList := strings.Split(argsStr, ",")
+						for _, arg := range argsList {
+							args = append(args, strings.TrimSpace(arg))
+						}
+					}
+				}
+
+				return &Statement{MethodCall: &MethodCallStmt{Object: objectName, Method: methodName, Args: args}}, lineNum + 1, nil
+			}
+		}
+
+		if len(parts) >= 5 && parts[2] == "=" && parts[3] == "new" {
+			typeName := parts[0]
+			varName := parts[1]
+			argsStart := strings.Index(line, "(")
+			argsEnd := strings.LastIndex(line, ")")
+
+			var args []string
+			if argsStart != -1 && argsEnd != -1 && argsEnd > argsStart+1 {
+				argsStr := strings.TrimSpace(line[argsStart+1 : argsEnd])
+				if argsStr != "" {
+					argsList := strings.Split(argsStr, ",")
+					for _, arg := range argsList {
+						args = append(args, strings.TrimSpace(arg))
+					}
+				}
+			}
+
+			return &Statement{ObjectDecl: &ObjectDeclStmt{Type: typeName, Name: varName, Args: args}}, lineNum + 1, nil
+		}
+
 		if strings.HasPrefix(parts[0], "list[") && strings.Contains(parts[0], "]") {
 			if len(parts) < 4 || parts[2] != "=" {
 				return nil, lineNum + 1, fmt.Errorf("list declaration format error at line %d (expected: list[type] name = [elements])", lineNum+1)
@@ -447,6 +548,171 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 
 		return nil, lineNum + 1, fmt.Errorf("unknown statement type '%s' at line %d", parts[0], lineNum+1)
 	}
+}
+
+func parseClassStatement(lines []string, lineNum, currentIndent int) (*Statement, int, error) {
+	line := strings.TrimSpace(lines[lineNum])
+	parts := strings.Fields(line)
+
+	if len(parts) < 2 || !strings.HasSuffix(line, ":") {
+		return nil, lineNum + 1, fmt.Errorf("class declaration format error at line %d", lineNum+1)
+	}
+
+	className := parts[1]
+	if strings.HasSuffix(className, ":") {
+		className = className[:len(className)-1]
+	}
+
+	expectedBodyIndent := currentIndent + 4
+	if currentIndent == 0 {
+		bodyStartLine := lineNum + 1
+		for bodyStartLine < len(lines) {
+			bodyLine := lines[bodyStartLine]
+			if strings.TrimSpace(bodyLine) != "" && !strings.HasPrefix(strings.TrimSpace(bodyLine), "#") {
+				expectedBodyIndent = getIndentation(bodyLine)
+				break
+			}
+			bodyStartLine++
+		}
+		if expectedBodyIndent <= currentIndent {
+			expectedBodyIndent = currentIndent + 4
+		}
+	}
+
+	var constructor *ConstructorStmt
+	var methods []*MethodDeclStmt
+	nextLine := lineNum + 1
+
+	for nextLine < len(lines) {
+		line := lines[nextLine]
+		trimmed := strings.TrimSpace(line)
+
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			nextLine++
+			continue
+		}
+
+		indent := getIndentation(line)
+		if indent < expectedBodyIndent {
+			break
+		}
+
+		if indent != expectedBodyIndent {
+			return nil, nextLine + 1, fmt.Errorf("unexpected indentation in class body at line %d", nextLine+1)
+		}
+
+		if strings.HasPrefix(trimmed, "init:") {
+			initBodyIndent := expectedBodyIndent + 4
+			initStartLine := nextLine + 1
+			for initStartLine < len(lines) {
+				initLine := lines[initStartLine]
+				if strings.TrimSpace(initLine) != "" && !strings.HasPrefix(strings.TrimSpace(initLine), "#") {
+					initBodyIndent = getIndentation(initLine)
+					break
+				}
+				initStartLine++
+			}
+
+			initBody, err := parseStatements(lines, initStartLine, initBodyIndent)
+			if err != nil {
+				return nil, nextLine + 1, err
+			}
+
+			constructor = &ConstructorStmt{Fields: initBody}
+			nextLine = findEndOfBlock(lines, initStartLine, initBodyIndent)
+		} else if strings.HasPrefix(trimmed, "fn ") {
+			method, newNextLine, err := parseMethodStatement(lines, nextLine, expectedBodyIndent)
+			if err != nil {
+				return nil, nextLine + 1, err
+			}
+			methods = append(methods, method)
+			nextLine = newNextLine
+		} else {
+			nextLine++
+		}
+	}
+
+	classStmt := &ClassDeclStmt{
+		Name:        className,
+		Constructor: constructor,
+		Methods:     methods,
+	}
+
+	return &Statement{ClassDecl: classStmt}, nextLine, nil
+}
+
+func parseMethodStatement(lines []string, lineNum, currentIndent int) (*MethodDeclStmt, int, error) {
+	line := strings.TrimSpace(lines[lineNum])
+
+	if !strings.HasPrefix(line, "fn ") || !strings.HasSuffix(line, ":") {
+		return nil, lineNum + 1, fmt.Errorf("invalid method declaration at line %d", lineNum+1)
+	}
+
+	signature := strings.TrimSpace(line[3 : len(line)-1])
+	parenStart := strings.Index(signature, "(")
+	if parenStart == -1 {
+		return nil, lineNum + 1, fmt.Errorf("method declaration missing parameters at line %d", lineNum+1)
+	}
+
+	methodName := strings.TrimSpace(signature[:parenStart])
+	parenEnd := strings.Index(signature, ")")
+	if parenEnd == -1 || parenEnd <= parenStart {
+		return nil, lineNum + 1, fmt.Errorf("method declaration missing closing parenthesis at line %d", lineNum+1)
+	}
+
+	paramsStr := strings.TrimSpace(signature[parenStart+1 : parenEnd])
+	var parameters []*MethodParameter
+	if paramsStr != "" {
+		paramList := strings.Split(paramsStr, ",")
+		for _, paramStr := range paramList {
+			paramStr = strings.TrimSpace(paramStr)
+			paramParts := strings.Fields(paramStr)
+			if len(paramParts) == 2 {
+				param := &MethodParameter{
+					Type: paramParts[0],
+					Name: paramParts[1],
+				}
+				parameters = append(parameters, param)
+			} else if len(paramParts) == 1 {
+				param := &MethodParameter{
+					Type: "int",
+					Name: paramParts[0],
+				}
+				parameters = append(parameters, param)
+			}
+		}
+	}
+	returnTypePart := strings.TrimSpace(signature[parenEnd+1:])
+	var returnType string
+	if strings.HasPrefix(returnTypePart, "->") {
+		returnType = strings.TrimSpace(returnTypePart[2:])
+	} else {
+		returnType = "void"
+	}
+	expectedBodyIndent := currentIndent + 4
+	bodyStartLine := lineNum + 1
+	for bodyStartLine < len(lines) {
+		bodyLine := lines[bodyStartLine]
+		if strings.TrimSpace(bodyLine) != "" && !strings.HasPrefix(strings.TrimSpace(bodyLine), "#") {
+			expectedBodyIndent = getIndentation(bodyLine)
+			break
+		}
+		bodyStartLine++
+	}
+
+	body, err := parseStatements(lines, bodyStartLine, expectedBodyIndent)
+	if err != nil {
+		return nil, lineNum + 1, err
+	}
+
+	nextLine := findEndOfBlock(lines, bodyStartLine, expectedBodyIndent)
+
+	return &MethodDeclStmt{
+		Name:       methodName,
+		Parameters: parameters,
+		ReturnType: returnType,
+		Body:       body,
+	}, nextLine, nil
 }
 
 func handleIndexAssignment(line, varName, value string) string {
