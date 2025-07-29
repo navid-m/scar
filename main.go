@@ -9,6 +9,10 @@ import (
 )
 
 func main() {
+	if len(os.Args) <= 1 {
+		fmt.Println("usage: scar [program.x]")
+		return
+	}
 	var input string
 	if len(os.Args) > 1 {
 		wd, _ := os.Getwd()
