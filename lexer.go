@@ -209,7 +209,6 @@ type IndexAccess struct {
 	Index    string `"[" @(Number | Ident) "]"`
 }
 
-// Global module registry
 var loadedModules = make(map[string]*ModuleInfo)
 
 func parseWithIndentation(input string) (*Program, error) {
@@ -219,7 +218,6 @@ func parseWithIndentation(input string) (*Program, error) {
 		return nil, err
 	}
 
-	// Extract imports from statements
 	var imports []*ImportStmt
 	var nonImportStatements []*Statement
 
@@ -682,7 +680,6 @@ func parsePubStatement(lines []string, lineNum, currentIndent int) (*Statement, 
 	case "class":
 		return parsePubClassStatement(lines, lineNum, currentIndent)
 	default:
-		// Handle pub variable declaration
 		if len(parts) >= 5 && parts[3] == "=" && isValidType(parts[1]) {
 			varType := parts[1]
 			varName := parts[2]
@@ -1032,13 +1029,11 @@ func parseElseStatement(lines []string, lineNum, currentIndent int) (*ElseStmt, 
 	return &ElseStmt{Body: body}, nextLine, nil
 }
 
-// Module loading functions
 func loadModule(moduleName string, baseDir string) (*ModuleInfo, error) {
 	if module, exists := loadedModules[moduleName]; exists {
 		return module, nil
 	}
 
-	// Try to find the module file
 	var modulePath string
 	possiblePaths := []string{
 		filepath.Join(baseDir, moduleName+".x"),
@@ -1057,7 +1052,6 @@ func loadModule(moduleName string, baseDir string) (*ModuleInfo, error) {
 		return nil, fmt.Errorf("module '%s' not found", moduleName)
 	}
 
-	// Read and parse the module
 	data, err := os.ReadFile(modulePath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read module '%s': %v", moduleName, err)
@@ -1068,7 +1062,6 @@ func loadModule(moduleName string, baseDir string) (*ModuleInfo, error) {
 		return nil, fmt.Errorf("failed to parse module '%s': %v", moduleName, err)
 	}
 
-	// Extract public symbols
 	module := &ModuleInfo{
 		Name:          moduleName,
 		FilePath:      modulePath,
@@ -1077,7 +1070,6 @@ func loadModule(moduleName string, baseDir string) (*ModuleInfo, error) {
 		PublicFuncs:   make(map[string]*MethodDeclStmt),
 	}
 
-	// Collect public declarations
 	for _, stmt := range program.Statements {
 		if stmt.PubVarDecl != nil {
 			varDecl := &VarDeclStmt{
@@ -1102,14 +1094,12 @@ func loadModule(moduleName string, baseDir string) (*ModuleInfo, error) {
 }
 
 func resolveSymbol(symbolName string, currentModule string) string {
-	// Check for module-qualified symbols (e.g., "math.PI")
 	if strings.Contains(symbolName, ".") {
 		parts := strings.SplitN(symbolName, ".", 2)
 		moduleName := parts[0]
 		symbol := parts[1]
 
 		if module, exists := loadedModules[moduleName]; exists {
-			// Check if symbol exists in module
 			if _, exists := module.PublicVars[symbol]; exists {
 				return fmt.Sprintf("%s_%s", moduleName, symbol)
 			}
