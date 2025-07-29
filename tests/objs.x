@@ -18,4 +18,5 @@ Cat myCat = new Cat()
 myCat.setAge(10)
 int age = myCat.getAge()
 myCat.setInfo(8, "Whiskers")
+reassign age = myCat.getAge()
 print "The age was %d" | age

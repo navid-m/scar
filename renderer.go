@@ -237,7 +237,6 @@ func renderStatements(b *strings.Builder, stmts []*Statement, indent string, cla
 			}
 			fmt.Fprintf(b, "%sreturn %s;\n", indent, value)
 
-
 		case stmt.While != nil:
 			fmt.Fprintf(b, "%swhile (%s) {\n", indent, stmt.While.Condition)
 			renderStatements(b, stmt.While.Body, indent+"    ", className)
@@ -383,6 +382,24 @@ func renderVarAssign(b *strings.Builder, varAssign *VarAssignStmt, indent string
 	} else {
 		if strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"") {
 			fmt.Fprintf(b, "%sstrcpy(%s, %s);\n", indent, name, value)
+		} else if strings.Contains(value, ".") && strings.Contains(value, "(") && strings.Contains(value, ")") {
+			parts := strings.SplitN(value, ".", 2)
+			objectName := parts[0]
+			methodCallPart := parts[1]
+			methodName := methodCallPart[:strings.Index(methodCallPart, "(")]
+			argsString := methodCallPart[strings.Index(methodCallPart, "(")+1 : strings.LastIndex(methodCallPart, ")")]
+			args := []string{}
+			if argsString != "" {
+				args = strings.Split(argsString, ", ")
+			}
+
+			objectType := getObjectType(objectName)
+			fmt.Fprintf(b, "%s%s = %s_%s(%s", indent, name, objectType, methodName, objectName)
+			for _, arg := range args {
+				fmt.Fprintf(b, ", %s", arg)
+			}
+			b.WriteString(");\n")
+
 		} else {
 			fmt.Fprintf(b, "%s%s = %s;\n", indent, name, value)
 		}
