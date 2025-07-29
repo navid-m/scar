@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path"
+	"path/filepath"
 	"runtime"
 	"strings"
 )
@@ -15,10 +16,15 @@ func main() {
 		fmt.Println("usage: scar [program.x]")
 		return
 	}
+
 	var input string
+	var baseDir string
+
 	if len(os.Args) > 1 {
 		wd, _ := os.Getwd()
 		ptf := path.Join(wd, os.Args[1])
+		baseDir = filepath.Dir(ptf)
+
 		data, err := os.ReadFile(ptf)
 		if err != nil {
 			log.Fatal("Could not find file.")
@@ -32,14 +38,16 @@ func main() {
 		log.Fatal(err)
 	}
 
-	cCode := InsertMacros(renderC(program))
+	cCode := InsertMacros(renderC(program, baseDir))
 	// fmt.Println(cCode)
+
 	tmpCPath := cleanedName + ".c"
 	err = os.WriteFile(tmpCPath, []byte(cCode), 0644)
 	if err != nil {
 		log.Fatalf("Failed to write temp C file: %v", err)
 	}
 	defer os.Remove(tmpCPath)
+
 	outputBinary := "./" + cleanedName
 	compilers := []string{"clang", "gcc"}
 	var success bool
@@ -48,11 +56,12 @@ func main() {
 		cmd := exec.Command(compiler, "-w", tmpCPath, "-o", outputBinary)
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
-
 		err := cmd.Run()
+
 		if runtime.GOOS == "windows" {
 			outputBinary += ".exe"
 		}
+
 		if err == nil {
 			fmt.Printf("Compiled %s\n", outputBinary)
 			success = true

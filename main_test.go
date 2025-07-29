@@ -32,7 +32,7 @@ int main() {
 	}
 
 	var (
-		result       = renderC(program)
+		result       = renderC(program, ".")
 		expectedNorm = normalizeWhitespace(expected)
 		resultNorm   = normalizeWhitespace(result)
 	)
@@ -73,7 +73,7 @@ int main() {
 	}
 
 	var (
-		result       = renderC(program)
+		result       = renderC(program, ".")
 		expectedNorm = normalizeWhitespace(expected)
 		resultNorm   = normalizeWhitespace(result)
 	)
@@ -118,7 +118,7 @@ int main() {
 	}
 
 	var (
-		result       = renderC(program)
+		result       = renderC(program, ".")
 		expectedNorm = normalizeWhitespace(expected)
 		resultNorm   = normalizeWhitespace(result)
 	)

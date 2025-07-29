@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 
@@ -37,14 +39,31 @@ var dslLexer = lexer.MustSimple([]lexer.SimpleRule{
 	{Name: "This", Pattern: `this`},
 	{Name: "New", Pattern: `new`},
 	{Name: "Void", Pattern: `void`},
+	{Name: "Pub", Pattern: `pub`},
+	{Name: "Import", Pattern: `import`},
 })
 
+// Import and module system types
+type ImportStmt struct {
+	Module string `"import" @String`
+}
+
+type ModuleInfo struct {
+	Name          string
+	FilePath      string
+	PublicVars    map[string]*VarDeclStmt
+	PublicClasses map[string]*ClassDeclStmt
+	PublicFuncs   map[string]*MethodDeclStmt
+}
+
 type Program struct {
-	Statements []*Statement `{ @@ ( Newline+ @@ )* Newline* }`
+	Imports    []*ImportStmt `@@*`
+	Statements []*Statement  `{ @@ ( Newline+ @@ )* Newline* }`
 }
 
 type Statement struct {
-	Print             *PrintStmt             `  @@`
+	Import            *ImportStmt            `  @@`
+	Print             *PrintStmt             `| @@`
 	Sleep             *SleepStmt             `| @@`
 	While             *WhileStmt             `| @@`
 	For               *ForStmt               `| @@`
@@ -58,6 +77,20 @@ type Statement struct {
 	ObjectDecl        *ObjectDeclStmt        `| @@`
 	Return            *ReturnStmt            `| @@`
 	VarDeclMethodCall *VarDeclMethodCallStmt `| @@`
+	PubVarDecl        *PubVarDeclStmt        `| @@`
+	PubClassDecl      *PubClassDeclStmt      `| @@`
+}
+
+type PubVarDeclStmt struct {
+	Type  string `"pub" @Ident`
+	Name  string `@Ident`
+	Value string `"=" @(Number | String | Ident)`
+}
+
+type PubClassDeclStmt struct {
+	Name        string            `"pub" "class" @Ident ":"`
+	Constructor *ConstructorStmt  `@@?`
+	Methods     []*MethodDeclStmt `@@*`
 }
 
 type VarDeclMethodCallStmt struct {
@@ -176,13 +209,29 @@ type IndexAccess struct {
 	Index    string `"[" @(Number | Ident) "]"`
 }
 
+// Global module registry
+var loadedModules = make(map[string]*ModuleInfo)
+
 func parseWithIndentation(input string) (*Program, error) {
 	lines := strings.Split(input, "\n")
 	statements, err := parseStatements(lines, 0, 0)
 	if err != nil {
 		return nil, err
 	}
-	return &Program{Statements: statements}, nil
+
+	// Extract imports from statements
+	var imports []*ImportStmt
+	var nonImportStatements []*Statement
+
+	for _, stmt := range statements {
+		if stmt.Import != nil {
+			imports = append(imports, stmt.Import)
+		} else {
+			nonImportStatements = append(nonImportStatements, stmt)
+		}
+	}
+
+	return &Program{Imports: imports, Statements: nonImportStatements}, nil
 }
 
 func parseStatements(lines []string, startLine, expectedIndent int) ([]*Statement, error) {
@@ -233,6 +282,16 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 	}
 
 	switch parts[0] {
+	case "import":
+		if len(parts) < 2 {
+			return nil, lineNum + 1, fmt.Errorf("import statement requires a module name at line %d", lineNum+1)
+		}
+		moduleName := strings.Trim(strings.Join(parts[1:], " "), "\"")
+		return &Statement{Import: &ImportStmt{Module: moduleName}}, lineNum + 1, nil
+
+	case "pub":
+		return parsePubStatement(lines, lineNum, currentIndent)
+
 	case "return":
 		if len(parts) < 2 {
 			return nil, lineNum + 1, fmt.Errorf("return statement requires a value at line %d", lineNum+1)
@@ -611,6 +670,125 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 	}
 }
 
+func parsePubStatement(lines []string, lineNum, currentIndent int) (*Statement, int, error) {
+	line := strings.TrimSpace(lines[lineNum])
+	parts := strings.Fields(line)
+
+	if len(parts) < 2 {
+		return nil, lineNum + 1, fmt.Errorf("pub statement requires a declaration at line %d", lineNum+1)
+	}
+
+	switch parts[1] {
+	case "class":
+		return parsePubClassStatement(lines, lineNum, currentIndent)
+	default:
+		// Handle pub variable declaration
+		if len(parts) >= 5 && parts[3] == "=" && isValidType(parts[1]) {
+			varType := parts[1]
+			varName := parts[2]
+			value := strings.Join(parts[4:], " ")
+
+			if strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"") {
+				value = value[1 : len(value)-1]
+			}
+
+			return &Statement{PubVarDecl: &PubVarDeclStmt{Type: varType, Name: varName, Value: value}}, lineNum + 1, nil
+		}
+		return nil, lineNum + 1, fmt.Errorf("invalid pub declaration at line %d", lineNum+1)
+	}
+}
+
+func parsePubClassStatement(lines []string, lineNum, currentIndent int) (*Statement, int, error) {
+	line := strings.TrimSpace(lines[lineNum])
+	parts := strings.Fields(line)
+
+	if len(parts) < 3 || !strings.HasSuffix(line, ":") {
+		return nil, lineNum + 1, fmt.Errorf("pub class declaration format error at line %d", lineNum+1)
+	}
+
+	className := parts[2]
+	if strings.HasSuffix(className, ":") {
+		className = className[:len(className)-1]
+	}
+
+	expectedBodyIndent := currentIndent + 4
+	if currentIndent == 0 {
+		bodyStartLine := lineNum + 1
+		for bodyStartLine < len(lines) {
+			bodyLine := lines[bodyStartLine]
+			if strings.TrimSpace(bodyLine) != "" && !strings.HasPrefix(strings.TrimSpace(bodyLine), "#") {
+				expectedBodyIndent = getIndentation(bodyLine)
+				break
+			}
+			bodyStartLine++
+		}
+		if expectedBodyIndent <= currentIndent {
+			expectedBodyIndent = currentIndent + 4
+		}
+	}
+
+	var constructor *ConstructorStmt
+	var methods []*MethodDeclStmt
+	nextLine := lineNum + 1
+
+	for nextLine < len(lines) {
+		line := lines[nextLine]
+		trimmed := strings.TrimSpace(line)
+
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			nextLine++
+			continue
+		}
+
+		indent := getIndentation(line)
+		if indent < expectedBodyIndent {
+			break
+		}
+
+		if indent != expectedBodyIndent {
+			return nil, nextLine + 1, fmt.Errorf("unexpected indentation in class body at line %d", nextLine+1)
+		}
+
+		if strings.HasPrefix(trimmed, "init:") {
+			initBodyIndent := expectedBodyIndent + 4
+			initStartLine := nextLine + 1
+			for initStartLine < len(lines) {
+				initLine := lines[initStartLine]
+				if strings.TrimSpace(initLine) != "" && !strings.HasPrefix(strings.TrimSpace(initLine), "#") {
+					initBodyIndent = getIndentation(initLine)
+					break
+				}
+				initStartLine++
+			}
+
+			initBody, err := parseStatements(lines, initStartLine, initBodyIndent)
+			if err != nil {
+				return nil, nextLine + 1, err
+			}
+
+			constructor = &ConstructorStmt{Fields: initBody}
+			nextLine = findEndOfBlock(lines, initStartLine, initBodyIndent)
+		} else if strings.HasPrefix(trimmed, "fn ") {
+			method, newNextLine, err := parseMethodStatement(lines, nextLine, expectedBodyIndent)
+			if err != nil {
+				return nil, nextLine + 1, err
+			}
+			methods = append(methods, method)
+			nextLine = newNextLine
+		} else {
+			nextLine++
+		}
+	}
+
+	pubClassStmt := &PubClassDeclStmt{
+		Name:        className,
+		Constructor: constructor,
+		Methods:     methods,
+	}
+
+	return &Statement{PubClassDecl: pubClassStmt}, nextLine, nil
+}
+
 func parseClassStatement(lines []string, lineNum, currentIndent int) (*Statement, int, error) {
 	line := strings.TrimSpace(lines[lineNum])
 	parts := strings.Fields(line)
@@ -852,6 +1030,103 @@ func parseElseStatement(lines []string, lineNum, currentIndent int) (*ElseStmt, 
 	nextLine := findEndOfBlock(lines, lineNum+1, expectedBodyIndent)
 
 	return &ElseStmt{Body: body}, nextLine, nil
+}
+
+// Module loading functions
+func loadModule(moduleName string, baseDir string) (*ModuleInfo, error) {
+	if module, exists := loadedModules[moduleName]; exists {
+		return module, nil
+	}
+
+	// Try to find the module file
+	var modulePath string
+	possiblePaths := []string{
+		filepath.Join(baseDir, moduleName+".x"),
+		filepath.Join(baseDir, "modules", moduleName+".x"),
+		filepath.Join(".", moduleName+".x"),
+	}
+
+	for _, path := range possiblePaths {
+		if _, err := os.Stat(path); err == nil {
+			modulePath = path
+			break
+		}
+	}
+
+	if modulePath == "" {
+		return nil, fmt.Errorf("module '%s' not found", moduleName)
+	}
+
+	// Read and parse the module
+	data, err := os.ReadFile(modulePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read module '%s': %v", moduleName, err)
+	}
+
+	program, err := parseWithIndentation(string(data))
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse module '%s': %v", moduleName, err)
+	}
+
+	// Extract public symbols
+	module := &ModuleInfo{
+		Name:          moduleName,
+		FilePath:      modulePath,
+		PublicVars:    make(map[string]*VarDeclStmt),
+		PublicClasses: make(map[string]*ClassDeclStmt),
+		PublicFuncs:   make(map[string]*MethodDeclStmt),
+	}
+
+	// Collect public declarations
+	for _, stmt := range program.Statements {
+		if stmt.PubVarDecl != nil {
+			varDecl := &VarDeclStmt{
+				Type:  stmt.PubVarDecl.Type,
+				Name:  stmt.PubVarDecl.Name,
+				Value: stmt.PubVarDecl.Value,
+			}
+			module.PublicVars[stmt.PubVarDecl.Name] = varDecl
+		}
+		if stmt.PubClassDecl != nil {
+			classDecl := &ClassDeclStmt{
+				Name:        stmt.PubClassDecl.Name,
+				Constructor: stmt.PubClassDecl.Constructor,
+				Methods:     stmt.PubClassDecl.Methods,
+			}
+			module.PublicClasses[stmt.PubClassDecl.Name] = classDecl
+		}
+	}
+
+	loadedModules[moduleName] = module
+	return module, nil
+}
+
+func resolveSymbol(symbolName string, currentModule string) string {
+	// Check for module-qualified symbols (e.g., "math.PI")
+	if strings.Contains(symbolName, ".") {
+		parts := strings.SplitN(symbolName, ".", 2)
+		moduleName := parts[0]
+		symbol := parts[1]
+
+		if module, exists := loadedModules[moduleName]; exists {
+			// Check if symbol exists in module
+			if _, exists := module.PublicVars[symbol]; exists {
+				return fmt.Sprintf("%s_%s", moduleName, symbol)
+			}
+			if _, exists := module.PublicClasses[symbol]; exists {
+				return fmt.Sprintf("%s_%s", moduleName, symbol)
+			}
+		}
+	}
+
+	return symbolName
+}
+
+func generateUniqueSymbol(originalName string, moduleName string) string {
+	if moduleName == "" {
+		return originalName
+	}
+	return fmt.Sprintf("%s_%s", moduleName, originalName)
 }
 
 var vdt = []string{"int", "float", "double", "char", "string", "bool"}

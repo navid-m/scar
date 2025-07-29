@@ -29,13 +29,29 @@ type ObjectInfo struct {
 
 var globalClasses = make(map[string]*ClassInfo)
 var globalObjects = make(map[string]*ObjectInfo)
+var currentModule = ""
 
-func renderC(program *Program) string {
+func renderC(program *Program, baseDir string) string {
 	var b strings.Builder
+
+	for _, importStmt := range program.Imports {
+		_, err := loadModule(importStmt.Module, baseDir)
+		if err != nil {
+			fmt.Printf("Warning: Failed to load module '%s': %v\n", importStmt.Module, err)
+		}
+	}
 
 	for _, stmt := range program.Statements {
 		if stmt.ClassDecl != nil {
 			collectClassInfo(stmt.ClassDecl)
+		}
+		if stmt.PubClassDecl != nil {
+			classDecl := &ClassDeclStmt{
+				Name:        stmt.PubClassDecl.Name,
+				Constructor: stmt.PubClassDecl.Constructor,
+				Methods:     stmt.PubClassDecl.Methods,
+			}
+			collectClassInfo(classDecl)
 		}
 		if stmt.ObjectDecl != nil {
 			objectInfo := &ObjectInfo{
@@ -46,16 +62,24 @@ func renderC(program *Program) string {
 		}
 	}
 
+	for _, module := range loadedModules {
+		for _, classDecl := range module.PublicClasses {
+			collectClassInfoWithModule(classDecl, module.Name)
+		}
+	}
+
 	b.WriteString(`#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
 `)
-	for _, classInfo := range globalClasses {
-		generateStructDefinition(&b, classInfo)
+
+	for className, classInfo := range globalClasses {
+		generateStructDefinition(&b, classInfo, className)
 		b.WriteString("\n")
 	}
+
 	for className, classInfo := range globalClasses {
 		for _, method := range classInfo.Methods {
 			returnType := "void"
@@ -64,7 +88,7 @@ func renderC(program *Program) string {
 			}
 
 			fmt.Fprintf(&b, "%s %s_%s(%s* this", returnType, className, method.Name, className)
-			if classDecl := findClassDecl(program, className); classDecl != nil {
+			if classDecl := findClassDeclByName(program, className); classDecl != nil {
 				if methodDecl := findMethodDecl(classDecl, method.Name); methodDecl != nil {
 					for _, param := range methodDecl.Parameters {
 						paramType := mapTypeToCType(param.Type)
@@ -81,17 +105,70 @@ func renderC(program *Program) string {
 		b.WriteString("\n")
 	}
 
+	for _, module := range loadedModules {
+		for varName, varDecl := range module.PublicVars {
+			cType := mapTypeToCType(varDecl.Type)
+			uniqueName := generateUniqueSymbol(varName, module.Name)
+			if varDecl.Type == "string" {
+				fmt.Fprintf(&b, "extern %s %s[256];\n", cType, uniqueName)
+			} else {
+				fmt.Fprintf(&b, "extern %s %s;\n", cType, uniqueName)
+			}
+		}
+	}
+
+	for _, module := range loadedModules {
+		for varName, varDecl := range module.PublicVars {
+			cType := mapTypeToCType(varDecl.Type)
+			uniqueName := generateUniqueSymbol(varName, module.Name)
+			value := varDecl.Value
+
+			if varDecl.Type == "string" {
+				if !strings.HasPrefix(value, "\"") {
+					value = fmt.Sprintf("\"%s\"", value)
+				}
+				fmt.Fprintf(&b, "%s %s[256];\n", cType, uniqueName)
+				fmt.Fprintf(&b, "void init_%s() { strcpy(%s, %s); }\n", uniqueName, uniqueName, value)
+			} else {
+				fmt.Fprintf(&b, "%s %s = %s;\n", cType, uniqueName, value)
+			}
+		}
+	}
+
 	for _, stmt := range program.Statements {
 		if stmt.ClassDecl != nil {
-			generateClassImplementation(&b, stmt.ClassDecl)
+			generateClassImplementation(&b, stmt.ClassDecl, "")
+		}
+		if stmt.PubClassDecl != nil {
+			classDecl := &ClassDeclStmt{
+				Name:        stmt.PubClassDecl.Name,
+				Constructor: stmt.PubClassDecl.Constructor,
+				Methods:     stmt.PubClassDecl.Methods,
+			}
+			generateClassImplementation(&b, classDecl, "")
+		}
+	}
+
+	for _, module := range loadedModules {
+		for _, classDecl := range module.PublicClasses {
+			generateClassImplementation(&b, classDecl, module.Name)
 		}
 	}
 
 	b.WriteString("int main() {\n")
 
+	for _, module := range loadedModules {
+		for varName, varDecl := range module.PublicVars {
+			if varDecl.Type == "string" {
+				uniqueName := generateUniqueSymbol(varName, module.Name)
+				fmt.Fprintf(&b, "    init_%s();\n", uniqueName)
+			}
+		}
+	}
+
 	var mainStatements []*Statement
 	for _, stmt := range program.Statements {
-		if stmt.ClassDecl == nil {
+		if stmt.ClassDecl == nil && stmt.PubClassDecl == nil && stmt.PubVarDecl == nil {
 			mainStatements = append(mainStatements, stmt)
 		}
 	}
@@ -103,11 +180,21 @@ func renderC(program *Program) string {
 }
 
 func collectClassInfo(classDecl *ClassDeclStmt) {
+	collectClassInfoWithModule(classDecl, "")
+}
+
+func collectClassInfoWithModule(classDecl *ClassDeclStmt, moduleName string) {
+	className := classDecl.Name
+	if moduleName != "" {
+		className = generateUniqueSymbol(classDecl.Name, moduleName)
+	}
+
 	classInfo := &ClassInfo{
-		Name:    classDecl.Name,
+		Name:    className,
 		Fields:  []FieldInfo{},
 		Methods: []MethodInfo{},
 	}
+
 	if classDecl.Constructor != nil {
 		for _, field := range classDecl.Constructor.Fields {
 			if field.VarDecl != nil {
@@ -123,6 +210,7 @@ func collectClassInfo(classDecl *ClassDeclStmt) {
 			}
 		}
 	}
+
 	for _, method := range classDecl.Methods {
 		methodInfo := MethodInfo{
 			Name:       method.Name,
@@ -135,11 +223,11 @@ func collectClassInfo(classDecl *ClassDeclStmt) {
 		classInfo.Methods = append(classInfo.Methods, methodInfo)
 	}
 
-	globalClasses[classDecl.Name] = classInfo
+	globalClasses[className] = classInfo
 }
 
-func generateStructDefinition(b *strings.Builder, classInfo *ClassInfo) {
-	fmt.Fprintf(b, "typedef struct %s {\n", classInfo.Name)
+func generateStructDefinition(b *strings.Builder, classInfo *ClassInfo, structName string) {
+	fmt.Fprintf(b, "typedef struct %s {\n", structName)
 	for _, field := range classInfo.Fields {
 		cType := mapTypeToCType(field.Type)
 		if field.Type == "string" {
@@ -148,12 +236,14 @@ func generateStructDefinition(b *strings.Builder, classInfo *ClassInfo) {
 			fmt.Fprintf(b, "    %s %s;\n", cType, field.Name)
 		}
 	}
-
-	fmt.Fprintf(b, "} %s;\n", classInfo.Name)
+	fmt.Fprintf(b, "} %s;\n", structName)
 }
 
-func generateClassImplementation(b *strings.Builder, classDecl *ClassDeclStmt) {
+func generateClassImplementation(b *strings.Builder, classDecl *ClassDeclStmt, moduleName string) {
 	className := classDecl.Name
+	if moduleName != "" {
+		className = generateUniqueSymbol(classDecl.Name, moduleName)
+	}
 
 	fmt.Fprintf(b, "%s* %s_new() {\n", className, className)
 	fmt.Fprintf(b, "    %s* obj = malloc(sizeof(%s));\n", className, className)
@@ -200,7 +290,7 @@ func generateClassImplementation(b *strings.Builder, classDecl *ClassDeclStmt) {
 		}
 
 		b.WriteString(") {\n")
-		renderStatements(b, method.Body, "    ", className)
+		renderStatements(b, method.Body, "    ", classDecl.Name)
 		b.WriteString("}\n\n")
 	}
 }
@@ -212,13 +302,14 @@ func renderStatements(b *strings.Builder, stmts []*Statement, indent string, cla
 			if stmt.Print.Format != "" && len(stmt.Print.Variables) > 0 {
 				args := make([]string, len(stmt.Print.Variables))
 				for i, v := range stmt.Print.Variables {
+					resolvedVar := resolveSymbol(v, currentModule)
 					if strings.HasPrefix(v, "this.") {
 						fieldName := v[5:]
 						args[i] = fmt.Sprintf("this->%s", fieldName)
 					} else if strings.Contains(v, "[") && strings.Contains(v, "]") {
-						args[i] = v
+						args[i] = resolvedVar
 					} else {
-						args[i] = v
+						args[i] = resolvedVar
 					}
 				}
 				argsStr := strings.Join(args, ", ")
@@ -234,26 +325,31 @@ func renderStatements(b *strings.Builder, stmts []*Statement, indent string, cla
 			value := stmt.Return.Value
 			if strings.HasPrefix(value, "this.") {
 				value = "this->" + value[5:]
+			} else {
+				value = resolveSymbol(value, currentModule)
 			}
 			fmt.Fprintf(b, "%sreturn %s;\n", indent, value)
 
 		case stmt.While != nil:
-			fmt.Fprintf(b, "%swhile (%s) {\n", indent, stmt.While.Condition)
+			condition := resolveSymbol(stmt.While.Condition, currentModule)
+			fmt.Fprintf(b, "%swhile (%s) {\n", indent, condition)
 			renderStatements(b, stmt.While.Body, indent+"    ", className)
 			fmt.Fprintf(b, "%s}\n", indent)
 		case stmt.For != nil:
 			varName := stmt.For.Var
-			start := stmt.For.Start
-			end := stmt.For.End
+			start := resolveSymbol(stmt.For.Start, currentModule)
+			end := resolveSymbol(stmt.For.End, currentModule)
 			fmt.Fprintf(b, "%sfor (int %s = %s; %s <= %s; %s++) {\n", indent, varName, start, varName, end, varName)
 			renderStatements(b, stmt.For.Body, indent+"    ", className)
 			fmt.Fprintf(b, "%s}\n", indent)
 		case stmt.If != nil:
-			fmt.Fprintf(b, "%sif (%s) {\n", indent, stmt.If.Condition)
+			condition := resolveSymbol(stmt.If.Condition, currentModule)
+			fmt.Fprintf(b, "%sif (%s) {\n", indent, condition)
 			renderStatements(b, stmt.If.Body, indent+"    ", className)
 
 			for _, elif := range stmt.If.ElseIfs {
-				fmt.Fprintf(b, "%s} else if (%s) {\n", indent, elif.Condition)
+				elifCondition := resolveSymbol(elif.Condition, currentModule)
+				fmt.Fprintf(b, "%s} else if (%s) {\n", indent, elifCondition)
 				renderStatements(b, elif.Body, indent+"    ", className)
 			}
 
@@ -265,6 +361,8 @@ func renderStatements(b *strings.Builder, stmts []*Statement, indent string, cla
 			fmt.Fprintf(b, "%s}\n", indent)
 		case stmt.VarDecl != nil:
 			renderVarDecl(b, stmt.VarDecl, indent)
+		case stmt.PubVarDecl != nil:
+			continue
 		case stmt.VarAssign != nil:
 			renderVarAssign(b, stmt.VarAssign, indent, className)
 		case stmt.ListDecl != nil:
@@ -277,18 +375,21 @@ func renderStatements(b *strings.Builder, stmts []*Statement, indent string, cla
 			renderVarDeclMethodCall(b, stmt.VarDeclMethodCall, indent)
 		case stmt.ClassDecl != nil:
 			continue
+		case stmt.PubClassDecl != nil:
+			continue
 		}
 	}
 }
 
 func renderObjectDecl(b *strings.Builder, objDecl *ObjectDeclStmt, indent string) {
+	objectType := resolveSymbol(objDecl.Type, currentModule)
 	objectInfo := &ObjectInfo{
 		Name: objDecl.Name,
-		Type: objDecl.Type,
+		Type: objectType,
 	}
 	globalObjects[objDecl.Name] = objectInfo
 
-	fmt.Fprintf(b, "%s%s* %s = %s_new();\n", indent, objDecl.Type, objDecl.Name, objDecl.Type)
+	fmt.Fprintf(b, "%s%s* %s = %s_new();\n", indent, objectType, objDecl.Name, objectType)
 }
 
 func renderMethodCall(b *strings.Builder, methodCall *MethodCallStmt, indent string) {
@@ -297,7 +398,8 @@ func renderMethodCall(b *strings.Builder, methodCall *MethodCallStmt, indent str
 	fmt.Fprintf(b, "%s%s_%s(%s", indent, objectType, methodCall.Method, methodCall.Object)
 
 	for _, arg := range methodCall.Args {
-		fmt.Fprintf(b, ", %s", arg)
+		resolvedArg := resolveSymbol(arg, currentModule)
+		fmt.Fprintf(b, ", %s", resolvedArg)
 	}
 
 	b.WriteString(");\n")
@@ -310,7 +412,8 @@ func renderVarDeclMethodCall(b *strings.Builder, varDecl *VarDeclMethodCallStmt,
 	fmt.Fprintf(b, "%s%s %s = %s_%s(%s", indent, cType, varDecl.Name, objectType, varDecl.Method, varDecl.Object)
 
 	for _, arg := range varDecl.Args {
-		fmt.Fprintf(b, ", %s", arg)
+		resolvedArg := resolveSymbol(arg, currentModule)
+		fmt.Fprintf(b, ", %s", resolvedArg)
 	}
 
 	b.WriteString(");\n")
@@ -334,7 +437,8 @@ func renderVarDecl(b *strings.Builder, varDecl *VarDeclStmt, indent string) {
 	}
 
 	cType := mapTypeToCType(varDecl.Type)
-	value := varDecl.Value
+	value := resolveSymbol(varDecl.Value, currentModule)
+
 	if varDecl.Type == "string" {
 		if !strings.HasPrefix(value, "\"") {
 			value = fmt.Sprintf("\"%s\"", value)
@@ -347,7 +451,7 @@ func renderVarDecl(b *strings.Builder, varDecl *VarDeclStmt, indent string) {
 }
 
 func renderVarAssign(b *strings.Builder, varAssign *VarAssignStmt, indent string, className string) {
-	value := varAssign.Value
+	value := resolveSymbol(varAssign.Value, currentModule)
 	name := varAssign.Name
 
 	if strings.HasPrefix(name, "this.") {
@@ -390,7 +494,10 @@ func renderVarAssign(b *strings.Builder, varAssign *VarAssignStmt, indent string
 			argsString := methodCallPart[strings.Index(methodCallPart, "(")+1 : strings.LastIndex(methodCallPart, ")")]
 			args := []string{}
 			if argsString != "" {
-				args = strings.Split(argsString, ", ")
+				argList := strings.Split(argsString, ", ")
+				for _, arg := range argList {
+					args = append(args, resolveSymbol(arg, currentModule))
+				}
 			}
 
 			objectType := getObjectType(objectName)
@@ -420,10 +527,11 @@ func renderListDecl(b *strings.Builder, listDecl *ListDeclStmt, indent string) {
 	if listDecl.Type == "string" {
 		fmt.Fprintf(b, "%s%s %s[%d][256];\n", indent, cType, listName, arraySize)
 		for i, elem := range elements {
-			if !strings.HasPrefix(elem, "\"") {
-				elem = fmt.Sprintf("\"%s\"", elem)
+			resolvedElem := resolveSymbol(elem, currentModule)
+			if !strings.HasPrefix(resolvedElem, "\"") {
+				resolvedElem = fmt.Sprintf("\"%s\"", resolvedElem)
 			}
-			fmt.Fprintf(b, "%sstrcpy(%s[%d], %s);\n", indent, listName, i, elem)
+			fmt.Fprintf(b, "%sstrcpy(%s[%d], %s);\n", indent, listName, i, resolvedElem)
 		}
 	} else {
 		fmt.Fprintf(b, "%s%s %s[%d]", indent, cType, listName, arraySize)
@@ -434,7 +542,8 @@ func renderListDecl(b *strings.Builder, listDecl *ListDeclStmt, indent string) {
 				if i > 0 {
 					fmt.Fprintf(b, ", ")
 				}
-				fmt.Fprintf(b, "%s", elem)
+				resolvedElem := resolveSymbol(elem, currentModule)
+				fmt.Fprintf(b, "%s", resolvedElem)
 			}
 			fmt.Fprintf(b, "}")
 		}
@@ -442,12 +551,33 @@ func renderListDecl(b *strings.Builder, listDecl *ListDeclStmt, indent string) {
 	}
 }
 
-func findClassDecl(program *Program, className string) *ClassDeclStmt {
+func findClassDeclByName(program *Program, className string) *ClassDeclStmt {
 	for _, stmt := range program.Statements {
 		if stmt.ClassDecl != nil && stmt.ClassDecl.Name == className {
 			return stmt.ClassDecl
 		}
+		if stmt.PubClassDecl != nil && stmt.PubClassDecl.Name == className {
+			return &ClassDeclStmt{
+				Name:        stmt.PubClassDecl.Name,
+				Constructor: stmt.PubClassDecl.Constructor,
+				Methods:     stmt.PubClassDecl.Methods,
+			}
+		}
 	}
+
+	for _, module := range loadedModules {
+		if classDecl, exists := module.PublicClasses[className]; exists {
+			return classDecl
+		}
+		modulePrefixedName := generateUniqueSymbol(className, module.Name)
+		if strings.HasSuffix(className, "_"+module.Name) || className == modulePrefixedName {
+			originalName := strings.TrimSuffix(className, "_"+module.Name)
+			if classDecl, exists := module.PublicClasses[originalName]; exists {
+				return classDecl
+			}
+		}
+	}
+
 	return nil
 }
 
