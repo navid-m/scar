@@ -68,6 +68,9 @@ func renderC(program *Program) string {
 				if methodDecl := findMethodDecl(classDecl, method.Name); methodDecl != nil {
 					for _, param := range methodDecl.Parameters {
 						paramType := mapTypeToCType(param.Type)
+						if param.Type == "string" {
+							paramType = "char*"
+						}
 						fmt.Fprintf(&b, ", %s %s", paramType, param.Name)
 					}
 				}
@@ -93,7 +96,7 @@ func renderC(program *Program) string {
 		}
 	}
 
-	renderStatements(&b, mainStatements, "    ")
+	renderStatements(&b, mainStatements, "    ", "")
 	b.WriteString("    return 0;\n")
 	b.WriteString("}\n")
 	return b.String()
@@ -190,16 +193,19 @@ func generateClassImplementation(b *strings.Builder, classDecl *ClassDeclStmt) {
 
 		for _, param := range method.Parameters {
 			paramType := mapTypeToCType(param.Type)
+			if param.Type == "string" {
+				paramType = "char*"
+			}
 			fmt.Fprintf(b, ", %s %s", paramType, param.Name)
 		}
 
 		b.WriteString(") {\n")
-		renderStatements(b, method.Body, "    ")
+		renderStatements(b, method.Body, "    ", className)
 		b.WriteString("}\n\n")
 	}
 }
 
-func renderStatements(b *strings.Builder, stmts []*Statement, indent string) {
+func renderStatements(b *strings.Builder, stmts []*Statement, indent string, className string) {
 	for _, stmt := range stmts {
 		switch {
 		case stmt.Print != nil:
@@ -225,37 +231,43 @@ func renderStatements(b *strings.Builder, stmts []*Statement, indent string) {
 		case stmt.Break != nil:
 			fmt.Fprintf(b, "%sbreak;\n", indent)
 		case stmt.Return != nil:
-			fmt.Fprintf(b, "%sreturn %s;\n", indent, stmt.Return.Value)
+			value := stmt.Return.Value
+			if strings.HasPrefix(value, "this.") {
+				value = "this->" + value[5:]
+			}
+			fmt.Fprintf(b, "%sreturn %s;\n", indent, value)
+
+
 		case stmt.While != nil:
 			fmt.Fprintf(b, "%swhile (%s) {\n", indent, stmt.While.Condition)
-			renderStatements(b, stmt.While.Body, indent+"    ")
+			renderStatements(b, stmt.While.Body, indent+"    ", className)
 			fmt.Fprintf(b, "%s}\n", indent)
 		case stmt.For != nil:
 			varName := stmt.For.Var
 			start := stmt.For.Start
 			end := stmt.For.End
 			fmt.Fprintf(b, "%sfor (int %s = %s; %s <= %s; %s++) {\n", indent, varName, start, varName, end, varName)
-			renderStatements(b, stmt.For.Body, indent+"    ")
+			renderStatements(b, stmt.For.Body, indent+"    ", className)
 			fmt.Fprintf(b, "%s}\n", indent)
 		case stmt.If != nil:
 			fmt.Fprintf(b, "%sif (%s) {\n", indent, stmt.If.Condition)
-			renderStatements(b, stmt.If.Body, indent+"    ")
+			renderStatements(b, stmt.If.Body, indent+"    ", className)
 
 			for _, elif := range stmt.If.ElseIfs {
 				fmt.Fprintf(b, "%s} else if (%s) {\n", indent, elif.Condition)
-				renderStatements(b, elif.Body, indent+"    ")
+				renderStatements(b, elif.Body, indent+"    ", className)
 			}
 
 			if stmt.If.Else != nil {
 				fmt.Fprintf(b, "%s} else {\n", indent)
-				renderStatements(b, stmt.If.Else.Body, indent+"    ")
+				renderStatements(b, stmt.If.Else.Body, indent+"    ", className)
 			}
 
 			fmt.Fprintf(b, "%s}\n", indent)
 		case stmt.VarDecl != nil:
 			renderVarDecl(b, stmt.VarDecl, indent)
 		case stmt.VarAssign != nil:
-			renderVarAssign(b, stmt.VarAssign, indent)
+			renderVarAssign(b, stmt.VarAssign, indent, className)
 		case stmt.ListDecl != nil:
 			renderListDecl(b, stmt.ListDecl, indent)
 		case stmt.ObjectDecl != nil:
@@ -335,13 +347,23 @@ func renderVarDecl(b *strings.Builder, varDecl *VarDeclStmt, indent string) {
 	}
 }
 
-func renderVarAssign(b *strings.Builder, varAssign *VarAssignStmt, indent string) {
+func renderVarAssign(b *strings.Builder, varAssign *VarAssignStmt, indent string, className string) {
 	value := varAssign.Value
 	name := varAssign.Name
 
 	if strings.HasPrefix(name, "this.") {
 		fieldName := name[5:]
-		if strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"") {
+		var fieldType string
+		if classInfo, ok := globalClasses[className]; ok {
+			for _, field := range classInfo.Fields {
+				if field.Name == fieldName {
+					fieldType = field.Type
+					break
+				}
+			}
+		}
+
+		if fieldType == "string" {
 			fmt.Fprintf(b, "%sstrcpy(this->%s, %s);\n", indent, fieldName, value)
 		} else {
 			fmt.Fprintf(b, "%sthis->%s = %s;\n", indent, fieldName, value)

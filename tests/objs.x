@@ -12,10 +12,10 @@ class Cat:
 
     fn getAge() -> int:
         print "Age is %d" | this.age
+        return this.age
 
 Cat myCat = new Cat()
 myCat.setAge(10)
-myCat.setInfo(8, "Whiskers")
 int age = myCat.getAge()
-
+myCat.setInfo(8, "Whiskers")
 print "The age was %d" | age
