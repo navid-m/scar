@@ -63,6 +63,6 @@ func main() {
 	}
 
 	if !success {
-		log.Fatal("Failed to compile with clang, tcc, and gcc.")
+		log.Fatal("Failed to compile.")
 	}
 }
