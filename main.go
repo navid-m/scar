@@ -45,7 +45,7 @@ func main() {
 	var success bool
 
 	for _, compiler := range compilers {
-		cmd := exec.Command(compiler, tmpCPath, "-o", outputBinary)
+		cmd := exec.Command(compiler, "-w", tmpCPath, "-o", outputBinary)
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 
