@@ -244,12 +244,29 @@ func collectClassInfoWithModule(classDecl *lexer.ClassDeclStmt, moduleName strin
 	}
 
 	if classDecl.Constructor != nil {
+		// Collect fields from constructor parameters
 		for _, param := range classDecl.Constructor.Parameters {
 			fieldInfo := FieldInfo{
 				Name: param.Name,
 				Type: param.Type,
 			}
 			classInfo.Fields = append(classInfo.Fields, fieldInfo)
+		}
+		
+		// Collect fields from the init section (constructor.Fields)
+		for _, stmt := range classDecl.Constructor.Fields {
+			if stmt.VarDecl != nil {
+				// Extract field name from "this.fieldName"
+				fieldName := stmt.VarDecl.Name
+				if strings.HasPrefix(fieldName, "this.") {
+					fieldName = fieldName[5:] // Remove "this." prefix
+				}
+				fieldInfo := FieldInfo{
+					Name: fieldName,
+					Type: stmt.VarDecl.Type,
+				}
+				classInfo.Fields = append(classInfo.Fields, fieldInfo)
+			}
 		}
 	}
 
