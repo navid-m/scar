@@ -48,6 +48,7 @@ type Statement struct {
 	FunctionCall      *FunctionCallStmt
 	TryCatch          *TryCatchStmt // Added for try-catch support
 	Throw             *ThrowStmt    // Added for throw support
+	VarDeclRead       *VarDeclReadStmt
 }
 
 type PubVarDeclStmt struct {
@@ -203,6 +204,12 @@ type TryCatchStmt struct {
 
 type ThrowStmt struct {
 	Value string
+}
+
+type VarDeclReadStmt struct {
+	Type     string
+	Name     string
+	FilePath string
 }
 
 var LoadedModules = make(map[string]*ModuleInfo)
@@ -366,7 +373,7 @@ func parseAllImports(lines []string, startLine int) ([]*ImportStmt, error) {
 }
 func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int, error) {
 	line := strings.TrimSpace(lines[lineNum])
-	parts := strings.Fields(strings.TrimSuffix(line, ":")) // Remove colon before splitting
+	parts := strings.Fields(strings.TrimSuffix(line, ":"))
 
 	if len(parts) == 0 {
 		return nil, lineNum + 1, fmt.Errorf("empty statement at line %d", lineNum+1)
@@ -377,10 +384,8 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 			return nil, lineNum + 1, fmt.Errorf("import statement requires a module name at line %d", lineNum+1)
 		}
 
-		// Check if this is a single-line import or multi-line import
 		if strings.Contains(line, ",") {
-			// Single-line bulk import: import lib1, lib2, lib3
-			importLine := strings.TrimSpace(line[6:]) // Remove "import"
+			importLine := strings.TrimSpace(line[6:])
 			moduleNames := strings.Split(importLine, ",")
 
 			var imports []*ImportStmt
@@ -390,23 +395,17 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 					imports = append(imports, &ImportStmt{Module: moduleName})
 				}
 			}
-
-			// Return the first import, and we'll handle the rest in ParseWithIndentation
 			if len(imports) > 0 {
 				return &Statement{Import: imports[0]}, lineNum + 1, nil
 			}
 		} else {
-			// Check for multi-line bulk import
 			nextLine := lineNum + 1
 			if nextLine < len(lines) {
 				nextTrimmed := strings.TrimSpace(lines[nextLine])
 				if nextTrimmed != "" && getIndentation(lines[nextLine]) > 0 {
-					// Multi-line bulk import
 					return parseBulkImport(lines, lineNum)
 				}
 			}
-
-			// Single import
 			moduleName := strings.Trim(strings.Join(parts[1:], " "), "\"")
 			return &Statement{Import: &ImportStmt{Module: moduleName}}, lineNum + 1, nil
 		}
@@ -848,12 +847,12 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 			varType := parts[0]
 			varName := parts[1]
 			value := strings.Join(parts[3:], " ")
-			if strings.Contains(value, ".") && strings.Contains(value, "(") && strings.Contains(value, ")") {
-				dotIndex := strings.Index(value, ".")
+			if strings.Contains(value, "._") && strings.Contains(value, "(") && strings.Contains(value, ")") {
+				dotIndex := strings.Index(value, "._")
 				parenIndex := strings.Index(value, "(")
 				if dotIndex < parenIndex {
 					objectName := strings.TrimSpace(value[:dotIndex])
-					methodPart := strings.TrimSpace(value[dotIndex+1:])
+					methodPart := strings.TrimSpace(value[dotIndex+2:])
 					methodEndIndex := strings.Index(methodPart, "(")
 					methodName := strings.TrimSpace(methodPart[:methodEndIndex])
 
@@ -877,6 +876,15 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 						Method: methodName,
 						Args:   args,
 					}}, lineNum + 1, nil
+				}
+			}
+
+			if strings.Contains(value, "read(") {
+				start := strings.Index(value, "read(")
+				end := strings.LastIndex(value, ")")
+				if start != -1 && end != -1 {
+					filePath := value[start+5 : end]
+					return &Statement{VarDeclRead: &VarDeclReadStmt{Type: varType, Name: varName, FilePath: filePath}}, lineNum + 1, nil
 				}
 			}
 

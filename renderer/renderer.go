@@ -235,7 +235,7 @@ func collectClassInfoWithModule(classDecl *lexer.ClassDeclStmt, moduleName strin
 			if stmt.VarDecl != nil {
 				fieldName := stmt.VarDecl.Name
 				if strings.HasPrefix(fieldName, "this.") {
-					fieldName = fieldName[5:] // Remove "this." prefix
+					fieldName = fieldName[5:]
 				}
 				fieldInfo := FieldInfo{
 					Name: fieldName,
@@ -619,6 +619,22 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			} else {
 				fmt.Fprintf(b, "%s%s %s = %s;\n", indent, cType, varName, value)
 			}
+		case stmt.VarDeclRead != nil:
+			varName := lexer.ResolveSymbol(stmt.VarDeclRead.Name, currentModule)
+			filePath := stmt.VarDeclRead.FilePath
+
+			fmt.Fprintf(b, "%schar* %s = NULL;\n", indent, varName)
+			fmt.Fprintf(b, "%sFILE* fp = fopen(%s, \"r\");\n", indent, filePath)
+			fmt.Fprintf(b, "%sif (fp != NULL) {\n", indent)
+			fmt.Fprintf(b, "%sfseek(fp, 0, SEEK_END);\n", indent+"    ")
+			fmt.Fprintf(b, "%slong size = ftell(fp);\n", indent+"    ")
+			fmt.Fprintf(b, "%sfseek(fp, 0, SEEK_SET);\n", indent+"    ")
+			fmt.Fprintf(b, "%s%s = malloc(size + 1);\n", indent+"    ", varName)
+			fmt.Fprintf(b, "%sfread(%s, 1, size, fp);\n", indent+"    ", varName)
+			fmt.Fprintf(b, "%s%s[size] = '\\0';\n", indent+"    ", varName)
+			fmt.Fprintf(b, "%sfclose(fp);\n", indent+"    ")
+			fmt.Fprintf(b, "%s}\n", indent)
+
 		case stmt.FunctionCall != nil:
 			funcName := lexer.ResolveSymbol(stmt.FunctionCall.Name, currentModule)
 			args := make([]string, len(stmt.FunctionCall.Args))
