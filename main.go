@@ -49,7 +49,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to write temp C file: %v", err)
 	}
-	// defer os.Remove(tmpCPath)
+	defer os.Remove(tmpCPath)
 
 	outputBinary := "./" + cleanedName
 	compilers := []string{"clang", "gcc"}
