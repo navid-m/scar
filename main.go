@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"scar/lexer"
+	"scar/preprocessor"
 	"strings"
 )
 
@@ -39,7 +40,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	cCode := InsertMacros(renderC(program, baseDir))
+	cCode := preprocessor.InsertMacros(renderC(program, baseDir))
 	// fmt.Println(cCode)
 
 	tmpCPath := cleanedName + ".c"
