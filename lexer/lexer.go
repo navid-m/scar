@@ -46,8 +46,8 @@ type Statement struct {
 	PubClassDecl      *PubClassDeclStmt
 	TopLevelFuncDecl  *TopLevelFuncDeclStmt
 	FunctionCall      *FunctionCallStmt
-	TryCatch          *TryCatchStmt // Added for try-catch support
-	Throw             *ThrowStmt    // Added for throw support
+	TryCatch          *TryCatchStmt
+	Throw             *ThrowStmt
 	VarDeclRead       *VarDeclReadStmt
 }
 
