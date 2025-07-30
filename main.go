@@ -51,26 +51,20 @@ func main() {
 	defer os.Remove(tmpCPath)
 
 	outputBinary := "./" + cleanedName
-	compilers := []string{"clang", "gcc"}
 	var success bool
 
-	for _, compiler := range compilers {
-		cmd := exec.Command(compiler, "-w", tmpCPath, "-o", outputBinary)
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		err := cmd.Run()
+	cmd := exec.Command("clang", "-w", tmpCPath, "-o", outputBinary)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	err = cmd.Run()
 
-		if runtime.GOOS == "windows" {
-			outputBinary += ".exe"
-		}
+	if runtime.GOOS == "windows" {
+		outputBinary += ".exe"
+	}
 
-		if err == nil {
-			fmt.Printf("Compiled %s\n", outputBinary)
-			success = true
-			break
-		} else {
-			fmt.Printf("%s failed.\n", compiler)
-		}
+	if err == nil {
+		fmt.Printf("Compiled %s\n", outputBinary)
+		success = true
 	}
 
 	if !success {
