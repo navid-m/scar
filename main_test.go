@@ -1,6 +1,7 @@
 package main
 
 import (
+	"scar/lexer"
 	"strings"
 	"testing"
 )
@@ -26,7 +27,7 @@ int main() {
 }
 `
 
-	program, err := parseWithIndentation(input)
+	program, err := lexer.ParseWithIndentation(input)
 	if err != nil {
 		t.Fatalf("Failed to parse input: %v", err)
 	}
@@ -67,7 +68,7 @@ int main() {
 }
 `
 
-	program, err := parseWithIndentation(input)
+	program, err := lexer.ParseWithIndentation(input)
 	if err != nil {
 		t.Fatalf("Failed to parse input: %v", err)
 	}
@@ -112,7 +113,7 @@ int main() {
 }
 `
 
-	program, err := parseWithIndentation(input)
+	program, err := lexer.ParseWithIndentation(input)
 	if err != nil {
 		t.Fatalf("Failed to parse input: %v", err)
 	}
@@ -133,7 +134,7 @@ func TestIndentationHandling(t *testing.T) {
 for i = 1 to 1:
     print "inside"
 print "after"`
-	program, err := parseWithIndentation(input)
+	program, err := lexer.ParseWithIndentation(input)
 	if err != nil {
 		t.Fatalf("Failed to parse input: %v", err)
 	}
@@ -167,7 +168,7 @@ for i = 1 to 1:
     
 print "end"`
 
-	program, err := parseWithIndentation(input)
+	program, err := lexer.ParseWithIndentation(input)
 	if err != nil {
 		t.Fatalf("Failed to parse input: %v", err)
 	}
@@ -189,7 +190,7 @@ func TestWhileConditions(t *testing.T) {
 
 	for _, tc := range testCases {
 		input := tc.input + "\n    print \"test\""
-		program, err := parseWithIndentation(input)
+		program, err := lexer.ParseWithIndentation(input)
 		if err != nil {
 			t.Fatalf("Failed to parse '%s': %v", tc.input, err)
 		}

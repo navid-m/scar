@@ -1,4 +1,4 @@
-package main
+package lexer
 
 import (
 	"fmt"
@@ -223,9 +223,9 @@ type FunctionCallStmt struct {
 	Args []string `"(" ( @(Ident | Number | String) ( "," @(Ident | Number | String) )* )? ")"`
 }
 
-var loadedModules = make(map[string]*ModuleInfo)
+var LoadedModules = make(map[string]*ModuleInfo)
 
-func parseWithIndentation(input string) (*Program, error) {
+func ParseWithIndentation(input string) (*Program, error) {
 	lines := strings.Split(input, "\n")
 	statements, err := parseStatements(lines, 0, 0)
 	if err != nil {
@@ -544,7 +544,7 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 
 		if strings.Contains(varName, "[") && strings.Contains(varName, "]") {
 			value = handleIndexAssignment(line, varName, value)
-		} else if len(parts) >= 6 && isOperator(parts[4]) {
+		} else if len(parts) >= 6 && IsOperator(parts[4]) {
 			left := parts[3]
 			operator := parts[4]
 			right := parts[5]
@@ -1184,8 +1184,8 @@ func parseElseStatement(lines []string, lineNum, currentIndent int) (*ElseStmt, 
 	return &ElseStmt{Body: body}, nextLine, nil
 }
 
-func loadModule(moduleName string, baseDir string) (*ModuleInfo, error) {
-	if module, exists := loadedModules[moduleName]; exists {
+func LoadModule(moduleName string, baseDir string) (*ModuleInfo, error) {
+	if module, exists := LoadedModules[moduleName]; exists {
 		return module, nil
 	}
 
@@ -1212,7 +1212,7 @@ func loadModule(moduleName string, baseDir string) (*ModuleInfo, error) {
 		return nil, fmt.Errorf("failed to read module '%s': %v", moduleName, err)
 	}
 
-	program, err := parseWithIndentation(string(data))
+	program, err := ParseWithIndentation(string(data))
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse module '%s': %v", moduleName, err)
 	}
@@ -1244,17 +1244,17 @@ func loadModule(moduleName string, baseDir string) (*ModuleInfo, error) {
 		}
 	}
 
-	loadedModules[moduleName] = module
+	LoadedModules[moduleName] = module
 	return module, nil
 }
 
-func resolveSymbol(symbolName string, currentModule string) string {
+func ResolveSymbol(symbolName string, currentModule string) string {
 	if strings.Contains(symbolName, ".") {
 		parts := strings.SplitN(symbolName, ".", 2)
 		moduleName := parts[0]
 		symbol := parts[1]
 
-		if module, exists := loadedModules[moduleName]; exists {
+		if module, exists := LoadedModules[moduleName]; exists {
 			if _, exists := module.PublicVars[symbol]; exists {
 				return fmt.Sprintf("%s_%s", moduleName, symbol)
 			}
@@ -1267,7 +1267,7 @@ func resolveSymbol(symbolName string, currentModule string) string {
 	return symbolName
 }
 
-func generateUniqueSymbol(originalName string, moduleName string) string {
+func GenerateUniqueSymbol(originalName string, moduleName string) string {
 	if moduleName == "" {
 		return originalName
 	}
@@ -1280,7 +1280,7 @@ func isValidType(s string) bool {
 	return slices.Contains(vdt, s)
 }
 
-func isOperator(s string) bool {
+func IsOperator(s string) bool {
 	operators := []string{"+", "-", "*", "/", "%"}
 	return slices.Contains(operators, s)
 }

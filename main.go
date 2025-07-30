@@ -8,6 +8,7 @@ import (
 	"path"
 	"path/filepath"
 	"runtime"
+	"scar/lexer"
 	"strings"
 )
 
@@ -33,7 +34,7 @@ func main() {
 	}
 
 	cleanedName := strings.ReplaceAll(os.Args[1], ".x", "")
-	program, err := parseWithIndentation(input)
+	program, err := lexer.ParseWithIndentation(input)
 	if err != nil {
 		log.Fatal(err)
 	}
