@@ -3,6 +3,7 @@ package renderer
 import (
 	"fmt"
 	"scar/lexer"
+	"strconv"
 	"strings"
 )
 
@@ -244,12 +245,38 @@ func collectClassInfoWithModule(classDecl *lexer.ClassDeclStmt, moduleName strin
 	}
 
 	if classDecl.Constructor != nil {
+		addedFields := make(map[string]bool)
+
 		for _, param := range classDecl.Constructor.Parameters {
-			fieldInfo := FieldInfo{
-				Name: param.Name,
-				Type: param.Type,
+			if !addedFields[param.Name] {
+				fieldInfo := FieldInfo{
+					Name: param.Name,
+					Type: param.Type,
+				}
+				classInfo.Fields = append(classInfo.Fields, fieldInfo)
+				addedFields[param.Name] = true
 			}
-			classInfo.Fields = append(classInfo.Fields, fieldInfo)
+		}
+
+		for _, field := range classDecl.Constructor.Fields {
+			if field.VarAssign != nil && strings.HasPrefix(field.VarAssign.Name, "this.") {
+				fieldName := field.VarAssign.Name[5:]
+				if addedFields[fieldName] {
+					continue
+				}
+				fieldType := "int"
+				value := field.VarAssign.Value
+				if (strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"")) ||
+					(strings.HasPrefix(value, "'") && strings.HasSuffix(value, "'")) {
+					fieldType = "string"
+				} else if _, err := strconv.Atoi(value); err != nil {
+					if _, err := strconv.ParseFloat(value, 64); err == nil {
+						fieldType = "float"
+					}
+				}
+				classInfo.Fields = append(classInfo.Fields, FieldInfo{Name: fieldName, Type: fieldType})
+				addedFields[fieldName] = true
+			}
 		}
 	}
 
@@ -307,34 +334,54 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 	fmt.Fprintf(b, "    %s* obj = malloc(sizeof(%s));\n", className, className)
 
 	if classDecl.Constructor != nil {
-		if len(classDecl.Constructor.Parameters) > 0 {
-			for _, param := range classDecl.Constructor.Parameters {
-				for _, field := range classDecl.Constructor.Fields {
-					if field.VarAssign != nil && strings.HasPrefix(field.VarAssign.Name, "this.") {
-						fieldName := field.VarAssign.Name[5:] // Remove "this."
-						if fieldName == param.Name {
-							fmt.Fprintf(b, "    obj->%s = %s;\n", fieldName, param.Name)
-							break
-						}
-					}
-				}
-			}
-		}
-
 		for _, field := range classDecl.Constructor.Fields {
 			if field.VarAssign != nil && strings.HasPrefix(field.VarAssign.Name, "this.") {
-				continue
-			}
-			switch {
-			case field.Print != nil:
+				fieldName := field.VarAssign.Name[5:]
+				value := field.VarAssign.Value
+				isString := false
+				for _, f := range globalClasses[className].Fields {
+					if f.Name == fieldName && (f.Type == "string" || f.Type == "char*" || f.Type == "char *") {
+						isString = true
+						break
+					}
+				}
+
+				if commentIndex := strings.Index(value, "#"); commentIndex != -1 {
+					comment := strings.TrimSpace(value[commentIndex+1:])
+					value = strings.TrimSpace(value[:commentIndex])
+					if isString {
+						if !strings.HasPrefix(value, "\"") {
+							value = fmt.Sprintf("\"%s\"", value)
+						}
+						fmt.Fprintf(b, "    strcpy(obj->%s, %s);  // %s\n", fieldName, value, comment)
+					} else {
+						fmt.Fprintf(b, "    obj->%s = %s;  // %s\n", fieldName, value, comment)
+					}
+				} else {
+					if isString {
+						if !strings.HasPrefix(value, "\"") {
+							value = fmt.Sprintf("\"%s\"", value)
+						}
+						fmt.Fprintf(b, "    strcpy(obj->%s, %s);\n", fieldName, value)
+					} else {
+						fmt.Fprintf(b, "    obj->%s = %s;\n", fieldName, value)
+					}
+				}
+			} else if field.Print != nil {
 				if field.Print.Format != "" && len(field.Print.Variables) > 0 {
 					args := make([]string, len(field.Print.Variables))
 					for i, v := range field.Print.Variables {
-						args[i] = v
+						resolvedVar := lexer.ResolveSymbol(v, currentModule)
+						if strings.HasPrefix(v, "this.") {
+							fieldName := v[5:]
+							args[i] = fmt.Sprintf("obj->%s", fieldName)
+						} else {
+							args[i] = resolvedVar
+						}
 					}
 					argsStr := strings.Join(args, ", ")
 					escapedFormat := strings.ReplaceAll(field.Print.Format, "\"", "\\\"")
-					b.WriteString(fmt.Sprintf("    printf(\"%s\\n\", %s);\n", escapedFormat, argsStr))
+					fmt.Fprintf(b, "    printf(\"%s\\n\", %s);\n", escapedFormat, argsStr)
 				} else {
 					fmt.Fprintf(b, "    printf(\"%s\\n\");\n", field.Print.Print)
 				}
@@ -819,7 +866,7 @@ func mapTypeToCType(dslType string) string {
 	case "char":
 		return "char"
 	case "string":
-		return "char"
+		return "char*"
 	case "bool":
 		return "int"
 	default:
