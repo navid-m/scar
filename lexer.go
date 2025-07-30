@@ -150,7 +150,7 @@ type BreakStmt struct {
 type VarDeclStmt struct {
 	Type  string `@Ident`
 	Name  string `@Ident`
-	Value string `"=" @(Number | String | Ident)`
+	Value string `"=" @(Number | String | Ident | Expression)`
 }
 
 type VarAssignStmt struct {
@@ -558,15 +558,32 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 		if len(parts) >= 5 && parts[2] == "=" && parts[3] == "new" {
 			typeName := parts[0]
 			varName := parts[1]
+			newPart := strings.TrimSpace(line[strings.Index(line, "new")+3:])
+			parenStart := strings.Index(newPart, "(")
+			if parenStart == -1 {
+				return nil, lineNum + 1, fmt.Errorf("object declaration missing parentheses at line %d", lineNum+1)
+			}
+
+			className := strings.TrimSpace(newPart[:parenStart])
+			var args []string
+			if strings.Contains(className, ".") {
+				parts := strings.Split(className, ".")
+				if len(parts) == 2 {
+					args = []string{parts[0], parts[1]}
+				} else {
+					return nil, lineNum + 1, fmt.Errorf("invalid module-qualified class name at line %d", lineNum+1)
+				}
+			} else {
+				args = []string{className}
+			}
+
 			argsStart := strings.Index(line, "(")
 			argsEnd := strings.LastIndex(line, ")")
-
-			var args []string
 			if argsStart != -1 && argsEnd != -1 && argsEnd > argsStart+1 {
-				argsStr := strings.TrimSpace(line[argsStart+1 : argsEnd])
-				if argsStr != "" {
-					argsList := strings.Split(argsStr, ",")
-					for _, arg := range argsList {
+				constructorArgsStr := strings.TrimSpace(line[argsStart+1 : argsEnd])
+				if constructorArgsStr != "" {
+					constructorArgsList := strings.Split(constructorArgsStr, ",")
+					for _, arg := range constructorArgsList {
 						args = append(args, strings.TrimSpace(arg))
 					}
 				}

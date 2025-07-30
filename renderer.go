@@ -80,27 +80,7 @@ func renderC(program *Program, baseDir string) string {
 		b.WriteString("\n")
 	}
 
-	for className, classInfo := range globalClasses {
-		for _, method := range classInfo.Methods {
-			returnType := "void"
-			if method.ReturnType != "" && method.ReturnType != "void" {
-				returnType = mapTypeToCType(method.ReturnType)
-			}
-
-			fmt.Fprintf(&b, "%s %s_%s(%s* this", returnType, className, method.Name, className)
-			if classDecl := findClassDeclByName(program, className); classDecl != nil {
-				if methodDecl := findMethodDecl(classDecl, method.Name); methodDecl != nil {
-					for _, param := range methodDecl.Parameters {
-						paramType := mapTypeToCType(param.Type)
-						if param.Type == "string" {
-							paramType = "char*"
-						}
-						fmt.Fprintf(&b, ", %s %s", paramType, param.Name)
-					}
-				}
-			}
-			b.WriteString(");\n")
-		}
+	for className := range globalClasses {
 		fmt.Fprintf(&b, "%s* %s_new();\n", className, className)
 		b.WriteString("\n")
 	}
@@ -382,7 +362,15 @@ func renderStatements(b *strings.Builder, stmts []*Statement, indent string, cla
 }
 
 func renderObjectDecl(b *strings.Builder, objDecl *ObjectDeclStmt, indent string) {
-	objectType := resolveSymbol(objDecl.Type, currentModule)
+	objectType := objDecl.Type
+	if len(objDecl.Args) >= 2 {
+		moduleName := objDecl.Args[0]
+		className := objDecl.Args[1]
+		objectType = fmt.Sprintf("%s_%s", moduleName, className)
+	} else {
+		objectType = resolveSymbol(objDecl.Type, currentModule)
+	}
+
 	objectInfo := &ObjectInfo{
 		Name: objDecl.Name,
 		Type: objectType,
@@ -423,6 +411,16 @@ func getObjectType(objectName string) string {
 	if objectInfo, exists := globalObjects[objectName]; exists {
 		return objectInfo.Type
 	}
+
+	for moduleName, module := range loadedModules {
+		for className := range module.PublicClasses {
+			qualifiedName := fmt.Sprintf("%s_%s", moduleName, className)
+			if strings.Contains(strings.ToLower(objectName), strings.ToLower(qualifiedName)) {
+				return qualifiedName
+			}
+		}
+	}
+
 	for className := range globalClasses {
 		if strings.Contains(strings.ToLower(objectName), strings.ToLower(className)) {
 			return className
@@ -437,7 +435,22 @@ func renderVarDecl(b *strings.Builder, varDecl *VarDeclStmt, indent string) {
 	}
 
 	cType := mapTypeToCType(varDecl.Type)
-	value := resolveSymbol(varDecl.Value, currentModule)
+	value := varDecl.Value
+
+	if strings.Contains(value, "*") || strings.Contains(value, "+") || strings.Contains(value, "-") || strings.Contains(value, "/") || strings.Contains(value, "%") {
+		parts := strings.Fields(value)
+		var resolvedParts []string
+		for _, part := range parts {
+			if isOperator(part) {
+				resolvedParts = append(resolvedParts, part)
+			} else {
+				resolvedParts = append(resolvedParts, resolveSymbol(part, currentModule))
+			}
+		}
+		value = strings.Join(resolvedParts, " ")
+	} else {
+		value = resolveSymbol(varDecl.Value, currentModule)
+	}
 
 	if varDecl.Type == "string" {
 		if !strings.HasPrefix(value, "\"") {
@@ -494,8 +507,8 @@ func renderVarAssign(b *strings.Builder, varAssign *VarAssignStmt, indent string
 			argsString := methodCallPart[strings.Index(methodCallPart, "(")+1 : strings.LastIndex(methodCallPart, ")")]
 			args := []string{}
 			if argsString != "" {
-				argList := strings.Split(argsString, ", ")
-				for _, arg := range argList {
+				argList := strings.SplitSeq(argsString, ", ")
+				for arg := range argList {
 					args = append(args, resolveSymbol(arg, currentModule))
 				}
 			}
