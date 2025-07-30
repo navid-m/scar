@@ -10,17 +10,19 @@ import (
 	"path/filepath"
 	"runtime"
 	"scar/lexer"
+	"scar/meta"
 	"scar/preprocessor"
 	"scar/renderer"
 	"strings"
 )
 
 func main() {
+	flag.Usage = meta.ShowUsage
 	asm := flag.Bool("asm", false, "show assembly output")
 	flag.Parse()
 
 	if len(flag.Args()) < 1 {
-		fmt.Println("usage: scar [-asm] [program.x]")
+		meta.ShowUsage()
 		return
 	}
 
