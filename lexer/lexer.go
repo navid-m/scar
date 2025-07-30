@@ -209,6 +209,22 @@ func ParseWithIndentation(input string) (*Program, error) {
 	for _, stmt := range statements {
 		if stmt.Import != nil {
 			imports = append(imports, stmt.Import)
+
+			// Handle bulk imports by re-parsing the import section
+			if strings.Contains(input, "import") {
+				importLines := strings.Split(input, "\n")
+				for i, line := range importLines {
+					trimmed := strings.TrimSpace(line)
+					if strings.HasPrefix(trimmed, "import") {
+						// Parse all imports from this point
+						bulkImports, err := parseAllImports(importLines, i)
+						if err == nil && len(bulkImports) > 1 {
+							imports = bulkImports
+							break
+						}
+					}
+				}
+			}
 		} else {
 			nonImportStatements = append(nonImportStatements, stmt)
 		}
@@ -256,6 +272,87 @@ func parseStatements(lines []string, startLine, expectedIndent int) ([]*Statemen
 	return statements, nil
 }
 
+func parseBulkImport(lines []string, lineNum int) (*Statement, int, error) {
+	var imports []*ImportStmt
+	currentLine := lineNum + 1
+
+	for currentLine < len(lines) {
+		line := lines[currentLine]
+		trimmed := strings.TrimSpace(line)
+
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			currentLine++
+			continue
+		}
+
+		// If line has no indentation, we've reached the end of the import block
+		if getIndentation(line) == 0 {
+			break
+		}
+
+		// Parse comma-separated modules on this line
+		moduleNames := strings.Split(trimmed, ",")
+		for _, moduleName := range moduleNames {
+			moduleName = strings.TrimSpace(strings.Trim(moduleName, "\""))
+			if moduleName != "" {
+				imports = append(imports, &ImportStmt{Module: moduleName})
+			}
+		}
+
+		currentLine++
+	}
+
+	if len(imports) == 0 {
+		return nil, lineNum + 1, fmt.Errorf("bulk import has no modules at line %d", lineNum+1)
+	}
+
+	// Return the first import statement, others will be handled in ParseWithIndentation
+	return &Statement{Import: imports[0]}, currentLine, nil
+}
+func parseAllImports(lines []string, startLine int) ([]*ImportStmt, error) {
+	var imports []*ImportStmt
+	line := strings.TrimSpace(lines[startLine])
+
+	if strings.Contains(line, ",") {
+		// Single-line bulk import
+		importLine := strings.TrimSpace(line[6:]) // Remove "import"
+		moduleNames := strings.Split(importLine, ",")
+		for _, moduleName := range moduleNames {
+			moduleName = strings.TrimSpace(strings.Trim(moduleName, "\""))
+			if moduleName != "" {
+				imports = append(imports, &ImportStmt{Module: moduleName})
+			}
+		}
+	} else {
+		// Multi-line bulk import
+		currentLine := startLine + 1
+		for currentLine < len(lines) {
+			line := lines[currentLine]
+			trimmed := strings.TrimSpace(line)
+
+			if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+				currentLine++
+				continue
+			}
+
+			if getIndentation(line) == 0 {
+				break
+			}
+
+			moduleNames := strings.Split(trimmed, ",")
+			for _, moduleName := range moduleNames {
+				moduleName = strings.TrimSpace(strings.Trim(moduleName, "\""))
+				if moduleName != "" {
+					imports = append(imports, &ImportStmt{Module: moduleName})
+				}
+			}
+
+			currentLine++
+		}
+	}
+
+	return imports, nil
+}
 func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int, error) {
 	line := strings.TrimSpace(lines[lineNum])
 	parts := strings.Fields(line)
@@ -269,9 +366,40 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 		if len(parts) < 2 {
 			return nil, lineNum + 1, fmt.Errorf("import statement requires a module name at line %d", lineNum+1)
 		}
-		moduleName := strings.Trim(strings.Join(parts[1:], " "), "\"")
-		return &Statement{Import: &ImportStmt{Module: moduleName}}, lineNum + 1, nil
 
+		// Check if this is a single-line import or multi-line import
+		if strings.Contains(line, ",") {
+			// Single-line bulk import: import lib1, lib2, lib3
+			importLine := strings.TrimSpace(line[6:]) // Remove "import"
+			moduleNames := strings.Split(importLine, ",")
+
+			var imports []*ImportStmt
+			for _, moduleName := range moduleNames {
+				moduleName = strings.TrimSpace(strings.Trim(moduleName, "\""))
+				if moduleName != "" {
+					imports = append(imports, &ImportStmt{Module: moduleName})
+				}
+			}
+
+			// Return the first import, and we'll handle the rest in ParseWithIndentation
+			if len(imports) > 0 {
+				return &Statement{Import: imports[0]}, lineNum + 1, nil
+			}
+		} else {
+			// Check for multi-line bulk import
+			nextLine := lineNum + 1
+			if nextLine < len(lines) {
+				nextTrimmed := strings.TrimSpace(lines[nextLine])
+				if nextTrimmed != "" && getIndentation(lines[nextLine]) > 0 {
+					// Multi-line bulk import
+					return parseBulkImport(lines, lineNum)
+				}
+			}
+
+			// Single import
+			moduleName := strings.Trim(strings.Join(parts[1:], " "), "\"")
+			return &Statement{Import: &ImportStmt{Module: moduleName}}, lineNum + 1, nil
+		}
 	case "var":
 		if len(parts) < 4 || parts[2] != "=" {
 			return nil, lineNum + 1, fmt.Errorf("var declaration format error at line %d (expected: var name = value)", lineNum+1)
@@ -734,8 +862,8 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 			return &Statement{VarDecl: &VarDeclStmt{Type: varType, Name: varName, Value: value}}, lineNum + 1, nil
 		}
 
-		return nil, lineNum + 1, fmt.Errorf("unknown statement type '%s' at line %d", parts[0], lineNum+1)
 	}
+	return nil, lineNum + 1, fmt.Errorf("unknown statement type '%s' at line %d", parts[0], lineNum+1)
 }
 
 func parsePubStatement(lines []string, lineNum, currentIndent int) (*Statement, int, error) {
@@ -979,7 +1107,6 @@ func parseClassStatement(lines []string, lineNum, currentIndent int) (*Statement
 				}
 			}
 
-			// Find constructor body
 			initBodyIndent = expectedBodyIndent + 4
 			initStartLine = nextLine + 1
 			for initStartLine < len(lines) {
