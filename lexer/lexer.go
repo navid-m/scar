@@ -180,7 +180,8 @@ type ClassDeclStmt struct {
 }
 
 type ConstructorStmt struct {
-	Fields []*Statement `"init" ":" Newline+ @@*`
+	Parameters []*MethodParameter `"init" "(" ( @@ ( "," @@ )* )? ")" ":" Newline+ @@*`
+	Fields     []*Statement       `@@*`
 }
 
 type MethodParameter struct {
@@ -584,6 +585,13 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 		return nil, lineNum + 1, fmt.Errorf("else statement must follow an if statement at line %d", lineNum+1)
 
 	default:
+		// Handle this.field assignments
+		if strings.HasPrefix(parts[0], "this.") && len(parts) >= 3 && parts[1] == "=" {
+			fieldName := parts[0][5:] // Remove "this."
+			value := strings.Join(parts[2:], " ")
+			return &Statement{VarAssign: &VarAssignStmt{Name: "this." + fieldName, Value: value}}, lineNum + 1, nil
+		}
+
 		if strings.Contains(line, "(") && strings.Contains(line, ")") && !strings.Contains(line, "=") && !strings.Contains(line, ".") {
 			parenStart := strings.Index(line, "(")
 			parenEnd := strings.LastIndex(line, ")")
@@ -845,9 +853,45 @@ func parsePubClassStatement(lines []string, lineNum, currentIndent int) (*Statem
 			return nil, nextLine + 1, fmt.Errorf("unexpected indentation in class body at line %d", nextLine+1)
 		}
 
-		if strings.HasPrefix(trimmed, "init:") {
-			initBodyIndent := expectedBodyIndent + 4
-			initStartLine := nextLine + 1
+		if strings.HasPrefix(trimmed, "init") {
+			var parameters []*MethodParameter
+			var initBody []*Statement
+			var initBodyIndent int
+			var initStartLine int
+
+			// Check if constructor has parameters
+			if strings.Contains(trimmed, "(") && strings.Contains(trimmed, ")") {
+				// Parse constructor with parameters
+				parenStart := strings.Index(trimmed, "(")
+				parenEnd := strings.Index(trimmed, ")")
+				if parenStart != -1 && parenEnd != -1 && parenEnd > parenStart {
+					paramsStr := strings.TrimSpace(trimmed[parenStart+1 : parenEnd])
+					if paramsStr != "" {
+						paramList := strings.Split(paramsStr, ",")
+						for _, paramStr := range paramList {
+							paramStr = strings.TrimSpace(paramStr)
+							paramParts := strings.Fields(paramStr)
+							if len(paramParts) == 2 {
+								param := &MethodParameter{
+									Type: paramParts[0],
+									Name: paramParts[1],
+								}
+								parameters = append(parameters, param)
+							} else if len(paramParts) == 1 {
+								param := &MethodParameter{
+									Type: "int",
+									Name: paramParts[0],
+								}
+								parameters = append(parameters, param)
+							}
+						}
+					}
+				}
+			}
+
+			// Find constructor body
+			initBodyIndent = expectedBodyIndent + 4
+			initStartLine = nextLine + 1
 			for initStartLine < len(lines) {
 				initLine := lines[initStartLine]
 				if strings.TrimSpace(initLine) != "" && !strings.HasPrefix(strings.TrimSpace(initLine), "#") {
@@ -862,7 +906,7 @@ func parsePubClassStatement(lines []string, lineNum, currentIndent int) (*Statem
 				return nil, nextLine + 1, err
 			}
 
-			constructor = &ConstructorStmt{Fields: initBody}
+			constructor = &ConstructorStmt{Parameters: parameters, Fields: initBody}
 			nextLine = findEndOfBlock(lines, initStartLine, initBodyIndent)
 		} else if strings.HasPrefix(trimmed, "fn ") {
 			method, newNextLine, err := parseMethodStatement(lines, nextLine, expectedBodyIndent)
@@ -936,9 +980,45 @@ func parseClassStatement(lines []string, lineNum, currentIndent int) (*Statement
 			return nil, nextLine + 1, fmt.Errorf("unexpected indentation in class body at line %d", nextLine+1)
 		}
 
-		if strings.HasPrefix(trimmed, "init:") {
-			initBodyIndent := expectedBodyIndent + 4
-			initStartLine := nextLine + 1
+		if strings.HasPrefix(trimmed, "init") {
+			var parameters []*MethodParameter
+			var initBody []*Statement
+			var initBodyIndent int
+			var initStartLine int
+
+			// Check if constructor has parameters
+			if strings.Contains(trimmed, "(") && strings.Contains(trimmed, ")") {
+				// Parse constructor with parameters
+				parenStart := strings.Index(trimmed, "(")
+				parenEnd := strings.Index(trimmed, ")")
+				if parenStart != -1 && parenEnd != -1 && parenEnd > parenStart {
+					paramsStr := strings.TrimSpace(trimmed[parenStart+1 : parenEnd])
+					if paramsStr != "" {
+						paramList := strings.Split(paramsStr, ",")
+						for _, paramStr := range paramList {
+							paramStr = strings.TrimSpace(paramStr)
+							paramParts := strings.Fields(paramStr)
+							if len(paramParts) == 2 {
+								param := &MethodParameter{
+									Type: paramParts[0],
+									Name: paramParts[1],
+								}
+								parameters = append(parameters, param)
+							} else if len(paramParts) == 1 {
+								param := &MethodParameter{
+									Type: "int",
+									Name: paramParts[0],
+								}
+								parameters = append(parameters, param)
+							}
+						}
+					}
+				}
+			}
+
+			// Find constructor body
+			initBodyIndent = expectedBodyIndent + 4
+			initStartLine = nextLine + 1
 			for initStartLine < len(lines) {
 				initLine := lines[initStartLine]
 				if strings.TrimSpace(initLine) != "" && !strings.HasPrefix(strings.TrimSpace(initLine), "#") {
@@ -953,7 +1033,7 @@ func parseClassStatement(lines []string, lineNum, currentIndent int) (*Statement
 				return nil, nextLine + 1, err
 			}
 
-			constructor = &ConstructorStmt{Fields: initBody}
+			constructor = &ConstructorStmt{Parameters: parameters, Fields: initBody}
 			nextLine = findEndOfBlock(lines, initStartLine, initBodyIndent)
 		} else if strings.HasPrefix(trimmed, "fn ") {
 			method, newNextLine, err := parseMethodStatement(lines, nextLine, expectedBodyIndent)

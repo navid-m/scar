@@ -86,7 +86,43 @@ func RenderC(program *lexer.Program, baseDir string) string {
 	}
 
 	for className := range globalClasses {
-		fmt.Fprintf(&b, "%s* %s_new();\n", className, className)
+		var constructor *lexer.ConstructorStmt
+		for _, stmt := range program.Statements {
+			if stmt.ClassDecl != nil && stmt.ClassDecl.Name == className {
+				constructor = stmt.ClassDecl.Constructor
+				break
+			}
+			if stmt.PubClassDecl != nil && stmt.PubClassDecl.Name == className {
+				constructor = stmt.PubClassDecl.Constructor
+				break
+			}
+		}
+
+		if constructor == nil {
+			for _, module := range lexer.LoadedModules {
+				if classDecl, exists := module.PublicClasses[className]; exists {
+					constructor = classDecl.Constructor
+					break
+				}
+			}
+		}
+
+		if constructor != nil && len(constructor.Parameters) > 0 {
+			fmt.Fprintf(&b, "%s* %s_new(", className, className)
+			for i, param := range constructor.Parameters {
+				if i > 0 {
+					b.WriteString(", ")
+				}
+				paramType := mapTypeToCType(param.Type)
+				if param.Type == "string" {
+					paramType = "char*"
+				}
+				fmt.Fprintf(&b, "%s %s", paramType, param.Name)
+			}
+			b.WriteString(");\n")
+		} else {
+			fmt.Fprintf(&b, "%s* %s_new();\n", className, className)
+		}
 		b.WriteString("\n")
 	}
 
@@ -208,18 +244,12 @@ func collectClassInfoWithModule(classDecl *lexer.ClassDeclStmt, moduleName strin
 	}
 
 	if classDecl.Constructor != nil {
-		for _, field := range classDecl.Constructor.Fields {
-			if field.VarDecl != nil {
-				fieldName := field.VarDecl.Name
-				if strings.HasPrefix(fieldName, "this.") {
-					fieldName = fieldName[5:]
-					fieldInfo := FieldInfo{
-						Name: fieldName,
-						Type: field.VarDecl.Type,
-					}
-					classInfo.Fields = append(classInfo.Fields, fieldInfo)
-				}
+		for _, param := range classDecl.Constructor.Parameters {
+			fieldInfo := FieldInfo{
+				Name: param.Name,
+				Type: param.Type,
 			}
+			classInfo.Fields = append(classInfo.Fields, fieldInfo)
 		}
 	}
 
@@ -257,30 +287,59 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 		className = lexer.GenerateUniqueSymbol(classDecl.Name, moduleName)
 	}
 
-	fmt.Fprintf(b, "%s* %s_new() {\n", className, className)
+	if classDecl.Constructor != nil && len(classDecl.Constructor.Parameters) > 0 {
+		fmt.Fprintf(b, "%s* %s_new(", className, className)
+		for i, param := range classDecl.Constructor.Parameters {
+			if i > 0 {
+				b.WriteString(", ")
+			}
+			paramType := mapTypeToCType(param.Type)
+			if param.Type == "string" {
+				paramType = "char*"
+			}
+			fmt.Fprintf(b, "%s %s", paramType, param.Name)
+		}
+		b.WriteString(") {\n")
+	} else {
+		fmt.Fprintf(b, "%s* %s_new() {\n", className, className)
+	}
+
 	fmt.Fprintf(b, "    %s* obj = malloc(sizeof(%s));\n", className, className)
 
 	if classDecl.Constructor != nil {
-		for _, field := range classDecl.Constructor.Fields {
-			if field.VarDecl != nil {
-				fieldName := field.VarDecl.Name
-				if strings.HasPrefix(fieldName, "this.") {
-					fieldName = fieldName[5:] // Remove "this."
-					fieldType := field.VarDecl.Type
-					value := field.VarDecl.Value
-
-					if fieldType == "string" {
-						if !strings.HasPrefix(value, "\"") {
-							value = fmt.Sprintf("\"%s\"", value)
+		if len(classDecl.Constructor.Parameters) > 0 {
+			for _, param := range classDecl.Constructor.Parameters {
+				for _, field := range classDecl.Constructor.Fields {
+					if field.VarAssign != nil && strings.HasPrefix(field.VarAssign.Name, "this.") {
+						fieldName := field.VarAssign.Name[5:] // Remove "this."
+						if fieldName == param.Name {
+							fmt.Fprintf(b, "    obj->%s = %s;\n", fieldName, param.Name)
+							break
 						}
-						fmt.Fprintf(b, "    strcpy(obj->%s, %s);\n", fieldName, value)
-					} else {
-						fmt.Fprintf(b, "    obj->%s = %s;\n", fieldName, value)
 					}
 				}
 			}
 		}
-		renderStatements(b, classDecl.Constructor.Fields, "    ", className)
+
+		for _, field := range classDecl.Constructor.Fields {
+			if field.VarAssign != nil && strings.HasPrefix(field.VarAssign.Name, "this.") {
+				continue
+			}
+			switch {
+			case field.Print != nil:
+				if field.Print.Format != "" && len(field.Print.Variables) > 0 {
+					args := make([]string, len(field.Print.Variables))
+					for i, v := range field.Print.Variables {
+						args[i] = v
+					}
+					argsStr := strings.Join(args, ", ")
+					escapedFormat := strings.ReplaceAll(field.Print.Format, "\"", "\\\"")
+					b.WriteString(fmt.Sprintf("    printf(\"%s\\n\", %s);\n", escapedFormat, argsStr))
+				} else {
+					fmt.Fprintf(b, "    printf(\"%s\\n\");\n", field.Print.Print)
+				}
+			}
+		}
 	}
 
 	b.WriteString("    return obj;\n")
@@ -493,8 +552,25 @@ func renderVarDeclInferred(b *strings.Builder, varDecl *lexer.VarDeclInferredStm
 				Type: objectType,
 			}
 			globalObjects[varDecl.Name] = objectInfo
-			// TODO: Handle constructor arguments
-			fmt.Fprintf(b, "%s%s* %s = %s_new();\n", indent, objectType, varDecl.Name, objectType)
+
+			argsStart := strings.Index(newPart, "(")
+			argsEnd := strings.LastIndex(newPart, ")")
+			if argsStart != -1 && argsEnd != -1 && argsEnd > argsStart+1 {
+				argsStr := strings.TrimSpace(newPart[argsStart+1 : argsEnd])
+				if argsStr != "" {
+					argsList := strings.Split(argsStr, ",")
+					var resolvedArgs []string
+					for _, arg := range argsList {
+						resolvedArgs = append(resolvedArgs, strings.TrimSpace(lexer.ResolveSymbol(arg, currentModule)))
+					}
+					argsJoined := strings.Join(resolvedArgs, ", ")
+					fmt.Fprintf(b, "%s%s* %s = %s_new(%s);\n", indent, objectType, varDecl.Name, objectType, argsJoined)
+				} else {
+					fmt.Fprintf(b, "%s%s* %s = %s_new();\n", indent, objectType, varDecl.Name, objectType)
+				}
+			} else {
+				fmt.Fprintf(b, "%s%s* %s = %s_new();\n", indent, objectType, varDecl.Name, objectType)
+			}
 		}
 	} else {
 		var cType string
