@@ -10,7 +10,7 @@ import (
 
 // Import and module system types
 type ImportStmt struct {
-	Module string `"import" @String`
+	Module string
 }
 
 type ModuleInfo struct {
@@ -22,177 +22,177 @@ type ModuleInfo struct {
 }
 
 type Program struct {
-	Imports    []*ImportStmt `@@*`
-	Statements []*Statement  `{ @@ ( Newline+ @@ )* Newline* }`
+	Imports    []*ImportStmt
+	Statements []*Statement
 }
 
 type Statement struct {
-	Import            *ImportStmt            `  @@`
-	Print             *PrintStmt             `| @@`
-	Sleep             *SleepStmt             `| @@`
-	While             *WhileStmt             `| @@`
-	For               *ForStmt               `| @@`
-	If                *IfStmt                `| @@`
-	Break             *BreakStmt             `| @@`
-	VarDecl           *VarDeclStmt           `| @@`
-	VarAssign         *VarAssignStmt         `| @@`
-	ListDecl          *ListDeclStmt          `| @@`
-	ClassDecl         *ClassDeclStmt         `| @@`
-	MethodCall        *MethodCallStmt        `| @@`
-	ObjectDecl        *ObjectDeclStmt        `| @@`
-	Return            *ReturnStmt            `| @@`
-	VarDeclMethodCall *VarDeclMethodCallStmt `| @@`
-	VarDeclInferred   *VarDeclInferredStmt   `| @@`
-	PubVarDecl        *PubVarDeclStmt        `| @@`
-	PubClassDecl      *PubClassDeclStmt      `| @@`
-	TopLevelFuncDecl  *TopLevelFuncDeclStmt  `| @@`
-	FunctionCall      *FunctionCallStmt      `| @@`
+	Import            *ImportStmt
+	Print             *PrintStmt
+	Sleep             *SleepStmt
+	While             *WhileStmt
+	For               *ForStmt
+	If                *IfStmt
+	Break             *BreakStmt
+	VarDecl           *VarDeclStmt
+	VarAssign         *VarAssignStmt
+	ListDecl          *ListDeclStmt
+	ClassDecl         *ClassDeclStmt
+	MethodCall        *MethodCallStmt
+	ObjectDecl        *ObjectDeclStmt
+	Return            *ReturnStmt
+	VarDeclMethodCall *VarDeclMethodCallStmt
+	VarDeclInferred   *VarDeclInferredStmt
+	PubVarDecl        *PubVarDeclStmt
+	PubClassDecl      *PubClassDeclStmt
+	TopLevelFuncDecl  *TopLevelFuncDeclStmt
+	FunctionCall      *FunctionCallStmt
 }
 
 type PubVarDeclStmt struct {
-	Type  string `"pub" @Ident`
-	Name  string `@Ident`
-	Value string `"=" @(Number | String | Ident)`
+	Type  string
+	Name  string
+	Value string
 }
 
 type PubClassDeclStmt struct {
-	Name        string            `"pub" "class" @Ident ":"`
-	Constructor *ConstructorStmt  `@@?`
-	Methods     []*MethodDeclStmt `@@*`
+	Name        string
+	Constructor *ConstructorStmt
+	Methods     []*MethodDeclStmt
 }
 
 type VarDeclMethodCallStmt struct {
-	Type   string   `@Ident`
-	Name   string   `@Ident`
-	Object string   `"=" @Ident`
-	Method string   `"." @Ident`
-	Args   []string `"(" ( @(Ident | Number | String) ( "," @(Ident | Number | String) )* )? ")"`
+	Type   string
+	Name   string
+	Object string
+	Method string
+	Args   []string
 }
 
 type VarDeclInferredStmt struct {
-	Name  string `"var" @Ident`
-	Value string `"=" @(Number | String | Ident | Expression)`
+	Name  string
+	Value string
 }
 
 type ReturnStmt struct {
-	Value string `"return" @(Ident | Number | String)`
+	Value string
 }
 
 type PrintStmt struct {
-	Print     string   `"print" @String`
-	Format    string   `| "print" @String`
-	Variables []string `"|" @Ident ( "," @Ident )*`
+	Print     string
+	Format    string
+	Variables []string
 }
 
 type SleepStmt struct {
-	Duration string `"sleep" @Number`
+	Duration string
 }
 
 type WhileStmt struct {
-	Condition string       `"while" @(Ident | Number) ":" Newline+`
-	Body      []*Statement `@@*`
+	Condition string
+	Body      []*Statement
 }
 
 type ForStmt struct {
-	Var   string       `"for" @Ident`
-	Start string       `"=" @Number`
-	End   string       `"to" @Number ":" Newline+`
-	Body  []*Statement `@@*`
+	Var   string
+	Start string
+	End   string
+	Body  []*Statement
 }
 
 type IfStmt struct {
-	Condition string       `"if" @(Ident | Number | String) ":" Newline+`
-	Body      []*Statement `@@*`
-	ElseIfs   []*ElifStmt  `@@*`
-	Else      *ElseStmt    `@@?`
+	Condition string
+	Body      []*Statement
+	ElseIfs   []*ElifStmt
+	Else      *ElseStmt
 }
 
 type ElifStmt struct {
-	Condition string       `"elif" @(Ident | Number | String) ":" Newline+`
-	Body      []*Statement `@@*`
+	Condition string
+	Body      []*Statement
 }
 
 type ElseStmt struct {
-	Body []*Statement `"else" ":" Newline+ @@*`
+	Body []*Statement
 }
 
 type BreakStmt struct {
-	Break string `"break"`
+	Break string
 }
 
 type VarDeclStmt struct {
-	Type  string `@Ident`
-	Name  string `@Ident`
-	Value string `"=" @(Number | String | Ident | Expression)`
+	Type  string
+	Name  string
+	Value string
 }
 
 type VarAssignStmt struct {
-	Name  string `@Ident`
-	Value string `"=" @(Number | String | Ident | Expression)`
+	Name  string
+	Value string
 }
 
 type ListDeclStmt struct {
-	Type     string   `"list" "[" @Ident "]"`
-	Name     string   `@Ident`
-	Elements []string `"=" "[" ( @(Number | String) ( "," @(Number | String) )* )? "]"`
+	Type     string
+	Name     string
+	Elements []string
 }
 
 type ClassDeclStmt struct {
-	Name        string            `"class" @Ident ":"`
-	Constructor *ConstructorStmt  `@@?`
-	Methods     []*MethodDeclStmt `@@*`
+	Name        string
+	Constructor *ConstructorStmt
+	Methods     []*MethodDeclStmt
 }
 
 type ConstructorStmt struct {
-	Parameters []*MethodParameter `"init" "(" ( @@ ( "," @@ )* )? ")" ":" Newline+ @@*`
-	Fields     []*Statement       `@@*`
+	Parameters []*MethodParameter
+	Fields     []*Statement
 }
 
 type MethodParameter struct {
-	Type string `@Ident`
-	Name string `@Ident`
+	Type string
+	Name string
 }
 
 type MethodDeclStmt struct {
-	Name       string             `"fn" @Ident`
-	Parameters []*MethodParameter `"(" ( @@ ( "," @@ )* )? ")"`
-	ReturnType string             `"->" @(Ident | "void") ":"`
-	Body       []*Statement       `Newline+ @@*`
+	Name       string
+	Parameters []*MethodParameter
+	ReturnType string
+	Body       []*Statement
 }
 
 type MethodCallStmt struct {
-	Object string   `@Ident`
-	Method string   `"." @Ident`
-	Args   []string `"(" ( @(Ident | Number | String) ( "," @(Ident | Number | String) )* )? ")"`
+	Object string
+	Method string
+	Args   []string
 }
 
 type ObjectDeclStmt struct {
-	Type string   `@Ident`
-	Name string   `@Ident`
-	Args []string `"=" "new" @Ident "(" ( @(Ident | Number | String) ( "," @(Ident | Number | String) )* )? ")"`
+	Type string
+	Name string
+	Args []string
 }
 
 type Expression struct {
-	Left     string `@(Ident | Number)`
-	Operator string `@("+" | "-" | "*" | "/" | "%")`
-	Right    string `@(Ident | Number)`
+	Left     string
+	Operator string
+	Right    string
 }
 
 type IndexAccess struct {
-	ListName string `@Ident`
-	Index    string `"[" @(Number | Ident) "]"`
+	ListName string
+	Index    string
 }
 
 type TopLevelFuncDeclStmt struct {
-	Name       string             `"fn" @Ident`
-	Parameters []*MethodParameter `"(" ( @@ ( "," @@ )* )? ")"`
-	ReturnType string             `"->" @(Ident | "void") ":"`
-	Body       []*Statement       `Newline+ @@*`
+	Name       string
+	Parameters []*MethodParameter
+	ReturnType string
+	Body       []*Statement
 }
 
 type FunctionCallStmt struct {
-	Name string   `@Ident`
-	Args []string `"(" ( @(Ident | Number | String) ( "," @(Ident | Number | String) )* )? ")"`
+	Name string
+	Args []string
 }
 
 var LoadedModules = make(map[string]*ModuleInfo)
