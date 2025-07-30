@@ -29,6 +29,7 @@ type ObjectInfo struct {
 
 var globalClasses = make(map[string]*ClassInfo)
 var globalObjects = make(map[string]*ObjectInfo)
+var globalFunctions = make(map[string]*TopLevelFuncDeclStmt)
 var currentModule = ""
 
 func renderC(program *Program, baseDir string) string {
@@ -60,6 +61,9 @@ func renderC(program *Program, baseDir string) string {
 			}
 			globalObjects[stmt.ObjectDecl.Name] = objectInfo
 		}
+		if stmt.TopLevelFuncDecl != nil {
+			globalFunctions[stmt.TopLevelFuncDecl.Name] = stmt.TopLevelFuncDecl
+		}
 	}
 
 	for _, module := range loadedModules {
@@ -84,6 +88,29 @@ func renderC(program *Program, baseDir string) string {
 		fmt.Fprintf(&b, "%s* %s_new();\n", className, className)
 		b.WriteString("\n")
 	}
+
+	for _, funcDecl := range globalFunctions {
+		returnType := "void"
+		if funcDecl.ReturnType != "" && funcDecl.ReturnType != "void" {
+			returnType = mapTypeToCType(funcDecl.ReturnType)
+		}
+
+		fmt.Fprintf(&b, "%s %s(", returnType, funcDecl.Name)
+
+		for i, param := range funcDecl.Parameters {
+			if i > 0 {
+				b.WriteString(", ")
+			}
+			paramType := mapTypeToCType(param.Type)
+			if param.Type == "string" {
+				paramType = "char*"
+			}
+			fmt.Fprintf(&b, "%s %s", paramType, param.Name)
+		}
+
+		b.WriteString(");\n")
+	}
+	b.WriteString("\n")
 
 	for _, module := range loadedModules {
 		for varName, varDecl := range module.PublicVars {
@@ -133,6 +160,10 @@ func renderC(program *Program, baseDir string) string {
 		for _, classDecl := range module.PublicClasses {
 			generateClassImplementation(&b, classDecl, module.Name)
 		}
+	}
+
+	for _, funcDecl := range globalFunctions {
+		generateTopLevelFunctionImplementation(&b, funcDecl)
 	}
 
 	b.WriteString("int main() {\n")
@@ -293,7 +324,8 @@ func renderStatements(b *strings.Builder, stmts []*Statement, indent string, cla
 					}
 				}
 				argsStr := strings.Join(args, ", ")
-				fmt.Fprintf(b, "%sprintf(\"%s\\n\", %s);\n", indent, stmt.Print.Format, argsStr)
+				escapedFormat := strings.ReplaceAll(stmt.Print.Format, "\"", "\\\"")
+				b.WriteString(fmt.Sprintf("%sprintf(\"%s\\n\", %s);\n", indent, escapedFormat, argsStr))
 			} else {
 				fmt.Fprintf(b, "%sprintf(\"%s\\n\");\n", indent, stmt.Print.Print)
 			}
@@ -353,6 +385,10 @@ func renderStatements(b *strings.Builder, stmts []*Statement, indent string, cla
 			renderMethodCall(b, stmt.MethodCall, indent)
 		case stmt.VarDeclMethodCall != nil:
 			renderVarDeclMethodCall(b, stmt.VarDeclMethodCall, indent)
+		case stmt.FunctionCall != nil:
+			renderFunctionCall(b, stmt.FunctionCall, indent)
+		case stmt.TopLevelFuncDecl != nil:
+			continue
 		case stmt.ClassDecl != nil:
 			continue
 		case stmt.PubClassDecl != nil:
@@ -601,6 +637,44 @@ func findMethodDecl(classDecl *ClassDeclStmt, methodName string) *MethodDeclStmt
 		}
 	}
 	return nil
+}
+
+func generateTopLevelFunctionImplementation(b *strings.Builder, funcDecl *TopLevelFuncDeclStmt) {
+	returnType := "void"
+	if funcDecl.ReturnType != "" && funcDecl.ReturnType != "void" {
+		returnType = mapTypeToCType(funcDecl.ReturnType)
+	}
+
+	fmt.Fprintf(b, "%s %s(", returnType, funcDecl.Name)
+
+	for i, param := range funcDecl.Parameters {
+		if i > 0 {
+			b.WriteString(", ")
+		}
+		paramType := mapTypeToCType(param.Type)
+		if param.Type == "string" {
+			paramType = "char*"
+		}
+		fmt.Fprintf(b, "%s %s", paramType, param.Name)
+	}
+
+	b.WriteString(") {\n")
+	renderStatements(b, funcDecl.Body, "    ", "")
+	b.WriteString("}\n\n")
+}
+
+func renderFunctionCall(b *strings.Builder, funcCall *FunctionCallStmt, indent string) {
+	fmt.Fprintf(b, "%s%s(", indent, funcCall.Name)
+
+	for i, arg := range funcCall.Args {
+		if i > 0 {
+			b.WriteString(", ")
+		}
+		resolvedArg := resolveSymbol(arg, currentModule)
+		fmt.Fprintf(b, "%s", resolvedArg)
+	}
+
+	b.WriteString(");\n")
 }
 
 func mapTypeToCType(dslType string) string {

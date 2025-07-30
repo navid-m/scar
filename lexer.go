@@ -79,6 +79,8 @@ type Statement struct {
 	VarDeclMethodCall *VarDeclMethodCallStmt `| @@`
 	PubVarDecl        *PubVarDeclStmt        `| @@`
 	PubClassDecl      *PubClassDeclStmt      `| @@`
+	TopLevelFuncDecl  *TopLevelFuncDeclStmt  `| @@`
+	FunctionCall      *FunctionCallStmt      `| @@`
 }
 
 type PubVarDeclStmt struct {
@@ -209,6 +211,18 @@ type IndexAccess struct {
 	Index    string `"[" @(Number | Ident) "]"`
 }
 
+type TopLevelFuncDeclStmt struct {
+	Name       string             `"fn" @Ident`
+	Parameters []*MethodParameter `"(" ( @@ ( "," @@ )* )? ")"`
+	ReturnType string             `"->" @(Ident | "void") ":"`
+	Body       []*Statement       `Newline+ @@*`
+}
+
+type FunctionCallStmt struct {
+	Name string   `@Ident`
+	Args []string `"(" ( @(Ident | Number | String) ( "," @(Ident | Number | String) )* )? ")"`
+}
+
 var loadedModules = make(map[string]*ModuleInfo)
 
 func parseWithIndentation(input string) (*Program, error) {
@@ -304,6 +318,9 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 	case "class":
 		return parseClassStatement(lines, lineNum, currentIndent)
 
+	case "fn":
+		return parseTopLevelFunctionStatement(lines, lineNum, currentIndent)
+
 	case "print":
 		if len(parts) < 2 {
 			return nil, lineNum + 1, fmt.Errorf("print statement requires a string at line %d", lineNum+1)
@@ -328,13 +345,31 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 			}
 
 			return &Statement{Print: &PrintStmt{Format: formatPart, Variables: variables}}, lineNum + 1, nil
-		} else {
-			str := strings.Join(parts[1:], " ")
-			if strings.HasPrefix(str, "\"") && strings.HasSuffix(str, "\"") {
-				str = str[1 : len(str)-1]
+		} else if strings.Contains(line, ",") && strings.Contains(line, "\"") {
+			quoteStart := strings.Index(line, "\"")
+			quoteEnd := strings.LastIndex(line, "\"")
+			if quoteStart != -1 && quoteEnd != -1 && quoteEnd > quoteStart {
+				formatPart := strings.TrimSpace(line[quoteStart+1 : quoteEnd])
+				varPart := strings.TrimSpace(line[quoteEnd+1:])
+
+				var variables []string
+				if varPart != "" && strings.HasPrefix(varPart, ",") {
+					varPart = strings.TrimSpace(varPart[1:])
+					varList := strings.Split(varPart, ",")
+					for _, v := range varList {
+						variables = append(variables, strings.TrimSpace(v))
+					}
+				}
+
+				return &Statement{Print: &PrintStmt{Format: formatPart, Variables: variables}}, lineNum + 1, nil
 			}
-			return &Statement{Print: &PrintStmt{Print: str}}, lineNum + 1, nil
 		}
+
+		str := strings.Join(parts[1:], " ")
+		if strings.HasPrefix(str, "\"") && strings.HasSuffix(str, "\"") {
+			str = str[1 : len(str)-1]
+		}
+		return &Statement{Print: &PrintStmt{Print: str}}, lineNum + 1, nil
 
 	case "sleep":
 		if len(parts) < 2 {
@@ -524,6 +559,28 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 		return nil, lineNum + 1, fmt.Errorf("else statement must follow an if statement at line %d", lineNum+1)
 
 	default:
+		if strings.Contains(line, "(") && strings.Contains(line, ")") && !strings.Contains(line, "=") && !strings.Contains(line, ".") {
+			parenStart := strings.Index(line, "(")
+			parenEnd := strings.LastIndex(line, ")")
+
+			if parenStart > 0 {
+				funcName := strings.TrimSpace(line[:parenStart])
+				var args []string
+
+				if parenEnd > parenStart+1 {
+					argsStr := strings.TrimSpace(line[parenStart+1 : parenEnd])
+					if argsStr != "" {
+						argsList := strings.Split(argsStr, ",")
+						for _, arg := range argsList {
+							args = append(args, strings.TrimSpace(arg))
+						}
+					}
+				}
+
+				return &Statement{FunctionCall: &FunctionCallStmt{Name: funcName, Args: args}}, lineNum + 1, nil
+			}
+		}
+
 		if strings.Contains(line, ".") && strings.Contains(line, "(") && strings.Contains(line, ")") && !strings.Contains(line, "=") {
 			dotIndex := strings.Index(line, ".")
 			parenIndex := strings.Index(line, "(")
@@ -892,6 +949,84 @@ func parseClassStatement(lines []string, lineNum, currentIndent int) (*Statement
 	}
 
 	return &Statement{ClassDecl: classStmt}, nextLine, nil
+}
+
+func parseTopLevelFunctionStatement(lines []string, lineNum, currentIndent int) (*Statement, int, error) {
+	line := strings.TrimSpace(lines[lineNum])
+
+	if !strings.HasPrefix(line, "fn ") || !strings.HasSuffix(line, ":") {
+		return nil, lineNum + 1, fmt.Errorf("invalid top-level function declaration at line %d", lineNum+1)
+	}
+
+	signature := strings.TrimSpace(line[3 : len(line)-1])
+	parenStart := strings.Index(signature, "(")
+	if parenStart == -1 {
+		return nil, lineNum + 1, fmt.Errorf("function declaration missing parameters at line %d", lineNum+1)
+	}
+
+	funcName := strings.TrimSpace(signature[:parenStart])
+	parenEnd := strings.Index(signature, ")")
+	if parenEnd == -1 || parenEnd <= parenStart {
+		return nil, lineNum + 1, fmt.Errorf("function declaration missing closing parenthesis at line %d", lineNum+1)
+	}
+
+	paramsStr := strings.TrimSpace(signature[parenStart+1 : parenEnd])
+	var parameters []*MethodParameter
+	if paramsStr != "" {
+		paramList := strings.Split(paramsStr, ",")
+		for _, paramStr := range paramList {
+			paramStr = strings.TrimSpace(paramStr)
+			paramParts := strings.Fields(paramStr)
+			if len(paramParts) == 2 {
+				param := &MethodParameter{
+					Type: paramParts[0],
+					Name: paramParts[1],
+				}
+				parameters = append(parameters, param)
+			} else if len(paramParts) == 1 {
+				param := &MethodParameter{
+					Type: "int",
+					Name: paramParts[0],
+				}
+				parameters = append(parameters, param)
+			}
+		}
+	}
+
+	returnTypePart := strings.TrimSpace(signature[parenEnd+1:])
+	var returnType string
+	if strings.HasPrefix(returnTypePart, "->") {
+		returnType = strings.TrimSpace(returnTypePart[2:])
+	} else {
+		returnType = "void"
+	}
+
+	expectedBodyIndent := currentIndent + 4
+	bodyStartLine := lineNum + 1
+	for bodyStartLine < len(lines) {
+		bodyLine := lines[bodyStartLine]
+		if strings.TrimSpace(bodyLine) != "" && !strings.HasPrefix(strings.TrimSpace(bodyLine), "#") {
+			expectedBodyIndent = getIndentation(bodyLine)
+			break
+		}
+		bodyStartLine++
+	}
+
+	body, err := parseStatements(lines, bodyStartLine, expectedBodyIndent)
+	if err != nil {
+		return nil, lineNum + 1, err
+	}
+
+	nextLine := findEndOfBlock(lines, bodyStartLine, expectedBodyIndent)
+
+	funcDecl := &TopLevelFuncDeclStmt{
+		Name:       funcName,
+		Parameters: parameters,
+		ReturnType: returnType,
+		Body:       body,
+	}
+
+	return &Statement{TopLevelFuncDecl: funcDecl}, nextLine, nil
 }
 
 func parseMethodStatement(lines []string, lineNum, currentIndent int) (*MethodDeclStmt, int, error) {
