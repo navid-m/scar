@@ -1684,12 +1684,11 @@ func (p *Parser) parseBlock() ([]*Statement, error) {
 			if currentIndent < baseIndent {
 				// Dedent detected - end of block
 				break
-			} else if currentIndent > baseIndent {
-				// More indentation than expected - this is an error for the while block
-				return nil, fmt.Errorf("unexpected indentation at line %d", p.tokens.Current().Line)
+			} else if currentIndent == baseIndent {
+				// Skip indentation if it matches exactly
+				p.tokens.Next()
 			}
-			// Skip indentation if it matches exactly
-			p.tokens.Next()
+			// If currentIndent > baseIndent, do not consume the indent here; let parseStatement handle nested blocks.
 		} else if baseIndent > 0 {
 			// No indentation but we expect some - this is a dedent to column 0
 			break
