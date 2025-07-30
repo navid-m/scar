@@ -20,6 +20,9 @@ while 1:
 #include <string.h>
 #include <unistd.h>
 
+int _exception = 0;
+
+
 int main() {
     printf("This will print forever: \n");
     sleep(3);
@@ -59,6 +62,9 @@ print "done..."`
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+
+int _exception = 0;
+
 
 int main() {
     printf("start...\n");
@@ -100,6 +106,9 @@ print "All done"`
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+
+int _exception = 0;
+
 
 int main() {
     printf("Starting nested test\n");

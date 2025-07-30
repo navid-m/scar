@@ -56,6 +56,8 @@ func RenderC(program *lexer.Program, baseDir string) string {
 #include <string.h>
 #include <unistd.h>
 
+int _exception = 0;
+
 `)
 
 	for className, classInfo := range globalClasses {
@@ -159,7 +161,7 @@ func RenderC(program *lexer.Program, baseDir string) string {
 
 	for _, stmt := range program.Statements {
 		if stmt.ClassDecl != nil {
-			generateClassImplementation(&b, stmt.ClassDecl, "")
+			generateClassImplementation(&b, stmt.ClassDecl, "", program)
 		}
 		if stmt.PubClassDecl != nil {
 			classDecl := &lexer.ClassDeclStmt{
@@ -167,18 +169,18 @@ func RenderC(program *lexer.Program, baseDir string) string {
 				Constructor: stmt.PubClassDecl.Constructor,
 				Methods:     stmt.PubClassDecl.Methods,
 			}
-			generateClassImplementation(&b, classDecl, "")
+			generateClassImplementation(&b, classDecl, "", program)
 		}
 	}
 
 	for _, module := range lexer.LoadedModules {
 		for _, classDecl := range module.PublicClasses {
-			generateClassImplementation(&b, classDecl, module.Name)
+			generateClassImplementation(&b, classDecl, module.Name, program)
 		}
 	}
 
 	for _, funcDecl := range globalFunctions {
-		generateTopLevelFunctionImplementation(&b, funcDecl)
+		generateTopLevelFunctionImplementation(&b, funcDecl, program)
 	}
 
 	b.WriteString("int main() {\n")
@@ -199,7 +201,7 @@ func RenderC(program *lexer.Program, baseDir string) string {
 		}
 	}
 
-	renderStatements(&b, mainStatements, "    ", "")
+	renderStatements(&b, mainStatements, "    ", "", program)
 	b.WriteString("    return 0;\n")
 	b.WriteString("}\n")
 	return b.String()
@@ -294,7 +296,7 @@ func generateStructDefinition(b *strings.Builder, classInfo *ClassInfo, structNa
 	fmt.Fprintf(b, "} %s;\n", structName)
 }
 
-func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclStmt, moduleName string) {
+func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclStmt, moduleName string, program *lexer.Program) {
 	className := classDecl.Name
 	if moduleName != "" {
 		className = lexer.GenerateUniqueSymbol(classDecl.Name, moduleName)
@@ -393,12 +395,12 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 		}
 
 		b.WriteString(") {\n")
-		renderStatements(b, method.Body, "    ", classDecl.Name)
+		renderStatements(b, method.Body, "    ", className, program)
 		b.WriteString("}\n\n")
 	}
 }
 
-func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent string, className string) {
+func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent string, className string, program *lexer.Program) {
 	for _, stmt := range stmts {
 		switch {
 		case stmt.Print != nil:
@@ -433,375 +435,203 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				value = lexer.ResolveSymbol(value, currentModule)
 			}
 			fmt.Fprintf(b, "%sreturn %s;\n", indent, value)
-
+		case stmt.Throw != nil:
+			value := lexer.ResolveSymbol(stmt.Throw.Value, currentModule)
+			fmt.Fprintf(b, "%s_exception = %s;\n", indent, value)
+			fmt.Fprintf(b, "%sgoto catch_label;\n", indent)
+		case stmt.TryCatch != nil:
+			fmt.Fprintf(b, "%s{\n", indent)
+			fmt.Fprintf(b, "%s    int _prev_exception = _exception;\n", indent)
+			fmt.Fprintf(b, "%s    _exception = 0;\n", indent)
+			renderStatements(b, stmt.TryCatch.TryBody, indent+"    ", className, program)
+			fmt.Fprintf(b, "%s    if (_exception != 0) {\n", indent)
+			fmt.Fprintf(b, "%scatch_label:\n", indent)
+			renderStatements(b, stmt.TryCatch.CatchBody, indent+"    ", className, program)
+			fmt.Fprintf(b, "%s    }\n", indent)
+			fmt.Fprintf(b, "%s    _exception = _prev_exception;\n", indent)
+			fmt.Fprintf(b, "%s}\n", indent)
 		case stmt.While != nil:
 			condition := lexer.ResolveSymbol(stmt.While.Condition, currentModule)
 			fmt.Fprintf(b, "%swhile (%s) {\n", indent, condition)
-			renderStatements(b, stmt.While.Body, indent+"    ", className)
+			renderStatements(b, stmt.While.Body, indent+"    ", className, program)
 			fmt.Fprintf(b, "%s}\n", indent)
 		case stmt.For != nil:
-			varName := stmt.For.Var
+			varName := lexer.ResolveSymbol(stmt.For.Var, currentModule)
 			start := lexer.ResolveSymbol(stmt.For.Start, currentModule)
 			end := lexer.ResolveSymbol(stmt.For.End, currentModule)
 			fmt.Fprintf(b, "%sfor (int %s = %s; %s <= %s; %s++) {\n", indent, varName, start, varName, end, varName)
-			renderStatements(b, stmt.For.Body, indent+"    ", className)
+			renderStatements(b, stmt.For.Body, indent+"    ", className, program)
 			fmt.Fprintf(b, "%s}\n", indent)
 		case stmt.If != nil:
 			condition := lexer.ResolveSymbol(stmt.If.Condition, currentModule)
 			fmt.Fprintf(b, "%sif (%s) {\n", indent, condition)
-			renderStatements(b, stmt.If.Body, indent+"    ", className)
-
+			renderStatements(b, stmt.If.Body, indent+"    ", className, program)
+			fmt.Fprintf(b, "%s}\n", indent)
 			for _, elif := range stmt.If.ElseIfs {
 				elifCondition := lexer.ResolveSymbol(elif.Condition, currentModule)
-				fmt.Fprintf(b, "%s} else if (%s) {\n", indent, elifCondition)
-				renderStatements(b, elif.Body, indent+"    ", className)
+				fmt.Fprintf(b, "%selse if (%s) {\n", indent, elifCondition)
+				renderStatements(b, elif.Body, indent+"    ", className, program)
+				fmt.Fprintf(b, "%s}\n", indent)
 			}
-
 			if stmt.If.Else != nil {
-				fmt.Fprintf(b, "%s} else {\n", indent)
-				renderStatements(b, stmt.If.Else.Body, indent+"    ", className)
+				fmt.Fprintf(b, "%selse {\n", indent)
+				renderStatements(b, stmt.If.Else.Body, indent+"    ", className, program)
+				fmt.Fprintf(b, "%s}\n", indent)
 			}
-
-			fmt.Fprintf(b, "%s}\n", indent)
 		case stmt.VarDecl != nil:
-			renderVarDecl(b, stmt.VarDecl, indent)
-		case stmt.VarDeclInferred != nil:
-			renderVarDeclInferred(b, stmt.VarDeclInferred, indent)
-		case stmt.PubVarDecl != nil:
-			continue
-		case stmt.VarAssign != nil:
-			renderVarAssign(b, stmt.VarAssign, indent, className)
-		case stmt.ListDecl != nil:
-			renderListDecl(b, stmt.ListDecl, indent)
-		case stmt.ObjectDecl != nil:
-			renderObjectDecl(b, stmt.ObjectDecl, indent)
-		case stmt.MethodCall != nil:
-			renderMethodCall(b, stmt.MethodCall, indent)
-		case stmt.VarDeclMethodCall != nil:
-			renderVarDeclMethodCall(b, stmt.VarDeclMethodCall, indent)
-		case stmt.FunctionCall != nil:
-			renderFunctionCall(b, stmt.FunctionCall, indent)
-		case stmt.TopLevelFuncDecl != nil:
-			continue
-		case stmt.ClassDecl != nil:
-			continue
-		case stmt.PubClassDecl != nil:
-			continue
-		}
-	}
-}
-
-func renderObjectDecl(b *strings.Builder, objDecl *lexer.ObjectDeclStmt, indent string) {
-	objectType := objDecl.Type
-	if len(objDecl.Args) >= 2 {
-		moduleName := objDecl.Args[0]
-		className := objDecl.Args[1]
-		objectType = fmt.Sprintf("%s_%s", moduleName, className)
-	} else {
-		objectType = lexer.ResolveSymbol(objDecl.Type, currentModule)
-	}
-
-	objectInfo := &ObjectInfo{
-		Name: objDecl.Name,
-		Type: objectType,
-	}
-	globalObjects[objDecl.Name] = objectInfo
-
-	fmt.Fprintf(b, "%s%s* %s = %s_new();\n", indent, objectType, objDecl.Name, objectType)
-}
-
-func renderMethodCall(b *strings.Builder, methodCall *lexer.MethodCallStmt, indent string) {
-	objectType := getObjectType(methodCall.Object)
-
-	fmt.Fprintf(b, "%s%s_%s(%s", indent, objectType, methodCall.Method, methodCall.Object)
-
-	for _, arg := range methodCall.Args {
-		resolvedArg := lexer.ResolveSymbol(arg, currentModule)
-		fmt.Fprintf(b, ", %s", resolvedArg)
-	}
-
-	b.WriteString(");\n")
-}
-
-func renderVarDeclMethodCall(b *strings.Builder, varDecl *lexer.VarDeclMethodCallStmt, indent string) {
-	objectType := getObjectType(varDecl.Object)
-	cType := mapTypeToCType(varDecl.Type)
-
-	fmt.Fprintf(b, "%s%s %s = %s_%s(%s", indent, cType, varDecl.Name, objectType, varDecl.Method, varDecl.Object)
-
-	for _, arg := range varDecl.Args {
-		resolvedArg := lexer.ResolveSymbol(arg, currentModule)
-		fmt.Fprintf(b, ", %s", resolvedArg)
-	}
-
-	b.WriteString(");\n")
-}
-
-func getObjectType(objectName string) string {
-	if objectInfo, exists := globalObjects[objectName]; exists {
-		return objectInfo.Type
-	}
-
-	for moduleName, module := range lexer.LoadedModules {
-		for className := range module.PublicClasses {
-			qualifiedName := fmt.Sprintf("%s_%s", moduleName, className)
-			if strings.Contains(strings.ToLower(objectName), strings.ToLower(qualifiedName)) {
-				return qualifiedName
-			}
-		}
-	}
-
-	for className := range globalClasses {
-		if strings.Contains(strings.ToLower(objectName), strings.ToLower(className)) {
-			return className
-		}
-	}
-	return "Object"
-}
-
-func renderVarDeclInferred(b *strings.Builder, varDecl *lexer.VarDeclInferredStmt, indent string) {
-	value := varDecl.Value
-
-	if strings.HasPrefix(value, "new ") {
-		newPart := strings.TrimSpace(value[4:]) // Remove "new "
-		parenStart := strings.Index(newPart, "(")
-		if parenStart == -1 {
-			className := strings.TrimSpace(newPart)
-			objectType := lexer.ResolveSymbol(className, currentModule)
-			objectInfo := &ObjectInfo{
-				Name: varDecl.Name,
-				Type: objectType,
-			}
-			globalObjects[varDecl.Name] = objectInfo
-
-			fmt.Fprintf(b, "%s%s* %s = %s_new();\n", indent, objectType, varDecl.Name, objectType)
-		} else {
-			className := strings.TrimSpace(newPart[:parenStart])
-			objectType := lexer.ResolveSymbol(className, currentModule)
-			objectInfo := &ObjectInfo{
-				Name: varDecl.Name,
-				Type: objectType,
-			}
-			globalObjects[varDecl.Name] = objectInfo
-
-			argsStart := strings.Index(newPart, "(")
-			argsEnd := strings.LastIndex(newPart, ")")
-			if argsStart != -1 && argsEnd != -1 && argsEnd > argsStart+1 {
-				argsStr := strings.TrimSpace(newPart[argsStart+1 : argsEnd])
-				if argsStr != "" {
-					argsList := strings.Split(argsStr, ",")
-					var resolvedArgs []string
-					for _, arg := range argsList {
-						resolvedArgs = append(resolvedArgs, strings.TrimSpace(lexer.ResolveSymbol(arg, currentModule)))
+			cType := mapTypeToCType(stmt.VarDecl.Type)
+			varName := lexer.ResolveSymbol(stmt.VarDecl.Name, currentModule)
+			value := lexer.ResolveSymbol(stmt.VarDecl.Value, currentModule)
+			if stmt.VarDecl.Type == "string" {
+				fmt.Fprintf(b, "%s%s %s[256];\n", indent, cType, varName)
+				if value != "" {
+					if !strings.HasPrefix(value, "\"") {
+						value = fmt.Sprintf("\"%s\"", value)
 					}
-					argsJoined := strings.Join(resolvedArgs, ", ")
-					fmt.Fprintf(b, "%s%s* %s = %s_new(%s);\n", indent, objectType, varDecl.Name, objectType, argsJoined)
-				} else {
-					fmt.Fprintf(b, "%s%s* %s = %s_new();\n", indent, objectType, varDecl.Name, objectType)
+					fmt.Fprintf(b, "%sstrcpy(%s, %s);\n", indent, varName, value)
 				}
 			} else {
-				fmt.Fprintf(b, "%s%s* %s = %s_new();\n", indent, objectType, varDecl.Name, objectType)
+				fmt.Fprintf(b, "%s%s %s = %s;\n", indent, cType, varName, value)
 			}
-		}
-	} else {
-		var cType string
-		var finalValue string
-
-		if strings.Contains(value, "\"") || (strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"")) {
-			cType = "char"
-			finalValue = value
-			if !strings.HasPrefix(finalValue, "\"") {
-				finalValue = fmt.Sprintf("\"%s\"", finalValue)
+		case stmt.VarAssign != nil:
+			varName := lexer.ResolveSymbol(stmt.VarAssign.Name, currentModule)
+			value := lexer.ResolveSymbol(stmt.VarAssign.Value, currentModule)
+			if strings.HasPrefix(varName, "this.") {
+				varName = "this->" + varName[5:]
 			}
-			fmt.Fprintf(b, "%s%s %s[256];\n", indent, cType, varDecl.Name)
-			fmt.Fprintf(b, "%sstrcpy(%s, %s);\n", indent, varDecl.Name, finalValue)
-		} else if strings.Contains(value, ".") {
-			cType = "float"
-			finalValue = lexer.ResolveSymbol(value, currentModule)
-			fmt.Fprintf(b, "%s%s %s = %s;\n", indent, cType, varDecl.Name, finalValue)
-		} else {
-			cType = "int"
-			finalValue = lexer.ResolveSymbol(value, currentModule)
-			fmt.Fprintf(b, "%s%s %s = %s;\n", indent, cType, varDecl.Name, finalValue)
-		}
-	}
-}
-
-func renderVarDecl(b *strings.Builder, varDecl *lexer.VarDeclStmt, indent string) {
-	if strings.HasPrefix(varDecl.Name, "this.") {
-		return
-	}
-
-	cType := mapTypeToCType(varDecl.Type)
-	value := varDecl.Value
-
-	if strings.Contains(value, "*") || strings.Contains(value, "+") || strings.Contains(value, "-") || strings.Contains(value, "/") || strings.Contains(value, "%") {
-		parts := strings.Fields(value)
-		var resolvedParts []string
-		for _, part := range parts {
-			if lexer.IsOperator(part) {
-				resolvedParts = append(resolvedParts, part)
+			if strings.Contains(varName, "[") && strings.Contains(varName, "]") {
+				fmt.Fprintf(b, "%s%s = %s;\n", indent, varName, value)
 			} else {
-				resolvedParts = append(resolvedParts, lexer.ResolveSymbol(part, currentModule))
+				var varType string
+				for _, classInfo := range globalClasses {
+					for _, field := range classInfo.Fields {
+						if field.Name == varName || ("this->"+field.Name) == varName {
+							varType = field.Type
+							break
+						}
+					}
+				}
+				if varType == "string" {
+					if !strings.HasPrefix(value, "\"") {
+						value = fmt.Sprintf("\"%s\"", value)
+					}
+					fmt.Fprintf(b, "%sstrcpy(%s, %s);\n", indent, varName, value)
+				} else {
+					fmt.Fprintf(b, "%s%s = %s;\n", indent, varName, value)
+				}
 			}
-		}
-		value = strings.Join(resolvedParts, " ")
-	} else {
-		value = lexer.ResolveSymbol(varDecl.Value, currentModule)
-	}
-
-	if varDecl.Type == "string" {
-		if !strings.HasPrefix(value, "\"") {
-			value = fmt.Sprintf("\"%s\"", value)
-		}
-		fmt.Fprintf(b, "%s%s %s[256];\n", indent, cType, varDecl.Name)
-		fmt.Fprintf(b, "%sstrcpy(%s, %s);\n", indent, varDecl.Name, value)
-	} else {
-		fmt.Fprintf(b, "%s%s %s = %s;\n", indent, cType, varDecl.Name, value)
-	}
-}
-
-func renderVarAssign(b *strings.Builder, varAssign *lexer.VarAssignStmt, indent string, className string) {
-	value := lexer.ResolveSymbol(varAssign.Value, currentModule)
-	name := varAssign.Name
-
-	if strings.HasPrefix(name, "this.") {
-		fieldName := name[5:]
-		var fieldType string
-		if classInfo, ok := globalClasses[className]; ok {
-			for _, field := range classInfo.Fields {
-				if field.Name == fieldName {
-					fieldType = field.Type
+		case stmt.ListDecl != nil:
+			listType := mapTypeToCType(stmt.ListDecl.Type)
+			listName := lexer.ResolveSymbol(stmt.ListDecl.Name, currentModule)
+			fmt.Fprintf(b, "%s%s %s[%d];\n", indent, listType, listName, len(stmt.ListDecl.Elements))
+			for i, elem := range stmt.ListDecl.Elements {
+				elem = lexer.ResolveSymbol(elem, currentModule)
+				if stmt.ListDecl.Type == "string" {
+					if !strings.HasPrefix(elem, "\"") {
+						elem = fmt.Sprintf("\"%s\"", elem)
+					}
+					fmt.Fprintf(b, "%sstrcpy(%s[%d], %s);\n", indent, listName, i, elem)
+				} else {
+					fmt.Fprintf(b, "%s%s[%d] = %s;\n", indent, listName, i, elem)
+				}
+			}
+		case stmt.ObjectDecl != nil:
+			varName := lexer.ResolveSymbol(stmt.ObjectDecl.Name, currentModule)
+			typeName := stmt.ObjectDecl.Type
+			args := stmt.ObjectDecl.Args
+			resolvedType := typeName
+			if strings.Contains(typeName, ".") {
+				parts := strings.Split(typeName, ".")
+				resolvedType = lexer.GenerateUniqueSymbol(parts[1], parts[0])
+			} else if moduleName, exists := isImportedType(typeName, program.Imports); exists {
+				resolvedType = lexer.GenerateUniqueSymbol(typeName, moduleName)
+			}
+			argsStr := ""
+			if len(args) > 1 {
+				argsStr = strings.Join(args[1:], ", ")
+			}
+			fmt.Fprintf(b, "%s%s* %s = %s_new(%s);\n", indent, resolvedType, varName, resolvedType, argsStr)
+		case stmt.MethodCall != nil:
+			objectName := lexer.ResolveSymbol(stmt.MethodCall.Object, currentModule)
+			methodName := stmt.MethodCall.Method
+			args := make([]string, len(stmt.MethodCall.Args))
+			for i, arg := range stmt.MethodCall.Args {
+				args[i] = lexer.ResolveSymbol(arg, currentModule)
+			}
+			argsStr := strings.Join(args, ", ")
+			var resolvedClassName string
+			for _, obj := range globalObjects {
+				if obj.Name == stmt.MethodCall.Object {
+					resolvedClassName = obj.Type
+					if strings.Contains(resolvedClassName, ".") {
+						parts := strings.Split(resolvedClassName, ".")
+						resolvedClassName = lexer.GenerateUniqueSymbol(parts[1], parts[0])
+					} else if moduleName, exists := isImportedType(resolvedClassName, program.Imports); exists {
+						resolvedClassName = lexer.GenerateUniqueSymbol(resolvedClassName, moduleName)
+					}
 					break
 				}
 			}
-		}
-
-		if fieldType == "string" {
-			fmt.Fprintf(b, "%sstrcpy(this->%s, %s);\n", indent, fieldName, value)
-		} else {
-			fmt.Fprintf(b, "%sthis->%s = %s;\n", indent, fieldName, value)
-		}
-		return
-	}
-
-	if strings.Contains(name, "[") && strings.Contains(name, "]") {
-		if strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"") {
-			bracketStart := strings.Index(name, "[")
-			listName := name[:bracketStart]
-			indexPart := name[bracketStart:]
-			fmt.Fprintf(b, "%sstrcpy(%s%s, %s);\n", indent, listName, indexPart, value)
-		} else {
-			fmt.Fprintf(b, "%s%s = %s;\n", indent, name, value)
-		}
-	} else {
-		if strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"") {
-			fmt.Fprintf(b, "%sstrcpy(%s, %s);\n", indent, name, value)
-		} else if strings.Contains(value, ".") && strings.Contains(value, "(") && strings.Contains(value, ")") {
-			parts := strings.SplitN(value, ".", 2)
-			objectName := parts[0]
-			methodCallPart := parts[1]
-			methodName := methodCallPart[:strings.Index(methodCallPart, "(")]
-			argsString := methodCallPart[strings.Index(methodCallPart, "(")+1 : strings.LastIndex(methodCallPart, ")")]
-			args := []string{}
-			if argsString != "" {
-				argList := strings.SplitSeq(argsString, ", ")
-				for arg := range argList {
-					args = append(args, lexer.ResolveSymbol(arg, currentModule))
+			if resolvedClassName == "" {
+				resolvedClassName = "unknown"
+			}
+			fmt.Fprintf(b, "%s%s_%s(%s, %s);\n", indent, resolvedClassName, methodName, objectName, argsStr)
+		case stmt.VarDeclMethodCall != nil:
+			varType := mapTypeToCType(stmt.VarDeclMethodCall.Type)
+			varName := lexer.ResolveSymbol(stmt.VarDeclMethodCall.Name, currentModule)
+			objectName := lexer.ResolveSymbol(stmt.VarDeclMethodCall.Object, currentModule)
+			methodName := stmt.VarDeclMethodCall.Method
+			args := make([]string, len(stmt.VarDeclMethodCall.Args))
+			for i, arg := range stmt.VarDeclMethodCall.Args {
+				args[i] = lexer.ResolveSymbol(arg, currentModule)
+			}
+			argsStr := strings.Join(args, ", ")
+			var resolvedClassName string
+			for _, obj := range globalObjects {
+				if obj.Name == stmt.VarDeclMethodCall.Object {
+					resolvedClassName = obj.Type
+					if strings.Contains(resolvedClassName, ".") {
+						parts := strings.Split(resolvedClassName, ".")
+						resolvedClassName = lexer.GenerateUniqueSymbol(parts[1], parts[0])
+					} else if moduleName, exists := isImportedType(resolvedClassName, program.Imports); exists {
+						resolvedClassName = lexer.GenerateUniqueSymbol(resolvedClassName, moduleName)
+					}
+					break
 				}
 			}
-
-			objectType := getObjectType(objectName)
-			fmt.Fprintf(b, "%s%s = %s_%s(%s", indent, name, objectType, methodName, objectName)
-			for _, arg := range args {
-				fmt.Fprintf(b, ", %s", arg)
+			if resolvedClassName == "" {
+				resolvedClassName = "unknown"
 			}
-			b.WriteString(");\n")
-
-		} else {
-			fmt.Fprintf(b, "%s%s = %s;\n", indent, name, value)
-		}
-	}
-}
-
-func renderListDecl(b *strings.Builder, listDecl *lexer.ListDeclStmt, indent string) {
-	cType := mapTypeToCType(listDecl.Type)
-	listName := listDecl.Name
-	elements := listDecl.Elements
-	arraySize := len(elements)
-	if arraySize == 0 {
-		arraySize = 100
-	} else if arraySize < 10 {
-		arraySize = 10
-	}
-
-	if listDecl.Type == "string" {
-		fmt.Fprintf(b, "%s%s %s[%d][256];\n", indent, cType, listName, arraySize)
-		for i, elem := range elements {
-			resolvedElem := lexer.ResolveSymbol(elem, currentModule)
-			if !strings.HasPrefix(resolvedElem, "\"") {
-				resolvedElem = fmt.Sprintf("\"%s\"", resolvedElem)
-			}
-			fmt.Fprintf(b, "%sstrcpy(%s[%d], %s);\n", indent, listName, i, resolvedElem)
-		}
-	} else {
-		fmt.Fprintf(b, "%s%s %s[%d]", indent, cType, listName, arraySize)
-
-		if len(elements) > 0 {
-			fmt.Fprintf(b, " = {")
-			for i, elem := range elements {
-				if i > 0 {
-					fmt.Fprintf(b, ", ")
+			fmt.Fprintf(b, "%s%s %s = %s_%s(%s, %s);\n", indent, varType, varName, resolvedClassName, methodName, objectName, argsStr)
+		case stmt.VarDeclInferred != nil:
+			varName := lexer.ResolveSymbol(stmt.VarDeclInferred.Name, currentModule)
+			value := lexer.ResolveSymbol(stmt.VarDeclInferred.Value, currentModule)
+			varType := inferTypeFromValue(stmt.VarDeclInferred.Value)
+			cType := mapTypeToCType(varType)
+			if varType == "string" {
+				fmt.Fprintf(b, "%s%s %s[256];\n", indent, cType, varName)
+				if value != "" {
+					if !strings.HasPrefix(value, "\"") {
+						value = fmt.Sprintf("\"%s\"", value)
+					}
+					fmt.Fprintf(b, "%sstrcpy(%s, %s);\n", indent, varName, value)
 				}
-				resolvedElem := lexer.ResolveSymbol(elem, currentModule)
-				fmt.Fprintf(b, "%s", resolvedElem)
+			} else {
+				fmt.Fprintf(b, "%s%s %s = %s;\n", indent, cType, varName, value)
 			}
-			fmt.Fprintf(b, "}")
+		case stmt.FunctionCall != nil:
+			funcName := lexer.ResolveSymbol(stmt.FunctionCall.Name, currentModule)
+			args := make([]string, len(stmt.FunctionCall.Args))
+			for i, arg := range stmt.FunctionCall.Args {
+				args[i] = lexer.ResolveSymbol(arg, currentModule)
+			}
+			argsStr := strings.Join(args, ", ")
+			fmt.Fprintf(b, "%s%s(%s);\n", indent, funcName, argsStr)
 		}
-		fmt.Fprintf(b, ";\n")
 	}
 }
 
-func FindClassDeclByName(program *lexer.Program, className string) *lexer.ClassDeclStmt {
-	for _, stmt := range program.Statements {
-		if stmt.ClassDecl != nil && stmt.ClassDecl.Name == className {
-			return stmt.ClassDecl
-		}
-		if stmt.PubClassDecl != nil && stmt.PubClassDecl.Name == className {
-			return &lexer.ClassDeclStmt{
-				Name:        stmt.PubClassDecl.Name,
-				Constructor: stmt.PubClassDecl.Constructor,
-				Methods:     stmt.PubClassDecl.Methods,
-			}
-		}
-	}
-
-	for _, module := range lexer.LoadedModules {
-		if classDecl, exists := module.PublicClasses[className]; exists {
-			return classDecl
-		}
-		modulePrefixedName := lexer.GenerateUniqueSymbol(className, module.Name)
-		if strings.HasSuffix(className, "_"+module.Name) || className == modulePrefixedName {
-			originalName := strings.TrimSuffix(className, "_"+module.Name)
-			if classDecl, exists := module.PublicClasses[originalName]; exists {
-				return classDecl
-			}
-		}
-	}
-
-	return nil
-}
-
-func FindMethodDecl(classDecl *lexer.ClassDeclStmt, methodName string) *lexer.MethodDeclStmt {
-	for _, method := range classDecl.Methods {
-		if method.Name == methodName {
-			return method
-		}
-	}
-	return nil
-}
-
-func generateTopLevelFunctionImplementation(b *strings.Builder, funcDecl *lexer.TopLevelFuncDeclStmt) {
+func generateTopLevelFunctionImplementation(b *strings.Builder, funcDecl *lexer.TopLevelFuncDeclStmt, program *lexer.Program) {
 	returnType := "void"
 	if funcDecl.ReturnType != "" && funcDecl.ReturnType != "void" {
 		returnType = mapTypeToCType(funcDecl.ReturnType)
@@ -821,26 +651,12 @@ func generateTopLevelFunctionImplementation(b *strings.Builder, funcDecl *lexer.
 	}
 
 	b.WriteString(") {\n")
-	renderStatements(b, funcDecl.Body, "    ", "")
+	renderStatements(b, funcDecl.Body, "    ", "", program)
 	b.WriteString("}\n\n")
 }
 
-func renderFunctionCall(b *strings.Builder, funcCall *lexer.FunctionCallStmt, indent string) {
-	fmt.Fprintf(b, "%s%s(", indent, funcCall.Name)
-
-	for i, arg := range funcCall.Args {
-		if i > 0 {
-			b.WriteString(", ")
-		}
-		resolvedArg := lexer.ResolveSymbol(arg, currentModule)
-		fmt.Fprintf(b, "%s", resolvedArg)
-	}
-
-	b.WriteString(");\n")
-}
-
-func mapTypeToCType(dslType string) string {
-	switch dslType {
+func mapTypeToCType(scaType string) string {
+	switch scaType {
 	case "int":
 		return "int"
 	case "float":
@@ -854,6 +670,17 @@ func mapTypeToCType(dslType string) string {
 	case "bool":
 		return "int"
 	default:
-		return "int"
+		return scaType
 	}
+}
+
+func isImportedType(typeName string, imports []*lexer.ImportStmt) (string, bool) {
+	for _, imp := range imports {
+		if module, exists := lexer.LoadedModules[imp.Module]; exists {
+			if _, classExists := module.PublicClasses[typeName]; classExists {
+				return imp.Module, true
+			}
+		}
+	}
+	return "", false
 }

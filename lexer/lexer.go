@@ -46,6 +46,8 @@ type Statement struct {
 	PubClassDecl      *PubClassDeclStmt
 	TopLevelFuncDecl  *TopLevelFuncDeclStmt
 	FunctionCall      *FunctionCallStmt
+	TryCatch          *TryCatchStmt // Added for try-catch support
+	Throw             *ThrowStmt    // Added for throw support
 }
 
 type PubVarDeclStmt struct {
@@ -192,6 +194,15 @@ type TopLevelFuncDeclStmt struct {
 type FunctionCallStmt struct {
 	Name string
 	Args []string
+}
+
+type TryCatchStmt struct {
+	TryBody   []*Statement
+	CatchBody []*Statement
+}
+
+type ThrowStmt struct {
+	Value string
 }
 
 var LoadedModules = make(map[string]*ModuleInfo)
@@ -355,12 +366,11 @@ func parseAllImports(lines []string, startLine int) ([]*ImportStmt, error) {
 }
 func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int, error) {
 	line := strings.TrimSpace(lines[lineNum])
-	parts := strings.Fields(line)
+	parts := strings.Fields(strings.TrimSuffix(line, ":")) // Remove colon before splitting
 
 	if len(parts) == 0 {
 		return nil, lineNum + 1, fmt.Errorf("empty statement at line %d", lineNum+1)
 	}
-
 	switch parts[0] {
 	case "import":
 		if len(parts) < 2 {
@@ -648,6 +658,18 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 
 		return &Statement{If: &IfStmt{Condition: condition, Body: body, ElseIfs: elseIfs, Else: elseStmt}}, nextLine, nil
 
+	case "try":
+		if !strings.HasSuffix(line, ":") {
+			return nil, lineNum + 1, fmt.Errorf("try statement must end with ':' at line %d", lineNum+1)
+		}
+		return parseTryCatchStatement(lines, lineNum, currentIndent)
+	case "throw":
+		if len(parts) < 2 {
+			return nil, lineNum + 1, fmt.Errorf("throw statement requires a value at line %d", lineNum+1)
+		}
+		value := strings.Join(parts[1:], " ")
+		return &Statement{Throw: &ThrowStmt{Value: value}}, lineNum + 1, nil
+
 	case "reassign":
 		if len(parts) < 4 || parts[2] != "=" {
 			return nil, lineNum + 1, fmt.Errorf("reassign statement format error at line %d (expected: reassign var = value)", lineNum+1)
@@ -674,6 +696,9 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 
 	case "else":
 		return nil, lineNum + 1, fmt.Errorf("else statement must follow an if statement at line %d", lineNum+1)
+
+	case "catch":
+		return nil, lineNum + 1, fmt.Errorf("catch statement must follow a try statement at line %d", lineNum+1)
 
 	default:
 		// Handle this.field assignments
@@ -864,6 +889,68 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 
 	}
 	return nil, lineNum + 1, fmt.Errorf("unknown statement type '%s' at line %d", parts[0], lineNum+1)
+}
+
+func parseTryCatchStatement(lines []string, lineNum, currentIndent int) (*Statement, int, error) {
+	line := strings.TrimSpace(lines[lineNum])
+	if line != "try:" {
+		return nil, lineNum + 1, fmt.Errorf("try statement format error at line %d", lineNum+1)
+	}
+
+	// Parse try block
+	var expectedBodyIndent = currentIndent + 4
+	bodyStartLine := lineNum + 1
+	for bodyStartLine < len(lines) {
+		bodyLine := lines[bodyStartLine]
+		if strings.TrimSpace(bodyLine) != "" && !strings.HasPrefix(strings.TrimSpace(bodyLine), "#") {
+			expectedBodyIndent = getIndentation(bodyLine)
+			break
+		}
+		bodyStartLine++
+	}
+	if expectedBodyIndent <= currentIndent {
+		expectedBodyIndent = currentIndent + 4
+	}
+
+	tryBody, err := parseStatements(lines, lineNum+1, expectedBodyIndent)
+	if err != nil {
+		return nil, lineNum + 1, err
+	}
+
+	nextLine := findEndOfBlock(lines, lineNum+1, expectedBodyIndent)
+
+	// Check for catch block
+	if nextLine >= len(lines) {
+		return nil, nextLine, fmt.Errorf("try statement requires a catch block at line %d", lineNum+1)
+	}
+
+	nextTrimmed := strings.TrimSpace(lines[nextLine])
+	if nextTrimmed != "catch:" {
+		return nil, nextLine, fmt.Errorf("expected catch statement after try block at line %d", nextLine+1)
+	}
+
+	// Parse catch block
+	bodyStartLine = nextLine + 1
+	for bodyStartLine < len(lines) {
+		bodyLine := lines[bodyStartLine]
+		if strings.TrimSpace(bodyLine) != "" && !strings.HasPrefix(strings.TrimSpace(bodyLine), "#") {
+			expectedBodyIndent = getIndentation(bodyLine)
+			break
+		}
+		bodyStartLine++
+	}
+	if expectedBodyIndent <= currentIndent {
+		expectedBodyIndent = currentIndent + 4
+	}
+
+	catchBody, err := parseStatements(lines, nextLine+1, expectedBodyIndent)
+	if err != nil {
+		return nil, nextLine + 1, err
+	}
+
+	nextLine = findEndOfBlock(lines, nextLine+1, expectedBodyIndent)
+
+	return &Statement{TryCatch: &TryCatchStmt{TryBody: tryBody, CatchBody: catchBody}}, nextLine, nil
 }
 
 func parsePubStatement(lines []string, lineNum, currentIndent int) (*Statement, int, error) {
