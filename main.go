@@ -46,7 +46,7 @@ func main() {
 	tmpCPath := cleanedName + ".c"
 	err = os.WriteFile(tmpCPath, []byte(cCode), 0644)
 	if err != nil {
-		log.Fatalf("Failed to write temp C file: %v", err)
+		log.Fatalf("Failed to write temp file: %v", err)
 	}
 	defer os.Remove(tmpCPath)
 
