@@ -27,7 +27,6 @@ func main() {
 		wd, _ := os.Getwd()
 		ptf := path.Join(wd, os.Args[1])
 		baseDir = filepath.Dir(ptf)
-
 		data, err := os.ReadFile(ptf)
 		if err != nil {
 			log.Fatal("Could not find file.")
