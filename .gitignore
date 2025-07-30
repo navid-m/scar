@@ -5,3 +5,4 @@ vendor/
 *.out
 errors
 scar
+*.DS_Store
