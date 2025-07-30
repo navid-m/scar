@@ -905,7 +905,6 @@ func parseTryCatchStatement(lines []string, lineNum, currentIndent int) (*Statem
 		return nil, lineNum + 1, fmt.Errorf("try statement format error at line %d", lineNum+1)
 	}
 
-	// Parse try block
 	var expectedBodyIndent = currentIndent + 4
 	bodyStartLine := lineNum + 1
 	for bodyStartLine < len(lines) {
@@ -927,7 +926,6 @@ func parseTryCatchStatement(lines []string, lineNum, currentIndent int) (*Statem
 
 	nextLine := findEndOfBlock(lines, lineNum+1, expectedBodyIndent)
 
-	// Check for catch block
 	if nextLine >= len(lines) {
 		return nil, nextLine, fmt.Errorf("try statement requires a catch block at line %d", lineNum+1)
 	}
