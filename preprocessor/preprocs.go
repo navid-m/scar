@@ -8,7 +8,7 @@ func insertLen(output string) string {
 
 func InsertMacros(output string) string {
 	outp := output
-	if strings.ContainsAny(output, "len") {
+	if strings.Contains(output, "len") {
 		outp = insertLen(outp)
 	}
 	return outp
