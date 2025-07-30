@@ -6,7 +6,7 @@ import (
 )
 
 func ShowUsage() {
-	fmt.Println("usage: scar [-asm] [program.x]")
+	fmt.Println("Usage: scar [-asm] [program.x]")
 	flag.PrintDefaults()
-	fmt.Println("By Navid M (c) 2025")
+	fmt.Println("\nBy Navid M (c) 2025")
 }
