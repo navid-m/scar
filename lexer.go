@@ -349,23 +349,26 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 			quoteStart := strings.Index(line, "\"")
 			quoteEnd := strings.LastIndex(line, "\"")
 			if quoteStart != -1 && quoteEnd != -1 && quoteEnd > quoteStart {
-				formatPart := strings.TrimSpace(line[quoteStart+1 : quoteEnd])
-				varPart := strings.TrimSpace(line[quoteEnd+1:])
+				afterQuote := strings.TrimSpace(line[quoteEnd+1:])
+				if strings.HasPrefix(afterQuote, ",") {
+					formatPart := strings.TrimSpace(line[quoteStart+1 : quoteEnd])
+					varPart := strings.TrimSpace(line[quoteEnd+1:])
 
-				var variables []string
-				if varPart != "" && strings.HasPrefix(varPart, ",") {
-					varPart = strings.TrimSpace(varPart[1:])
-					varList := strings.Split(varPart, ",")
-					for _, v := range varList {
-						variables = append(variables, strings.TrimSpace(v))
+					var variables []string
+					if varPart != "" && strings.HasPrefix(varPart, ",") {
+						varPart = strings.TrimSpace(varPart[1:])
+						varList := strings.SplitSeq(varPart, ",")
+						for v := range varList {
+							variables = append(variables, strings.TrimSpace(v))
+						}
 					}
-				}
 
-				return &Statement{Print: &PrintStmt{Format: formatPart, Variables: variables}}, lineNum + 1, nil
+					return &Statement{Print: &PrintStmt{Format: formatPart, Variables: variables}}, lineNum + 1, nil
+				}
 			}
 		}
 
-		str := strings.Join(parts[1:], " ")
+		str := strings.TrimSpace(line[5:])
 		if strings.HasPrefix(str, "\"") && strings.HasSuffix(str, "\"") {
 			str = str[1 : len(str)-1]
 		}
