@@ -6,43 +6,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
-
-	"github.com/alecthomas/participle/v2/lexer"
 )
-
-var dslLexer = lexer.MustSimple([]lexer.SimpleRule{
-	{Name: "Comment", Pattern: `#[^\n]*`},
-	{Name: "Number", Pattern: `\d+`},
-	{Name: "String", Pattern: `"[^"]*"`},
-	{Name: "Ident", Pattern: `[a-zA-Z_][a-zA-Z0-9_]*`},
-	{Name: "Colon", Pattern: `:`},
-	{Name: "Newline", Pattern: `\n`},
-	{Name: "Indent", Pattern: `^[ \t]+`},
-	{Name: "Whitespace", Pattern: `[ \t\r]+`},
-	{Name: "Assign", Pattern: `=`},
-	{Name: "To", Pattern: `to`},
-	{Name: "If", Pattern: `if`},
-	{Name: "Elif", Pattern: `elif`},
-	{Name: "Else", Pattern: `else`},
-	{Name: "Reassign", Pattern: `reassign`},
-	{Name: "Break", Pattern: `break`},
-	{Name: "LeftBracket", Pattern: `\[`},
-	{Name: "RightBracket", Pattern: `\]`},
-	{Name: "LeftParen", Pattern: `\(`},
-	{Name: "RightParen", Pattern: `\)`},
-	{Name: "Comma", Pattern: `,`},
-	{Name: "Dot", Pattern: `\.`},
-	{Name: "Arrow", Pattern: `->`},
-	{Name: "Class", Pattern: `class`},
-	{Name: "Init", Pattern: `init`},
-	{Name: "Fn", Pattern: `fn`},
-	{Name: "This", Pattern: `this`},
-	{Name: "New", Pattern: `new`},
-	{Name: "Void", Pattern: `void`},
-	{Name: "Pub", Pattern: `pub`},
-	{Name: "Import", Pattern: `import`},
-	{Name: "Var", Pattern: `var`},
-})
 
 // Import and module system types
 type ImportStmt struct {
