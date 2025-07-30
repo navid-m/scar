@@ -2,4 +2,21 @@ class SideEffectsConstructorClass:
     init:
         print "This is a side effect."
 
-SideEffectsConstructorClass scc = new SideEffectsConstructorClass()
+class TestClass:
+    init:
+        this.name = "Test"
+        print "Created TestClass with name: %s", this.name
+
+var scc = new SideEffectsConstructorClass()
+var test = new TestClass()
+var number = 42
+var text = "Hello, world"
+var float_val = 3.14
+
+print "Testing type inference:"
+print "number = %d", number
+print "text = %s", text
+print "float_val = %f", float_val
+
+# want: 
+# var scc = new SideEffectsConstructorClass()

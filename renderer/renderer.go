@@ -375,6 +375,8 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			fmt.Fprintf(b, "%s}\n", indent)
 		case stmt.VarDecl != nil:
 			renderVarDecl(b, stmt.VarDecl, indent)
+		case stmt.VarDeclInferred != nil:
+			renderVarDeclInferred(b, stmt.VarDeclInferred, indent)
 		case stmt.PubVarDecl != nil:
 			continue
 		case stmt.VarAssign != nil:
@@ -465,6 +467,57 @@ func getObjectType(objectName string) string {
 		}
 	}
 	return "Object"
+}
+
+func renderVarDeclInferred(b *strings.Builder, varDecl *lexer.VarDeclInferredStmt, indent string) {
+	value := varDecl.Value
+
+	if strings.HasPrefix(value, "new ") {
+		newPart := strings.TrimSpace(value[4:]) // Remove "new "
+		parenStart := strings.Index(newPart, "(")
+		if parenStart == -1 {
+			className := strings.TrimSpace(newPart)
+			objectType := lexer.ResolveSymbol(className, currentModule)
+			objectInfo := &ObjectInfo{
+				Name: varDecl.Name,
+				Type: objectType,
+			}
+			globalObjects[varDecl.Name] = objectInfo
+
+			fmt.Fprintf(b, "%s%s* %s = %s_new();\n", indent, objectType, varDecl.Name, objectType)
+		} else {
+			className := strings.TrimSpace(newPart[:parenStart])
+			objectType := lexer.ResolveSymbol(className, currentModule)
+			objectInfo := &ObjectInfo{
+				Name: varDecl.Name,
+				Type: objectType,
+			}
+			globalObjects[varDecl.Name] = objectInfo
+			// TODO: Handle constructor arguments
+			fmt.Fprintf(b, "%s%s* %s = %s_new();\n", indent, objectType, varDecl.Name, objectType)
+		}
+	} else {
+		var cType string
+		var finalValue string
+
+		if strings.Contains(value, "\"") || (strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"")) {
+			cType = "char"
+			finalValue = value
+			if !strings.HasPrefix(finalValue, "\"") {
+				finalValue = fmt.Sprintf("\"%s\"", finalValue)
+			}
+			fmt.Fprintf(b, "%s%s %s[256];\n", indent, cType, varDecl.Name)
+			fmt.Fprintf(b, "%sstrcpy(%s, %s);\n", indent, varDecl.Name, finalValue)
+		} else if strings.Contains(value, ".") {
+			cType = "float"
+			finalValue = lexer.ResolveSymbol(value, currentModule)
+			fmt.Fprintf(b, "%s%s %s = %s;\n", indent, cType, varDecl.Name, finalValue)
+		} else {
+			cType = "int"
+			finalValue = lexer.ResolveSymbol(value, currentModule)
+			fmt.Fprintf(b, "%s%s %s = %s;\n", indent, cType, varDecl.Name, finalValue)
+		}
+	}
 }
 
 func renderVarDecl(b *strings.Builder, varDecl *lexer.VarDeclStmt, indent string) {
@@ -602,7 +655,7 @@ func renderListDecl(b *strings.Builder, listDecl *lexer.ListDeclStmt, indent str
 	}
 }
 
-func findClassDeclByName(program *lexer.Program, className string) *lexer.ClassDeclStmt {
+func FindClassDeclByName(program *lexer.Program, className string) *lexer.ClassDeclStmt {
 	for _, stmt := range program.Statements {
 		if stmt.ClassDecl != nil && stmt.ClassDecl.Name == className {
 			return stmt.ClassDecl
@@ -632,7 +685,7 @@ func findClassDeclByName(program *lexer.Program, className string) *lexer.ClassD
 	return nil
 }
 
-func findMethodDecl(classDecl *lexer.ClassDeclStmt, methodName string) *lexer.MethodDeclStmt {
+func FindMethodDecl(classDecl *lexer.ClassDeclStmt, methodName string) *lexer.MethodDeclStmt {
 	for _, method := range classDecl.Methods {
 		if method.Name == methodName {
 			return method

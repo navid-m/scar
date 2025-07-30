@@ -41,6 +41,7 @@ var dslLexer = lexer.MustSimple([]lexer.SimpleRule{
 	{Name: "Void", Pattern: `void`},
 	{Name: "Pub", Pattern: `pub`},
 	{Name: "Import", Pattern: `import`},
+	{Name: "Var", Pattern: `var`},
 })
 
 // Import and module system types
@@ -77,6 +78,7 @@ type Statement struct {
 	ObjectDecl        *ObjectDeclStmt        `| @@`
 	Return            *ReturnStmt            `| @@`
 	VarDeclMethodCall *VarDeclMethodCallStmt `| @@`
+	VarDeclInferred   *VarDeclInferredStmt   `| @@`
 	PubVarDecl        *PubVarDeclStmt        `| @@`
 	PubClassDecl      *PubClassDeclStmt      `| @@`
 	TopLevelFuncDecl  *TopLevelFuncDeclStmt  `| @@`
@@ -101,6 +103,11 @@ type VarDeclMethodCallStmt struct {
 	Object string   `"=" @Ident`
 	Method string   `"." @Ident`
 	Args   []string `"(" ( @(Ident | Number | String) ( "," @(Ident | Number | String) )* )? ")"`
+}
+
+type VarDeclInferredStmt struct {
+	Name  string `"var" @Ident`
+	Value string `"=" @(Number | String | Ident | Expression)`
 }
 
 type ReturnStmt struct {
@@ -300,6 +307,21 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 		}
 		moduleName := strings.Trim(strings.Join(parts[1:], " "), "\"")
 		return &Statement{Import: &ImportStmt{Module: moduleName}}, lineNum + 1, nil
+
+	case "var":
+		if len(parts) < 4 || parts[2] != "=" {
+			return nil, lineNum + 1, fmt.Errorf("var declaration format error at line %d (expected: var name = value)", lineNum+1)
+		}
+		varName := parts[1]
+		value := strings.Join(parts[3:], " ")
+
+		if strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"") {
+			// Maybe do something here later, idk.
+		} else if strings.Contains(value, " ") && !strings.Contains(value, "\"") && !strings.HasPrefix(value, "new ") {
+			value = fmt.Sprintf("\"%s\"", value)
+		}
+
+		return &Statement{VarDeclInferred: &VarDeclInferredStmt{Name: varName, Value: value}}, lineNum + 1, nil
 
 	case "pub":
 		return parsePubStatement(lines, lineNum, currentIndent)
