@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -15,17 +16,23 @@ import (
 )
 
 func main() {
-	if len(os.Args) <= 1 {
-		fmt.Println("usage: scar [program.x]")
+	asm := flag.Bool("asm", false, "show assembly output")
+	flag.Parse()
+
+	if len(flag.Args()) < 1 {
+		fmt.Println("usage: scar [-asm] [program.x]")
 		return
 	}
 
-	var input string
-	var baseDir string
+	var (
+		input   string
+		baseDir string
+		ptf     string
+	)
 
-	if len(os.Args) > 1 {
+	if len(flag.Args()) > 0 {
 		wd, _ := os.Getwd()
-		ptf := path.Join(wd, os.Args[1])
+		ptf = path.Join(wd, flag.Arg(0))
 		baseDir = filepath.Dir(ptf)
 		data, err := os.ReadFile(ptf)
 		if err != nil {
@@ -34,14 +41,25 @@ func main() {
 		input = string(data)
 	}
 
-	cleanedName := strings.ReplaceAll(os.Args[1], ".x", "")
+	cleanedName := strings.ReplaceAll(filepath.Base(ptf), ".x", "")
 	program, err := lexer.ParseWithIndentation(input)
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	cCode := preprocessor.InsertMacros(renderer.RenderC(program, baseDir))
-	// fmt.Println(cCode)
+
+	if *asm {
+		cmd := exec.Command("clang", "-w", "-S", "-x", "c", "-o", "-", "-")
+		cmd.Stdin = strings.NewReader(cCode)
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		err = cmd.Run()
+		if err != nil {
+			log.Fatal("Failed to generate assembly.")
+		}
+		return
+	}
 
 	tmpCPath := cleanedName + ".c"
 	err = os.WriteFile(tmpCPath, []byte(cCode), 0644)
