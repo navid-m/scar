@@ -1347,10 +1347,7 @@ func (p *Parser) parseBlock() ([]*Statement, error) {
 			p.tokens.Next()
 		}
 
-		// Expect newline after statement
 		if !p.tokens.Match("Newline") && !p.tokens.IsAtEnd() {
-			// If there's no newline but more tokens, it might be a syntax error
-			// or the end of the block. Let the next parse attempt handle it.
 			break
 		}
 		if p.tokens.Match("Newline") {
@@ -1368,25 +1365,19 @@ func (p *Parser) parseExpression() (string, error) {
 		p.tokens.Next()
 		p.tokens.SkipWhitespaceAndComments()
 
-		// Check if there's an operator following the token
 		if p.tokens.Match("Plus", "Minus", "Multiply", "Divide", "Modulo",
 			"Less", "Greater", "LessEqual", "GreaterEqual", "Equal", "NotEqual") {
 
 			opToken := p.tokens.Current()
 			p.tokens.Next()
 			p.tokens.SkipWhitespaceAndComments()
-
-			// Parse the right-hand side of the expression
 			right, err := p.parseExpression()
 			if err != nil {
 				return "", fmt.Errorf("invalid expression after operator: %v", err)
 			}
 
-			// Return the combined expression
 			return fmt.Sprintf("%s %s %s", token.Value, opToken.Value, right), nil
 		}
-
-		// No operator, just return the token value
 		return token.Value, nil
 	}
 
@@ -1446,7 +1437,6 @@ func (p *Parser) parseValue() (string, error) {
 	return "", fmt.Errorf("expected value")
 }
 
-// Updated main parsing function to use the new parser
 func ParseWithIndentation(input string) (*Program, error) {
 	parser, err := NewParser(input)
 	if err != nil {
@@ -1454,8 +1444,6 @@ func ParseWithIndentation(input string) (*Program, error) {
 	}
 	return parser.ParseProgram()
 }
-
-// Utility functions (keeping the existing ones that are still needed)
 
 func LoadModule(moduleName string, baseDir string) (*ModuleInfo, error) {
 	if module, exists := LoadedModules[moduleName]; exists {
