@@ -244,7 +244,6 @@ func collectClassInfoWithModule(classDecl *lexer.ClassDeclStmt, moduleName strin
 	}
 
 	if classDecl.Constructor != nil {
-		// Collect fields from constructor parameters
 		for _, param := range classDecl.Constructor.Parameters {
 			fieldInfo := FieldInfo{
 				Name: param.Name,
@@ -252,11 +251,8 @@ func collectClassInfoWithModule(classDecl *lexer.ClassDeclStmt, moduleName strin
 			}
 			classInfo.Fields = append(classInfo.Fields, fieldInfo)
 		}
-
-		// Collect fields from the init section (constructor.Fields)
 		for _, stmt := range classDecl.Constructor.Fields {
 			if stmt.VarDecl != nil {
-				// Extract field name from "this.fieldName"
 				fieldName := stmt.VarDecl.Name
 				if strings.HasPrefix(fieldName, "this.") {
 					fieldName = fieldName[5:] // Remove "this." prefix
@@ -267,10 +263,8 @@ func collectClassInfoWithModule(classDecl *lexer.ClassDeclStmt, moduleName strin
 				}
 				classInfo.Fields = append(classInfo.Fields, fieldInfo)
 			}
-			// FIXED: Also collect fields from VarAssign statements like this.name = "Test"
 			if stmt.VarAssign != nil && strings.HasPrefix(stmt.VarAssign.Name, "this.") {
-				fieldName := stmt.VarAssign.Name[5:] // Remove "this." prefix
-				// Infer the type from the value
+				fieldName := stmt.VarAssign.Name[5:]
 				fieldType := inferTypeFromValue(stmt.VarAssign.Value)
 				fieldInfo := FieldInfo{
 					Name: fieldName,
@@ -296,7 +290,6 @@ func collectClassInfoWithModule(classDecl *lexer.ClassDeclStmt, moduleName strin
 	globalClasses[className] = classInfo
 }
 
-// Helper function to infer type from value
 func inferTypeFromValue(value string) string {
 	if strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"") {
 		return "string"
@@ -349,7 +342,6 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 	fmt.Fprintf(b, "    %s* obj = malloc(sizeof(%s));\n", className, className)
 
 	if classDecl.Constructor != nil {
-		// Initialize fields from constructor parameters
 		if len(classDecl.Constructor.Parameters) > 0 {
 			for _, param := range classDecl.Constructor.Parameters {
 				if param.Type == "string" {
@@ -360,13 +352,10 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 			}
 		}
 
-		// Process constructor body
 		for _, field := range classDecl.Constructor.Fields {
 			if field.VarAssign != nil && strings.HasPrefix(field.VarAssign.Name, "this.") {
 				fieldName := field.VarAssign.Name[5:] // Remove "this."
 				value := field.VarAssign.Value
-
-				// Determine field type from struct definition
 				var fieldType string
 				if classInfo, exists := globalClasses[className]; exists {
 					for _, f := range classInfo.Fields {
@@ -386,7 +375,6 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 					fmt.Fprintf(b, "    obj->%s = %s;\n", fieldName, value)
 				}
 			} else if field.Print != nil {
-				// FIXED: Handle print statements that reference this.fieldName
 				if field.Print.Format != "" && len(field.Print.Variables) > 0 {
 					args := make([]string, len(field.Print.Variables))
 					for i, v := range field.Print.Variables {
@@ -451,7 +439,7 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				}
 				argsStr := strings.Join(args, ", ")
 				escapedFormat := strings.ReplaceAll(stmt.Print.Format, "\"", "\\\"")
-				b.WriteString(fmt.Sprintf("%sprintf(\"%s\\n\", %s);\n", indent, escapedFormat, argsStr))
+				fmt.Fprintf(b, "%sprintf(\"%s\\n\", %s);\n", indent, escapedFormat, argsStr)
 			} else {
 				fmt.Fprintf(b, "%sprintf(\"%s\\n\");\n", indent, stmt.Print.Print)
 			}
