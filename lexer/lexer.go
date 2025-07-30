@@ -1547,12 +1547,6 @@ func GenerateUniqueSymbol(originalName string, moduleName string) string {
 	return fmt.Sprintf("%s_%s", moduleName, originalName)
 }
 
-var vdt = []string{"int", "float", "double", "char", "string", "bool"}
-
-func isValidType(s string) bool {
-	return slices.Contains(vdt, s)
-}
-
 func IsOperator(s string) bool {
 	operators := []string{"+", "-", "*", "/", "%"}
 	return slices.Contains(operators, s)
