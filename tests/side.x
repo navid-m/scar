@@ -17,6 +17,3 @@ print "Testing type inference:"
 print "number = %d", number
 print "text = %s", text
 print "float_val = %f", float_val
-
-# want: 
-# var scc = new SideEffectsConstructorClass()
