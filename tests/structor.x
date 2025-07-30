@@ -5,4 +5,4 @@ class ArgConstructorClass:
         print "a = %d", a
         print "b = %d", b
 
-var acc = new ArgConstructorClass(1, 2)
+ArgConstructorClass acc = new ArgConstructorClass(1, 2)

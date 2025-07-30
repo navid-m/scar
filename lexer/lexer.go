@@ -14,7 +14,6 @@ var dslLexer = lexer.MustSimple([]lexer.SimpleRule{
 	{Name: "Comment", Pattern: `#[^\n]*`},
 	{Name: "Number", Pattern: `\d+`},
 	{Name: "String", Pattern: `"[^"]*"`},
-	{Name: "Ident", Pattern: `[a-zA-Z_][a-zA-Z0-9_]*`},
 	{Name: "Colon", Pattern: `:`},
 	{Name: "Newline", Pattern: `\n`},
 	{Name: "Indent", Pattern: `^[ \t]+`},
@@ -42,11 +41,156 @@ var dslLexer = lexer.MustSimple([]lexer.SimpleRule{
 	{Name: "Pub", Pattern: `pub`},
 	{Name: "Import", Pattern: `import`},
 	{Name: "Var", Pattern: `var`},
+	{Name: "Print", Pattern: `print`},
+	{Name: "Sleep", Pattern: `sleep`},
+	{Name: "While", Pattern: `while`},
+	{Name: "For", Pattern: `for`},
+	{Name: "Return", Pattern: `return`},
+	{Name: "List", Pattern: `list`},
+	{Name: "Plus", Pattern: `\+`},
+	{Name: "Minus", Pattern: `-`},
+	{Name: "Multiply", Pattern: `\*`},
+	{Name: "Divide", Pattern: `/`},
+	{Name: "Modulo", Pattern: `%`},
+	{Name: "Pipe", Pattern: `\|`},
+	{Name: "Less", Pattern: `<`},
+	{Name: "Greater", Pattern: `>`},
+	{Name: "LessEqual", Pattern: `<=`},
+	{Name: "GreaterEqual", Pattern: `>=`},
+	{Name: "Equal", Pattern: `==`},
+	{Name: "NotEqual", Pattern: `!=`},
+	{Name: "Not", Pattern: `!`},
+	{Name: "Ident", Pattern: `[a-zA-Z_][a-zA-Z0-9_]*`},
 })
+
+// Token represents a lexical token
+type Token struct {
+	Type  string
+	Value string
+	Line  int
+	Col   int
+}
+
+// TokenStream represents a stream of tokens with current position
+type TokenStream struct {
+	tokens   []Token
+	position int
+}
+
+// NewTokenStream creates a new token stream from input text
+func NewTokenStream(input string) (*TokenStream, error) {
+	tokens, err := tokenize(input)
+	if err != nil {
+		return nil, err
+	}
+	return &TokenStream{tokens: tokens, position: 0}, nil
+}
+
+// Current returns the current token
+func (ts *TokenStream) Current() *Token {
+	if ts.position >= len(ts.tokens) {
+		return nil
+	}
+	return &ts.tokens[ts.position]
+}
+
+// Next advances to the next token
+func (ts *TokenStream) Next() *Token {
+	if ts.position < len(ts.tokens) {
+		ts.position++
+	}
+	return ts.Current()
+}
+
+// Peek returns the token at offset positions ahead without advancing
+func (ts *TokenStream) Peek(offset int) *Token {
+	pos := ts.position + offset
+	if pos >= len(ts.tokens) {
+		return nil
+	}
+	return &ts.tokens[pos]
+}
+
+// Consume advances if the current token matches the expected type
+func (ts *TokenStream) Consume(tokenType string) (*Token, error) {
+	current := ts.Current()
+	if current == nil {
+		return nil, fmt.Errorf("unexpected end of input, expected %s", tokenType)
+	}
+	if current.Type != tokenType {
+		return nil, fmt.Errorf("expected %s, got %s at line %d", tokenType, current.Type, current.Line)
+	}
+	ts.Next()
+	return current, nil
+}
+
+// Match checks if current token matches any of the given types
+func (ts *TokenStream) Match(tokenTypes ...string) bool {
+	current := ts.Current()
+	if current == nil {
+		return false
+	}
+	for _, tokenType := range tokenTypes {
+		if current.Type == tokenType {
+			return true
+		}
+	}
+	return false
+}
+
+// SkipWhitespaceAndComments skips whitespace and comment tokens
+func (ts *TokenStream) SkipWhitespaceAndComments() {
+	for ts.Current() != nil && (ts.Current().Type == "Whitespace" || ts.Current().Type == "Comment" || ts.Current().Type == "Indent") {
+		ts.Next()
+	}
+}
+
+// IsAtEnd checks if we're at the end of the token stream
+func (ts *TokenStream) IsAtEnd() bool {
+	return ts.position >= len(ts.tokens)
+}
+
+// tokenTypeToName converts a lexer.TokenType to its corresponding rule name.
+func tokenTypeToName(tt lexer.TokenType) string {
+	for name, t := range dslLexer.Symbols() {
+		if t == tt {
+			return name
+		}
+	}
+	// Fallback to the numeric value if no symbol found (should not happen)
+	return fmt.Sprintf("%d", tt)
+}
+
+func tokenize(input string) ([]Token, error) {
+	lex, err := dslLexer.LexString("", input)
+	if err != nil {
+		return nil, err
+	}
+
+	var tokens []Token
+	for {
+		token, err := lex.Next()
+		if err != nil {
+			return nil, err
+		}
+		if token.EOF() {
+			break
+		}
+
+		tokens = append(tokens, Token{
+			Type:  tokenTypeToName(token.Type),
+			Value: token.Value,
+			Line:  token.Pos.Line,
+			Col:   token.Pos.Column,
+		})
+	}
+
+	return tokens, nil
+}
 
 // Import and module system types
 type ImportStmt struct {
-	Module string `"import" @String`
+	Module string
 }
 
 type ModuleInfo struct {
@@ -58,1233 +202,1604 @@ type ModuleInfo struct {
 }
 
 type Program struct {
-	Imports    []*ImportStmt `@@*`
-	Statements []*Statement  `{ @@ ( Newline+ @@ )* Newline* }`
+	Imports    []*ImportStmt
+	Statements []*Statement
 }
 
 type Statement struct {
-	Import            *ImportStmt            `  @@`
-	Print             *PrintStmt             `| @@`
-	Sleep             *SleepStmt             `| @@`
-	While             *WhileStmt             `| @@`
-	For               *ForStmt               `| @@`
-	If                *IfStmt                `| @@`
-	Break             *BreakStmt             `| @@`
-	VarDecl           *VarDeclStmt           `| @@`
-	VarAssign         *VarAssignStmt         `| @@`
-	ListDecl          *ListDeclStmt          `| @@`
-	ClassDecl         *ClassDeclStmt         `| @@`
-	MethodCall        *MethodCallStmt        `| @@`
-	ObjectDecl        *ObjectDeclStmt        `| @@`
-	Return            *ReturnStmt            `| @@`
-	VarDeclMethodCall *VarDeclMethodCallStmt `| @@`
-	VarDeclInferred   *VarDeclInferredStmt   `| @@`
-	PubVarDecl        *PubVarDeclStmt        `| @@`
-	PubClassDecl      *PubClassDeclStmt      `| @@`
-	TopLevelFuncDecl  *TopLevelFuncDeclStmt  `| @@`
-	FunctionCall      *FunctionCallStmt      `| @@`
+	Import            *ImportStmt
+	Print             *PrintStmt
+	Sleep             *SleepStmt
+	While             *WhileStmt
+	For               *ForStmt
+	If                *IfStmt
+	Break             *BreakStmt
+	VarDecl           *VarDeclStmt
+	VarAssign         *VarAssignStmt
+	ListDecl          *ListDeclStmt
+	ClassDecl         *ClassDeclStmt
+	MethodCall        *MethodCallStmt
+	ObjectDecl        *ObjectDeclStmt
+	Return            *ReturnStmt
+	VarDeclMethodCall *VarDeclMethodCallStmt
+	VarDeclInferred   *VarDeclInferredStmt
+	PubVarDecl        *PubVarDeclStmt
+	PubClassDecl      *PubClassDeclStmt
+	TopLevelFuncDecl  *TopLevelFuncDeclStmt
+	FunctionCall      *FunctionCallStmt
 }
 
 type PubVarDeclStmt struct {
-	Type  string `"pub" @Ident`
-	Name  string `@Ident`
-	Value string `"=" @(Number | String | Ident)`
+	Type  string
+	Name  string
+	Value string
 }
 
 type PubClassDeclStmt struct {
-	Name        string            `"pub" "class" @Ident ":"`
-	Constructor *ConstructorStmt  `@@?`
-	Methods     []*MethodDeclStmt `@@*`
+	Name        string
+	Constructor *ConstructorStmt
+	Methods     []*MethodDeclStmt
 }
 
 type VarDeclMethodCallStmt struct {
-	Type   string   `@Ident`
-	Name   string   `@Ident`
-	Object string   `"=" @Ident`
-	Method string   `"." @Ident`
-	Args   []string `"(" ( @(Ident | Number | String) ( "," @(Ident | Number | String) )* )? ")"`
+	Type   string
+	Name   string
+	Object string
+	Method string
+	Args   []string
 }
 
 type VarDeclInferredStmt struct {
-	Name  string `"var" @Ident`
-	Value string `"=" @(Number | String | Ident | Expression)`
+	Name  string
+	Value string
 }
 
 type ReturnStmt struct {
-	Value string `"return" @(Ident | Number | String)`
+	Value string
 }
 
 type PrintStmt struct {
-	Print     string   `"print" @String`
-	Format    string   `| "print" @String`
-	Variables []string `"|" @Ident ( "," @Ident )*`
+	Print     string
+	Format    string
+	Variables []string
 }
 
 type SleepStmt struct {
-	Duration string `"sleep" @Number`
+	Duration string
 }
 
 type WhileStmt struct {
-	Condition string       `"while" @(Ident | Number) ":" Newline+`
-	Body      []*Statement `@@*`
+	Condition string
+	Body      []*Statement
 }
 
 type ForStmt struct {
-	Var   string       `"for" @Ident`
-	Start string       `"=" @Number`
-	End   string       `"to" @Number ":" Newline+`
-	Body  []*Statement `@@*`
+	Var   string
+	Start string
+	End   string
+	Body  []*Statement
 }
 
 type IfStmt struct {
-	Condition string       `"if" @(Ident | Number | String) ":" Newline+`
-	Body      []*Statement `@@*`
-	ElseIfs   []*ElifStmt  `@@*`
-	Else      *ElseStmt    `@@?`
+	Condition string
+	Body      []*Statement
+	ElseIfs   []*ElifStmt
+	Else      *ElseStmt
 }
 
 type ElifStmt struct {
-	Condition string       `"elif" @(Ident | Number | String) ":" Newline+`
-	Body      []*Statement `@@*`
+	Condition string
+	Body      []*Statement
 }
 
 type ElseStmt struct {
-	Body []*Statement `"else" ":" Newline+ @@*`
+	Body []*Statement
 }
 
 type BreakStmt struct {
-	Break string `"break"`
+	Break string
 }
 
 type VarDeclStmt struct {
-	Type  string `@Ident`
-	Name  string `@Ident`
-	Value string `"=" @(Number | String | Ident | Expression)`
+	Type  string
+	Name  string
+	Value string
 }
 
 type VarAssignStmt struct {
-	Name  string `@Ident`
-	Value string `"=" @(Number | String | Ident | Expression)`
+	Name  string
+	Value string
 }
 
 type ListDeclStmt struct {
-	Type     string   `"list" "[" @Ident "]"`
-	Name     string   `@Ident`
-	Elements []string `"=" "[" ( @(Number | String) ( "," @(Number | String) )* )? "]"`
+	Type     string
+	Name     string
+	Elements []string
 }
 
 type ClassDeclStmt struct {
-	Name        string            `"class" @Ident ":"`
-	Constructor *ConstructorStmt  `@@?`
-	Methods     []*MethodDeclStmt `@@*`
+	Name        string
+	Constructor *ConstructorStmt
+	Methods     []*MethodDeclStmt
 }
 
 type ConstructorStmt struct {
-	Parameters []*MethodParameter `"init" "(" ( @@ ( "," @@ )* )? ")" ":" Newline+ @@*`
-	Fields     []*Statement       `@@*`
+	Parameters []*MethodParameter
+	Fields     []*Statement
 }
 
 type MethodParameter struct {
-	Type string `@Ident`
-	Name string `@Ident`
+	Type string
+	Name string
 }
 
 type MethodDeclStmt struct {
-	Name       string             `"fn" @Ident`
-	Parameters []*MethodParameter `"(" ( @@ ( "," @@ )* )? ")"`
-	ReturnType string             `"->" @(Ident | "void") ":"`
-	Body       []*Statement       `Newline+ @@*`
+	Name       string
+	Parameters []*MethodParameter
+	ReturnType string
+	Body       []*Statement
 }
 
 type MethodCallStmt struct {
-	Object string   `@Ident`
-	Method string   `"." @Ident`
-	Args   []string `"(" ( @(Ident | Number | String) ( "," @(Ident | Number | String) )* )? ")"`
+	Object string
+	Method string
+	Args   []string
 }
 
 type ObjectDeclStmt struct {
-	Type string   `@Ident`
-	Name string   `@Ident`
-	Args []string `"=" "new" @Ident "(" ( @(Ident | Number | String) ( "," @(Ident | Number | String) )* )? ")"`
+	Type string
+	Name string
+	Args []string
 }
 
 type Expression struct {
-	Left     string `@(Ident | Number)`
-	Operator string `@("+" | "-" | "*" | "/" | "%")`
-	Right    string `@(Ident | Number)`
+	Left     string
+	Operator string
+	Right    string
 }
 
 type IndexAccess struct {
-	ListName string `@Ident`
-	Index    string `"[" @(Number | Ident) "]"`
+	ListName string
+	Index    string
 }
 
 type TopLevelFuncDeclStmt struct {
-	Name       string             `"fn" @Ident`
-	Parameters []*MethodParameter `"(" ( @@ ( "," @@ )* )? ")"`
-	ReturnType string             `"->" @(Ident | "void") ":"`
-	Body       []*Statement       `Newline+ @@*`
+	Name       string
+	Parameters []*MethodParameter
+	ReturnType string
+	Body       []*Statement
 }
 
 type FunctionCallStmt struct {
-	Name string   `@Ident`
-	Args []string `"(" ( @(Ident | Number | String) ( "," @(Ident | Number | String) )* )? ")"`
+	Name string
+	Args []string
 }
 
 var LoadedModules = make(map[string]*ModuleInfo)
 
-func ParseWithIndentation(input string) (*Program, error) {
-	lines := strings.Split(input, "\n")
-	statements, err := parseStatements(lines, 0, 0)
+// Parser represents the main parser
+type Parser struct {
+	tokens *TokenStream
+}
+
+// NewParser creates a new parser with the given input
+func NewParser(input string) (*Parser, error) {
+	tokens, err := NewTokenStream(input)
 	if err != nil {
 		return nil, err
 	}
-
-	var imports []*ImportStmt
-	var nonImportStatements []*Statement
-
-	for _, stmt := range statements {
-		if stmt.Import != nil {
-			imports = append(imports, stmt.Import)
-		} else {
-			nonImportStatements = append(nonImportStatements, stmt)
-		}
-	}
-
-	return &Program{Imports: imports, Statements: nonImportStatements}, nil
+	return &Parser{tokens: tokens}, nil
 }
 
-func parseStatements(lines []string, startLine, expectedIndent int) ([]*Statement, error) {
+// ParseProgram parses the entire program
+func (p *Parser) ParseProgram() (*Program, error) {
+	var imports []*ImportStmt
 	var statements []*Statement
-	i := startLine
 
-	for i < len(lines) {
-		line := lines[i]
-
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
-			i++
-			continue
-		}
-
-		indent := getIndentation(line)
-
-		if expectedIndent == 0 && len(statements) == 0 {
-			expectedIndent = indent
-		}
-
-		if indent < expectedIndent {
+	for !p.tokens.IsAtEnd() {
+		p.tokens.SkipWhitespaceAndComments()
+		if p.tokens.IsAtEnd() {
 			break
 		}
 
-		if indent > expectedIndent {
-			return nil, fmt.Errorf("unexpected indentation at line %d (expected %d, got %d)", i+1, expectedIndent, indent)
+		// Skip newlines at top level
+		if p.tokens.Match("Newline") {
+			p.tokens.Next()
+			continue
 		}
 
-		stmt, nextLine, err := parseStatement(lines, i, indent)
+		stmt, err := p.parseStatement()
 		if err != nil {
 			return nil, err
 		}
 
-		statements = append(statements, stmt)
-		i = nextLine
+		if stmt.Import != nil {
+			imports = append(imports, stmt.Import)
+		} else {
+			statements = append(statements, stmt)
+		}
+
+		// Skip trailing newlines
+		for p.tokens.Match("Newline") {
+			p.tokens.Next()
+		}
+	}
+
+	return &Program{Imports: imports, Statements: statements}, nil
+}
+
+// parseStatement parses a single statement
+func (p *Parser) parseStatement() (*Statement, error) {
+	p.tokens.SkipWhitespaceAndComments()
+
+	if p.tokens.IsAtEnd() {
+		return nil, fmt.Errorf("unexpected end of input")
+	}
+
+	current := p.tokens.Current()
+	switch current.Type {
+	case "Import":
+		return p.parseImport()
+	case "Print":
+		return p.parsePrint()
+	case "Sleep":
+		return p.parseSleep()
+	case "While":
+		return p.parseWhile()
+	case "For":
+		return p.parseFor()
+	case "If":
+		return p.parseIf()
+	case "Break":
+		return p.parseBreak()
+	case "Var":
+		return p.parseVarInferred()
+	case "Pub":
+		return p.parsePub()
+	case "Return":
+		return p.parseReturn()
+	case "Class":
+		return p.parseClass()
+	case "Fn":
+		return p.parseTopLevelFunction()
+	case "Reassign":
+		return p.parseVarAssign()
+	case "List":
+		return p.parseListDecl()
+	case "Ident":
+		return p.parseIdentStatement()
+	default:
+		return nil, fmt.Errorf("unexpected token %s at line %d", current.Type, current.Line)
+	}
+}
+
+func (p *Parser) parseImport() (*Statement, error) {
+	_, err := p.tokens.Consume("Import")
+	if err != nil {
+		return nil, err
+	}
+
+	p.tokens.SkipWhitespaceAndComments()
+	moduleToken, err := p.tokens.Consume("String")
+	if err != nil {
+		return nil, err
+	}
+
+	moduleName := strings.Trim(moduleToken.Value, "\"")
+	return &Statement{Import: &ImportStmt{Module: moduleName}}, nil
+}
+
+func (p *Parser) parsePrint() (*Statement, error) {
+	_, err := p.tokens.Consume("Print")
+	if err != nil {
+		return nil, err
+	}
+
+	p.tokens.SkipWhitespaceAndComments()
+
+	// Handle empty print statement - just print a newline
+	if p.tokens.Match("Newline") || p.tokens.IsAtEnd() {
+		return &Statement{Print: &PrintStmt{Print: ""}}, nil
+	}
+
+	// Check for string literal
+	if p.tokens.Match("String") {
+		stringToken := p.tokens.Current()
+		p.tokens.Next()
+		p.tokens.SkipWhitespaceAndComments()
+
+		// Check for format string with variables (using pipe or comma)
+		if p.tokens.Match("Pipe") || p.tokens.Match("Comma") {
+			// Consume the pipe or comma
+			delimiter := p.tokens.Current().Type
+			p.tokens.Next()
+			p.tokens.SkipWhitespaceAndComments()
+
+			formatStr := strings.Trim(stringToken.Value, "\"")
+			var variables []string
+
+			// Parse variables until end of line or statement
+			for !p.tokens.IsAtEnd() && !p.tokens.Match("Newline") {
+				if p.tokens.Match("Comma") && delimiter == "Comma" {
+					p.tokens.Next()
+					p.tokens.SkipWhitespaceAndComments()
+				}
+
+				if p.tokens.Match("Ident") {
+					varToken := p.tokens.Current()
+					variables = append(variables, varToken.Value)
+					p.tokens.Next()
+					p.tokens.SkipWhitespaceAndComments()
+				} else if p.tokens.Match("Number", "String") {
+					// Allow direct values in print statements
+					valToken := p.tokens.Current()
+					variables = append(variables, valToken.Value)
+					p.tokens.Next()
+					p.tokens.SkipWhitespaceAndComments()
+				} else {
+					break
+				}
+
+				// After first variable, only allow comma if that's our delimiter
+				if p.tokens.Match("Comma") && delimiter == "Pipe" {
+					break
+				}
+			}
+
+			return &Statement{Print: &PrintStmt{Format: formatStr, Variables: variables}}, nil
+		}
+
+		// Simple print statement with just a string
+		printStr := strings.Trim(stringToken.Value, "\"")
+		return &Statement{Print: &PrintStmt{Print: printStr}}, nil
+	}
+
+	// Handle print with just variables (no string literal)
+	var variables []string
+	for !p.tokens.IsAtEnd() && !p.tokens.Match("Newline") {
+		if p.tokens.Match("Comma") {
+			p.tokens.Next()
+			p.tokens.SkipWhitespaceAndComments()
+		}
+
+		if p.tokens.Match("Ident", "Number", "String") {
+			token := p.tokens.Current()
+			variables = append(variables, token.Value)
+			p.tokens.Next()
+			p.tokens.SkipWhitespaceAndComments()
+		} else {
+			break
+		}
+	}
+
+	if len(variables) > 0 {
+		// For multiple variables, join with spaces in the format string
+		formatStr := strings.Repeat("%v ", len(variables))
+		formatStr = strings.TrimSpace(formatStr)
+		return &Statement{Print: &PrintStmt{Format: formatStr, Variables: variables}}, nil
+	}
+
+	// If we get here, it's an empty print statement
+	return &Statement{Print: &PrintStmt{Print: ""}}, nil
+}
+
+func (p *Parser) parseSleep() (*Statement, error) {
+	_, err := p.tokens.Consume("Sleep")
+	if err != nil {
+		return nil, err
+	}
+
+	p.tokens.SkipWhitespaceAndComments()
+	durationToken, err := p.tokens.Consume("Number")
+	if err != nil {
+		return nil, err
+	}
+
+	return &Statement{Sleep: &SleepStmt{Duration: durationToken.Value}}, nil
+}
+
+func (p *Parser) parseWhile() (*Statement, error) {
+	_, err := p.tokens.Consume("While")
+	if err != nil {
+		return nil, err
+	}
+
+	p.tokens.SkipWhitespaceAndComments()
+	condition, err := p.parseExpression()
+	if err != nil {
+		return nil, err
+	}
+
+	p.tokens.SkipWhitespaceAndComments()
+	_, err = p.tokens.Consume("Colon")
+	if err != nil {
+		return nil, err
+	}
+
+	body, err := p.parseBlock()
+	if err != nil {
+		return nil, err
+	}
+
+	return &Statement{While: &WhileStmt{Condition: condition, Body: body}}, nil
+}
+
+func (p *Parser) parseFor() (*Statement, error) {
+	_, err := p.tokens.Consume("For")
+	if err != nil {
+		return nil, err
+	}
+
+	p.tokens.SkipWhitespaceAndComments()
+	varToken, err := p.tokens.Consume("Ident")
+	if err != nil {
+		return nil, err
+	}
+
+	p.tokens.SkipWhitespaceAndComments()
+	_, err = p.tokens.Consume("Assign")
+	if err != nil {
+		return nil, err
+	}
+
+	p.tokens.SkipWhitespaceAndComments()
+	startToken, err := p.tokens.Consume("Number")
+	if err != nil {
+		return nil, err
+	}
+
+	p.tokens.SkipWhitespaceAndComments()
+	_, err = p.tokens.Consume("To")
+	if err != nil {
+		return nil, err
+	}
+
+	p.tokens.SkipWhitespaceAndComments()
+	endToken, err := p.tokens.Consume("Number")
+	if err != nil {
+		return nil, err
+	}
+
+	p.tokens.SkipWhitespaceAndComments()
+	_, err = p.tokens.Consume("Colon")
+	if err != nil {
+		return nil, err
+	}
+
+	body, err := p.parseBlock()
+	if err != nil {
+		return nil, err
+	}
+
+	return &Statement{For: &ForStmt{
+		Var:   varToken.Value,
+		Start: startToken.Value,
+		End:   endToken.Value,
+		Body:  body,
+	}}, nil
+}
+
+func (p *Parser) parseIf() (*Statement, error) {
+	_, err := p.tokens.Consume("If")
+	if err != nil {
+		return nil, err
+	}
+
+	p.tokens.SkipWhitespaceAndComments()
+	condition, err := p.parseExpression()
+	if err != nil {
+		return nil, err
+	}
+
+	p.tokens.SkipWhitespaceAndComments()
+	_, err = p.tokens.Consume("Colon")
+	if err != nil {
+		return nil, err
+	}
+
+	body, err := p.parseBlock()
+	if err != nil {
+		return nil, err
+	}
+
+	var elseIfs []*ElifStmt
+	for p.tokens.Match("Elif") {
+		elifStmt, err := p.parseElif()
+		if err != nil {
+			return nil, err
+		}
+		elseIfs = append(elseIfs, elifStmt)
+	}
+
+	var elseStmt *ElseStmt
+	if p.tokens.Match("Else") {
+		elseStmt, err = p.parseElse()
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return &Statement{If: &IfStmt{
+		Condition: condition,
+		Body:      body,
+		ElseIfs:   elseIfs,
+		Else:      elseStmt,
+	}}, nil
+}
+
+func (p *Parser) parseElif() (*ElifStmt, error) {
+	_, err := p.tokens.Consume("Elif")
+	if err != nil {
+		return nil, err
+	}
+
+	p.tokens.SkipWhitespaceAndComments()
+	condition, err := p.parseExpression()
+	if err != nil {
+		return nil, err
+	}
+
+	p.tokens.SkipWhitespaceAndComments()
+	_, err = p.tokens.Consume("Colon")
+	if err != nil {
+		return nil, err
+	}
+
+	body, err := p.parseBlock()
+	if err != nil {
+		return nil, err
+	}
+
+	return &ElifStmt{Condition: condition, Body: body}, nil
+}
+
+func (p *Parser) parseElse() (*ElseStmt, error) {
+	_, err := p.tokens.Consume("Else")
+	if err != nil {
+		return nil, err
+	}
+
+	p.tokens.SkipWhitespaceAndComments()
+	_, err = p.tokens.Consume("Colon")
+	if err != nil {
+		return nil, err
+	}
+
+	body, err := p.parseBlock()
+	if err != nil {
+		return nil, err
+	}
+
+	return &ElseStmt{Body: body}, nil
+}
+
+func (p *Parser) parseBreak() (*Statement, error) {
+	_, err := p.tokens.Consume("Break")
+	if err != nil {
+		return nil, err
+	}
+
+	return &Statement{Break: &BreakStmt{Break: "break"}}, nil
+}
+
+func (p *Parser) parseVarInferred() (*Statement, error) {
+	_, err := p.tokens.Consume("Var")
+	if err != nil {
+		return nil, err
+	}
+
+	p.tokens.SkipWhitespaceAndComments()
+	nameToken, err := p.tokens.Consume("Ident")
+	if err != nil {
+		return nil, err
+	}
+
+	p.tokens.SkipWhitespaceAndComments()
+	_, err = p.tokens.Consume("Assign")
+	if err != nil {
+		return nil, err
+	}
+
+	p.tokens.SkipWhitespaceAndComments()
+	value, err := p.parseValue()
+	if err != nil {
+		return nil, err
+	}
+
+	return &Statement{VarDeclInferred: &VarDeclInferredStmt{
+		Name:  nameToken.Value,
+		Value: value,
+	}}, nil
+}
+
+func (p *Parser) parsePub() (*Statement, error) {
+	_, err := p.tokens.Consume("Pub")
+	if err != nil {
+		return nil, err
+	}
+
+	p.tokens.SkipWhitespaceAndComments()
+	if p.tokens.Match("Class") {
+		return p.parsePubClass()
+	}
+
+	// Parse pub var declaration
+	typeToken, err := p.tokens.Consume("Ident")
+	if err != nil {
+		return nil, err
+	}
+
+	p.tokens.SkipWhitespaceAndComments()
+	nameToken, err := p.tokens.Consume("Ident")
+	if err != nil {
+		return nil, err
+	}
+
+	p.tokens.SkipWhitespaceAndComments()
+	_, err = p.tokens.Consume("Assign")
+	if err != nil {
+		return nil, err
+	}
+
+	p.tokens.SkipWhitespaceAndComments()
+	value, err := p.parseValue()
+	if err != nil {
+		return nil, err
+	}
+
+	return &Statement{PubVarDecl: &PubVarDeclStmt{
+		Type:  typeToken.Value,
+		Name:  nameToken.Value,
+		Value: value,
+	}}, nil
+}
+
+func (p *Parser) parseReturn() (*Statement, error) {
+	_, err := p.tokens.Consume("Return")
+	if err != nil {
+		return nil, err
+	}
+
+	p.tokens.SkipWhitespaceAndComments()
+	value, err := p.parseValue()
+	if err != nil {
+		return nil, err
+	}
+
+	// Handle this.field references
+	if strings.HasPrefix(value, "this.") {
+		fieldName := value[5:]
+		value = "this->" + fieldName
+	}
+
+	return &Statement{Return: &ReturnStmt{Value: value}}, nil
+}
+
+func (p *Parser) parseClass() (*Statement, error) {
+	_, err := p.tokens.Consume("Class")
+	if err != nil {
+		return nil, err
+	}
+
+	p.tokens.SkipWhitespaceAndComments()
+	nameToken, err := p.tokens.Consume("Ident")
+	if err != nil {
+		return nil, err
+	}
+
+	p.tokens.SkipWhitespaceAndComments()
+	_, err = p.tokens.Consume("Colon")
+	if err != nil {
+		return nil, err
+	}
+
+	var constructor *ConstructorStmt
+	var methods []*MethodDeclStmt
+
+	// Parse class body
+	for !p.tokens.IsAtEnd() {
+		p.tokens.SkipWhitespaceAndComments()
+		if p.tokens.IsAtEnd() {
+			break
+		}
+
+		// Check for indentation (simplified - in a real implementation you'd track indentation levels)
+		if p.tokens.Match("Newline") {
+			p.tokens.Next()
+			continue
+		}
+
+		if p.tokens.Match("Init") {
+			constructor, err = p.parseConstructor()
+			if err != nil {
+				return nil, err
+			}
+		} else if p.tokens.Match("Fn") {
+			method, err := p.parseMethod()
+			if err != nil {
+				return nil, err
+			}
+			methods = append(methods, method)
+		} else {
+			// End of class body
+			break
+		}
+	}
+
+	return &Statement{ClassDecl: &ClassDeclStmt{
+		Name:        nameToken.Value,
+		Constructor: constructor,
+		Methods:     methods,
+	}}, nil
+}
+
+func (p *Parser) parsePubClass() (*Statement, error) {
+	_, err := p.tokens.Consume("Class")
+	if err != nil {
+		return nil, err
+	}
+
+	p.tokens.SkipWhitespaceAndComments()
+	nameToken, err := p.tokens.Consume("Ident")
+	if err != nil {
+		return nil, err
+	}
+
+	p.tokens.SkipWhitespaceAndComments()
+	_, err = p.tokens.Consume("Colon")
+	if err != nil {
+		return nil, err
+	}
+
+	var constructor *ConstructorStmt
+	var methods []*MethodDeclStmt
+
+	// Parse class body (similar to parseClass)
+	for !p.tokens.IsAtEnd() {
+		p.tokens.SkipWhitespaceAndComments()
+		if p.tokens.IsAtEnd() {
+			break
+		}
+
+		if p.tokens.Match("Newline") {
+			p.tokens.Next()
+			continue
+		}
+
+		if p.tokens.Match("Init") {
+			constructor, err = p.parseConstructor()
+			if err != nil {
+				return nil, err
+			}
+		} else if p.tokens.Match("Fn") {
+			method, err := p.parseMethod()
+			if err != nil {
+				return nil, err
+			}
+			methods = append(methods, method)
+		} else {
+			break
+		}
+	}
+
+	return &Statement{PubClassDecl: &PubClassDeclStmt{
+		Name:        nameToken.Value,
+		Constructor: constructor,
+		Methods:     methods,
+	}}, nil
+}
+
+func (p *Parser) parseConstructor() (*ConstructorStmt, error) {
+	_, err := p.tokens.Consume("Init")
+	if err != nil {
+		return nil, err
+	}
+
+	p.tokens.SkipWhitespaceAndComments()
+	_, err = p.tokens.Consume("LeftParen")
+	if err != nil {
+		return nil, err
+	}
+
+	parameters, err := p.parseParameterList()
+	if err != nil {
+		return nil, err
+	}
+
+	p.tokens.SkipWhitespaceAndComments()
+	_, err = p.tokens.Consume("RightParen")
+	if err != nil {
+		return nil, err
+	}
+
+	p.tokens.SkipWhitespaceAndComments()
+	_, err = p.tokens.Consume("Colon")
+	if err != nil {
+		return nil, err
+	}
+
+	fields, err := p.parseBlock()
+	if err != nil {
+		return nil, err
+	}
+
+	return &ConstructorStmt{
+		Parameters: parameters,
+		Fields:     fields,
+	}, nil
+}
+
+func (p *Parser) parseMethod() (*MethodDeclStmt, error) {
+	_, err := p.tokens.Consume("Fn")
+	if err != nil {
+		return nil, err
+	}
+
+	p.tokens.SkipWhitespaceAndComments()
+	nameToken, err := p.tokens.Consume("Ident")
+	if err != nil {
+		return nil, err
+	}
+
+	p.tokens.SkipWhitespaceAndComments()
+	_, err = p.tokens.Consume("LeftParen")
+	if err != nil {
+		return nil, err
+	}
+
+	parameters, err := p.parseParameterList()
+	if err != nil {
+		return nil, err
+	}
+
+	p.tokens.SkipWhitespaceAndComments()
+	_, err = p.tokens.Consume("RightParen")
+	if err != nil {
+		return nil, err
+	}
+
+	p.tokens.SkipWhitespaceAndComments()
+	returnType := "void"
+	if p.tokens.Match("Arrow") {
+		p.tokens.Next()
+		p.tokens.SkipWhitespaceAndComments()
+		if p.tokens.Match("Ident", "Void") {
+			returnTypeToken := p.tokens.Current()
+			returnType = returnTypeToken.Value
+			p.tokens.Next()
+		}
+	}
+
+	p.tokens.SkipWhitespaceAndComments()
+	_, err = p.tokens.Consume("Colon")
+	if err != nil {
+		return nil, err
+	}
+
+	body, err := p.parseBlock()
+	if err != nil {
+		return nil, err
+	}
+
+	return &MethodDeclStmt{
+		Name:       nameToken.Value,
+		Parameters: parameters,
+		ReturnType: returnType,
+		Body:       body,
+	}, nil
+}
+
+func (p *Parser) parseTopLevelFunction() (*Statement, error) {
+	_, err := p.tokens.Consume("Fn")
+	if err != nil {
+		return nil, err
+	}
+
+	p.tokens.SkipWhitespaceAndComments()
+	nameToken, err := p.tokens.Consume("Ident")
+	if err != nil {
+		return nil, err
+	}
+
+	p.tokens.SkipWhitespaceAndComments()
+	_, err = p.tokens.Consume("LeftParen")
+	if err != nil {
+		return nil, err
+	}
+
+	parameters, err := p.parseParameterList()
+	if err != nil {
+		return nil, err
+	}
+
+	p.tokens.SkipWhitespaceAndComments()
+	_, err = p.tokens.Consume("RightParen")
+	if err != nil {
+		return nil, err
+	}
+
+	p.tokens.SkipWhitespaceAndComments()
+	returnType := "void"
+	if p.tokens.Match("Arrow") {
+		p.tokens.Next()
+		p.tokens.SkipWhitespaceAndComments()
+		if p.tokens.Match("Ident", "Void") {
+			returnTypeToken := p.tokens.Current()
+			returnType = returnTypeToken.Value
+			p.tokens.Next()
+		}
+	}
+
+	p.tokens.SkipWhitespaceAndComments()
+	_, err = p.tokens.Consume("Colon")
+	if err != nil {
+		return nil, err
+	}
+
+	body, err := p.parseBlock()
+	if err != nil {
+		return nil, err
+	}
+
+	return &Statement{TopLevelFuncDecl: &TopLevelFuncDeclStmt{
+		Name:       nameToken.Value,
+		Parameters: parameters,
+		ReturnType: returnType,
+		Body:       body,
+	}}, nil
+}
+
+func (p *Parser) parseVarAssign() (*Statement, error) {
+	_, err := p.tokens.Consume("Reassign")
+	if err != nil {
+		return nil, err
+	}
+
+	p.tokens.SkipWhitespaceAndComments()
+	nameToken, err := p.tokens.Consume("Ident")
+	if err != nil {
+		return nil, err
+	}
+
+	p.tokens.SkipWhitespaceAndComments()
+	_, err = p.tokens.Consume("Assign")
+	if err != nil {
+		return nil, err
+	}
+
+	p.tokens.SkipWhitespaceAndComments()
+	value, err := p.parseExpression()
+	if err != nil {
+		return nil, err
+	}
+
+	return &Statement{VarAssign: &VarAssignStmt{
+		Name:  nameToken.Value,
+		Value: value,
+	}}, nil
+}
+
+func (p *Parser) parseListDecl() (*Statement, error) {
+	_, err := p.tokens.Consume("List")
+	if err != nil {
+		return nil, err
+	}
+
+	p.tokens.SkipWhitespaceAndComments()
+	_, err = p.tokens.Consume("LeftBracket")
+	if err != nil {
+		return nil, err
+	}
+
+	p.tokens.SkipWhitespaceAndComments()
+	typeToken, err := p.tokens.Consume("Ident")
+	if err != nil {
+		return nil, err
+	}
+
+	p.tokens.SkipWhitespaceAndComments()
+	_, err = p.tokens.Consume("RightBracket")
+	if err != nil {
+		return nil, err
+	}
+
+	p.tokens.SkipWhitespaceAndComments()
+	nameToken, err := p.tokens.Consume("Ident")
+	if err != nil {
+		return nil, err
+	}
+
+	p.tokens.SkipWhitespaceAndComments()
+	_, err = p.tokens.Consume("Assign")
+	if err != nil {
+		return nil, err
+	}
+
+	p.tokens.SkipWhitespaceAndComments()
+	_, err = p.tokens.Consume("LeftBracket")
+	if err != nil {
+		return nil, err
+	}
+
+	var elements []string
+	p.tokens.SkipWhitespaceAndComments()
+	if !p.tokens.Match("RightBracket") {
+		for {
+			p.tokens.SkipWhitespaceAndComments()
+			if p.tokens.Match("String", "Number") {
+				valueToken := p.tokens.Current()
+				value := valueToken.Value
+				if valueToken.Type == "String" {
+					value = strings.Trim(value, "\"")
+				}
+				elements = append(elements, value)
+				p.tokens.Next()
+			} else {
+				return nil, fmt.Errorf("expected string or number in list")
+			}
+
+			p.tokens.SkipWhitespaceAndComments()
+			if p.tokens.Match("Comma") {
+				p.tokens.Next()
+				continue
+			} else {
+				break
+			}
+		}
+	}
+
+	p.tokens.SkipWhitespaceAndComments()
+	_, err = p.tokens.Consume("RightBracket")
+	if err != nil {
+		return nil, err
+	}
+
+	return &Statement{ListDecl: &ListDeclStmt{
+		Type:     typeToken.Value,
+		Name:     nameToken.Value,
+		Elements: elements,
+	}}, nil
+}
+
+func (p *Parser) parseIdentStatement() (*Statement, error) {
+	// This handles various statements that start with an identifier
+	first := p.tokens.Current()
+
+	// Look ahead to determine what kind of statement this is
+	if p.tokens.Peek(1) != nil && p.tokens.Peek(1).Type == "Ident" &&
+		p.tokens.Peek(2) != nil && p.tokens.Peek(2).Type == "Assign" {
+		// Type name = value (variable declaration)
+		return p.parseVarDecl()
+	}
+
+	if p.tokens.Peek(1) != nil && p.tokens.Peek(1).Type == "Assign" {
+		// name = value (assignment or this.field assignment)
+		if strings.HasPrefix(first.Value, "this.") {
+			return p.parseThisFieldAssign()
+		}
+		return p.parseAssignment()
+	}
+
+	if p.tokens.Peek(1) != nil && p.tokens.Peek(1).Type == "Dot" {
+		// object.method() (method call)
+		return p.parseMethodCall()
+	}
+
+	if p.tokens.Peek(1) != nil && p.tokens.Peek(1).Type == "LeftParen" {
+		// function() (function call)
+		return p.parseFunctionCall()
+	}
+
+	// Check for object declaration: Type name = new ClassName()
+	if p.tokens.Peek(1) != nil && p.tokens.Peek(1).Type == "Ident" &&
+		p.tokens.Peek(2) != nil && p.tokens.Peek(2).Type == "Assign" &&
+		p.tokens.Peek(3) != nil && p.tokens.Peek(3).Type == "New" {
+		return p.parseObjectDecl()
+	}
+
+	return nil, fmt.Errorf("unexpected identifier statement at line %d", first.Line)
+}
+
+func (p *Parser) parseVarDecl() (*Statement, error) {
+	typeToken, err := p.tokens.Consume("Ident")
+	if err != nil {
+		return nil, err
+	}
+
+	p.tokens.SkipWhitespaceAndComments()
+	nameToken, err := p.tokens.Consume("Ident")
+	if err != nil {
+		return nil, err
+	}
+
+	p.tokens.SkipWhitespaceAndComments()
+	_, err = p.tokens.Consume("Assign")
+	if err != nil {
+		return nil, err
+	}
+
+	p.tokens.SkipWhitespaceAndComments()
+
+	// Check if this is a method call assignment
+	if p.tokens.Match("Ident") && p.tokens.Peek(1) != nil && p.tokens.Peek(1).Type == "Dot" {
+		objectToken := p.tokens.Current()
+		p.tokens.Next()
+		p.tokens.SkipWhitespaceAndComments()
+		_, err = p.tokens.Consume("Dot")
+		if err != nil {
+			return nil, err
+		}
+		p.tokens.SkipWhitespaceAndComments()
+		methodToken, err := p.tokens.Consume("Ident")
+		if err != nil {
+			return nil, err
+		}
+		p.tokens.SkipWhitespaceAndComments()
+		_, err = p.tokens.Consume("LeftParen")
+		if err != nil {
+			return nil, err
+		}
+
+		args, err := p.parseArgumentList()
+		if err != nil {
+			return nil, err
+		}
+
+		p.tokens.SkipWhitespaceAndComments()
+		_, err = p.tokens.Consume("RightParen")
+		if err != nil {
+			return nil, err
+		}
+
+		return &Statement{VarDeclMethodCall: &VarDeclMethodCallStmt{
+			Type:   typeToken.Value,
+			Name:   nameToken.Value,
+			Object: objectToken.Value,
+			Method: methodToken.Value,
+			Args:   args,
+		}}, nil
+	}
+
+	value, err := p.parseValue()
+	if err != nil {
+		return nil, err
+	}
+
+	return &Statement{VarDecl: &VarDeclStmt{
+		Type:  typeToken.Value,
+		Name:  nameToken.Value,
+		Value: value,
+	}}, nil
+}
+
+func (p *Parser) parseThisFieldAssign() (*Statement, error) {
+	nameToken, err := p.tokens.Consume("Ident")
+	if err != nil {
+		return nil, err
+	}
+
+	p.tokens.SkipWhitespaceAndComments()
+	_, err = p.tokens.Consume("Assign")
+	if err != nil {
+		return nil, err
+	}
+
+	p.tokens.SkipWhitespaceAndComments()
+	value, err := p.parseValue()
+	if err != nil {
+		return nil, err
+	}
+
+	return &Statement{VarAssign: &VarAssignStmt{
+		Name:  nameToken.Value,
+		Value: value,
+	}}, nil
+}
+
+func (p *Parser) parseAssignment() (*Statement, error) {
+	nameToken, err := p.tokens.Consume("Ident")
+	if err != nil {
+		return nil, err
+	}
+
+	p.tokens.SkipWhitespaceAndComments()
+	_, err = p.tokens.Consume("Assign")
+	if err != nil {
+		return nil, err
+	}
+
+	p.tokens.SkipWhitespaceAndComments()
+	value, err := p.parseExpression()
+	if err != nil {
+		return nil, err
+	}
+
+	return &Statement{VarAssign: &VarAssignStmt{
+		Name:  nameToken.Value,
+		Value: value,
+	}}, nil
+}
+
+func (p *Parser) parseMethodCall() (*Statement, error) {
+	objectToken, err := p.tokens.Consume("Ident")
+	if err != nil {
+		return nil, err
+	}
+
+	p.tokens.SkipWhitespaceAndComments()
+	_, err = p.tokens.Consume("Dot")
+	if err != nil {
+		return nil, err
+	}
+
+	p.tokens.SkipWhitespaceAndComments()
+	methodToken, err := p.tokens.Consume("Ident")
+	if err != nil {
+		return nil, err
+	}
+
+	p.tokens.SkipWhitespaceAndComments()
+	_, err = p.tokens.Consume("LeftParen")
+	if err != nil {
+		return nil, err
+	}
+
+	args, err := p.parseArgumentList()
+	if err != nil {
+		return nil, err
+	}
+
+	p.tokens.SkipWhitespaceAndComments()
+	_, err = p.tokens.Consume("RightParen")
+	if err != nil {
+		return nil, err
+	}
+
+	return &Statement{MethodCall: &MethodCallStmt{
+		Object: objectToken.Value,
+		Method: methodToken.Value,
+		Args:   args,
+	}}, nil
+}
+
+func (p *Parser) parseFunctionCall() (*Statement, error) {
+	nameToken, err := p.tokens.Consume("Ident")
+	if err != nil {
+		return nil, err
+	}
+
+	p.tokens.SkipWhitespaceAndComments()
+	_, err = p.tokens.Consume("LeftParen")
+	if err != nil {
+		return nil, err
+	}
+
+	args, err := p.parseArgumentList()
+	if err != nil {
+		return nil, err
+	}
+
+	p.tokens.SkipWhitespaceAndComments()
+	_, err = p.tokens.Consume("RightParen")
+	if err != nil {
+		return nil, err
+	}
+
+	return &Statement{FunctionCall: &FunctionCallStmt{
+		Name: nameToken.Value,
+		Args: args,
+	}}, nil
+}
+
+func (p *Parser) parseObjectDecl() (*Statement, error) {
+	typeToken, err := p.tokens.Consume("Ident")
+	if err != nil {
+		return nil, err
+	}
+
+	p.tokens.SkipWhitespaceAndComments()
+	nameToken, err := p.tokens.Consume("Ident")
+	if err != nil {
+		return nil, err
+	}
+
+	p.tokens.SkipWhitespaceAndComments()
+	_, err = p.tokens.Consume("Assign")
+	if err != nil {
+		return nil, err
+	}
+
+	p.tokens.SkipWhitespaceAndComments()
+	_, err = p.tokens.Consume("New")
+	if err != nil {
+		return nil, err
+	}
+
+	p.tokens.SkipWhitespaceAndComments()
+	classToken, err := p.tokens.Consume("Ident")
+	if err != nil {
+		return nil, err
+	}
+
+	// Handle module-qualified class names (module.ClassName)
+	var args []string
+	if p.tokens.Match("Dot") {
+		p.tokens.Next()
+		p.tokens.SkipWhitespaceAndComments()
+		actualClassToken, err := p.tokens.Consume("Ident")
+		if err != nil {
+			return nil, err
+		}
+		args = []string{classToken.Value, actualClassToken.Value}
+	} else {
+		args = []string{classToken.Value}
+	}
+
+	p.tokens.SkipWhitespaceAndComments()
+	_, err = p.tokens.Consume("LeftParen")
+	if err != nil {
+		return nil, err
+	}
+
+	constructorArgs, err := p.parseArgumentList()
+	if err != nil {
+		return nil, err
+	}
+	args = append(args, constructorArgs...)
+
+	p.tokens.SkipWhitespaceAndComments()
+	_, err = p.tokens.Consume("RightParen")
+	if err != nil {
+		return nil, err
+	}
+
+	return &Statement{ObjectDecl: &ObjectDeclStmt{
+		Type: typeToken.Value,
+		Name: nameToken.Value,
+		Args: args,
+	}}, nil
+}
+
+// Helper functions
+
+func (p *Parser) parseParameterList() ([]*MethodParameter, error) {
+	var parameters []*MethodParameter
+
+	p.tokens.SkipWhitespaceAndComments()
+	if p.tokens.Match("RightParen") {
+		return parameters, nil
+	}
+
+	for {
+		p.tokens.SkipWhitespaceAndComments()
+		typeToken, err := p.tokens.Consume("Ident")
+		if err != nil {
+			return nil, err
+		}
+
+		p.tokens.SkipWhitespaceAndComments()
+		nameToken, err := p.tokens.Consume("Ident")
+		if err != nil {
+			// If only one token, assume it's the name and type is "int"
+			parameters = append(parameters, &MethodParameter{
+				Type: "int",
+				Name: typeToken.Value,
+			})
+		} else {
+			parameters = append(parameters, &MethodParameter{
+				Type: typeToken.Value,
+				Name: nameToken.Value,
+			})
+		}
+
+		p.tokens.SkipWhitespaceAndComments()
+		if p.tokens.Match("Comma") {
+			p.tokens.Next()
+			continue
+		} else {
+			break
+		}
+	}
+
+	return parameters, nil
+}
+
+func (p *Parser) parseArgumentList() ([]string, error) {
+	var args []string
+
+	p.tokens.SkipWhitespaceAndComments()
+	if p.tokens.Match("RightParen") {
+		return args, nil
+	}
+
+	for {
+		p.tokens.SkipWhitespaceAndComments()
+		if p.tokens.Match("String", "Number", "Ident") {
+			argToken := p.tokens.Current()
+			args = append(args, argToken.Value)
+			p.tokens.Next()
+		} else {
+			return nil, fmt.Errorf("expected argument")
+		}
+
+		p.tokens.SkipWhitespaceAndComments()
+		if p.tokens.Match("Comma") {
+			p.tokens.Next()
+			continue
+		} else {
+			break
+		}
+	}
+
+	return args, nil
+}
+
+func (p *Parser) parseBlock() ([]*Statement, error) {
+	var statements []*Statement
+
+	// Skip initial newlines and whitespace
+	for p.tokens.Match("Newline", "Whitespace") {
+		p.tokens.Next()
+	}
+
+	// Get the base indentation level of the first line
+	baseIndent := 0
+	if p.tokens.Match("Indent") {
+		baseIndent = len(p.tokens.Current().Value)
+	}
+
+	for !p.tokens.IsAtEnd() {
+		// Skip whitespace at the start of the line
+		p.tokens.SkipWhitespaceAndComments()
+
+		// Check for end of block (empty line or dedent)
+		if p.tokens.Match("Newline") {
+			p.tokens.Next()
+			continue
+		}
+
+		// Check for dedent (less indentation than base)
+		if p.tokens.Match("Indent") {
+			currentIndent := len(p.tokens.Current().Value)
+			if currentIndent < baseIndent {
+				break
+			}
+			// Skip indentation if it matches or exceeds base
+			p.tokens.Next()
+		}
+
+		// Check for block-ending keywords at this indentation level
+		if p.tokens.Match("Elif", "Else", "Except", "Finally") {
+			break
+		}
+
+		// Skip empty lines
+		if p.tokens.Match("Newline") {
+			p.tokens.Next()
+			continue
+		}
+
+		// Parse the statement
+		stmt, err := p.parseStatement()
+		if err != nil {
+			return nil, err
+		}
+
+		if stmt != nil {
+			statements = append(statements, stmt)
+		}
+
+		// Skip trailing whitespace and comments
+		p.tokens.SkipWhitespaceAndComments()
+
+		// Expect newline after statement
+		if p.tokens.Match("Newline") {
+			p.tokens.Next()
+		} else if !p.tokens.IsAtEnd() {
+			// If there's no newline but more tokens, it might be a syntax error
+			// but we'll let the next parse attempt handle it
+			break
+		}
 	}
 
 	return statements, nil
 }
 
-func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int, error) {
-	line := strings.TrimSpace(lines[lineNum])
-	parts := strings.Fields(line)
+func (p *Parser) parseExpression() (string, error) {
+	// Handle simple literals and identifiers
+	if p.tokens.Match("Number", "Ident") {
+		token := p.tokens.Current()
+		p.tokens.Next()
+		p.tokens.SkipWhitespaceAndComments()
 
-	if len(parts) == 0 {
-		return nil, lineNum + 1, fmt.Errorf("empty statement at line %d", lineNum+1)
+		// Check if there's an operator following the token
+		if p.tokens.Match("Plus", "Minus", "Multiply", "Divide", "Modulo",
+			"Less", "Greater", "LessEqual", "GreaterEqual", "Equal", "NotEqual") {
+
+			opToken := p.tokens.Current()
+			p.tokens.Next()
+			p.tokens.SkipWhitespaceAndComments()
+
+			// Parse the right-hand side of the expression
+			right, err := p.parseExpression()
+			if err != nil {
+				return "", fmt.Errorf("invalid expression after operator: %v", err)
+			}
+
+			// Return the combined expression
+			return fmt.Sprintf("%s %s %s", token.Value, opToken.Value, right), nil
+		}
+
+		// No operator, just return the token value
+		return token.Value, nil
 	}
 
-	switch parts[0] {
-	case "import":
-		if len(parts) < 2 {
-			return nil, lineNum + 1, fmt.Errorf("import statement requires a module name at line %d", lineNum+1)
-		}
-		moduleName := strings.Trim(strings.Join(parts[1:], " "), "\"")
-		return &Statement{Import: &ImportStmt{Module: moduleName}}, lineNum + 1, nil
+	// Handle string literals
+	if p.tokens.Match("String") {
+		token := p.tokens.Current()
+		p.tokens.Next()
+		return token.Value, nil
+	}
 
-	case "var":
-		if len(parts) < 4 || parts[2] != "=" {
-			return nil, lineNum + 1, fmt.Errorf("var declaration format error at line %d (expected: var name = value)", lineNum+1)
-		}
-		varName := parts[1]
-		value := strings.Join(parts[3:], " ")
+	// Handle unary operators (like -1, !condition)
+	if p.tokens.Match("Minus", "Not") {
+		opToken := p.tokens.Current()
+		p.tokens.Next()
+		p.tokens.SkipWhitespaceAndComments()
 
-		if strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"") {
-			// Maybe do something here later, idk.
-		} else if strings.Contains(value, " ") && !strings.Contains(value, "\"") && !strings.HasPrefix(value, "new ") {
-			value = fmt.Sprintf("\"%s\"", value)
-		}
-
-		return &Statement{VarDeclInferred: &VarDeclInferredStmt{Name: varName, Value: value}}, lineNum + 1, nil
-
-	case "pub":
-		return parsePubStatement(lines, lineNum, currentIndent)
-
-	case "return":
-		if len(parts) < 2 {
-			return nil, lineNum + 1, fmt.Errorf("return statement requires a value at line %d", lineNum+1)
-		}
-		value := strings.Join(parts[1:], " ")
-		if strings.HasPrefix(value, "this.") {
-			fieldName := value[5:]
-			value = "this->" + fieldName
-		}
-		return &Statement{Return: &ReturnStmt{Value: value}}, lineNum + 1, nil
-
-	case "class":
-		return parseClassStatement(lines, lineNum, currentIndent)
-
-	case "fn":
-		return parseTopLevelFunctionStatement(lines, lineNum, currentIndent)
-
-	case "print":
-		if len(parts) < 2 {
-			return nil, lineNum + 1, fmt.Errorf("print statement requires a string at line %d", lineNum+1)
-		}
-
-		if strings.Contains(line, "|") {
-			var (
-				pipeIndex  = strings.Index(line, "|")
-				formatPart = strings.TrimSpace(line[5:pipeIndex])
-				varPart    = strings.TrimSpace(line[pipeIndex+1:])
-			)
-			if strings.HasPrefix(formatPart, "\"") && strings.HasSuffix(formatPart, "\"") {
-				formatPart = formatPart[1 : len(formatPart)-1]
-			}
-
-			var variables []string
-			if varPart != "" {
-				varList := strings.SplitSeq(varPart, ",")
-				for v := range varList {
-					variables = append(variables, strings.TrimSpace(v))
-				}
-			}
-
-			return &Statement{Print: &PrintStmt{Format: formatPart, Variables: variables}}, lineNum + 1, nil
-		} else if strings.Contains(line, ",") && strings.Contains(line, "\"") {
-			quoteStart := strings.Index(line, "\"")
-			quoteEnd := strings.LastIndex(line, "\"")
-			if quoteStart != -1 && quoteEnd != -1 && quoteEnd > quoteStart {
-				afterQuote := strings.TrimSpace(line[quoteEnd+1:])
-				if strings.HasPrefix(afterQuote, ",") {
-					formatPart := strings.TrimSpace(line[quoteStart+1 : quoteEnd])
-					varPart := strings.TrimSpace(line[quoteEnd+1:])
-
-					var variables []string
-					if varPart != "" && strings.HasPrefix(varPart, ",") {
-						varPart = strings.TrimSpace(varPart[1:])
-						varList := strings.SplitSeq(varPart, ",")
-						for v := range varList {
-							variables = append(variables, strings.TrimSpace(v))
-						}
-					}
-
-					return &Statement{Print: &PrintStmt{Format: formatPart, Variables: variables}}, lineNum + 1, nil
-				}
-			}
-		}
-
-		str := strings.TrimSpace(line[5:])
-		if strings.HasPrefix(str, "\"") && strings.HasSuffix(str, "\"") {
-			str = str[1 : len(str)-1]
-		}
-		return &Statement{Print: &PrintStmt{Print: str}}, lineNum + 1, nil
-
-	case "sleep":
-		if len(parts) < 2 {
-			return nil, lineNum + 1, fmt.Errorf("sleep statement requires a number at line %d", lineNum+1)
-		}
-		return &Statement{Sleep: &SleepStmt{Duration: parts[1]}}, lineNum + 1, nil
-
-	case "break":
-		return &Statement{Break: &BreakStmt{Break: "break"}}, lineNum + 1, nil
-
-	case "while":
-		if len(parts) < 2 || !strings.HasSuffix(line, ":") {
-			return nil, lineNum + 1, fmt.Errorf("while statement format error at line %d", lineNum+1)
-		}
-		var (
-			colonIndex    = strings.LastIndex(line, ":")
-			conditionPart = strings.TrimSpace(line[5:colonIndex])
-			condition     = conditionPart
-		)
-		expectedBodyIndent := currentIndent + 4
-		if currentIndent == 0 {
-			bodyStartLine := lineNum + 1
-			for bodyStartLine < len(lines) {
-				bodyLine := lines[bodyStartLine]
-				if strings.TrimSpace(bodyLine) != "" && !strings.HasPrefix(strings.TrimSpace(bodyLine), "#") {
-					expectedBodyIndent = getIndentation(bodyLine)
-					break
-				}
-				bodyStartLine++
-			}
-			if expectedBodyIndent <= currentIndent {
-				expectedBodyIndent = currentIndent + 4
-			}
-		}
-
-		body, err := parseStatements(lines, lineNum+1, expectedBodyIndent)
+		expr, err := p.parseExpression()
 		if err != nil {
-			return nil, lineNum + 1, err
+			return "", fmt.Errorf("invalid expression after unary operator: %v", err)
 		}
+		return fmt.Sprintf("%s%s", opToken.Value, expr), nil
+	}
 
-		nextLine := findEndOfBlock(lines, lineNum+1, expectedBodyIndent)
-
-		return &Statement{While: &WhileStmt{Condition: condition, Body: body}}, nextLine, nil
-
-	case "for":
-		equalsIndex := strings.Index(line, "=")
-		toIndex := strings.Index(line, "to")
-		colonIndex := strings.LastIndex(line, ":")
-		if equalsIndex == -1 || toIndex == -1 || colonIndex == -1 ||
-			!(equalsIndex > strings.Index(line, "for") && equalsIndex < toIndex && toIndex < colonIndex) {
-			return nil, lineNum + 1, fmt.Errorf("for statement format error at line %d", lineNum+1)
-		}
-
-		varName := strings.TrimSpace(line[strings.Index(line, "for")+len("for") : equalsIndex])
-		start := strings.TrimSpace(line[equalsIndex+1 : toIndex])
-		end := strings.TrimSpace(line[toIndex+len("to") : colonIndex])
-
-		if varName == "" || start == "" || end == "" {
-			return nil, lineNum + 1, fmt.Errorf("for statement missing variable, start, or end expression at line %d", lineNum+1)
-		}
-
-		expectedBodyIndent := currentIndent + 4
-		if currentIndent == 0 {
-			bodyStartLine := lineNum + 1
-			for bodyStartLine < len(lines) {
-				bodyLine := lines[bodyStartLine]
-				if strings.TrimSpace(bodyLine) != "" && !strings.HasPrefix(strings.TrimSpace(bodyLine), "#") {
-					expectedBodyIndent = getIndentation(bodyLine)
-					break
-				}
-				bodyStartLine++
-			}
-			if expectedBodyIndent <= currentIndent {
-				expectedBodyIndent = currentIndent + 4
-			}
-		}
-
-		body, err := parseStatements(lines, lineNum+1, expectedBodyIndent)
+	// Handle parenthesized expressions
+	if p.tokens.Match("LeftParen") {
+		p.tokens.Next()
+		expr, err := p.parseExpression()
 		if err != nil {
-			return nil, lineNum + 1, err
+			return "", err
 		}
 
-		nextLine := findEndOfBlock(lines, lineNum+1, expectedBodyIndent)
-
-		return &Statement{For: &ForStmt{Var: varName, Start: start, End: end, Body: body}}, nextLine, nil
-
-	case "if":
-		if len(parts) < 2 || !strings.HasSuffix(line, ":") {
-			return nil, lineNum + 1, fmt.Errorf("if statement format error at line %d", lineNum+1)
+		if !p.tokens.Match("RightParen") {
+			return "", fmt.Errorf("expected ')' after expression")
 		}
-		var (
-			colonIndex         = strings.LastIndex(line, ":")
-			conditionPart      = strings.TrimSpace(line[2:colonIndex])
-			condition          = conditionPart
-			expectedBodyIndent = currentIndent + 4
-		)
-		if currentIndent == 0 {
-			bodyStartLine := lineNum + 1
-			for bodyStartLine < len(lines) {
-				bodyLine := lines[bodyStartLine]
-				if strings.TrimSpace(bodyLine) != "" && !strings.HasPrefix(strings.TrimSpace(bodyLine), "#") {
-					expectedBodyIndent = getIndentation(bodyLine)
-					break
-				}
-				bodyStartLine++
-			}
-			if expectedBodyIndent <= currentIndent {
-				expectedBodyIndent = currentIndent + 4
-			}
-		}
-
-		body, err := parseStatements(lines, lineNum+1, expectedBodyIndent)
-		if err != nil {
-			return nil, lineNum + 1, err
-		}
-
-		nextLine := findEndOfBlock(lines, lineNum+1, expectedBodyIndent)
-
-		var elseIfs []*ElifStmt
-		for nextLine < len(lines) {
-			nextTrimmed := strings.TrimSpace(lines[nextLine])
-			if nextTrimmed == "" || strings.HasPrefix(nextTrimmed, "#") {
-				nextLine++
-				continue
-			}
-
-			nextIndent := getIndentation(lines[nextLine])
-			if nextIndent != currentIndent {
-				break
-			}
-
-			if !strings.HasPrefix(nextTrimmed, "elif ") {
-				break
-			}
-
-			elifStmt, newNextLine, err := parseElifStatement(lines, nextLine, currentIndent)
-			if err != nil {
-				return nil, nextLine, err
-			}
-
-			elseIfs = append(elseIfs, elifStmt)
-			nextLine = newNextLine
-		}
-
-		var elseStmt *ElseStmt
-		if nextLine < len(lines) {
-			nextTrimmed := strings.TrimSpace(lines[nextLine])
-			if nextTrimmed != "" && !strings.HasPrefix(nextTrimmed, "#") {
-				nextIndent := getIndentation(lines[nextLine])
-				if nextIndent == currentIndent && strings.HasPrefix(nextTrimmed, "else:") {
-					var err error
-					elseStmt, nextLine, err = parseElseStatement(lines, nextLine, currentIndent)
-					if err != nil {
-						return nil, nextLine, err
-					}
-				}
-			}
-		}
-
-		return &Statement{If: &IfStmt{Condition: condition, Body: body, ElseIfs: elseIfs, Else: elseStmt}}, nextLine, nil
-
-	case "reassign":
-		if len(parts) < 4 || parts[2] != "=" {
-			return nil, lineNum + 1, fmt.Errorf("reassign statement format error at line %d (expected: reassign var = value)", lineNum+1)
-		}
-
-		varName := parts[1]
-		value := strings.Join(parts[3:], " ")
-
-		if strings.Contains(varName, "[") && strings.Contains(varName, "]") {
-			value = handleIndexAssignment(line, varName, value)
-		} else if len(parts) >= 6 && IsOperator(parts[4]) {
-			left := parts[3]
-			operator := parts[4]
-			right := parts[5]
-			value = left + " " + operator + " " + right
-		} else if strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"") {
-			value = value[1 : len(value)-1]
-		}
-
-		return &Statement{VarAssign: &VarAssignStmt{Name: varName, Value: value}}, lineNum + 1, nil
-
-	case "elif":
-		return nil, lineNum + 1, fmt.Errorf("elif statement must follow an if statement at line %d", lineNum+1)
-
-	case "else":
-		return nil, lineNum + 1, fmt.Errorf("else statement must follow an if statement at line %d", lineNum+1)
-
-	default:
-		// Handle this.field assignments
-		if strings.HasPrefix(parts[0], "this.") && len(parts) >= 3 && parts[1] == "=" {
-			fieldName := parts[0][5:] // Remove "this."
-			value := strings.Join(parts[2:], " ")
-			return &Statement{VarAssign: &VarAssignStmt{Name: "this." + fieldName, Value: value}}, lineNum + 1, nil
-		}
-
-		if strings.Contains(line, "(") && strings.Contains(line, ")") && !strings.Contains(line, "=") && !strings.Contains(line, ".") {
-			parenStart := strings.Index(line, "(")
-			parenEnd := strings.LastIndex(line, ")")
-
-			if parenStart > 0 {
-				funcName := strings.TrimSpace(line[:parenStart])
-				var args []string
-
-				if parenEnd > parenStart+1 {
-					argsStr := strings.TrimSpace(line[parenStart+1 : parenEnd])
-					if argsStr != "" {
-						argsList := strings.Split(argsStr, ",")
-						for _, arg := range argsList {
-							args = append(args, strings.TrimSpace(arg))
-						}
-					}
-				}
-
-				return &Statement{FunctionCall: &FunctionCallStmt{Name: funcName, Args: args}}, lineNum + 1, nil
-			}
-		}
-
-		if strings.Contains(line, ".") && strings.Contains(line, "(") && strings.Contains(line, ")") && !strings.Contains(line, "=") {
-			dotIndex := strings.Index(line, ".")
-			parenIndex := strings.Index(line, "(")
-			if dotIndex < parenIndex {
-				objectName := strings.TrimSpace(line[:dotIndex])
-				methodPart := strings.TrimSpace(line[dotIndex+1:])
-
-				methodEndIndex := strings.Index(methodPart, "(")
-				if methodEndIndex == -1 {
-					return nil, lineNum + 1, fmt.Errorf("invalid method call syntax at line %d", lineNum+1)
-				}
-
-				methodName := strings.TrimSpace(methodPart[:methodEndIndex])
-				argsStart := strings.Index(line, "(")
-				argsEnd := strings.LastIndex(line, ")")
-
-				var args []string
-				if argsEnd > argsStart+1 {
-					argsStr := strings.TrimSpace(line[argsStart+1 : argsEnd])
-					if argsStr != "" {
-						argsList := strings.Split(argsStr, ",")
-						for _, arg := range argsList {
-							args = append(args, strings.TrimSpace(arg))
-						}
-					}
-				}
-
-				return &Statement{MethodCall: &MethodCallStmt{Object: objectName, Method: methodName, Args: args}}, lineNum + 1, nil
-			}
-		}
-
-		if len(parts) >= 5 && parts[2] == "=" && parts[3] == "new" {
-			typeName := parts[0]
-			varName := parts[1]
-			newPart := strings.TrimSpace(line[strings.Index(line, "new")+3:])
-			parenStart := strings.Index(newPart, "(")
-			if parenStart == -1 {
-				return nil, lineNum + 1, fmt.Errorf("object declaration missing parentheses at line %d", lineNum+1)
-			}
-
-			className := strings.TrimSpace(newPart[:parenStart])
-			var args []string
-			if strings.Contains(className, ".") {
-				parts := strings.Split(className, ".")
-				if len(parts) == 2 {
-					args = []string{parts[0], parts[1]}
-				} else {
-					return nil, lineNum + 1, fmt.Errorf("invalid module-qualified class name at line %d", lineNum+1)
-				}
-			} else {
-				args = []string{className}
-			}
-
-			argsStart := strings.Index(line, "(")
-			argsEnd := strings.LastIndex(line, ")")
-			if argsStart != -1 && argsEnd != -1 && argsEnd > argsStart+1 {
-				constructorArgsStr := strings.TrimSpace(line[argsStart+1 : argsEnd])
-				if constructorArgsStr != "" {
-					constructorArgsList := strings.Split(constructorArgsStr, ",")
-					for _, arg := range constructorArgsList {
-						args = append(args, strings.TrimSpace(arg))
-					}
-				}
-			}
-
-			return &Statement{ObjectDecl: &ObjectDeclStmt{Type: typeName, Name: varName, Args: args}}, lineNum + 1, nil
-		}
-
-		if strings.HasPrefix(parts[0], "list[") && strings.Contains(parts[0], "]") {
-			if len(parts) < 4 || parts[2] != "=" {
-				return nil, lineNum + 1, fmt.Errorf("list declaration format error at line %d (expected: list[type] name = [elements])", lineNum+1)
-			}
-
-			typeStart := strings.Index(parts[0], "[")
-			typeEnd := strings.Index(parts[0], "]")
-			if typeStart == -1 || typeEnd == -1 || typeEnd <= typeStart {
-				return nil, lineNum + 1, fmt.Errorf("invalid list type declaration at line %d", lineNum+1)
-			}
-
-			listType := parts[0][typeStart+1 : typeEnd]
-			listName := parts[1]
-
-			elementsStart := strings.Index(line, "[")
-			secondBracketPos := strings.Index(line[elementsStart+1:], "[")
-			if secondBracketPos != -1 {
-				elementsStart = elementsStart + 1 + secondBracketPos
-			} else {
-				return nil, lineNum + 1, fmt.Errorf("list declaration missing elements at line %d", lineNum+1)
-			}
-
-			elementsEnd := strings.LastIndex(line, "]")
-			if elementsEnd == -1 || elementsEnd <= elementsStart {
-				return nil, lineNum + 1, fmt.Errorf("list declaration missing closing bracket at line %d", lineNum+1)
-			}
-
-			elementsStr := strings.TrimSpace(line[elementsStart+1 : elementsEnd])
-			var elements []string
-
-			if elementsStr != "" {
-				elementsList := strings.Split(elementsStr, ",")
-				for _, elem := range elementsList {
-					elem = strings.TrimSpace(elem)
-					if elem != "" {
-						if strings.HasPrefix(elem, "\"") && strings.HasSuffix(elem, "\"") {
-							elem = elem[1 : len(elem)-1]
-						}
-						elements = append(elements, elem)
-					}
-				}
-			}
-
-			return &Statement{ListDecl: &ListDeclStmt{Type: listType, Name: listName, Elements: elements}}, lineNum + 1, nil
-		}
-
-		if len(parts) >= 4 && parts[2] == "=" && isValidType(parts[0]) {
-			varType := parts[0]
-			varName := parts[1]
-			value := strings.Join(parts[3:], " ")
-			if strings.Contains(value, ".") && strings.Contains(value, "(") && strings.Contains(value, ")") {
-				dotIndex := strings.Index(value, ".")
-				parenIndex := strings.Index(value, "(")
-				if dotIndex < parenIndex {
-					objectName := strings.TrimSpace(value[:dotIndex])
-					methodPart := strings.TrimSpace(value[dotIndex+1:])
-					methodEndIndex := strings.Index(methodPart, "(")
-					methodName := strings.TrimSpace(methodPart[:methodEndIndex])
-
-					argsStart := strings.Index(value, "(")
-					argsEnd := strings.LastIndex(value, ")")
-					var args []string
-					if argsEnd > argsStart+1 {
-						argsStr := strings.TrimSpace(value[argsStart+1 : argsEnd])
-						if argsStr != "" {
-							argsList := strings.Split(argsStr, ",")
-							for _, arg := range argsList {
-								args = append(args, strings.TrimSpace(arg))
-							}
-						}
-					}
-
-					return &Statement{VarDeclMethodCall: &VarDeclMethodCallStmt{
-						Type:   varType,
-						Name:   varName,
-						Object: objectName,
-						Method: methodName,
-						Args:   args,
-					}}, lineNum + 1, nil
-				}
-			}
-
-			if strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"") {
-				value = value[1 : len(value)-1]
-			}
-
-			return &Statement{VarDecl: &VarDeclStmt{Type: varType, Name: varName, Value: value}}, lineNum + 1, nil
-		}
-
-		return nil, lineNum + 1, fmt.Errorf("unknown statement type '%s' at line %d", parts[0], lineNum+1)
+		p.tokens.Next()
+		return fmt.Sprintf("(%s)", expr), nil
 	}
+
+	return "", fmt.Errorf("expected expression, got %s", p.tokens.Current().Type)
 }
 
-func parsePubStatement(lines []string, lineNum, currentIndent int) (*Statement, int, error) {
-	line := strings.TrimSpace(lines[lineNum])
-	parts := strings.Fields(line)
+func (p *Parser) parseValue() (string, error) {
+	p.tokens.SkipWhitespaceAndComments()
 
-	if len(parts) < 2 {
-		return nil, lineNum + 1, fmt.Errorf("pub statement requires a declaration at line %d", lineNum+1)
+	if p.tokens.Match("String") {
+		token := p.tokens.Current()
+		p.tokens.Next()
+		return strings.Trim(token.Value, "\""), nil
 	}
 
-	switch parts[1] {
-	case "class":
-		return parsePubClassStatement(lines, lineNum, currentIndent)
-	default:
-		if len(parts) >= 5 && parts[3] == "=" && isValidType(parts[1]) {
-			varType := parts[1]
-			varName := parts[2]
-			value := strings.Join(parts[4:], " ")
-
-			if strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"") {
-				value = value[1 : len(value)-1]
-			}
-
-			return &Statement{PubVarDecl: &PubVarDeclStmt{Type: varType, Name: varName, Value: value}}, lineNum + 1, nil
-		}
-		return nil, lineNum + 1, fmt.Errorf("invalid pub declaration at line %d", lineNum+1)
+	if p.tokens.Match("Number", "Ident") {
+		token := p.tokens.Current()
+		p.tokens.Next()
+		return token.Value, nil
 	}
+
+	return "", fmt.Errorf("expected value")
 }
 
-func parsePubClassStatement(lines []string, lineNum, currentIndent int) (*Statement, int, error) {
-	line := strings.TrimSpace(lines[lineNum])
-	parts := strings.Fields(line)
-
-	if len(parts) < 3 || !strings.HasSuffix(line, ":") {
-		return nil, lineNum + 1, fmt.Errorf("pub class declaration format error at line %d", lineNum+1)
-	}
-
-	className := parts[2]
-	if strings.HasSuffix(className, ":") {
-		className = className[:len(className)-1]
-	}
-
-	expectedBodyIndent := currentIndent + 4
-	if currentIndent == 0 {
-		bodyStartLine := lineNum + 1
-		for bodyStartLine < len(lines) {
-			bodyLine := lines[bodyStartLine]
-			if strings.TrimSpace(bodyLine) != "" && !strings.HasPrefix(strings.TrimSpace(bodyLine), "#") {
-				expectedBodyIndent = getIndentation(bodyLine)
-				break
-			}
-			bodyStartLine++
-		}
-		if expectedBodyIndent <= currentIndent {
-			expectedBodyIndent = currentIndent + 4
-		}
-	}
-
-	var constructor *ConstructorStmt
-	var methods []*MethodDeclStmt
-	nextLine := lineNum + 1
-
-	for nextLine < len(lines) {
-		line := lines[nextLine]
-		trimmed := strings.TrimSpace(line)
-
-		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
-			nextLine++
-			continue
-		}
-
-		indent := getIndentation(line)
-		if indent < expectedBodyIndent {
-			break
-		}
-
-		if indent != expectedBodyIndent {
-			return nil, nextLine + 1, fmt.Errorf("unexpected indentation in class body at line %d", nextLine+1)
-		}
-
-		if strings.HasPrefix(trimmed, "init") {
-			var parameters []*MethodParameter
-			var initBody []*Statement
-			var initBodyIndent int
-			var initStartLine int
-
-			// Check if constructor has parameters
-			if strings.Contains(trimmed, "(") && strings.Contains(trimmed, ")") {
-				// Parse constructor with parameters
-				parenStart := strings.Index(trimmed, "(")
-				parenEnd := strings.Index(trimmed, ")")
-				if parenStart != -1 && parenEnd != -1 && parenEnd > parenStart {
-					paramsStr := strings.TrimSpace(trimmed[parenStart+1 : parenEnd])
-					if paramsStr != "" {
-						paramList := strings.Split(paramsStr, ",")
-						for _, paramStr := range paramList {
-							paramStr = strings.TrimSpace(paramStr)
-							paramParts := strings.Fields(paramStr)
-							if len(paramParts) == 2 {
-								param := &MethodParameter{
-									Type: paramParts[0],
-									Name: paramParts[1],
-								}
-								parameters = append(parameters, param)
-							} else if len(paramParts) == 1 {
-								param := &MethodParameter{
-									Type: "int",
-									Name: paramParts[0],
-								}
-								parameters = append(parameters, param)
-							}
-						}
-					}
-				}
-			}
-
-			// Find constructor body
-			initBodyIndent = expectedBodyIndent + 4
-			initStartLine = nextLine + 1
-			for initStartLine < len(lines) {
-				initLine := lines[initStartLine]
-				if strings.TrimSpace(initLine) != "" && !strings.HasPrefix(strings.TrimSpace(initLine), "#") {
-					initBodyIndent = getIndentation(initLine)
-					break
-				}
-				initStartLine++
-			}
-
-			initBody, err := parseStatements(lines, initStartLine, initBodyIndent)
-			if err != nil {
-				return nil, nextLine + 1, err
-			}
-
-			constructor = &ConstructorStmt{Parameters: parameters, Fields: initBody}
-			nextLine = findEndOfBlock(lines, initStartLine, initBodyIndent)
-		} else if strings.HasPrefix(trimmed, "fn ") {
-			method, newNextLine, err := parseMethodStatement(lines, nextLine, expectedBodyIndent)
-			if err != nil {
-				return nil, nextLine + 1, err
-			}
-			methods = append(methods, method)
-			nextLine = newNextLine
-		} else {
-			nextLine++
-		}
-	}
-
-	pubClassStmt := &PubClassDeclStmt{
-		Name:        className,
-		Constructor: constructor,
-		Methods:     methods,
-	}
-
-	return &Statement{PubClassDecl: pubClassStmt}, nextLine, nil
-}
-
-func parseClassStatement(lines []string, lineNum, currentIndent int) (*Statement, int, error) {
-	line := strings.TrimSpace(lines[lineNum])
-	parts := strings.Fields(line)
-
-	if len(parts) < 2 || !strings.HasSuffix(line, ":") {
-		return nil, lineNum + 1, fmt.Errorf("class declaration format error at line %d", lineNum+1)
-	}
-
-	className := parts[1]
-	if strings.HasSuffix(className, ":") {
-		className = className[:len(className)-1]
-	}
-
-	expectedBodyIndent := currentIndent + 4
-	if currentIndent == 0 {
-		bodyStartLine := lineNum + 1
-		for bodyStartLine < len(lines) {
-			bodyLine := lines[bodyStartLine]
-			if strings.TrimSpace(bodyLine) != "" && !strings.HasPrefix(strings.TrimSpace(bodyLine), "#") {
-				expectedBodyIndent = getIndentation(bodyLine)
-				break
-			}
-			bodyStartLine++
-		}
-		if expectedBodyIndent <= currentIndent {
-			expectedBodyIndent = currentIndent + 4
-		}
-	}
-
-	var constructor *ConstructorStmt
-	var methods []*MethodDeclStmt
-	nextLine := lineNum + 1
-
-	for nextLine < len(lines) {
-		line := lines[nextLine]
-		trimmed := strings.TrimSpace(line)
-
-		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
-			nextLine++
-			continue
-		}
-
-		indent := getIndentation(line)
-		if indent < expectedBodyIndent {
-			break
-		}
-
-		if indent != expectedBodyIndent {
-			return nil, nextLine + 1, fmt.Errorf("unexpected indentation in class body at line %d", nextLine+1)
-		}
-
-		if strings.HasPrefix(trimmed, "init") {
-			var parameters []*MethodParameter
-			var initBody []*Statement
-			var initBodyIndent int
-			var initStartLine int
-
-			// Check if constructor has parameters
-			if strings.Contains(trimmed, "(") && strings.Contains(trimmed, ")") {
-				// Parse constructor with parameters
-				parenStart := strings.Index(trimmed, "(")
-				parenEnd := strings.Index(trimmed, ")")
-				if parenStart != -1 && parenEnd != -1 && parenEnd > parenStart {
-					paramsStr := strings.TrimSpace(trimmed[parenStart+1 : parenEnd])
-					if paramsStr != "" {
-						paramList := strings.Split(paramsStr, ",")
-						for _, paramStr := range paramList {
-							paramStr = strings.TrimSpace(paramStr)
-							paramParts := strings.Fields(paramStr)
-							if len(paramParts) == 2 {
-								param := &MethodParameter{
-									Type: paramParts[0],
-									Name: paramParts[1],
-								}
-								parameters = append(parameters, param)
-							} else if len(paramParts) == 1 {
-								param := &MethodParameter{
-									Type: "int",
-									Name: paramParts[0],
-								}
-								parameters = append(parameters, param)
-							}
-						}
-					}
-				}
-			}
-
-			// Find constructor body
-			initBodyIndent = expectedBodyIndent + 4
-			initStartLine = nextLine + 1
-			for initStartLine < len(lines) {
-				initLine := lines[initStartLine]
-				if strings.TrimSpace(initLine) != "" && !strings.HasPrefix(strings.TrimSpace(initLine), "#") {
-					initBodyIndent = getIndentation(initLine)
-					break
-				}
-				initStartLine++
-			}
-
-			initBody, err := parseStatements(lines, initStartLine, initBodyIndent)
-			if err != nil {
-				return nil, nextLine + 1, err
-			}
-
-			constructor = &ConstructorStmt{Parameters: parameters, Fields: initBody}
-			nextLine = findEndOfBlock(lines, initStartLine, initBodyIndent)
-		} else if strings.HasPrefix(trimmed, "fn ") {
-			method, newNextLine, err := parseMethodStatement(lines, nextLine, expectedBodyIndent)
-			if err != nil {
-				return nil, nextLine + 1, err
-			}
-			methods = append(methods, method)
-			nextLine = newNextLine
-		} else {
-			nextLine++
-		}
-	}
-
-	classStmt := &ClassDeclStmt{
-		Name:        className,
-		Constructor: constructor,
-		Methods:     methods,
-	}
-
-	return &Statement{ClassDecl: classStmt}, nextLine, nil
-}
-
-func parseTopLevelFunctionStatement(lines []string, lineNum, currentIndent int) (*Statement, int, error) {
-	line := strings.TrimSpace(lines[lineNum])
-
-	if !strings.HasPrefix(line, "fn ") || !strings.HasSuffix(line, ":") {
-		return nil, lineNum + 1, fmt.Errorf("invalid top-level function declaration at line %d", lineNum+1)
-	}
-
-	signature := strings.TrimSpace(line[3 : len(line)-1])
-	parenStart := strings.Index(signature, "(")
-	if parenStart == -1 {
-		return nil, lineNum + 1, fmt.Errorf("function declaration missing parameters at line %d", lineNum+1)
-	}
-
-	funcName := strings.TrimSpace(signature[:parenStart])
-	parenEnd := strings.Index(signature, ")")
-	if parenEnd == -1 || parenEnd <= parenStart {
-		return nil, lineNum + 1, fmt.Errorf("function declaration missing closing parenthesis at line %d", lineNum+1)
-	}
-
-	paramsStr := strings.TrimSpace(signature[parenStart+1 : parenEnd])
-	var parameters []*MethodParameter
-	if paramsStr != "" {
-		paramList := strings.Split(paramsStr, ",")
-		for _, paramStr := range paramList {
-			paramStr = strings.TrimSpace(paramStr)
-			paramParts := strings.Fields(paramStr)
-			if len(paramParts) == 2 {
-				param := &MethodParameter{
-					Type: paramParts[0],
-					Name: paramParts[1],
-				}
-				parameters = append(parameters, param)
-			} else if len(paramParts) == 1 {
-				param := &MethodParameter{
-					Type: "int",
-					Name: paramParts[0],
-				}
-				parameters = append(parameters, param)
-			}
-		}
-	}
-
-	returnTypePart := strings.TrimSpace(signature[parenEnd+1:])
-	var returnType string
-	if strings.HasPrefix(returnTypePart, "->") {
-		returnType = strings.TrimSpace(returnTypePart[2:])
-	} else {
-		returnType = "void"
-	}
-
-	expectedBodyIndent := currentIndent + 4
-	bodyStartLine := lineNum + 1
-	for bodyStartLine < len(lines) {
-		bodyLine := lines[bodyStartLine]
-		if strings.TrimSpace(bodyLine) != "" && !strings.HasPrefix(strings.TrimSpace(bodyLine), "#") {
-			expectedBodyIndent = getIndentation(bodyLine)
-			break
-		}
-		bodyStartLine++
-	}
-
-	body, err := parseStatements(lines, bodyStartLine, expectedBodyIndent)
+// Updated main parsing function to use the new parser
+func ParseWithIndentation(input string) (*Program, error) {
+	parser, err := NewParser(input)
 	if err != nil {
-		return nil, lineNum + 1, err
+		return nil, err
 	}
-
-	nextLine := findEndOfBlock(lines, bodyStartLine, expectedBodyIndent)
-
-	funcDecl := &TopLevelFuncDeclStmt{
-		Name:       funcName,
-		Parameters: parameters,
-		ReturnType: returnType,
-		Body:       body,
-	}
-
-	return &Statement{TopLevelFuncDecl: funcDecl}, nextLine, nil
+	return parser.ParseProgram()
 }
 
-func parseMethodStatement(lines []string, lineNum, currentIndent int) (*MethodDeclStmt, int, error) {
-	line := strings.TrimSpace(lines[lineNum])
-
-	if !strings.HasPrefix(line, "fn ") || !strings.HasSuffix(line, ":") {
-		return nil, lineNum + 1, fmt.Errorf("invalid method declaration at line %d", lineNum+1)
-	}
-
-	signature := strings.TrimSpace(line[3 : len(line)-1])
-	parenStart := strings.Index(signature, "(")
-	if parenStart == -1 {
-		return nil, lineNum + 1, fmt.Errorf("method declaration missing parameters at line %d", lineNum+1)
-	}
-
-	methodName := strings.TrimSpace(signature[:parenStart])
-	parenEnd := strings.Index(signature, ")")
-	if parenEnd == -1 || parenEnd <= parenStart {
-		return nil, lineNum + 1, fmt.Errorf("method declaration missing closing parenthesis at line %d", lineNum+1)
-	}
-
-	paramsStr := strings.TrimSpace(signature[parenStart+1 : parenEnd])
-	var parameters []*MethodParameter
-	if paramsStr != "" {
-		paramList := strings.SplitSeq(paramsStr, ",")
-		for paramStr := range paramList {
-			paramStr = strings.TrimSpace(paramStr)
-			paramParts := strings.Fields(paramStr)
-			if len(paramParts) == 2 {
-				param := &MethodParameter{
-					Type: paramParts[0],
-					Name: paramParts[1],
-				}
-				parameters = append(parameters, param)
-			} else if len(paramParts) == 1 {
-				param := &MethodParameter{
-					Type: "int",
-					Name: paramParts[0],
-				}
-				parameters = append(parameters, param)
-			}
-		}
-	}
-	returnTypePart := strings.TrimSpace(signature[parenEnd+1:])
-	var returnType string
-	if strings.HasPrefix(returnTypePart, "->") {
-		returnType = strings.TrimSpace(returnTypePart[2:])
-	} else {
-		returnType = "void"
-	}
-	expectedBodyIndent := currentIndent + 4
-	bodyStartLine := lineNum + 1
-	for bodyStartLine < len(lines) {
-		bodyLine := lines[bodyStartLine]
-		if strings.TrimSpace(bodyLine) != "" && !strings.HasPrefix(strings.TrimSpace(bodyLine), "#") {
-			expectedBodyIndent = getIndentation(bodyLine)
-			break
-		}
-		bodyStartLine++
-	}
-
-	body, err := parseStatements(lines, bodyStartLine, expectedBodyIndent)
-	if err != nil {
-		return nil, lineNum + 1, err
-	}
-
-	nextLine := findEndOfBlock(lines, bodyStartLine, expectedBodyIndent)
-
-	return &MethodDeclStmt{
-		Name:       methodName,
-		Parameters: parameters,
-		ReturnType: returnType,
-		Body:       body,
-	}, nextLine, nil
-}
-
-func handleIndexAssignment(line, varName, value string) string {
-	return value
-}
-
-func parseElifStatement(lines []string, lineNum, currentIndent int) (*ElifStmt, int, error) {
-	line := strings.TrimSpace(lines[lineNum])
-	parts := strings.Fields(line)
-
-	if len(parts) < 2 || !strings.HasSuffix(line, ":") {
-		return nil, lineNum + 1, fmt.Errorf("elif statement format error at line %d", lineNum+1)
-	}
-
-	var (
-		colonIndex         = strings.LastIndex(line, ":")
-		conditionPart      = strings.TrimSpace(line[4:colonIndex])
-		condition          = conditionPart
-		expectedBodyIndent = currentIndent + 4
-	)
-
-	if currentIndent == 0 {
-		bodyStartLine := lineNum + 1
-		for bodyStartLine < len(lines) {
-			bodyLine := lines[bodyStartLine]
-			if strings.TrimSpace(bodyLine) != "" && !strings.HasPrefix(strings.TrimSpace(bodyLine), "#") {
-				expectedBodyIndent = getIndentation(bodyLine)
-				break
-			}
-			bodyStartLine++
-		}
-		if expectedBodyIndent <= currentIndent {
-			expectedBodyIndent = currentIndent + 4
-		}
-	}
-
-	body, err := parseStatements(lines, lineNum+1, expectedBodyIndent)
-	if err != nil {
-		return nil, lineNum + 1, err
-	}
-
-	nextLine := findEndOfBlock(lines, lineNum+1, expectedBodyIndent)
-
-	return &ElifStmt{Condition: condition, Body: body}, nextLine, nil
-}
-
-func parseElseStatement(lines []string, lineNum, currentIndent int) (*ElseStmt, int, error) {
-	line := strings.TrimSpace(lines[lineNum])
-
-	if line != "else:" {
-		return nil, lineNum + 1, fmt.Errorf("else statement format error at line %d", lineNum+1)
-	}
-
-	var expectedBodyIndent = currentIndent + 4
-
-	if currentIndent == 0 {
-		bodyStartLine := lineNum + 1
-		for bodyStartLine < len(lines) {
-			bodyLine := lines[bodyStartLine]
-			if strings.TrimSpace(bodyLine) != "" && !strings.HasPrefix(strings.TrimSpace(bodyLine), "#") {
-				expectedBodyIndent = getIndentation(bodyLine)
-				break
-			}
-			bodyStartLine++
-		}
-		if expectedBodyIndent <= currentIndent {
-			expectedBodyIndent = currentIndent + 4
-		}
-	}
-
-	body, err := parseStatements(lines, lineNum+1, expectedBodyIndent)
-	if err != nil {
-		return nil, lineNum + 1, err
-	}
-
-	nextLine := findEndOfBlock(lines, lineNum+1, expectedBodyIndent)
-
-	return &ElseStmt{Body: body}, nextLine, nil
-}
+// Utility functions (keeping the existing ones that are still needed)
 
 func LoadModule(moduleName string, baseDir string) (*ModuleInfo, error) {
 	if module, exists := LoadedModules[moduleName]; exists {
@@ -1385,39 +1900,4 @@ func isValidType(s string) bool {
 func IsOperator(s string) bool {
 	operators := []string{"+", "-", "*", "/", "%"}
 	return slices.Contains(operators, s)
-}
-
-func getIndentation(line string) int {
-	indent := 0
-	shouldBreak := false
-	for _, char := range line {
-		switch char {
-		case ' ':
-			indent++
-		case '\t':
-			indent += 4
-		default:
-			shouldBreak = true
-		}
-		if shouldBreak {
-			break
-		}
-	}
-	return indent
-}
-
-func findEndOfBlock(lines []string, startLine, blockIndent int) int {
-	for i := startLine; i < len(lines); i++ {
-		line := lines[i]
-		trimmed := strings.TrimSpace(line)
-
-		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
-			continue
-		}
-
-		if getIndentation(line) < blockIndent {
-			return i
-		}
-	}
-	return len(lines)
 }
