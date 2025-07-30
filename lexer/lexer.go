@@ -81,8 +81,6 @@ func (p *Parser) parseStatement() (*Statement, error) {
 		return p.parseWhile()
 	case "For":
 		return p.parseFor()
-	case "If":
-		return p.parseIf()
 	case "Break":
 		return p.parseBreak()
 	case "Var":
@@ -249,12 +247,26 @@ func (p *Parser) parseWhile() (*Statement, error) {
 		return nil, err
 	}
 
-	// Ensure we have a newline after the colon
+	// Skip to the next line to handle the indented block
 	p.tokens.SkipWhitespaceAndComments()
 	if p.tokens.Match("Newline") {
 		p.tokens.Next()
+		// Skip any empty lines
+		for p.tokens.Match("Newline") {
+			p.tokens.Next()
+		}
 	}
 
+	// The next token should be an Indent token for the block
+	if !p.tokens.Match("Indent") {
+		// If no indentation, it's an empty block
+		return &Statement{While: &WhileStmt{Condition: condition, Body: []*Statement{}}}, nil
+	}
+
+	// Consume the Indent token
+	p.tokens.Next()
+
+	// Parse the indented block
 	body, err := p.parseBlock()
 	if err != nil {
 		return nil, err
@@ -270,105 +282,93 @@ func (p *Parser) parseFor() (*Statement, error) {
 	}
 
 	p.tokens.SkipWhitespaceAndComments()
+
+	// Parse the loop variable
 	varToken, err := p.tokens.Consume("Ident")
 	if err != nil {
 		return nil, err
 	}
 
 	p.tokens.SkipWhitespaceAndComments()
+
+	// Parse the '='
 	_, err = p.tokens.Consume("Assign")
 	if err != nil {
 		return nil, err
 	}
 
 	p.tokens.SkipWhitespaceAndComments()
+
+	// Parse the start number
 	startToken, err := p.tokens.Consume("Number")
 	if err != nil {
 		return nil, err
 	}
 
 	p.tokens.SkipWhitespaceAndComments()
+
+	// Parse 'to'
 	_, err = p.tokens.Consume("To")
 	if err != nil {
 		return nil, err
 	}
 
 	p.tokens.SkipWhitespaceAndComments()
+
+	// Parse the end number
 	endToken, err := p.tokens.Consume("Number")
 	if err != nil {
 		return nil, err
 	}
 
 	p.tokens.SkipWhitespaceAndComments()
+
+	// Parse the colon
 	_, err = p.tokens.Consume("Colon")
 	if err != nil {
 		return nil, err
 	}
 
+	// Skip to the next line to handle the indented block
 	p.tokens.SkipWhitespaceAndComments()
 	if p.tokens.Match("Newline") {
 		p.tokens.Next()
+		// Skip any empty lines
+		for p.tokens.Match("Newline") {
+			p.tokens.Next()
+		}
 	}
 
+	// The next token should be an Indent token for the block
+	if !p.tokens.Match("Indent") {
+		// If no indentation, it's an empty block
+		return &Statement{
+			For: &ForStmt{
+				Var:   varToken.Value,
+				Start: startToken.Value,
+				End:   endToken.Value,
+				Body:  []*Statement{},
+			},
+		}, nil
+	}
+
+	// Consume the Indent token
+	p.tokens.Next()
+
+	// Parse the loop body
 	body, err := p.parseBlock()
 	if err != nil {
 		return nil, err
 	}
 
-	return &Statement{For: &ForStmt{
-		Var:   varToken.Value,
-		Start: startToken.Value,
-		End:   endToken.Value,
-		Body:  body,
-	}}, nil
-}
-
-func (p *Parser) parseIf() (*Statement, error) {
-	_, err := p.tokens.Consume("If")
-	if err != nil {
-		return nil, err
-	}
-
-	p.tokens.SkipWhitespaceAndComments()
-	condition, err := p.parseExpression()
-	if err != nil {
-		return nil, err
-	}
-
-	p.tokens.SkipWhitespaceAndComments()
-	_, err = p.tokens.Consume("Colon")
-	if err != nil {
-		return nil, err
-	}
-
-	body, err := p.parseBlock()
-	if err != nil {
-		return nil, err
-	}
-
-	var elseIfs []*ElifStmt
-	for p.tokens.Match("Elif") {
-		elifStmt, err := p.parseElif()
-		if err != nil {
-			return nil, err
-		}
-		elseIfs = append(elseIfs, elifStmt)
-	}
-
-	var elseStmt *ElseStmt
-	if p.tokens.Match("Else") {
-		elseStmt, err = p.parseElse()
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	return &Statement{If: &IfStmt{
-		Condition: condition,
-		Body:      body,
-		ElseIfs:   elseIfs,
-		Else:      elseStmt,
-	}}, nil
+	return &Statement{
+		For: &ForStmt{
+			Var:   varToken.Value,
+			Start: startToken.Value,
+			End:   endToken.Value,
+			Body:  body,
+		},
+	}, nil
 }
 
 func (p *Parser) parseElif() (*ElifStmt, error) {
@@ -1281,27 +1281,12 @@ func (p *Parser) parseArgumentList() ([]string, error) {
 func (p *Parser) parseBlock() ([]*Statement, error) {
 	var statements []*Statement
 
-	p.tokens.SkipWhitespaceAndComments()
+	for {
+		// Skip whitespace and comments
+		p.tokens.SkipWhitespaceAndComments()
 
-	if p.tokens.Match("Newline") {
-		p.tokens.Next()
-	}
-
-	// Get the base indentation level of the first line
-	baseIndent := 0
-	if p.tokens.Match("Indent") {
-		baseIndent = len(p.tokens.Current().Value)
-		p.tokens.Next() // consume the indent
-	}
-
-	for !p.tokens.IsAtEnd() {
-		// Skip whitespace and comments but NOT indent tokens
-		for p.tokens.Current() != nil && (p.tokens.Current().Type == "Whitespace" || p.tokens.Current().Type == "Comment") {
-			p.tokens.Next()
-		}
-
-		// Check for end of input
-		if p.tokens.IsAtEnd() {
+		// Check for end of input or dedent
+		if p.tokens.IsAtEnd() || p.tokens.Match("Dedent") {
 			break
 		}
 
@@ -1309,22 +1294,6 @@ func (p *Parser) parseBlock() ([]*Statement, error) {
 		if p.tokens.Match("Newline") {
 			p.tokens.Next()
 			continue
-		}
-
-		// Check for dedent (less indentation than base) or no indentation
-		if p.tokens.Match("Indent") {
-			currentIndent := len(p.tokens.Current().Value)
-			if currentIndent < baseIndent {
-				// Dedent detected - end of block
-				break
-			} else if currentIndent == baseIndent {
-				// Skip indentation if it matches exactly
-				p.tokens.Next()
-			}
-			// If currentIndent > baseIndent, do not consume the indent here; let parseStatement handle nested blocks.
-		} else if baseIndent > 0 {
-			// No indentation but we expect some - this is a dedent to column 0
-			break
 		}
 
 		// Check for block-ending keywords at this indentation level
@@ -1338,20 +1307,32 @@ func (p *Parser) parseBlock() ([]*Statement, error) {
 			return nil, err
 		}
 
-		if stmt != nil {
-			statements = append(statements, stmt)
+		if stmt == nil {
+			// If we couldn't parse a statement, break to avoid infinite loop
+			break
 		}
+
+		statements = append(statements, stmt)
 
 		// Skip trailing whitespace and comments
 		for p.tokens.Current() != nil && (p.tokens.Current().Type == "Whitespace" || p.tokens.Current().Type == "Comment") {
 			p.tokens.Next()
 		}
 
-		if !p.tokens.Match("Newline") && !p.tokens.IsAtEnd() {
+		// If we're not at a newline or the end, something's wrong
+		if !p.tokens.Match("Newline") && !p.tokens.IsAtEnd() && !p.tokens.Match("Dedent") {
 			break
 		}
+
+		// Consume the newline if present
 		if p.tokens.Match("Newline") {
 			p.tokens.Next()
+		}
+
+		// If we hit a dedent, consume it and break
+		if p.tokens.Match("Dedent") {
+			p.tokens.Next()
+			break
 		}
 	}
 

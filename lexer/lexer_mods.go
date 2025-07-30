@@ -163,18 +163,76 @@ func tokenize(input string) ([]Token, error) {
 		return nil, err
 	}
 
-	var tokens []Token
+	var (
+		tokens    []Token
+		indentStack = []int{0} // Start with 0 indentation level
+		lineStart   = true
+		currentIndent = 0
+	)
+
 	for {
 		token, err := lex.Next()
 		if err != nil {
 			return nil, err
 		}
 		if token.EOF() {
+			// Add dedent tokens for all remaining indentation levels
+			for i := len(indentStack) - 1; i > 0; i-- {
+				tokens = append(tokens, Token{
+					Type:  "Dedent",
+					Value: "",
+					Line:  token.Pos.Line,
+					Col:   token.Pos.Column,
+				})
+			}
 			break
 		}
 
+		tokenType := tokenTypeToName(token.Type)
+
+		// Handle indentation at the start of a line
+		if lineStart && tokenType == "Indent" {
+			currentIndent = len(token.Value)
+			// If this is a new indentation level, add an indent token
+			if currentIndent > indentStack[len(indentStack)-1] {
+				indentStack = append(indentStack, currentIndent)
+				tokens = append(tokens, Token{
+					Type:  "Indent",
+					Value: token.Value,
+					Line:  token.Pos.Line,
+					Col:   token.Pos.Column,
+				})
+			} else if currentIndent < indentStack[len(indentStack)-1] {
+				// Dedent: pop from stack until we find matching indentation
+				for len(indentStack) > 0 && currentIndent < indentStack[len(indentStack)-1] {
+					indentStack = indentStack[:len(indentStack)-1]
+					tokens = append(tokens, Token{
+						Type:  "Dedent",
+						Value: "",
+						Line:  token.Pos.Line,
+						Col:   token.Pos.Column,
+					})
+				}
+				// If no matching indentation level found, it's an error
+				if len(indentStack) == 0 || currentIndent != indentStack[len(indentStack)-1] {
+					return nil, fmt.Errorf("inconsistent indentation at line %d", token.Pos.Line)
+				}
+			}
+			// Don't add the original Indent token, we've handled it
+			continue
+		}
+
+		// Track line starts for indentation
+		if tokenType == "Newline" {
+			lineStart = true
+			currentIndent = 0
+		} else if tokenType != "Whitespace" && tokenType != "Comment" {
+			lineStart = false
+		}
+
+		// Add the token
 		tokens = append(tokens, Token{
-			Type:  tokenTypeToName(token.Type),
+			Type:  tokenType,
 			Value: token.Value,
 			Line:  token.Pos.Line,
 			Col:   token.Pos.Column,
