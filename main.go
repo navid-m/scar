@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"scar/lexer"
 	"scar/preprocessor"
+	"scar/renderer"
 	"strings"
 )
 
@@ -40,7 +41,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	cCode := preprocessor.InsertMacros(renderC(program, baseDir))
+	cCode := preprocessor.InsertMacros(renderer.RenderC(program, baseDir))
 	// fmt.Println(cCode)
 
 	tmpCPath := cleanedName + ".c"

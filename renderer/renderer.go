@@ -1,4 +1,4 @@
-package main
+package renderer
 
 import (
 	"fmt"
@@ -33,7 +33,7 @@ var globalObjects = make(map[string]*ObjectInfo)
 var globalFunctions = make(map[string]*lexer.TopLevelFuncDeclStmt)
 var currentModule = ""
 
-func renderC(program *lexer.Program, baseDir string) string {
+func RenderC(program *lexer.Program, baseDir string) string {
 	var b strings.Builder
 
 	for _, importStmt := range program.Imports {

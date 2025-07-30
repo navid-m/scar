@@ -2,6 +2,7 @@ package main
 
 import (
 	"scar/lexer"
+	"scar/renderer"
 	"strings"
 	"testing"
 )
@@ -33,7 +34,7 @@ int main() {
 	}
 
 	var (
-		result       = renderC(program, ".")
+		result       = renderer.RenderC(program, ".")
 		expectedNorm = normalizeWhitespace(expected)
 		resultNorm   = normalizeWhitespace(result)
 	)
@@ -74,7 +75,7 @@ int main() {
 	}
 
 	var (
-		result       = renderC(program, ".")
+		result       = renderer.RenderC(program, ".")
 		expectedNorm = normalizeWhitespace(expected)
 		resultNorm   = normalizeWhitespace(result)
 	)
@@ -119,7 +120,7 @@ int main() {
 	}
 
 	var (
-		result       = renderC(program, ".")
+		result       = renderer.RenderC(program, ".")
 		expectedNorm = normalizeWhitespace(expected)
 		resultNorm   = normalizeWhitespace(result)
 	)
