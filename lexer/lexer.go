@@ -616,6 +616,12 @@ func (p *Parser) parseWhile() (*Statement, error) {
 		return nil, err
 	}
 
+	// Ensure we have a newline after the colon
+	p.tokens.SkipWhitespaceAndComments()
+	if p.tokens.Match("Newline") {
+		p.tokens.Next()
+	}
+
 	body, err := p.parseBlock()
 	if err != nil {
 		return nil, err
@@ -664,6 +670,11 @@ func (p *Parser) parseFor() (*Statement, error) {
 	_, err = p.tokens.Consume("Colon")
 	if err != nil {
 		return nil, err
+	}
+
+	p.tokens.SkipWhitespaceAndComments()
+	if p.tokens.Match("Newline") {
+		p.tokens.Next()
 	}
 
 	body, err := p.parseBlock()
@@ -1637,8 +1648,9 @@ func (p *Parser) parseArgumentList() ([]string, error) {
 func (p *Parser) parseBlock() ([]*Statement, error) {
 	var statements []*Statement
 
-	// Skip initial newlines and whitespace
-	for p.tokens.Match("Newline", "Whitespace") {
+	p.tokens.SkipWhitespaceAndComments()
+
+	if p.tokens.Match("Newline") {
 		p.tokens.Next()
 	}
 
@@ -1646,37 +1658,46 @@ func (p *Parser) parseBlock() ([]*Statement, error) {
 	baseIndent := 0
 	if p.tokens.Match("Indent") {
 		baseIndent = len(p.tokens.Current().Value)
+		p.tokens.Next() // consume the indent
 	}
 
 	for !p.tokens.IsAtEnd() {
-		// Skip whitespace at the start of the line
-		p.tokens.SkipWhitespaceAndComments()
+		// Skip whitespace and comments but NOT indent tokens
+		for p.tokens.Current() != nil && (p.tokens.Current().Type == "Whitespace" || p.tokens.Current().Type == "Comment") {
+			p.tokens.Next()
+		}
 
-		// Check for end of block (empty line or dedent)
+		// Check for end of input
+		if p.tokens.IsAtEnd() {
+			break
+		}
+
+		// Check for newlines
 		if p.tokens.Match("Newline") {
 			p.tokens.Next()
 			continue
 		}
 
-		// Check for dedent (less indentation than base)
+		// Check for dedent (less indentation than base) or no indentation
 		if p.tokens.Match("Indent") {
 			currentIndent := len(p.tokens.Current().Value)
 			if currentIndent < baseIndent {
+				// Dedent detected - end of block
 				break
+			} else if currentIndent > baseIndent {
+				// More indentation than expected - this is an error for the while block
+				return nil, fmt.Errorf("unexpected indentation at line %d", p.tokens.Current().Line)
 			}
-			// Skip indentation if it matches or exceeds base
+			// Skip indentation if it matches exactly
 			p.tokens.Next()
+		} else if baseIndent > 0 {
+			// No indentation but we expect some - this is a dedent to column 0
+			break
 		}
 
 		// Check for block-ending keywords at this indentation level
 		if p.tokens.Match("Elif", "Else", "Except", "Finally") {
 			break
-		}
-
-		// Skip empty lines
-		if p.tokens.Match("Newline") {
-			p.tokens.Next()
-			continue
 		}
 
 		// Parse the statement
@@ -1690,15 +1711,18 @@ func (p *Parser) parseBlock() ([]*Statement, error) {
 		}
 
 		// Skip trailing whitespace and comments
-		p.tokens.SkipWhitespaceAndComments()
+		for p.tokens.Current() != nil && (p.tokens.Current().Type == "Whitespace" || p.tokens.Current().Type == "Comment") {
+			p.tokens.Next()
+		}
 
 		// Expect newline after statement
+		if !p.tokens.Match("Newline") && !p.tokens.IsAtEnd() {
+			// If there's no newline but more tokens, it might be a syntax error
+			// or the end of the block. Let the next parse attempt handle it.
+			break
+		}
 		if p.tokens.Match("Newline") {
 			p.tokens.Next()
-		} else if !p.tokens.IsAtEnd() {
-			// If there's no newline but more tokens, it might be a syntax error
-			// but we'll let the next parse attempt handle it
-			break
 		}
 	}
 
