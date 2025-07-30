@@ -41,6 +41,12 @@ func (p *Parser) ParseProgram() (*Program, error) {
 			continue
 		}
 
+		// Skip dedent tokens at top level (in case they follow a block)
+		if p.tokens.Match("Dedent") {
+			p.tokens.Next()
+			continue
+		}
+
 		stmt, err := p.parseStatement()
 		if err != nil {
 			return nil, err
@@ -1285,8 +1291,14 @@ func (p *Parser) parseBlock() ([]*Statement, error) {
 		// Skip whitespace and comments
 		p.tokens.SkipWhitespaceAndComments()
 
-		// Check for end of input or dedent
-		if p.tokens.IsAtEnd() || p.tokens.Match("Dedent") {
+		// Check for end of input
+		if p.tokens.IsAtEnd() {
+			break
+		}
+
+		// Check for dedent explicitly to end the block
+		if p.tokens.Match("Dedent") {
+			p.tokens.Next() // Consume the Dedent token
 			break
 		}
 
@@ -1315,24 +1327,11 @@ func (p *Parser) parseBlock() ([]*Statement, error) {
 		statements = append(statements, stmt)
 
 		// Skip trailing whitespace and comments
-		for p.tokens.Current() != nil && (p.tokens.Current().Type == "Whitespace" || p.tokens.Current().Type == "Comment") {
-			p.tokens.Next()
-		}
-
-		// If we're not at a newline or the end, something's wrong
-		if !p.tokens.Match("Newline") && !p.tokens.IsAtEnd() && !p.tokens.Match("Dedent") {
-			break
-		}
+		p.tokens.SkipWhitespaceAndComments()
 
 		// Consume the newline if present
 		if p.tokens.Match("Newline") {
 			p.tokens.Next()
-		}
-
-		// If we hit a dedent, consume it and break
-		if p.tokens.Match("Dedent") {
-			p.tokens.Next()
-			break
 		}
 	}
 
