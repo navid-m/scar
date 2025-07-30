@@ -1,5 +1,4 @@
 print "Starting FizzBuzz..."
-sleep 1
 
 for i = 1 to 100:
     if i % 3 == 0 && i % 5 == 0:
