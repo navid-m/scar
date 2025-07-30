@@ -8,7 +8,6 @@ import (
 	"strings"
 )
 
-// Import and module system types
 type ImportStmt struct {
 	Module string
 }
