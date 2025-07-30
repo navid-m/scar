@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"scar/lexer"
 	"scar/renderer"
 	"strings"
@@ -211,6 +213,32 @@ func TestWhileConditions(t *testing.T) {
 			t.Errorf("Expected condition '%s', got '%s' for input '%s'",
 				tc.condition, whileStmt.Condition, tc.input)
 		}
+	}
+}
+
+func TestCompileAllTestFiles(t *testing.T) {
+	files, err := filepath.Glob("tests/*.x")
+	if err != nil {
+		t.Fatalf("Failed to list test files: %v", err)
+	}
+
+	for _, file := range files {
+		t.Run(file, func(t *testing.T) {
+			content, err := os.ReadFile(file)
+			if err != nil {
+				t.Fatalf("Failed to read file %s: %v", file, err)
+			}
+
+			program, err := lexer.ParseWithIndentation(string(content))
+			if err != nil {
+				t.Fatalf("Failed to parse file %s: %v", file, err)
+			}
+
+			output := renderer.RenderC(program, ".")
+			if len(output) == 0 {
+				t.Errorf("Rendered output is empty for file %s", file)
+			}
+		})
 	}
 }
 
