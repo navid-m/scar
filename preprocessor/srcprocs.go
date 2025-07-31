@@ -127,8 +127,6 @@ func ProcessAppendExpressions(source string) string {
 				if comma != -1 {
 					mapName := strings.TrimSpace(argStr[:comma])
 					value := strings.TrimSpace(argStr[comma+1:])
-
-					// Generate append operation that returns the map name
 					result.WriteString("(" + mapName + "_append_helper(" + mapName + "_keys, " + mapName + "_values, &" + mapName + "_size, " + value + "), " + mapName + ")")
 					i = endParen + 1
 					continue
