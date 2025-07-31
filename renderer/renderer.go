@@ -225,12 +225,17 @@ func collectClassInfoWithModule(classDecl *lexer.ClassDeclStmt, moduleName strin
 	}
 
 	if classDecl.Constructor != nil {
+		// Track unique fields to avoid duplicates
+		fieldMap := make(map[string]bool)
 		for _, param := range classDecl.Constructor.Parameters {
-			fieldInfo := FieldInfo{
-				Name: param.Name,
-				Type: param.Type,
+			if _, exists := fieldMap[param.Name]; !exists {
+				fieldInfo := FieldInfo{
+					Name: param.Name,
+					Type: param.Type,
+				}
+				classInfo.Fields = append(classInfo.Fields, fieldInfo)
+				fieldMap[param.Name] = true
 			}
-			classInfo.Fields = append(classInfo.Fields, fieldInfo)
 		}
 		for _, stmt := range classDecl.Constructor.Fields {
 			if stmt.VarDecl != nil {
@@ -238,20 +243,26 @@ func collectClassInfoWithModule(classDecl *lexer.ClassDeclStmt, moduleName strin
 				if strings.HasPrefix(fieldName, "this.") {
 					fieldName = fieldName[5:]
 				}
-				fieldInfo := FieldInfo{
-					Name: fieldName,
-					Type: stmt.VarDecl.Type,
+				if _, exists := fieldMap[fieldName]; !exists {
+					fieldInfo := FieldInfo{
+						Name: fieldName,
+						Type: stmt.VarDecl.Type,
+					}
+					classInfo.Fields = append(classInfo.Fields, fieldInfo)
+					fieldMap[fieldName] = true
 				}
-				classInfo.Fields = append(classInfo.Fields, fieldInfo)
 			}
 			if stmt.VarAssign != nil && strings.HasPrefix(stmt.VarAssign.Name, "this.") {
 				fieldName := stmt.VarAssign.Name[5:]
-				fieldType := inferTypeFromValue(stmt.VarAssign.Value)
-				fieldInfo := FieldInfo{
-					Name: fieldName,
-					Type: fieldType,
+				if _, exists := fieldMap[fieldName]; !exists {
+					fieldType := inferTypeFromValue(stmt.VarAssign.Value)
+					fieldInfo := FieldInfo{
+						Name: fieldName,
+						Type: fieldType,
+					}
+					classInfo.Fields = append(classInfo.Fields, fieldInfo)
+					fieldMap[fieldName] = true
 				}
-				classInfo.Fields = append(classInfo.Fields, fieldInfo)
 			}
 		}
 	}
@@ -326,19 +337,28 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 	fmt.Fprintf(b, "    %s* obj = malloc(sizeof(%s));\n", className, className)
 
 	if classDecl.Constructor != nil {
+		// Track assigned fields to avoid duplicates
+		assignedFields := make(map[string]bool)
+
 		if len(classDecl.Constructor.Parameters) > 0 {
 			for _, param := range classDecl.Constructor.Parameters {
-				if param.Type == "string" {
-					fmt.Fprintf(b, "    strcpy(obj->%s, %s);\n", param.Name, param.Name)
-				} else {
-					fmt.Fprintf(b, "    obj->%s = %s;\n", param.Name, param.Name)
+				if _, exists := assignedFields[param.Name]; !exists {
+					if param.Type == "string" {
+						fmt.Fprintf(b, "    strcpy(obj->%s, %s);\n", param.Name, param.Name)
+					} else {
+						fmt.Fprintf(b, "    obj->%s = %s;\n", param.Name, param.Name)
+					}
+					assignedFields[param.Name] = true
 				}
 			}
 		}
 
 		for _, field := range classDecl.Constructor.Fields {
 			if field.VarDecl != nil && strings.HasPrefix(field.VarDecl.Name, "this.") {
-				fieldName := field.VarDecl.Name[5:] // Remove "this."
+				fieldName := field.VarDecl.Name[5:]
+				if _, exists := assignedFields[fieldName]; exists {
+					continue
+				}
 				value := field.VarDecl.Value
 				fieldType := field.VarDecl.Type
 
@@ -350,8 +370,12 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 				} else {
 					fmt.Fprintf(b, "    obj->%s = %s;\n", fieldName, value)
 				}
+				assignedFields[fieldName] = true
 			} else if field.VarAssign != nil && strings.HasPrefix(field.VarAssign.Name, "this.") {
-				fieldName := field.VarAssign.Name[5:] // Remove "this."
+				fieldName := field.VarAssign.Name[5:]
+				if _, exists := assignedFields[fieldName]; exists {
+					continue
+				}
 				value := field.VarAssign.Value
 				var fieldType string
 				if classInfo, exists := globalClasses[className]; exists {
@@ -371,6 +395,7 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 				} else {
 					fmt.Fprintf(b, "    obj->%s = %s;\n", fieldName, value)
 				}
+				assignedFields[fieldName] = true
 			} else if field.Print != nil {
 				if field.Print.Format != "" && len(field.Print.Variables) > 0 {
 					args := make([]string, len(field.Print.Variables))
@@ -416,7 +441,6 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 		b.WriteString("}\n\n")
 	}
 }
-
 func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent string, className string, program *lexer.Program) {
 	for _, stmt := range stmts {
 		switch {
@@ -570,61 +594,34 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			typeName := stmt.ObjectDecl.Type
 			args := stmt.ObjectDecl.Args
 			resolvedType := typeName
-			originalType := typeName
 
-			if len(args) > 1 && strings.Contains(args[0]+"."+args[1], ".") {
-				originalType = args[0] + "." + args[1]
-				resolvedType = lexer.GenerateUniqueSymbol(args[1], args[0])
-			} else if strings.Contains(typeName, ".") {
+			if strings.Contains(typeName, ".") {
 				parts := strings.Split(typeName, ".")
-				originalType = typeName
 				resolvedType = lexer.GenerateUniqueSymbol(parts[1], parts[0])
 			} else if moduleName, exists := isImportedType(typeName, program.Imports); exists {
-				originalType = typeName
 				resolvedType = lexer.GenerateUniqueSymbol(typeName, moduleName)
 			}
+
 			objectInfo := &ObjectInfo{
 				Name: stmt.ObjectDecl.Name,
-				Type: originalType,
+				Type: typeName,
 			}
 			globalObjects[stmt.ObjectDecl.Name] = objectInfo
 
+			// Only include constructor arguments, excluding type name
 			argsStr := ""
-			if strings.Contains(typeName, ".") && len(args) > 2 {
-				argsStr = strings.Join(args[2:], ", ")
-			} else if !strings.Contains(typeName, ".") && len(args) > 1 {
-				argsStr = strings.Join(args[1:], ", ")
+			if len(args) > 0 {
+				// Filter out type name if present in args
+				constructorArgs := make([]string, 0)
+				for _, arg := range args {
+					// Skip the type name if it matches resolvedType or typeName
+					if arg != typeName && arg != resolvedType {
+						constructorArgs = append(constructorArgs, lexer.ResolveSymbol(arg, currentModule))
+					}
+				}
+				argsStr = strings.Join(constructorArgs, ", ")
 			}
 			fmt.Fprintf(b, "%s%s* %s = %s_new(%s);\n", indent, resolvedType, varName, resolvedType, argsStr)
-		case stmt.MethodCall != nil:
-			objectName := lexer.ResolveSymbol(stmt.MethodCall.Object, currentModule)
-			methodName := stmt.MethodCall.Method
-			args := make([]string, len(stmt.MethodCall.Args))
-			for i, arg := range stmt.MethodCall.Args {
-				args[i] = lexer.ResolveSymbol(arg, currentModule)
-			}
-			argsStr := strings.Join(args, ", ")
-			var resolvedClassName string
-			for _, obj := range globalObjects {
-				if obj.Name == stmt.MethodCall.Object {
-					resolvedClassName = obj.Type
-					if strings.Contains(resolvedClassName, ".") {
-						parts := strings.Split(resolvedClassName, ".")
-						resolvedClassName = lexer.GenerateUniqueSymbol(parts[1], parts[0])
-					} else if moduleName, exists := isImportedType(resolvedClassName, program.Imports); exists {
-						resolvedClassName = lexer.GenerateUniqueSymbol(resolvedClassName, moduleName)
-					}
-					break
-				}
-			}
-			if resolvedClassName == "" {
-				resolvedClassName = "unknown"
-			}
-			if argsStr == "" {
-				fmt.Fprintf(b, "%s%s_%s(%s);\n", indent, resolvedClassName, methodName, objectName)
-			} else {
-				fmt.Fprintf(b, "%s%s_%s(%s, %s);\n", indent, resolvedClassName, methodName, objectName, argsStr)
-			}
 		case stmt.VarDeclMethodCall != nil:
 			varType := mapTypeToCType(stmt.VarDeclMethodCall.Type)
 			varName := lexer.ResolveSymbol(stmt.VarDeclMethodCall.Name, currentModule)

@@ -1658,6 +1658,7 @@ func parseMethodStatement(lines []string, lineNum, currentIndent int) (*MethodDe
 			}
 		}
 	}
+
 	returnTypePart := strings.TrimSpace(signature[parenEnd+1:])
 	var returnType string
 	if strings.HasPrefix(returnTypePart, "->") {
@@ -1665,6 +1666,7 @@ func parseMethodStatement(lines []string, lineNum, currentIndent int) (*MethodDe
 	} else {
 		returnType = "void"
 	}
+
 	expectedBodyIndent := currentIndent + 4
 	bodyStartLine := lineNum + 1
 	for bodyStartLine < len(lines) {
