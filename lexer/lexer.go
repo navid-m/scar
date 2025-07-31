@@ -51,6 +51,7 @@ type Statement struct {
 	VarDeclRead       *VarDeclReadStmt
 	VarDeclWrite      *VarDeclWriteStmt
 	RawCode           *RawCodeStmt
+	MapDecl           *MapDeclStmt
 }
 
 type PubVarDeclStmt struct {
@@ -71,6 +72,18 @@ type VarDeclMethodCallStmt struct {
 	Object string
 	Method string
 	Args   []string
+}
+
+type MapDeclStmt struct {
+	KeyType   string
+	ValueType string
+	Name      string
+	Pairs     []MapPair
+}
+
+type MapPair struct {
+	Key   string
+	Value string
 }
 
 type VarDeclInferredStmt struct {
@@ -383,6 +396,107 @@ func parseAllImports(lines []string, startLine int) ([]*ImportStmt, error) {
 }
 func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int, error) {
 	line := strings.TrimSpace(lines[lineNum])
+
+	// Check for map declaration first to avoid splitting type prematurely
+	if strings.HasPrefix(line, "map[") && strings.Contains(line, "]") && strings.Contains(line, "=") {
+		// Find the end of the type declaration
+		typeEnd := strings.Index(line, "]")
+		if typeEnd == -1 {
+			return nil, lineNum + 1, fmt.Errorf("invalid map type declaration at line %d", lineNum+1)
+		}
+
+		// Extract the full type (e.g., "map[int: string]")
+		mapType := line[:typeEnd+1]
+		if !strings.Contains(mapType, ":") {
+			return nil, lineNum + 1, fmt.Errorf("map type must specify key:value types at line %d", lineNum+1)
+		}
+
+		// Parse the type declaration
+		typeStart := strings.Index(mapType, "[")
+		typeDecl := strings.TrimSpace(mapType[typeStart+1 : typeEnd])
+		typeParts := strings.SplitN(typeDecl, ":", 2)
+		if len(typeParts) != 2 {
+			return nil, lineNum + 1, fmt.Errorf("map type must specify key:value types at line %d", lineNum+1)
+		}
+
+		keyType := strings.TrimSpace(typeParts[0])
+		valueType := strings.TrimSpace(typeParts[1])
+		if keyType == "" || valueType == "" {
+			return nil, lineNum + 1, fmt.Errorf("map type must specify valid key and value types at line %d", lineNum+1)
+		}
+
+		// Extract the rest of the line after the type
+		restOfLine := strings.TrimSpace(line[typeEnd+1:])
+		parts := strings.Fields(restOfLine)
+		if len(parts) < 3 || parts[1] != "=" {
+			return nil, lineNum + 1, fmt.Errorf("map declaration format error at line %d (expected: map[keyType: valueType] name = [key: value, ...])", lineNum+1)
+		}
+
+		mapName := parts[0]
+
+		// Parse map initialization
+		pairsStart := strings.Index(line, "=") + 1
+		pairsEnd := strings.LastIndex(line, "]")
+		if pairsStart == -1 || pairsEnd == -1 || pairsEnd <= pairsStart {
+			return nil, lineNum + 1, fmt.Errorf("map declaration missing initialization at line %d", lineNum+1)
+		}
+
+		pairsStr := strings.TrimSpace(line[pairsStart:pairsEnd])
+		if strings.HasPrefix(pairsStr, "[") {
+			pairsStr = strings.TrimSpace(pairsStr[1:])
+		}
+		var pairs []MapPair
+
+		if pairsStr != "" {
+			if strings.Contains(pairsStr, ":") {
+				// Key-value pairs: [1: "hello", 2: "world"]
+				pairsList := splitMapPairs(pairsStr)
+				for _, pairStr := range pairsList {
+					pairStr = strings.TrimSpace(pairStr)
+					if pairStr != "" {
+						colonIdx := strings.Index(pairStr, ":")
+						if colonIdx == -1 {
+							return nil, lineNum + 1, fmt.Errorf("invalid map pair format at line %d", lineNum+1)
+						}
+						key := strings.TrimSpace(pairStr[:colonIdx])
+						value := strings.TrimSpace(pairStr[colonIdx+1:])
+
+						// Remove quotes if present
+						if strings.HasPrefix(key, "\"") && strings.HasSuffix(key, "\"") {
+							key = key[1 : len(key)-1]
+						}
+						if strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"") {
+							value = value[1 : len(value)-1]
+						}
+
+						pairs = append(pairs, MapPair{Key: key, Value: value})
+					}
+				}
+			} else {
+				// Array-style initialization: ["what", "who"]
+				valuesList := strings.Split(pairsStr, ",")
+				for i, valueStr := range valuesList {
+					valueStr = strings.TrimSpace(valueStr)
+					if valueStr != "" {
+						if strings.HasPrefix(valueStr, "\"") && strings.HasSuffix(valueStr, "\"") {
+							valueStr = valueStr[1 : len(valueStr)-1]
+						}
+						pairs = append(pairs, MapPair{
+							Key:   fmt.Sprintf("%d", i),
+							Value: valueStr,
+						})
+					}
+				}
+			}
+		}
+
+		return &Statement{MapDecl: &MapDeclStmt{
+			KeyType:   keyType,
+			ValueType: valueType,
+			Name:      mapName,
+			Pairs:     pairs,
+		}}, lineNum + 1, nil
+	}
 	parts := strings.Fields(strings.TrimSuffix(line, ":"))
 
 	if len(parts) == 0 {
@@ -974,7 +1088,58 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 	}
 	return nil, lineNum + 1, fmt.Errorf("unknown statement type '%s' at line %d", parts[0], lineNum+1)
 }
+func splitMapPairs(input string) []string {
+	var pairs []string
+	var currentPair strings.Builder
+	inQuotes := false
+	parenCount := 0
 
+	for _, char := range input {
+		switch char {
+		case '"':
+			if inQuotes && currentPair.Len() > 0 && currentPair.String()[currentPair.Len()-1] != '\\' {
+				inQuotes = false
+			} else if !inQuotes {
+				inQuotes = true
+			}
+			currentPair.WriteRune(char)
+		case ',':
+			if !inQuotes && parenCount == 0 {
+				pair := strings.TrimSpace(currentPair.String())
+				if pair != "" {
+					pairs = append(pairs, pair)
+				}
+				currentPair.Reset()
+				continue
+			}
+			currentPair.WriteRune(char)
+		case '(':
+			if inQuotes {
+				currentPair.WriteRune(char)
+			} else {
+				parenCount++
+				currentPair.WriteRune(char)
+			}
+		case ')':
+			if inQuotes {
+				currentPair.WriteRune(char)
+			} else {
+				parenCount--
+				currentPair.WriteRune(char)
+			}
+		default:
+			currentPair.WriteRune(char)
+		}
+	}
+
+	// Add the last pair if it exists
+	pair := strings.TrimSpace(currentPair.String())
+	if pair != "" {
+		pairs = append(pairs, pair)
+	}
+
+	return pairs
+}
 func parseTryCatchStatement(lines []string, lineNum, currentIndent int) (*Statement, int, error) {
 	line := strings.TrimSpace(lines[lineNum])
 	if line != "try:" {
@@ -1635,7 +1800,7 @@ func GenerateUniqueSymbol(originalName string, moduleName string) string {
 	return fmt.Sprintf("%s_%s", moduleName, originalName)
 }
 
-var vdt = []string{"int", "float", "double", "char", "string", "bool"}
+var vdt = []string{"int", "float", "double", "char", "string", "bool", "map"}
 
 func isValidType(s string) bool {
 	return slices.Contains(vdt, s)

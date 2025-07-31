@@ -677,7 +677,56 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 					b.WriteString("\n")
 				}
 			}
+		case stmt.MapDecl != nil:
+			mapName := lexer.ResolveSymbol(stmt.MapDecl.Name, currentModule)
+			keyType := mapTypeToCType(stmt.MapDecl.KeyType)
+			valueType := mapTypeToCType(stmt.MapDecl.ValueType)
+
+			// Define a simple map structure using parallel arrays
+			mapSize := len(stmt.MapDecl.Pairs)
+			if mapSize == 0 {
+				mapSize = 10 // Default size for empty maps
+			}
+
+			// Declare arrays for keys and values
+			if stmt.MapDecl.KeyType == "string" {
+				fmt.Fprintf(b, "%s%s %s_keys[%d][256];\n", indent, keyType, mapName, mapSize)
+			} else {
+				fmt.Fprintf(b, "%s%s %s_keys[%d];\n", indent, keyType, mapName, mapSize)
+			}
+
+			if stmt.MapDecl.ValueType == "string" {
+				fmt.Fprintf(b, "%s%s %s_values[%d][256];\n", indent, valueType, mapName, mapSize)
+			} else {
+				fmt.Fprintf(b, "%s%s %s_values[%d];\n", indent, valueType, mapName, mapSize)
+			}
+
+			fmt.Fprintf(b, "%sint %s_size = %d;\n", indent, mapName, len(stmt.MapDecl.Pairs))
+
+			for i, pair := range stmt.MapDecl.Pairs {
+				key := pair.Key
+				value := pair.Value
+
+				if stmt.MapDecl.KeyType == "string" {
+					if !strings.HasPrefix(key, "\"") {
+						key = fmt.Sprintf("\"%s\"", key)
+					}
+					fmt.Fprintf(b, "%sstrcpy(%s_keys[%d], %s);\n", indent, mapName, i, key)
+				} else {
+					fmt.Fprintf(b, "%s%s_keys[%d] = %s;\n", indent, mapName, i, key)
+				}
+
+				if stmt.MapDecl.ValueType == "string" {
+					if !strings.HasPrefix(value, "\"") {
+						value = fmt.Sprintf("\"%s\"", value)
+					}
+					fmt.Fprintf(b, "%sstrcpy(%s_values[%d], %s);\n", indent, mapName, i, value)
+				} else {
+					fmt.Fprintf(b, "%s%s_values[%d] = %s;\n", indent, mapName, i, value)
+				}
+			}
 		}
+
 	}
 }
 
@@ -705,8 +754,8 @@ func generateTopLevelFunctionImplementation(b *strings.Builder, funcDecl *lexer.
 	b.WriteString("}\n\n")
 }
 
-func mapTypeToCType(scaType string) string {
-	switch scaType {
+func mapTypeToCType(mapType string) string {
+	switch mapType {
 	case "int":
 		return "int"
 	case "float":
@@ -720,7 +769,7 @@ func mapTypeToCType(scaType string) string {
 	case "bool":
 		return "int"
 	default:
-		return scaType
+		return mapType
 	}
 }
 
