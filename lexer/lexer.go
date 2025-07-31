@@ -260,14 +260,11 @@ func ParseWithIndentation(input string) (*Program, error) {
 	for _, stmt := range statements {
 		if stmt.Import != nil {
 			imports = append(imports, stmt.Import)
-
-			// Handle bulk imports by re-parsing the import section
 			if strings.Contains(input, "import") {
 				importLines := strings.Split(input, "\n")
 				for i, line := range importLines {
 					trimmed := strings.TrimSpace(line)
 					if strings.HasPrefix(trimmed, "import") {
-						// Parse all imports from this point
 						bulkImports, err := parseAllImports(importLines, i)
 						if err == nil && len(bulkImports) > 1 {
 							imports = bulkImports
@@ -429,8 +426,6 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 		}
 
 		mapName := parts[0]
-
-		// Parse map initialization
 		pairsStart := strings.Index(line, "=") + 1
 		pairsEnd := strings.LastIndex(line, "]")
 		if pairsStart == -1 || pairsEnd == -1 || pairsEnd <= pairsStart {
@@ -467,7 +462,6 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 					}
 				}
 			} else {
-				// Array-style initialization: ["what", "who"]
 				valuesList := strings.Split(pairsStr, ",")
 				for i, valueStr := range valuesList {
 					valueStr = strings.TrimSpace(valueStr)
@@ -534,7 +528,6 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 		varName := parts[1]
 		value := strings.Join(parts[3:], " ")
 
-		// Handle object construction with "new"
 		if strings.HasPrefix(value, "new ") {
 			newPart := strings.TrimSpace(value[4:]) // Remove "new "
 			parenStart := strings.Index(newPart, "(")
@@ -544,7 +537,6 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 
 			className := strings.TrimSpace(newPart[:parenStart])
 
-			// Parse constructor arguments
 			var constructorArgs []string
 			argsStart := strings.Index(value, "(")
 			argsEnd := strings.LastIndex(value, ")")
@@ -564,7 +556,6 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 			if strings.Contains(className, ".") {
 				parts := strings.Split(className, ".")
 				if len(parts) == 2 {
-					// For module-qualified types, store module and class info separately
 					args = append(args, parts[0]) // module name
 					args = append(args, parts[1]) // class name
 					typeName = className          // Keep full qualified name as type
@@ -574,8 +565,6 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 			} else {
 				args = append(args, className)
 			}
-
-			// Add constructor arguments
 			args = append(args, constructorArgs...)
 
 			return &Statement{ObjectDecl: &ObjectDeclStmt{Type: typeName, Name: varName, Args: args}}, lineNum + 1, nil
@@ -1249,7 +1238,6 @@ func parseTryCatchStatement(lines []string, lineNum, currentIndent int) (*Statem
 		return nil, nextLine, fmt.Errorf("expected catch statement after try block at line %d", nextLine+1)
 	}
 
-	// Parse catch block
 	bodyStartLine = nextLine + 1
 	for bodyStartLine < len(lines) {
 		bodyLine := lines[bodyStartLine]
@@ -1484,9 +1472,7 @@ func parseClassStatement(lines []string, lineNum, currentIndent int) (*Statement
 			var initBodyIndent int
 			var initStartLine int
 
-			// Check if constructor has parameters
 			if strings.Contains(trimmed, "(") && strings.Contains(trimmed, ")") {
-				// Parse constructor with parameters
 				parenStart := strings.Index(trimmed, "(")
 				parenEnd := strings.Index(trimmed, ")")
 				if parenStart != -1 && parenEnd != -1 && parenEnd > parenStart {
@@ -1848,12 +1834,8 @@ func LoadModule(moduleName string, baseDir string) (*ModuleInfo, error) {
 }
 
 func ResolveSymbol(symbolName string, currentModule string) string {
-	// Handle expressions containing module-qualified symbols
 	if strings.Contains(symbolName, ".") && (strings.Contains(symbolName, " ") || strings.Contains(symbolName, "*") || strings.Contains(symbolName, "+") || strings.Contains(symbolName, "-") || strings.Contains(symbolName, "/")) {
-		// This is an expression, need to find and replace module-qualified symbols within it
 		result := symbolName
-
-		// Find all potential module.symbol patterns
 		words := strings.FieldsFunc(symbolName, func(r rune) bool {
 			return r == ' ' || r == '*' || r == '+' || r == '-' || r == '/' || r == '(' || r == ')' || r == '[' || r == ']' || r == ',' || r == '=' || r == '<' || r == '>' || r == '!'
 		})
@@ -1882,7 +1864,6 @@ func ResolveSymbol(symbolName string, currentModule string) string {
 		return result
 	}
 
-	// Handle simple module.symbol pattern
 	if strings.Contains(symbolName, ".") {
 		parts := strings.SplitN(symbolName, ".", 2)
 		moduleName := parts[0]
