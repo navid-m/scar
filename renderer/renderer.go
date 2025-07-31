@@ -636,29 +636,25 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			fmt.Fprintf(b, "%sfclose(%s);\n", indent+"    ", fpVarName)
 			fmt.Fprintf(b, "%s}\n", indent)
 		case stmt.VarDeclWrite != nil:
-			content := lexer.ResolveSymbol(stmt.VarDeclWrite.Content, currentModule)
-			filePath := fmt.Sprintf("\"%s\"", stmt.VarDeclWrite.FilePath)
-			mode := stmt.VarDeclWrite.Mode
-
-			// Generate unique file pointer variable name
-			fpVarName := fmt.Sprintf("fp_write_%d", len(stmt.VarDeclWrite.FilePath)) // Simple uniqueness
-
-			var fileMode string
+			var (
+				content   = lexer.ResolveSymbol(stmt.VarDeclWrite.Content, currentModule)
+				filePath  = fmt.Sprintf("\"%s\"", stmt.VarDeclWrite.FilePath)
+				mode      = stmt.VarDeclWrite.Mode
+				fpVarName = fmt.Sprintf("fp_write_%d", len(stmt.VarDeclWrite.FilePath))
+				fileMode  string
+			)
 			if mode == "append!" {
 				fileMode = "\"a\""
 			} else {
-				fileMode = "\"w\"" // default to overwrite
+				fileMode = "\"w\""
 			}
 
 			fmt.Fprintf(b, "%sFILE* %s = fopen(%s, %s);\n", indent, fpVarName, filePath, fileMode)
 			fmt.Fprintf(b, "%sif (%s != NULL) {\n", indent, fpVarName)
 
-			// Check if content is a string variable or literal
 			if strings.HasPrefix(content, "\"") && strings.HasSuffix(content, "\"") {
-				// String literal
 				fmt.Fprintf(b, "%s    fprintf(%s, \"%%s\", %s);\n", indent, fpVarName, content)
 			} else {
-				// Variable - need to determine type and format accordingly
 				fmt.Fprintf(b, "%s    fprintf(%s, \"%%s\", %s);\n", indent, fpVarName, content)
 			}
 
