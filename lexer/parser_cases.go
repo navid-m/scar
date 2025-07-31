@@ -127,6 +127,8 @@ func parsePubStatement(lines []string, lineNum, currentIndent int) (*Statement, 
 	switch parts[1] {
 	case "class":
 		return parsePubClassStatement(lines, lineNum, currentIndent)
+	case "fn":
+		return parsePubFunctionStatement(lines, lineNum, currentIndent)
 	default:
 		if len(parts) >= 5 && parts[3] == "=" && isValidType(parts[1]) {
 			varType := parts[1]
@@ -682,8 +684,95 @@ func LoadModule(moduleName string, baseDir string) (*ModuleInfo, error) {
 			}
 			module.PublicClasses[stmt.PubClassDecl.Name] = classDecl
 		}
+		if stmt.PubTopLevelFuncDecl != nil {
+			funcDecl := &MethodDeclStmt{
+				Name:       stmt.PubTopLevelFuncDecl.Name,
+				Parameters: stmt.PubTopLevelFuncDecl.Parameters,
+				ReturnType: stmt.PubTopLevelFuncDecl.ReturnType,
+				Body:       stmt.PubTopLevelFuncDecl.Body,
+			}
+			module.PublicFuncs[stmt.PubTopLevelFuncDecl.Name] = funcDecl
+		}
 	}
 
 	LoadedModules[moduleName] = module
 	return module, nil
+}
+
+func parsePubFunctionStatement(lines []string, lineNum, currentIndent int) (*Statement, int, error) {
+	line := strings.TrimSpace(lines[lineNum])
+
+	if !strings.HasPrefix(line, "pub fn ") || !strings.HasSuffix(line, ":") {
+		return nil, lineNum + 1, fmt.Errorf("invalid pub function declaration at line %d", lineNum+1)
+	}
+
+	signature := strings.TrimSpace(line[7 : len(line)-1]) // Remove "pub fn " and ":"
+	parenStart := strings.Index(signature, "(")
+	if parenStart == -1 {
+		return nil, lineNum + 1, fmt.Errorf("pub function declaration missing parameters at line %d", lineNum+1)
+	}
+
+	funcName := strings.TrimSpace(signature[:parenStart])
+	parenEnd := strings.Index(signature, ")")
+	if parenEnd == -1 || parenEnd <= parenStart {
+		return nil, lineNum + 1, fmt.Errorf("pub function declaration missing closing parenthesis at line %d", lineNum+1)
+	}
+
+	paramsStr := strings.TrimSpace(signature[parenStart+1 : parenEnd])
+	var parameters []*MethodParameter
+	if paramsStr != "" {
+		paramList := strings.Split(paramsStr, ",")
+		for _, paramStr := range paramList {
+			paramStr = strings.TrimSpace(paramStr)
+			paramParts := strings.Fields(paramStr)
+			if len(paramParts) == 2 {
+				param := &MethodParameter{
+					Type: paramParts[0],
+					Name: paramParts[1],
+				}
+				parameters = append(parameters, param)
+			} else if len(paramParts) == 1 {
+				param := &MethodParameter{
+					Type: "int",
+					Name: paramParts[0],
+				}
+				parameters = append(parameters, param)
+			}
+		}
+	}
+
+	returnTypePart := strings.TrimSpace(signature[parenEnd+1:])
+	var returnType string
+	if strings.HasPrefix(returnTypePart, "->") {
+		returnType = strings.TrimSpace(returnTypePart[2:])
+	} else {
+		returnType = "void"
+	}
+
+	expectedBodyIndent := currentIndent + 4
+	bodyStartLine := lineNum + 1
+	for bodyStartLine < len(lines) {
+		bodyLine := lines[bodyStartLine]
+		if strings.TrimSpace(bodyLine) != "" && !strings.HasPrefix(strings.TrimSpace(bodyLine), "#") {
+			expectedBodyIndent = getIndentation(bodyLine)
+			break
+		}
+		bodyStartLine++
+	}
+
+	body, err := parseStatements(lines, bodyStartLine, expectedBodyIndent)
+	if err != nil {
+		return nil, lineNum + 1, err
+	}
+
+	nextLine := findEndOfBlock(lines, bodyStartLine, expectedBodyIndent)
+
+	pubFuncDecl := &PubTopLevelFuncDeclStmt{
+		Name:       funcName,
+		Parameters: parameters,
+		ReturnType: returnType,
+		Body:       body,
+	}
+
+	return &Statement{PubTopLevelFuncDecl: pubFuncDecl}, nextLine, nil
 }

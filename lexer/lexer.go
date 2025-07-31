@@ -58,6 +58,14 @@ type Statement struct {
 	RawCode             *RawCodeStmt
 	MapDecl             *MapDeclStmt
 	ParallelFor         *ParallelForStmt
+	PubTopLevelFuncDecl *PubTopLevelFuncDeclStmt
+}
+
+type PubTopLevelFuncDeclStmt struct {
+	Name       string
+	Parameters []*MethodParameter
+	ReturnType string
+	Body       []*Statement
 }
 
 type ParallelForStmt struct {

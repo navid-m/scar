@@ -52,6 +52,15 @@ func RenderC(program *lexer.Program, baseDir string) string {
 		if stmt.TopLevelFuncDecl != nil {
 			globalFunctions[stmt.TopLevelFuncDecl.Name] = stmt.TopLevelFuncDecl
 		}
+		if stmt.PubTopLevelFuncDecl != nil {
+			topLevelFunc := &lexer.TopLevelFuncDeclStmt{
+				Name:       stmt.PubTopLevelFuncDecl.Name,
+				Parameters: stmt.PubTopLevelFuncDecl.Parameters,
+				ReturnType: stmt.PubTopLevelFuncDecl.ReturnType,
+				Body:       stmt.PubTopLevelFuncDecl.Body,
+			}
+			globalFunctions[stmt.PubTopLevelFuncDecl.Name] = topLevelFunc
+		}
 	}
 
 	for _, module := range lexer.LoadedModules {
@@ -114,6 +123,17 @@ int _exception = 0;
 			fmt.Fprintf(&b, "%s* %s_new();\n", className, className)
 		}
 		b.WriteString("\n")
+	}
+	for _, module := range lexer.LoadedModules {
+		for funcName, funcDecl := range module.PublicFuncs {
+			topLevelFunc := &lexer.TopLevelFuncDeclStmt{
+				Name:       lexer.GenerateUniqueSymbol(funcName, module.Name),
+				Parameters: funcDecl.Parameters,
+				ReturnType: funcDecl.ReturnType,
+				Body:       funcDecl.Body,
+			}
+			globalFunctions[lexer.GenerateUniqueSymbol(funcName, module.Name)] = topLevelFunc
+		}
 	}
 
 	for _, funcDecl := range globalFunctions {
@@ -214,6 +234,12 @@ int _exception = 0;
 	renderStatements(&b, mainStatements, "    ", "", program)
 	b.WriteString("    return 0;\n")
 	b.WriteString("}\n")
+
+	for _, stmt := range program.Statements {
+		if stmt.PubTopLevelFuncDecl == nil && stmt.ClassDecl == nil && stmt.PubClassDecl == nil && stmt.PubVarDecl == nil && stmt.TopLevelFuncDecl == nil {
+			mainStatements = append(mainStatements, stmt)
+		}
+	}
 	return b.String()
 }
 
