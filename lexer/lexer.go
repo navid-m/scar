@@ -50,6 +50,7 @@ type Statement struct {
 	Throw             *ThrowStmt
 	VarDeclRead       *VarDeclReadStmt
 	VarDeclWrite      *VarDeclWriteStmt
+	RawCode           *RawCodeStmt
 }
 
 type PubVarDeclStmt struct {
@@ -100,6 +101,10 @@ type SleepStmt struct {
 type WhileStmt struct {
 	Condition string
 	Body      []*Statement
+}
+
+type RawCodeStmt struct {
+	Code string
 }
 
 type ForStmt struct {
@@ -705,6 +710,44 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 
 	case "catch":
 		return nil, lineNum + 1, fmt.Errorf("catch statement must follow a try statement at line %d", lineNum+1)
+
+	case "$raw":
+		if !strings.HasSuffix(line, "(") {
+			return nil, lineNum + 1, fmt.Errorf("$raw block must start with '(' at line %d", lineNum+1)
+		}
+
+		var rawCode strings.Builder
+		currentLine := lineNum + 1
+		parenCount := 1
+
+		for currentLine < len(lines) && parenCount > 0 {
+			line := lines[currentLine]
+
+			for _, char := range line {
+				switch char {
+				case '(':
+					parenCount++
+				case ')':
+					parenCount--
+				}
+
+				if parenCount > 0 {
+					rawCode.WriteRune(char)
+				}
+			}
+
+			if parenCount > 0 {
+				rawCode.WriteString("\n")
+			}
+			currentLine++
+		}
+
+		if parenCount > 0 {
+			return nil, lineNum + 1, fmt.Errorf("unclosed $raw block starting at line %d", lineNum+1)
+		}
+
+		code := strings.TrimSpace(rawCode.String())
+		return &Statement{RawCode: &RawCodeStmt{Code: code}}, currentLine, nil
 
 	default:
 		if strings.HasPrefix(parts[0], "this.") && len(parts) >= 3 && parts[1] == "=" {

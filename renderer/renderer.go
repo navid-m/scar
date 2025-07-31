@@ -668,6 +668,15 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			}
 			argsStr := strings.Join(args, ", ")
 			fmt.Fprintf(b, "%s%s(%s);\n", indent, funcName, argsStr)
+		case stmt.RawCode != nil:
+			rawLines := strings.Split(stmt.RawCode.Code, "\n")
+			for _, rawLine := range rawLines {
+				if strings.TrimSpace(rawLine) != "" {
+					fmt.Fprintf(b, "%s%s\n", indent, rawLine)
+				} else {
+					b.WriteString("\n")
+				}
+			}
 		}
 	}
 }
