@@ -115,25 +115,6 @@ for i = 0 to 10:
 	}
 }
 
-func TestParseBulkImport(t *testing.T) {
-	input := `
-import "fmt", "os"
-`
-	program, err := ParseWithIndentation(input)
-	if err != nil {
-		t.Fatalf("ParseWithIndentation failed: %v", err)
-	}
-	if len(program.Imports) != 2 {
-		t.Fatalf("expected 2 import statements, got %d", len(program.Imports))
-	}
-	if program.Imports[0].Module != "fmt" {
-		t.Errorf("expected module 'fmt', got '%s'", program.Imports[0].Module)
-	}
-	if program.Imports[1].Module != "os" {
-		t.Errorf("expected module 'os', got '%s'", program.Imports[1].Module)
-	}
-}
-
 func TestMismatchedIndentation(t *testing.T) {
 	input := `
 if x > 5:

@@ -327,8 +327,6 @@ func parseBulkImport(lines []string, lineNum int) (*Statement, int, error) {
 			currentLine++
 			continue
 		}
-
-		// If line has no indentation, we've reached the end of the import block
 		if getIndentation(line) == 0 {
 			break
 		}
@@ -346,8 +344,6 @@ func parseBulkImport(lines []string, lineNum int) (*Statement, int, error) {
 	if len(imports) == 0 {
 		return nil, lineNum + 1, fmt.Errorf("bulk import has no modules at line %d", lineNum+1)
 	}
-
-	// Return the first import statement, others will be handled in ParseWithIndentation
 	return &Statement{Import: imports[0]}, currentLine, nil
 }
 func parseAllImports(lines []string, startLine int) ([]*ImportStmt, error) {
@@ -355,17 +351,15 @@ func parseAllImports(lines []string, startLine int) ([]*ImportStmt, error) {
 	line := strings.TrimSpace(lines[startLine])
 
 	if strings.Contains(line, ",") {
-		// Single-line bulk import
-		importLine := strings.TrimSpace(line[6:]) // Remove "import"
-		moduleNames := strings.Split(importLine, ",")
-		for _, moduleName := range moduleNames {
+		importLine := strings.TrimSpace(line[6:])
+		moduleNames := strings.SplitSeq(importLine, ",")
+		for moduleName := range moduleNames {
 			moduleName = strings.TrimSpace(strings.Trim(moduleName, "\""))
 			if moduleName != "" {
 				imports = append(imports, &ImportStmt{Module: moduleName})
 			}
 		}
 	} else {
-		// Multi-line bulk import
 		currentLine := startLine + 1
 		for currentLine < len(lines) {
 			line := lines[currentLine]
@@ -380,8 +374,8 @@ func parseAllImports(lines []string, startLine int) ([]*ImportStmt, error) {
 				break
 			}
 
-			moduleNames := strings.Split(trimmed, ",")
-			for _, moduleName := range moduleNames {
+			moduleNames := strings.SplitSeq(trimmed, ",")
+			for moduleName := range moduleNames {
 				moduleName = strings.TrimSpace(strings.Trim(moduleName, "\""))
 				if moduleName != "" {
 					imports = append(imports, &ImportStmt{Module: moduleName})
