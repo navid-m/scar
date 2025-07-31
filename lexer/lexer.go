@@ -53,6 +53,25 @@ type Statement struct {
 	VarDeclWrite        *VarDeclWriteStmt
 	RawCode             *RawCodeStmt
 	MapDecl             *MapDeclStmt
+	MapAppend           *MapAppendStmt
+	MapRemove           *MapRemoveStmt
+	MapGet              *MapGetStmt
+}
+
+type MapAppendStmt struct {
+	MapName string
+	Key     string
+	Value   string
+}
+
+type MapRemoveStmt struct {
+	MapName string
+	Key     string
+}
+
+type MapGetStmt struct {
+	MapName string
+	Key     string
 }
 
 type PubVarDeclStmt struct {
@@ -260,14 +279,11 @@ func ParseWithIndentation(input string) (*Program, error) {
 	for _, stmt := range statements {
 		if stmt.Import != nil {
 			imports = append(imports, stmt.Import)
-
-			// Handle bulk imports by re-parsing the import section
 			if strings.Contains(input, "import") {
 				importLines := strings.Split(input, "\n")
 				for i, line := range importLines {
 					trimmed := strings.TrimSpace(line)
 					if strings.HasPrefix(trimmed, "import") {
-						// Parse all imports from this point
 						bulkImports, err := parseAllImports(importLines, i)
 						if err == nil && len(bulkImports) > 1 {
 							imports = bulkImports
@@ -354,6 +370,7 @@ func parseBulkImport(lines []string, lineNum int) (*Statement, int, error) {
 	}
 	return &Statement{Import: imports[0]}, currentLine, nil
 }
+
 func parseAllImports(lines []string, startLine int) ([]*ImportStmt, error) {
 	var imports []*ImportStmt
 	line := strings.TrimSpace(lines[startLine])
@@ -396,8 +413,40 @@ func parseAllImports(lines []string, startLine int) ([]*ImportStmt, error) {
 
 	return imports, nil
 }
+
 func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int, error) {
 	line := strings.TrimSpace(lines[lineNum])
+	if strings.HasPrefix(line, "append!") {
+		args := strings.TrimSpace(line[len("append!"):])
+		parts := strings.SplitN(args, ",", 3)
+		if len(parts) != 3 {
+			return nil, lineNum + 1, fmt.Errorf("append! requires map, key, value at line %d", lineNum+1)
+		}
+		mapName := strings.TrimSpace(parts[0])
+		key := strings.TrimSpace(parts[1])
+		value := strings.TrimSpace(parts[2])
+		return &Statement{MapAppend: &MapAppendStmt{MapName: mapName, Key: key, Value: value}}, lineNum + 1, nil
+	}
+	if strings.HasPrefix(line, "remove!") {
+		args := strings.TrimSpace(line[len("remove!"):])
+		parts := strings.SplitN(args, ",", 2)
+		if len(parts) != 2 {
+			return nil, lineNum + 1, fmt.Errorf("remove! requires map, key at line %d", lineNum+1)
+		}
+		mapName := strings.TrimSpace(parts[0])
+		key := strings.TrimSpace(parts[1])
+		return &Statement{MapRemove: &MapRemoveStmt{MapName: mapName, Key: key}}, lineNum + 1, nil
+	}
+	if strings.HasPrefix(line, "get!") {
+		args := strings.TrimSpace(line[len("get!"):])
+		parts := strings.SplitN(args, ",", 2)
+		if len(parts) != 2 {
+			return nil, lineNum + 1, fmt.Errorf("get! requires map, key at line %d", lineNum+1)
+		}
+		mapName := strings.TrimSpace(parts[0])
+		key := strings.TrimSpace(parts[1])
+		return &Statement{MapGet: &MapGetStmt{MapName: mapName, Key: key}}, lineNum + 1, nil
+	}
 
 	if strings.HasPrefix(line, "map[") && strings.Contains(line, "]") && strings.Contains(line, "=") {
 		typeEnd := strings.Index(line, "]")
@@ -467,7 +516,6 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 					}
 				}
 			} else {
-				// Array-style initialization: ["what", "who"]
 				valuesList := strings.Split(pairsStr, ",")
 				for i, valueStr := range valuesList {
 					valueStr = strings.TrimSpace(valueStr)
@@ -533,8 +581,6 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 		}
 		varName := parts[1]
 		value := strings.Join(parts[3:], " ")
-
-		// Handle object construction with "new"
 		if strings.HasPrefix(value, "new ") {
 			newPart := strings.TrimSpace(value[4:]) // Remove "new "
 			parenStart := strings.Index(newPart, "(")
@@ -543,8 +589,6 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 			}
 
 			className := strings.TrimSpace(newPart[:parenStart])
-
-			// Parse constructor arguments
 			var constructorArgs []string
 			argsStart := strings.Index(value, "(")
 			argsEnd := strings.LastIndex(value, ")")
@@ -557,14 +601,11 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 					}
 				}
 			}
-
-			// Handle module-qualified types
 			typeName := className
 			var args []string
 			if strings.Contains(className, ".") {
 				parts := strings.Split(className, ".")
 				if len(parts) == 2 {
-					// For module-qualified types, store module and class info separately
 					args = append(args, parts[0]) // module name
 					args = append(args, parts[1]) // class name
 					typeName = className          // Keep full qualified name as type
@@ -574,10 +615,7 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 			} else {
 				args = append(args, className)
 			}
-
-			// Add constructor arguments
 			args = append(args, constructorArgs...)
-
 			return &Statement{ObjectDecl: &ObjectDeclStmt{Type: typeName, Name: varName, Args: args}}, lineNum + 1, nil
 		}
 
@@ -1161,6 +1199,7 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 	}
 	return nil, lineNum + 1, fmt.Errorf("unknown statement type '%s' at line %d", parts[0], lineNum+1)
 }
+
 func splitMapPairs(input string) []string {
 	var pairs []string
 	var currentPair strings.Builder
@@ -1205,7 +1244,6 @@ func splitMapPairs(input string) []string {
 		}
 	}
 
-	// Add the last pair if it exists
 	pair := strings.TrimSpace(currentPair.String())
 	if pair != "" {
 		pairs = append(pairs, pair)
@@ -1848,41 +1886,7 @@ func LoadModule(moduleName string, baseDir string) (*ModuleInfo, error) {
 }
 
 func ResolveSymbol(symbolName string, currentModule string) string {
-	// Handle expressions containing module-qualified symbols
-	if strings.Contains(symbolName, ".") && (strings.Contains(symbolName, " ") || strings.Contains(symbolName, "*") || strings.Contains(symbolName, "+") || strings.Contains(symbolName, "-") || strings.Contains(symbolName, "/")) {
-		// This is an expression, need to find and replace module-qualified symbols within it
-		result := symbolName
-
-		// Find all potential module.symbol patterns
-		words := strings.FieldsFunc(symbolName, func(r rune) bool {
-			return r == ' ' || r == '*' || r == '+' || r == '-' || r == '/' || r == '(' || r == ')' || r == '[' || r == ']' || r == ',' || r == '=' || r == '<' || r == '>' || r == '!'
-		})
-
-		for _, word := range words {
-			if strings.Contains(word, ".") {
-				parts := strings.SplitN(word, ".", 2)
-				if len(parts) == 2 {
-					moduleName := parts[0]
-					symbol := parts[1]
-
-					if module, exists := LoadedModules[moduleName]; exists {
-						if _, exists := module.PublicVars[symbol]; exists {
-							replacement := fmt.Sprintf("%s_%s", moduleName, symbol)
-							result = strings.ReplaceAll(result, word, replacement)
-						}
-						if _, exists := module.PublicClasses[symbol]; exists {
-							replacement := fmt.Sprintf("%s_%s", moduleName, symbol)
-							result = strings.ReplaceAll(result, word, replacement)
-						}
-					}
-				}
-			}
-		}
-
-		return result
-	}
-
-	// Handle simple module.symbol pattern
+	// Only handle module.symbol replacement here, not get! or other string hacks
 	if strings.Contains(symbolName, ".") {
 		parts := strings.SplitN(symbolName, ".", 2)
 		moduleName := parts[0]
@@ -1897,7 +1901,6 @@ func ResolveSymbol(symbolName string, currentModule string) string {
 			}
 		}
 	}
-
 	return symbolName
 }
 
