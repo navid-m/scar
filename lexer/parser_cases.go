@@ -3,6 +3,7 @@
 // License: GPL3
 //
 // Contains the parser cases for the parser/lexer operations.
+// Includes compile-time module processing and parsing.
 
 package lexer
 
