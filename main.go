@@ -1,3 +1,9 @@
+// By Navid M (c)
+// Date: 2025
+// License: GPL3
+//
+// Contains entry point for the scar compiler.
+
 package main
 
 import (
@@ -78,18 +84,44 @@ func main() {
 	}
 	defer os.Remove(tmpCPath)
 
-	outputBinary := "./" + cleanedName
-	var success bool
+	var (
+		outputBinary = "./" + cleanedName
+		cmpPath      = "clang"
+		compileArgs  = []string{"-w", "-fopenmp", tmpCPath, "-o", outputBinary}
+	)
+	switch runtime.GOOS {
+	case "darwin":
+		cmpPath = "/opt/homebrew/opt/llvm/bin/clang"
+		compileArgs = []string{
+			"-fopenmp",
+			tmpCPath,
+			"-I/opt/homebrew/opt/libomp/include",
+			"-L/opt/homebrew/opt/libomp/lib",
+			"-o", outputBinary,
+		}
+	case "linux":
+		compileArgs = []string{
+			"-fopenmp",
+			tmpCPath,
+			"-o", outputBinary,
+		}
+	case "windows":
+		// Assumes libomp is present and MSVC or Clang is installed
+		// Will be part of the installer. I suppose.
+		outputBinary += ".exe"
+		compileArgs = []string{
+			"-fopenmp",
+			tmpCPath,
+			"-o", outputBinary,
+		}
+	}
 
-	cmd := exec.Command("clang", "-w", tmpCPath, "-o", outputBinary)
+	cmd := exec.Command(cmpPath, compileArgs...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	err = cmd.Run()
 
-	if runtime.GOOS == "windows" {
-		outputBinary += ".exe"
-	}
-
+	success := false
 	if err == nil {
 		fmt.Printf("Compiled %s\n", outputBinary)
 		success = true
