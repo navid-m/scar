@@ -319,10 +319,8 @@ func parseBulkImport(lines []string, lineNum int) (*Statement, int, error) {
 		if getIndentation(line) == 0 {
 			break
 		}
-
-		// Parse comma-separated modules on this line
-		moduleNames := strings.Split(trimmed, ",")
-		for _, moduleName := range moduleNames {
+		moduleNames := strings.SplitSeq(trimmed, ",")
+		for moduleName := range moduleNames {
 			moduleName = strings.TrimSpace(strings.Trim(moduleName, "\""))
 			if moduleName != "" {
 				imports = append(imports, &ImportStmt{Module: moduleName})
