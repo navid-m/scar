@@ -6,11 +6,13 @@ import (
 	"strings"
 )
 
-var globalClasses = make(map[string]*ClassInfo)
-var globalObjects = make(map[string]*ObjectInfo)
-var globalFunctions = make(map[string]*lexer.TopLevelFuncDeclStmt)
-var globalArrays = make(map[string]string)
-var currentModule = ""
+var (
+	globalClasses   = make(map[string]*ClassInfo)
+	globalObjects   = make(map[string]*ObjectInfo)
+	globalFunctions = make(map[string]*lexer.TopLevelFuncDeclStmt)
+	globalArrays    = make(map[string]string)
+	currentModule   = ""
+)
 
 func RenderC(program *lexer.Program, baseDir string) string {
 	var b strings.Builder
@@ -337,7 +339,6 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 	fmt.Fprintf(b, "    %s* obj = malloc(sizeof(%s));\n", className, className)
 
 	if classDecl.Constructor != nil {
-		// Track assigned fields to avoid duplicates
 		assignedFields := make(map[string]bool)
 
 		if len(classDecl.Constructor.Parameters) > 0 {
