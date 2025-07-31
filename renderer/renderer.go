@@ -274,7 +274,10 @@ func inferTypeFromValue(value string) string {
 	if strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"") {
 		return "string"
 	}
-	if strings.Contains(value, ".") {
+	if strings.HasPrefix(value, "new ") {
+		return "object"
+	}
+	if strings.Contains(value, ".") && !strings.HasPrefix(value, "new ") {
 		return "float"
 	}
 	if value == "true" || value == "false" {
@@ -540,14 +543,29 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			typeName := stmt.ObjectDecl.Type
 			args := stmt.ObjectDecl.Args
 			resolvedType := typeName
-			if strings.Contains(typeName, ".") {
+			originalType := typeName
+
+			if len(args) > 1 && strings.Contains(args[0]+"."+args[1], ".") {
+				originalType = args[0] + "." + args[1]
+				resolvedType = lexer.GenerateUniqueSymbol(args[1], args[0])
+			} else if strings.Contains(typeName, ".") {
 				parts := strings.Split(typeName, ".")
+				originalType = typeName
 				resolvedType = lexer.GenerateUniqueSymbol(parts[1], parts[0])
 			} else if moduleName, exists := isImportedType(typeName, program.Imports); exists {
+				originalType = typeName
 				resolvedType = lexer.GenerateUniqueSymbol(typeName, moduleName)
 			}
+			objectInfo := &ObjectInfo{
+				Name: stmt.ObjectDecl.Name,
+				Type: originalType,
+			}
+			globalObjects[stmt.ObjectDecl.Name] = objectInfo
+
 			argsStr := ""
-			if len(args) > 1 {
+			if strings.Contains(typeName, ".") && len(args) > 2 {
+				argsStr = strings.Join(args[2:], ", ")
+			} else if !strings.Contains(typeName, ".") && len(args) > 1 {
 				argsStr = strings.Join(args[1:], ", ")
 			}
 			fmt.Fprintf(b, "%s%s* %s = %s_new(%s);\n", indent, resolvedType, varName, resolvedType, argsStr)

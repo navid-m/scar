@@ -526,6 +526,53 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 		varName := parts[1]
 		value := strings.Join(parts[3:], " ")
 
+		// Handle object construction with "new"
+		if strings.HasPrefix(value, "new ") {
+			newPart := strings.TrimSpace(value[4:]) // Remove "new "
+			parenStart := strings.Index(newPart, "(")
+			if parenStart == -1 {
+				return nil, lineNum + 1, fmt.Errorf("object declaration missing parentheses at line %d", lineNum+1)
+			}
+
+			className := strings.TrimSpace(newPart[:parenStart])
+
+			// Parse constructor arguments
+			var constructorArgs []string
+			argsStart := strings.Index(value, "(")
+			argsEnd := strings.LastIndex(value, ")")
+			if argsStart != -1 && argsEnd != -1 && argsEnd > argsStart+1 {
+				constructorArgsStr := strings.TrimSpace(value[argsStart+1 : argsEnd])
+				if constructorArgsStr != "" {
+					constructorArgsList := strings.Split(constructorArgsStr, ",")
+					for _, arg := range constructorArgsList {
+						constructorArgs = append(constructorArgs, strings.TrimSpace(arg))
+					}
+				}
+			}
+
+			// Handle module-qualified types
+			typeName := className
+			var args []string
+			if strings.Contains(className, ".") {
+				parts := strings.Split(className, ".")
+				if len(parts) == 2 {
+					// For module-qualified types, store module and class info separately
+					args = append(args, parts[0]) // module name
+					args = append(args, parts[1]) // class name
+					typeName = className          // Keep full qualified name as type
+				} else {
+					return nil, lineNum + 1, fmt.Errorf("invalid module-qualified class name at line %d", lineNum+1)
+				}
+			} else {
+				args = append(args, className)
+			}
+
+			// Add constructor arguments
+			args = append(args, constructorArgs...)
+
+			return &Statement{ObjectDecl: &ObjectDeclStmt{Type: typeName, Name: varName, Args: args}}, lineNum + 1, nil
+		}
+
 		if strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"") {
 			// Maybe do something here later, idk.
 		} else if strings.Contains(value, " ") && !strings.Contains(value, "\"") && !strings.HasPrefix(value, "new ") {
@@ -994,12 +1041,12 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 			varType := parts[0]
 			varName := parts[1]
 			value := strings.Join(parts[3:], " ")
-			if strings.Contains(value, "._") && strings.Contains(value, "(") && strings.Contains(value, ")") {
-				dotIndex := strings.Index(value, "._")
+			if strings.Contains(value, ".") && strings.Contains(value, "(") && strings.Contains(value, ")") && !strings.HasPrefix(value, "new ") {
+				dotIndex := strings.Index(value, ".")
 				parenIndex := strings.Index(value, "(")
 				if dotIndex < parenIndex {
 					objectName := strings.TrimSpace(value[:dotIndex])
-					methodPart := strings.TrimSpace(value[dotIndex+2:])
+					methodPart := strings.TrimSpace(value[dotIndex+1:])
 					methodEndIndex := strings.Index(methodPart, "(")
 					methodName := strings.TrimSpace(methodPart[:methodEndIndex])
 
@@ -1761,6 +1808,41 @@ func LoadModule(moduleName string, baseDir string) (*ModuleInfo, error) {
 }
 
 func ResolveSymbol(symbolName string, currentModule string) string {
+	// Handle expressions containing module-qualified symbols
+	if strings.Contains(symbolName, ".") && (strings.Contains(symbolName, " ") || strings.Contains(symbolName, "*") || strings.Contains(symbolName, "+") || strings.Contains(symbolName, "-") || strings.Contains(symbolName, "/")) {
+		// This is an expression, need to find and replace module-qualified symbols within it
+		result := symbolName
+
+		// Find all potential module.symbol patterns
+		words := strings.FieldsFunc(symbolName, func(r rune) bool {
+			return r == ' ' || r == '*' || r == '+' || r == '-' || r == '/' || r == '(' || r == ')' || r == '[' || r == ']' || r == ',' || r == '=' || r == '<' || r == '>' || r == '!'
+		})
+
+		for _, word := range words {
+			if strings.Contains(word, ".") {
+				parts := strings.SplitN(word, ".", 2)
+				if len(parts) == 2 {
+					moduleName := parts[0]
+					symbol := parts[1]
+
+					if module, exists := LoadedModules[moduleName]; exists {
+						if _, exists := module.PublicVars[symbol]; exists {
+							replacement := fmt.Sprintf("%s_%s", moduleName, symbol)
+							result = strings.ReplaceAll(result, word, replacement)
+						}
+						if _, exists := module.PublicClasses[symbol]; exists {
+							replacement := fmt.Sprintf("%s_%s", moduleName, symbol)
+							result = strings.ReplaceAll(result, word, replacement)
+						}
+					}
+				}
+			}
+		}
+
+		return result
+	}
+
+	// Handle simple module.symbol pattern
 	if strings.Contains(symbolName, ".") {
 		parts := strings.SplitN(symbolName, ".", 2)
 		moduleName := parts[0]
