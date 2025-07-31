@@ -5,9 +5,8 @@ import (
 	"fmt"
 )
 
-func ShowUsage() error {
+func ShowUsage() {
 	fmt.Println("Usage: scar [-asm] [program.x]")
 	flag.PrintDefaults()
-	_, err := fmt.Println("\nBy Navid M (c) 2025")
-	return err
+	fmt.Println("\nBy Navid M (c) 2025")
 }
