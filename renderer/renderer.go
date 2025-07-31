@@ -1,3 +1,9 @@
+// By Navid M (c)
+// Date: 2025
+// License: GPL3
+//
+// IL code generator for the scar programming language.
+
 package renderer
 
 import (

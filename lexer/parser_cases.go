@@ -1,3 +1,9 @@
+// By Navid M (c)
+// Date: 2025
+// License: GPL3
+//
+// Contains the parser cases for the parser/lexer operations.
+
 package lexer
 
 import (

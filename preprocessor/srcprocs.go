@@ -3,7 +3,7 @@
 // License: GPL3
 //
 // Prior to C conversion (therefore: raw input) macros.
-// This file contains functions to process source-level macros in Scar code.
+// Contains functions to process source-level macros in Scar code.
 
 package preprocessor
 

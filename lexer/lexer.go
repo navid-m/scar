@@ -1,3 +1,9 @@
+// By Navid M (c)
+// Date: 2025
+// License: GPL3
+//
+// Contains the lexer for the scar programming language.
+
 package lexer
 
 import (
