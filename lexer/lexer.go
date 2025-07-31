@@ -391,24 +391,20 @@ func parseAllImports(lines []string, startLine int) ([]*ImportStmt, error) {
 func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int, error) {
 	line := strings.TrimSpace(lines[lineNum])
 
-	// Check for map declaration first to avoid splitting type prematurely
 	if strings.HasPrefix(line, "map[") && strings.Contains(line, "]") && strings.Contains(line, "=") {
-		// Find the end of the type declaration
 		typeEnd := strings.Index(line, "]")
 		if typeEnd == -1 {
 			return nil, lineNum + 1, fmt.Errorf("invalid map type declaration at line %d", lineNum+1)
 		}
-
-		// Extract the full type (e.g., "map[int: string]")
 		mapType := line[:typeEnd+1]
 		if !strings.Contains(mapType, ":") {
 			return nil, lineNum + 1, fmt.Errorf("map type must specify key:value types at line %d", lineNum+1)
 		}
-
-		// Parse the type declaration
-		typeStart := strings.Index(mapType, "[")
-		typeDecl := strings.TrimSpace(mapType[typeStart+1 : typeEnd])
-		typeParts := strings.SplitN(typeDecl, ":", 2)
+		var (
+			typeStart = strings.Index(mapType, "[")
+			typeDecl  = strings.TrimSpace(mapType[typeStart+1 : typeEnd])
+			typeParts = strings.SplitN(typeDecl, ":", 2)
+		)
 		if len(typeParts) != 2 {
 			return nil, lineNum + 1, fmt.Errorf("map type must specify key:value types at line %d", lineNum+1)
 		}
@@ -418,8 +414,6 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 		if keyType == "" || valueType == "" {
 			return nil, lineNum + 1, fmt.Errorf("map type must specify valid key and value types at line %d", lineNum+1)
 		}
-
-		// Extract the rest of the line after the type
 		restOfLine := strings.TrimSpace(line[typeEnd+1:])
 		parts := strings.Fields(restOfLine)
 		if len(parts) < 3 || parts[1] != "=" {
@@ -443,7 +437,6 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 
 		if pairsStr != "" {
 			if strings.Contains(pairsStr, ":") {
-				// Key-value pairs: [1: "hello", 2: "world"]
 				pairsList := splitMapPairs(pairsStr)
 				for _, pairStr := range pairsList {
 					pairStr = strings.TrimSpace(pairStr)
@@ -455,7 +448,6 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 						key := strings.TrimSpace(pairStr[:colonIdx])
 						value := strings.TrimSpace(pairStr[colonIdx+1:])
 
-						// Remove quotes if present
 						if strings.HasPrefix(key, "\"") && strings.HasSuffix(key, "\"") {
 							key = key[1 : len(key)-1]
 						}
