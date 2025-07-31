@@ -107,8 +107,7 @@ func main() {
 			"-o", outputBinary,
 		}
 	case "windows":
-		// Assumes libomp is present and MSVC or Clang is installed
-		// Will be part of the installer. I suppose.
+		cmpPath = "gcc"
 		outputBinary += ".exe"
 		compileArgs = []string{
 			"-fopenmp",
