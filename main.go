@@ -19,6 +19,8 @@ import (
 func main() {
 	flag.Usage = meta.ShowUsage
 	asm := flag.Bool("asm", false, "show assembly output")
+	c := flag.Bool("c", false, "show c input")
+
 	flag.Parse()
 
 	if len(flag.Args()) < 1 {
@@ -60,6 +62,11 @@ func main() {
 		if err != nil {
 			log.Fatal("Failed to generate assembly.")
 		}
+		return
+	}
+
+	if *c {
+		fmt.Println(cCode)
 		return
 	}
 
