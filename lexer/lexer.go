@@ -49,6 +49,7 @@ type Statement struct {
 	TryCatch          *TryCatchStmt
 	Throw             *ThrowStmt
 	VarDeclRead       *VarDeclReadStmt
+	VarDeclWrite      *VarDeclWriteStmt
 }
 
 type PubVarDeclStmt struct {
@@ -74,6 +75,12 @@ type VarDeclMethodCallStmt struct {
 type VarDeclInferredStmt struct {
 	Name  string
 	Value string
+}
+
+type VarDeclWriteStmt struct {
+	Content  string
+	FilePath string
+	Mode     string
 }
 
 type ReturnStmt struct {
@@ -700,7 +707,6 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 		return nil, lineNum + 1, fmt.Errorf("catch statement must follow a try statement at line %d", lineNum+1)
 
 	default:
-		// Handle this.field assignments
 		if strings.HasPrefix(parts[0], "this.") && len(parts) >= 3 && parts[1] == "=" {
 			fieldName := parts[0][5:] // Remove "this."
 			value := strings.Join(parts[2:], " ")
@@ -895,6 +901,35 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 			return &Statement{VarDecl: &VarDeclStmt{Type: varType, Name: varName, Value: value}}, lineNum + 1, nil
 		}
 
+		if strings.HasPrefix(line, "write(") && strings.HasSuffix(line, ")") {
+			start := strings.Index(line, "(")
+			end := strings.LastIndex(line, ")")
+			if start != -1 && end != -1 && end > start {
+				argsStr := strings.TrimSpace(line[start+1 : end])
+				if argsStr != "" {
+					args := strings.Split(argsStr, ",")
+					if len(args) >= 2 {
+						content := strings.TrimSpace(args[0])
+						filePath := strings.TrimSpace(args[1])
+						mode := "overwrite!"
+						if len(args) >= 3 {
+							mode = strings.TrimSpace(args[2])
+						}
+						if strings.HasPrefix(filePath, "\"") && strings.HasSuffix(filePath, "\"") {
+							filePath = filePath[1 : len(filePath)-1]
+						}
+						if strings.HasPrefix(mode, "\"") && strings.HasSuffix(mode, "\"") {
+							mode = mode[1 : len(mode)-1]
+						}
+						return &Statement{VarDeclWrite: &VarDeclWriteStmt{
+							Content:  content,
+							FilePath: filePath,
+							Mode:     mode,
+						}}, lineNum + 1, nil
+					}
+				}
+			}
+		}
 	}
 	return nil, lineNum + 1, fmt.Errorf("unknown statement type '%s' at line %d", parts[0], lineNum+1)
 }

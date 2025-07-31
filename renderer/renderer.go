@@ -622,19 +622,48 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 		case stmt.VarDeclRead != nil:
 			varName := lexer.ResolveSymbol(stmt.VarDeclRead.Name, currentModule)
 			filePath := stmt.VarDeclRead.FilePath
+			fpVarName := fmt.Sprintf("fp_read_%s", varName)
 
 			fmt.Fprintf(b, "%schar* %s = NULL;\n", indent, varName)
-			fmt.Fprintf(b, "%sFILE* fp = fopen(%s, \"r\");\n", indent, filePath)
-			fmt.Fprintf(b, "%sif (fp != NULL) {\n", indent)
-			fmt.Fprintf(b, "%sfseek(fp, 0, SEEK_END);\n", indent+"    ")
-			fmt.Fprintf(b, "%slong size = ftell(fp);\n", indent+"    ")
-			fmt.Fprintf(b, "%sfseek(fp, 0, SEEK_SET);\n", indent+"    ")
+			fmt.Fprintf(b, "%sFILE* %s = fopen(%s, \"r\");\n", indent, fpVarName, filePath)
+			fmt.Fprintf(b, "%sif (%s != NULL) {\n", indent, fpVarName)
+			fmt.Fprintf(b, "%sfseek(%s, 0, SEEK_END);\n", indent+"    ", fpVarName)
+			fmt.Fprintf(b, "%slong size = ftell(%s);\n", indent+"    ", fpVarName)
+			fmt.Fprintf(b, "%sfseek(%s, 0, SEEK_SET);\n", indent+"    ", fpVarName)
 			fmt.Fprintf(b, "%s%s = malloc(size + 1);\n", indent+"    ", varName)
-			fmt.Fprintf(b, "%sfread(%s, 1, size, fp);\n", indent+"    ", varName)
+			fmt.Fprintf(b, "%sfread(%s, 1, size, %s);\n", indent+"    ", varName, fpVarName)
 			fmt.Fprintf(b, "%s%s[size] = '\\0';\n", indent+"    ", varName)
-			fmt.Fprintf(b, "%sfclose(fp);\n", indent+"    ")
+			fmt.Fprintf(b, "%sfclose(%s);\n", indent+"    ", fpVarName)
 			fmt.Fprintf(b, "%s}\n", indent)
+		case stmt.VarDeclWrite != nil:
+			content := lexer.ResolveSymbol(stmt.VarDeclWrite.Content, currentModule)
+			filePath := fmt.Sprintf("\"%s\"", stmt.VarDeclWrite.FilePath)
+			mode := stmt.VarDeclWrite.Mode
 
+			// Generate unique file pointer variable name
+			fpVarName := fmt.Sprintf("fp_write_%d", len(stmt.VarDeclWrite.FilePath)) // Simple uniqueness
+
+			var fileMode string
+			if mode == "append!" {
+				fileMode = "\"a\""
+			} else {
+				fileMode = "\"w\"" // default to overwrite
+			}
+
+			fmt.Fprintf(b, "%sFILE* %s = fopen(%s, %s);\n", indent, fpVarName, filePath, fileMode)
+			fmt.Fprintf(b, "%sif (%s != NULL) {\n", indent, fpVarName)
+
+			// Check if content is a string variable or literal
+			if strings.HasPrefix(content, "\"") && strings.HasSuffix(content, "\"") {
+				// String literal
+				fmt.Fprintf(b, "%s    fprintf(%s, \"%%s\", %s);\n", indent, fpVarName, content)
+			} else {
+				// Variable - need to determine type and format accordingly
+				fmt.Fprintf(b, "%s    fprintf(%s, \"%%s\", %s);\n", indent, fpVarName, content)
+			}
+
+			fmt.Fprintf(b, "%s    fclose(%s);\n", indent, fpVarName)
+			fmt.Fprintf(b, "%s}\n", indent)
 		case stmt.FunctionCall != nil:
 			funcName := lexer.ResolveSymbol(stmt.FunctionCall.Name, currentModule)
 			args := make([]string, len(stmt.FunctionCall.Args))
