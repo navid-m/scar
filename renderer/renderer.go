@@ -9,6 +9,7 @@ import (
 var globalClasses = make(map[string]*ClassInfo)
 var globalObjects = make(map[string]*ObjectInfo)
 var globalFunctions = make(map[string]*lexer.TopLevelFuncDeclStmt)
+var globalArrays = make(map[string]string)
 var currentModule = ""
 
 func RenderC(program *lexer.Program, baseDir string) string {
@@ -503,7 +504,16 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				varName = "this->" + varName[5:]
 			}
 			if strings.Contains(varName, "[") && strings.Contains(varName, "]") {
-				fmt.Fprintf(b, "%s%s = %s;\n", indent, varName, value)
+				// Extract array name from varName like "names[2]"
+				arrayName := varName[:strings.Index(varName, "[")]
+				if arrayType, exists := globalArrays[arrayName]; exists && arrayType == "string" {
+					if !strings.HasPrefix(value, "\"") {
+						value = fmt.Sprintf("\"%s\"", value)
+					}
+					fmt.Fprintf(b, "%sstrcpy(%s, %s);\n", indent, varName, value)
+				} else {
+					fmt.Fprintf(b, "%s%s = %s;\n", indent, varName, value)
+				}
 			} else {
 				var varType string
 				for _, classInfo := range globalClasses {
@@ -526,7 +536,12 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 		case stmt.ListDecl != nil:
 			listType := mapTypeToCType(stmt.ListDecl.Type)
 			listName := lexer.ResolveSymbol(stmt.ListDecl.Name, currentModule)
-			fmt.Fprintf(b, "%s%s %s[%d];\n", indent, listType, listName, len(stmt.ListDecl.Elements))
+			globalArrays[stmt.ListDecl.Name] = stmt.ListDecl.Type
+			if stmt.ListDecl.Type == "string" {
+				fmt.Fprintf(b, "%s%s %s[%d][256];\n", indent, listType, listName, len(stmt.ListDecl.Elements))
+			} else {
+				fmt.Fprintf(b, "%s%s %s[%d];\n", indent, listType, listName, len(stmt.ListDecl.Elements))
+			}
 			for i, elem := range stmt.ListDecl.Elements {
 				elem = lexer.ResolveSymbol(elem, currentModule)
 				if stmt.ListDecl.Type == "string" {
