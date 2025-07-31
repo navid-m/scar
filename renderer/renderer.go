@@ -337,7 +337,20 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 		}
 
 		for _, field := range classDecl.Constructor.Fields {
-			if field.VarAssign != nil && strings.HasPrefix(field.VarAssign.Name, "this.") {
+			if field.VarDecl != nil && strings.HasPrefix(field.VarDecl.Name, "this.") {
+				fieldName := field.VarDecl.Name[5:] // Remove "this."
+				value := field.VarDecl.Value
+				fieldType := field.VarDecl.Type
+
+				if fieldType == "string" {
+					if !strings.HasPrefix(value, "\"") {
+						value = fmt.Sprintf("\"%s\"", value)
+					}
+					fmt.Fprintf(b, "    strcpy(obj->%s, %s);\n", fieldName, value)
+				} else {
+					fmt.Fprintf(b, "    obj->%s = %s;\n", fieldName, value)
+				}
+			} else if field.VarAssign != nil && strings.HasPrefix(field.VarAssign.Name, "this.") {
 				fieldName := field.VarAssign.Name[5:] // Remove "this."
 				value := field.VarAssign.Value
 				var fieldType string
@@ -351,7 +364,7 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 				}
 
 				if fieldType == "string" {
-					if !strings.HasPrefix(value, "\"") {
+					if !strings.HasPrefix(value, "\"") && !isValidIdentifier(value) {
 						value = fmt.Sprintf("\"%s\"", value)
 					}
 					fmt.Fprintf(b, "    strcpy(obj->%s, %s);\n", fieldName, value)
