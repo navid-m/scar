@@ -227,7 +227,7 @@ func collectClassInfoWithModule(classDecl *lexer.ClassDeclStmt, moduleName strin
 	}
 
 	if classDecl.Constructor != nil {
-		// Track unique fields to avoid duplicates
+		// We track unique fields here to avoid duplicates
 		fieldMap := make(map[string]bool)
 		for _, param := range classDecl.Constructor.Parameters {
 			if _, exists := fieldMap[param.Name]; !exists {
@@ -442,6 +442,7 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 		b.WriteString("}\n\n")
 	}
 }
+
 func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent string, className string, program *lexer.Program) {
 	for _, stmt := range stmts {
 		switch {
@@ -608,14 +609,10 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				Type: typeName,
 			}
 			globalObjects[stmt.ObjectDecl.Name] = objectInfo
-
-			// Only include constructor arguments, excluding type name
 			argsStr := ""
 			if len(args) > 0 {
-				// Filter out type name if present in args
 				constructorArgs := make([]string, 0)
 				for _, arg := range args {
-					// Skip the type name if it matches resolvedType or typeName
 					if arg != typeName && arg != resolvedType {
 						constructorArgs = append(constructorArgs, lexer.ResolveSymbol(arg, currentModule))
 					}
