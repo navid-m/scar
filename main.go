@@ -46,6 +46,7 @@ func main() {
 	}
 
 	cleanedName := strings.ReplaceAll(filepath.Base(ptf), ".x", "")
+	input = preprocessor.ProcessSourceLevelMacros(input)
 	program, err := lexer.ParseWithIndentation(input)
 	if err != nil {
 		log.Fatal(err)
