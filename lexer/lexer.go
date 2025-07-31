@@ -57,6 +57,14 @@ type Statement struct {
 	VarDeclWrite        *VarDeclWriteStmt
 	RawCode             *RawCodeStmt
 	MapDecl             *MapDeclStmt
+	ParallelFor         *ParallelForStmt
+}
+
+type ParallelForStmt struct {
+	Var   string
+	Start string
+	End   string
+	Body  []*Statement
 }
 
 type PubVarDeclStmt struct {

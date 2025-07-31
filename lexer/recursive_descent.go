@@ -180,6 +180,51 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 		return nil, lineNum + 1, fmt.Errorf("empty statement at line %d", lineNum+1)
 	}
 	switch parts[0] {
+	case "parallel":
+		if len(parts) < 5 || parts[1] != "for" || parts[3] != "=" || !strings.Contains(line, "to") || !strings.HasSuffix(line, ":") {
+			return nil, lineNum + 1, fmt.Errorf("parallel for statement format error at line %d (expected: parallel for var = start to end:)", lineNum+1)
+		}
+
+		equalsIndex := strings.Index(line, "=")
+		toIndex := strings.Index(line, "to")
+		colonIndex := strings.LastIndex(line, ":")
+		if equalsIndex == -1 || toIndex == -1 || colonIndex == -1 ||
+			!(equalsIndex > strings.Index(line, "for") && equalsIndex < toIndex && toIndex < colonIndex) {
+			return nil, lineNum + 1, fmt.Errorf("parallel for statement format error at line %d", lineNum+1)
+		}
+
+		varName := strings.TrimSpace(line[strings.Index(line, "for")+len("for") : equalsIndex])
+		start := strings.TrimSpace(line[equalsIndex+1 : toIndex])
+		end := strings.TrimSpace(line[toIndex+len("to") : colonIndex])
+
+		if varName == "" || start == "" || end == "" {
+			return nil, lineNum + 1, fmt.Errorf("parallel for statement missing variable, start, or end expression at line %d", lineNum+1)
+		}
+
+		expectedBodyIndent := currentIndent + 4
+		if currentIndent == 0 {
+			bodyStartLine := lineNum + 1
+			for bodyStartLine < len(lines) {
+				bodyLine := lines[bodyStartLine]
+				if strings.TrimSpace(bodyLine) != "" && !strings.HasPrefix(strings.TrimSpace(bodyLine), "#") {
+					expectedBodyIndent = getIndentation(bodyLine)
+					break
+				}
+				bodyStartLine++
+			}
+			if expectedBodyIndent <= currentIndent {
+				expectedBodyIndent = currentIndent + 4
+			}
+		}
+
+		body, err := parseStatements(lines, lineNum+1, expectedBodyIndent)
+		if err != nil {
+			return nil, lineNum + 1, err
+		}
+
+		nextLine := findEndOfBlock(lines, lineNum+1, expectedBodyIndent)
+
+		return &Statement{ParallelFor: &ParallelForStmt{Var: varName, Start: start, End: end, Body: body}}, nextLine, nil
 	case "import":
 		if len(parts) < 2 {
 			return nil, lineNum + 1, fmt.Errorf("import statement requires a module name at line %d", lineNum+1)

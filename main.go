@@ -93,6 +93,7 @@ func main() {
 	case "darwin":
 		cmpPath = "/opt/homebrew/opt/llvm/bin/clang"
 		compileArgs = []string{
+			"-w",
 			"-fopenmp",
 			tmpCPath,
 			"-I/opt/homebrew/opt/libomp/include",

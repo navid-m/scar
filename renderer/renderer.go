@@ -805,6 +805,14 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 					fmt.Fprintf(b, "%s%s_values[%d] = %s;\n", indent, mapName, i, value)
 				}
 			}
+		case stmt.ParallelFor != nil:
+			varName := lexer.ResolveSymbol(stmt.ParallelFor.Var, currentModule)
+			start := lexer.ResolveSymbol(stmt.ParallelFor.Start, currentModule)
+			end := lexer.ResolveSymbol(stmt.ParallelFor.End, currentModule)
+			fmt.Fprintf(b, "%s#pragma omp parallel for\n", indent)
+			fmt.Fprintf(b, "%sfor (int %s = %s; %s <= %s; %s++) {\n", indent, varName, start, varName, end, varName)
+			renderStatements(b, stmt.ParallelFor.Body, indent+"    ", className, program)
+			fmt.Fprintf(b, "%s}\n", indent)
 		}
 	}
 }
