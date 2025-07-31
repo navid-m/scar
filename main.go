@@ -19,7 +19,7 @@ import (
 func main() {
 	flag.Usage = meta.ShowUsage
 	asm := flag.Bool("asm", false, "show assembly output")
-	c := flag.Bool("c", false, "show c input")
+	c := flag.Bool("c", false, "show IL")
 
 	flag.Parse()
 
