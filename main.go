@@ -68,7 +68,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to write temp file: %v", err)
 	}
-	// defer os.Remove(tmpCPath)
+	defer os.Remove(tmpCPath)
 
 	outputBinary := "./" + cleanedName
 	var success bool
