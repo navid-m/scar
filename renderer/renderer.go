@@ -810,7 +810,6 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				}
 			}
 		}
-
 	}
 }
 
