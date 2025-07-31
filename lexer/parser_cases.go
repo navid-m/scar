@@ -323,8 +323,8 @@ func parseClassStatement(lines []string, lineNum, currentIndent int) (*Statement
 				if parenStart != -1 && parenEnd != -1 && parenEnd > parenStart {
 					paramsStr := strings.TrimSpace(trimmed[parenStart+1 : parenEnd])
 					if paramsStr != "" {
-						paramList := strings.Split(paramsStr, ",")
-						for _, paramStr := range paramList {
+						paramList := strings.SplitSeq(paramsStr, ",")
+						for paramStr := range paramList {
 							paramStr = strings.TrimSpace(paramStr)
 							paramParts := strings.Fields(paramStr)
 							if len(paramParts) == 2 {
