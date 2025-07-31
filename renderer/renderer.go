@@ -812,7 +812,89 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 		}
 	}
 }
+func generateMapHelperFunctions(b *strings.Builder, mapDecl *lexer.MapDeclStmt) {
+	mapName := mapDecl.Name
+	keyType := mapTypeToCType(mapDecl.KeyType)
+	valueType := mapTypeToCType(mapDecl.ValueType)
 
+	// Append helper function
+	fmt.Fprintf(b, "int %s_append_helper(", mapName)
+	if mapDecl.KeyType == "string" {
+		fmt.Fprintf(b, "%s keys[][256], ", keyType)
+	} else {
+		fmt.Fprintf(b, "%s keys[], ", keyType)
+	}
+	if mapDecl.ValueType == "string" {
+		fmt.Fprintf(b, "%s values[][256], int* size, %s value[256]) {\n", valueType, valueType)
+	} else {
+		fmt.Fprintf(b, "%s values[], int* size, %s value) {\n", valueType, valueType)
+	}
+
+	fmt.Fprintf(b, "    if (*size < 100) {\n") // Assuming max size of 100
+	if mapDecl.KeyType == "string" {
+		fmt.Fprintf(b, "        sprintf(keys[*size], \"%%d\", *size);\n")
+	} else {
+		fmt.Fprintf(b, "        keys[*size] = *size;\n")
+	}
+
+	if mapDecl.ValueType == "string" {
+		fmt.Fprintf(b, "        strcpy(values[*size], value);\n")
+	} else {
+		fmt.Fprintf(b, "        values[*size] = value;\n")
+	}
+
+	fmt.Fprintf(b, "        (*size)++;\n")
+	fmt.Fprintf(b, "    }\n")
+	fmt.Fprintf(b, "    return 0;\n")
+	fmt.Fprintf(b, "}\n\n")
+
+	// Delete helper function
+	fmt.Fprintf(b, "int %s_delete_helper(", mapName)
+	if mapDecl.KeyType == "string" {
+		fmt.Fprintf(b, "%s keys[][256], ", keyType)
+	} else {
+		fmt.Fprintf(b, "%s keys[], ", keyType)
+	}
+	if mapDecl.ValueType == "string" {
+		fmt.Fprintf(b, "%s values[][256], int* size, ", valueType)
+	} else {
+		fmt.Fprintf(b, "%s values[], int* size, ", valueType)
+	}
+
+	if mapDecl.KeyType == "string" {
+		fmt.Fprintf(b, "%s* key) {\n", keyType)
+	} else {
+		fmt.Fprintf(b, "%s key) {\n", keyType)
+	}
+
+	fmt.Fprintf(b, "    for (int i = 0; i < *size; i++) {\n")
+	if mapDecl.KeyType == "string" {
+		fmt.Fprintf(b, "        if (strcmp(keys[i], key) == 0) {\n")
+	} else {
+		fmt.Fprintf(b, "        if (keys[i] == key) {\n")
+	}
+
+	fmt.Fprintf(b, "            for (int j = i; j < *size - 1; j++) {\n")
+	if mapDecl.KeyType == "string" {
+		fmt.Fprintf(b, "                strcpy(keys[j], keys[j+1]);\n")
+	} else {
+		fmt.Fprintf(b, "                keys[j] = keys[j+1];\n")
+	}
+
+	if mapDecl.ValueType == "string" {
+		fmt.Fprintf(b, "                strcpy(values[j], values[j+1]);\n")
+	} else {
+		fmt.Fprintf(b, "                values[j] = values[j+1];\n")
+	}
+
+	fmt.Fprintf(b, "            }\n")
+	fmt.Fprintf(b, "            (*size)--;\n")
+	fmt.Fprintf(b, "            break;\n")
+	fmt.Fprintf(b, "        }\n")
+	fmt.Fprintf(b, "    }\n")
+	fmt.Fprintf(b, "    return 0;\n")
+	fmt.Fprintf(b, "}\n\n")
+}
 func generateTopLevelFunctionImplementation(b *strings.Builder, funcDecl *lexer.TopLevelFuncDeclStmt, program *lexer.Program) {
 	returnType := "void"
 	if funcDecl.ReturnType != "" && funcDecl.ReturnType != "void" {
