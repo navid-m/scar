@@ -26,32 +26,33 @@ type Program struct {
 }
 
 type Statement struct {
-	Import            *ImportStmt
-	Print             *PrintStmt
-	Sleep             *SleepStmt
-	While             *WhileStmt
-	For               *ForStmt
-	If                *IfStmt
-	Break             *BreakStmt
-	VarDecl           *VarDeclStmt
-	VarAssign         *VarAssignStmt
-	ListDecl          *ListDeclStmt
-	ClassDecl         *ClassDeclStmt
-	MethodCall        *MethodCallStmt
-	ObjectDecl        *ObjectDeclStmt
-	Return            *ReturnStmt
-	VarDeclMethodCall *VarDeclMethodCallStmt
-	VarDeclInferred   *VarDeclInferredStmt
-	PubVarDecl        *PubVarDeclStmt
-	PubClassDecl      *PubClassDeclStmt
-	TopLevelFuncDecl  *TopLevelFuncDeclStmt
-	FunctionCall      *FunctionCallStmt
-	TryCatch          *TryCatchStmt
-	Throw             *ThrowStmt
-	VarDeclRead       *VarDeclReadStmt
-	VarDeclWrite      *VarDeclWriteStmt
-	RawCode           *RawCodeStmt
-	MapDecl           *MapDeclStmt
+	Import              *ImportStmt
+	Print               *PrintStmt
+	Sleep               *SleepStmt
+	While               *WhileStmt
+	For                 *ForStmt
+	If                  *IfStmt
+	Break               *BreakStmt
+	VarDecl             *VarDeclStmt
+	VarAssign           *VarAssignStmt
+	ListDecl            *ListDeclStmt
+	ClassDecl           *ClassDeclStmt
+	MethodCall          *MethodCallStmt
+	ObjectDecl          *ObjectDeclStmt
+	Return              *ReturnStmt
+	VarDeclMethodCall   *VarDeclMethodCallStmt
+	VarAssignMethodCall *VarAssignMethodCallStmt
+	VarDeclInferred     *VarDeclInferredStmt
+	PubVarDecl          *PubVarDeclStmt
+	PubClassDecl        *PubClassDeclStmt
+	TopLevelFuncDecl    *TopLevelFuncDeclStmt
+	FunctionCall        *FunctionCallStmt
+	TryCatch            *TryCatchStmt
+	Throw               *ThrowStmt
+	VarDeclRead         *VarDeclReadStmt
+	VarDeclWrite        *VarDeclWriteStmt
+	RawCode             *RawCodeStmt
+	MapDecl             *MapDeclStmt
 }
 
 type PubVarDeclStmt struct {
@@ -68,6 +69,13 @@ type PubClassDeclStmt struct {
 
 type VarDeclMethodCallStmt struct {
 	Type   string
+	Name   string
+	Object string
+	Method string
+	Args   []string
+}
+
+type VarAssignMethodCallStmt struct {
 	Name   string
 	Object string
 	Method string
@@ -833,6 +841,38 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 
 		varName := parts[1]
 		value := strings.Join(parts[3:], " ")
+
+		// Check for method call assignment
+		if strings.Contains(value, ".") && strings.Contains(value, "(") && strings.Contains(value, ")") && !strings.HasPrefix(value, "new ") {
+			dotIndex := strings.Index(value, ".")
+			parenIndex := strings.Index(value, "(")
+			if dotIndex < parenIndex {
+				objectName := strings.TrimSpace(value[:dotIndex])
+				methodPart := strings.TrimSpace(value[dotIndex+1:])
+				methodEndIndex := strings.Index(methodPart, "(")
+				methodName := strings.TrimSpace(methodPart[:methodEndIndex])
+
+				argsStart := strings.Index(value, "(")
+				argsEnd := strings.LastIndex(value, ")")
+				var args []string
+				if argsEnd > argsStart+1 {
+					argsStr := strings.TrimSpace(value[argsStart+1 : argsEnd])
+					if argsStr != "" {
+						argsList := strings.Split(argsStr, ",")
+						for _, arg := range argsList {
+							args = append(args, strings.TrimSpace(arg))
+						}
+					}
+				}
+
+				return &Statement{VarAssignMethodCall: &VarAssignMethodCallStmt{
+					Name:   varName,
+					Object: objectName,
+					Method: methodName,
+					Args:   args,
+				}}, lineNum + 1, nil
+			}
+		}
 
 		if strings.Contains(varName, "[") && strings.Contains(varName, "]") {
 			value = handleIndexAssignment(line, varName, value)

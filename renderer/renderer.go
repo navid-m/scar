@@ -525,7 +525,7 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 					}
 				}
 				if varType == "string" {
-					if !strings.HasPrefix(value, "\"") {
+					if !strings.HasPrefix(value, "\"") && !isValidIdentifier(value) {
 						value = fmt.Sprintf("\"%s\"", value)
 					}
 					fmt.Fprintf(b, "%sstrcpy(%s, %s);\n", indent, varName, value)
@@ -608,7 +608,11 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			if resolvedClassName == "" {
 				resolvedClassName = "unknown"
 			}
-			fmt.Fprintf(b, "%s%s_%s(%s, %s);\n", indent, resolvedClassName, methodName, objectName, argsStr)
+			if argsStr == "" {
+				fmt.Fprintf(b, "%s%s_%s(%s);\n", indent, resolvedClassName, methodName, objectName)
+			} else {
+				fmt.Fprintf(b, "%s%s_%s(%s, %s);\n", indent, resolvedClassName, methodName, objectName, argsStr)
+			}
 		case stmt.VarDeclMethodCall != nil:
 			varType := mapTypeToCType(stmt.VarDeclMethodCall.Type)
 			varName := lexer.ResolveSymbol(stmt.VarDeclMethodCall.Name, currentModule)
@@ -635,7 +639,41 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			if resolvedClassName == "" {
 				resolvedClassName = "unknown"
 			}
-			fmt.Fprintf(b, "%s%s %s = %s_%s(%s, %s);\n", indent, varType, varName, resolvedClassName, methodName, objectName, argsStr)
+			if argsStr == "" {
+				fmt.Fprintf(b, "%s%s %s = %s_%s(%s);\n", indent, varType, varName, resolvedClassName, methodName, objectName)
+			} else {
+				fmt.Fprintf(b, "%s%s %s = %s_%s(%s, %s);\n", indent, varType, varName, resolvedClassName, methodName, objectName, argsStr)
+			}
+		case stmt.VarAssignMethodCall != nil:
+			varName := lexer.ResolveSymbol(stmt.VarAssignMethodCall.Name, currentModule)
+			objectName := lexer.ResolveSymbol(stmt.VarAssignMethodCall.Object, currentModule)
+			methodName := stmt.VarAssignMethodCall.Method
+			args := make([]string, len(stmt.VarAssignMethodCall.Args))
+			for i, arg := range stmt.VarAssignMethodCall.Args {
+				args[i] = lexer.ResolveSymbol(arg, currentModule)
+			}
+			argsStr := strings.Join(args, ", ")
+			var resolvedClassName string
+			for _, obj := range globalObjects {
+				if obj.Name == stmt.VarAssignMethodCall.Object {
+					resolvedClassName = obj.Type
+					if strings.Contains(resolvedClassName, ".") {
+						parts := strings.Split(resolvedClassName, ".")
+						resolvedClassName = lexer.GenerateUniqueSymbol(parts[1], parts[0])
+					} else if moduleName, exists := isImportedType(resolvedClassName, program.Imports); exists {
+						resolvedClassName = lexer.GenerateUniqueSymbol(resolvedClassName, moduleName)
+					}
+					break
+				}
+			}
+			if resolvedClassName == "" {
+				resolvedClassName = "unknown"
+			}
+			if argsStr == "" {
+				fmt.Fprintf(b, "%s%s = %s_%s(%s);\n", indent, varName, resolvedClassName, methodName, objectName)
+			} else {
+				fmt.Fprintf(b, "%s%s = %s_%s(%s, %s);\n", indent, varName, resolvedClassName, methodName, objectName, argsStr)
+			}
 		case stmt.VarDeclInferred != nil:
 			varName := lexer.ResolveSymbol(stmt.VarDeclInferred.Name, currentModule)
 			value := lexer.ResolveSymbol(stmt.VarDeclInferred.Value, currentModule)
@@ -785,6 +823,23 @@ func generateTopLevelFunctionImplementation(b *strings.Builder, funcDecl *lexer.
 	b.WriteString(") {\n")
 	renderStatements(b, funcDecl.Body, "    ", "", program)
 	b.WriteString("}\n\n")
+}
+
+func isValidIdentifier(s string) bool {
+	if len(s) == 0 {
+		return false
+	}
+	// Check if first character is letter or underscore
+	if !((s[0] >= 'a' && s[0] <= 'z') || (s[0] >= 'A' && s[0] <= 'Z') || s[0] == '_') {
+		return false
+	}
+	// Check remaining characters are letters, digits, or underscores
+	for i := 1; i < len(s); i++ {
+		if !((s[i] >= 'a' && s[i] <= 'z') || (s[i] >= 'A' && s[i] <= 'Z') || (s[i] >= '0' && s[i] <= '9') || s[i] == '_') {
+			return false
+		}
+	}
+	return true
 }
 
 func mapTypeToCType(mapType string) string {
