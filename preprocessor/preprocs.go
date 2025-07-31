@@ -1,3 +1,10 @@
+// By Navid M (c)
+// Date: 2025
+// License: GPL3
+//
+// Post C conversion macros.
+// This file contains functions to insert macros and process expressions in C code.
+
 package preprocessor
 
 import "strings"
