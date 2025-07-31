@@ -479,7 +479,6 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 
 		mapName := parts[0]
 
-		// Parse map initialization
 		pairsStart := strings.Index(line, "=") + 1
 		pairsEnd := strings.LastIndex(line, "]")
 		if pairsStart == -1 || pairsEnd == -1 || pairsEnd <= pairsStart {
@@ -539,6 +538,7 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 			Pairs:     pairs,
 		}}, lineNum + 1, nil
 	}
+
 	parts := strings.Fields(strings.TrimSuffix(line, ":"))
 
 	if len(parts) == 0 {
@@ -582,7 +582,7 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 		varName := parts[1]
 		value := strings.Join(parts[3:], " ")
 		if strings.HasPrefix(value, "new ") {
-			newPart := strings.TrimSpace(value[4:]) // Remove "new "
+			newPart := strings.TrimSpace(value[4:])
 			parenStart := strings.Index(newPart, "(")
 			if parenStart == -1 {
 				return nil, lineNum + 1, fmt.Errorf("object declaration missing parentheses at line %d", lineNum+1)
@@ -1425,7 +1425,6 @@ func parsePubClassStatement(lines []string, lineNum, currentIndent int) (*Statem
 				}
 			}
 
-			// Find constructor body
 			initBodyIndent = expectedBodyIndent + 4
 			initStartLine = nextLine + 1
 			for initStartLine < len(lines) {
@@ -1517,14 +1516,14 @@ func parseClassStatement(lines []string, lineNum, currentIndent int) (*Statement
 		}
 
 		if strings.HasPrefix(trimmed, "init") {
-			var parameters []*MethodParameter
-			var initBody []*Statement
-			var initBodyIndent int
-			var initStartLine int
+			var (
+				parameters     []*MethodParameter
+				initBody       []*Statement
+				initBodyIndent int
+				initStartLine  int
+			)
 
-			// Check if constructor has parameters
 			if strings.Contains(trimmed, "(") && strings.Contains(trimmed, ")") {
-				// Parse constructor with parameters
 				parenStart := strings.Index(trimmed, "(")
 				parenEnd := strings.Index(trimmed, ")")
 				if parenStart != -1 && parenEnd != -1 && parenEnd > parenStart {
@@ -1886,7 +1885,6 @@ func LoadModule(moduleName string, baseDir string) (*ModuleInfo, error) {
 }
 
 func ResolveSymbol(symbolName string, currentModule string) string {
-	// Only handle module.symbol replacement here, not get! or other string hacks
 	if strings.Contains(symbolName, ".") {
 		parts := strings.SplitN(symbolName, ".", 2)
 		moduleName := parts[0]
@@ -1911,10 +1909,10 @@ func GenerateUniqueSymbol(originalName string, moduleName string) string {
 	return fmt.Sprintf("%s_%s", moduleName, originalName)
 }
 
-var vdt = []string{"int", "float", "double", "char", "string", "bool", "map"}
+var vdTypes = []string{"int", "float", "double", "char", "string", "bool", "map"}
 
 func isValidType(s string) bool {
-	return slices.Contains(vdt, s)
+	return slices.Contains(vdTypes, s)
 }
 
 func IsOperator(s string) bool {
