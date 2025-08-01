@@ -565,11 +565,9 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			varType := mapTypeToCType(stmt.VarDecl.Type)
 			varName := lexer.ResolveSymbol(stmt.VarDecl.Name, currentModule)
 			value := lexer.ResolveSymbol(stmt.VarDecl.Value, currentModule)
-
-			// Handle object member initialization (this.member = value)
 			if strings.HasPrefix(varName, "this.") {
 				fieldName := varName[5:]
-				if varType == "string" {
+				if stmt.VarDecl.Type == "string" {
 					if !strings.HasPrefix(value, "\"") && !strings.HasSuffix(value, "\"") {
 						value = fmt.Sprintf("\"%s\"", value)
 					}
@@ -578,13 +576,9 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 					fmt.Fprintf(b, "%sthis->%s = %s;\n", indent, fieldName, value)
 				}
 			} else {
-				// It's a regular variable declaration
-				if varType == "string" {
-					fmt.Fprintf(b, "%s%s %s[256];\n", indent, varType, varName)
+				if stmt.VarDecl.Type == "string" {
+					fmt.Fprintf(b, "%schar %s[256];\n", indent, varName)
 					if value != "" {
-						if !strings.HasPrefix(value, "\"") && !strings.HasSuffix(value, "\"") {
-							value = fmt.Sprintf("\"%s\"", value)
-						}
 						fmt.Fprintf(b, "%sstrcpy(%s, %s);\n", indent, varName, value)
 					}
 				} else {
