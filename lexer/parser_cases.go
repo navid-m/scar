@@ -206,8 +206,8 @@ func parsePubClassStatement(lines []string, lineNum, currentIndent int) (*Statem
 				if parenStart != -1 && parenEnd != -1 && parenEnd > parenStart {
 					paramsStr := strings.TrimSpace(trimmed[parenStart+1 : parenEnd])
 					if paramsStr != "" {
-						paramList := strings.Split(paramsStr, ",")
-						for _, paramStr := range paramList {
+						paramList := strings.SplitSeq(paramsStr, ",")
+						for paramStr := range paramList {
 							paramStr = strings.TrimSpace(paramStr)
 							paramParts := strings.Fields(paramStr)
 							if len(paramParts) == 2 {
@@ -543,7 +543,7 @@ func parseMethodStatement(lines []string, lineNum, currentIndent int) (*MethodDe
 }
 
 // TODO: Replace placeholder for handling index assignment.
-func handleIndexAssignment(line, varName, value string) string {
+func handleIndexAssignment(_, _, value string) string {
 	return value
 }
 
