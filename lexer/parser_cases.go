@@ -716,8 +716,8 @@ func parsePubFunctionStatement(lines []string, lineNum, currentIndent int) (*Sta
 	paramsStr := strings.TrimSpace(signature[parenStart+1 : parenEnd])
 	var parameters []*MethodParameter
 	if paramsStr != "" {
-		paramList := strings.Split(paramsStr, ",")
-		for _, paramStr := range paramList {
+		paramList := strings.SplitSeq(paramsStr, ",")
+		for paramStr := range paramList {
 			paramStr = strings.TrimSpace(paramStr)
 			paramParts := strings.Fields(paramStr)
 			if len(paramParts) == 2 {
