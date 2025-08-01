@@ -418,10 +418,7 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 					continue
 				}
 
-				if strings.HasPrefix(fieldName, "this.") {
-					fieldName = fieldName[5:]
-				}
-
+				fieldName = strings.TrimPrefix(fieldName, "this.")
 				isStringField := stmt.VarDecl.Type == "string"
 
 				fmt.Printf("Debug: VarDecl field %s, value %s, isStringField %v\n", fieldName, value, isStringField)
@@ -444,9 +441,7 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 					continue
 				}
 
-				if strings.HasPrefix(fieldName, "this.") {
-					fieldName = fieldName[5:]
-				}
+				fieldName = strings.TrimPrefix(fieldName, "this.")
 
 				isStringField := false
 				if classInfo, exists := globalClasses[className]; exists {
