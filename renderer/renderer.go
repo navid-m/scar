@@ -377,25 +377,72 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 		fmt.Fprintf(b, "%s* %s_new() {\n", className, className)
 	}
 
-	fmt.Fprintf(b, "    %s* obj = (%s*)malloc(sizeof(%s));\n", className, className, className)
+	fmt.Fprintf(b, "    %s* this = malloc(sizeof(%s));\n", className, className)
 
 	if classInfo, exists := globalClasses[className]; exists {
 		for _, field := range classInfo.Fields {
 			switch field.Type {
 			case "int":
-				fmt.Fprintf(b, "    obj->%s = 0;\n", field.Name)
+				fmt.Fprintf(b, "    this->%s = 0;\n", field.Name)
 			case "float", "double":
-				fmt.Fprintf(b, "    obj->%s = 0.0;\n", field.Name)
+				fmt.Fprintf(b, "    this->%s = 0.0;\n", field.Name)
 			case "string":
-				fmt.Fprintf(b, "    obj->%s[0] = '\\0';\n", field.Name)
+				fmt.Fprintf(b, "    this->%s[0] = '\\0';\n", field.Name)
 			case "bool":
-				fmt.Fprintf(b, "    obj->%s = 0;\n", field.Name)
+				fmt.Fprintf(b, "    this->%s = 0;\n", field.Name)
 			}
 		}
 	}
+
 	if classDecl.Constructor != nil {
+		if classInfo, exists := globalClasses[className]; exists {
+			for _, param := range classDecl.Constructor.Parameters {
+				for _, field := range classInfo.Fields {
+					if field.Name == param.Name {
+						if param.Type == "string" {
+							fmt.Fprintf(b, "    strcpy(this->%s, %s);\n", param.Name, param.Name)
+						} else {
+							fmt.Fprintf(b, "    this->%s = %s;\n", param.Name, param.Name)
+						}
+						break
+					}
+				}
+			}
+		}
+
 		for _, stmt := range classDecl.Constructor.Fields {
 			switch {
+			case stmt.VarDecl != nil:
+				fieldName := stmt.VarDecl.Name
+				value := stmt.VarDecl.Value
+
+				if fieldName == "this" {
+					continue
+				}
+
+				if strings.HasPrefix(fieldName, "this.") {
+					fieldName = fieldName[5:]
+				}
+
+				isStringField := false
+				if classInfo, exists := globalClasses[className]; exists {
+					for _, field := range classInfo.Fields {
+						if field.Name == fieldName && field.Type == "string" {
+							isStringField = true
+							break
+						}
+					}
+				}
+
+				if isStringField {
+					if !strings.HasPrefix(value, "\"") && !strings.HasSuffix(value, "\"") && !isValidIdentifier(value) {
+						value = fmt.Sprintf("\"%s\"", value)
+					}
+					fmt.Fprintf(b, "    strcpy(this->%s, %s);\n", fieldName, value)
+				} else {
+					value = strings.ReplaceAll(value, "this.", "this->")
+					fmt.Fprintf(b, "    this->%s = %s;\n", fieldName, value)
+				}
 
 			case stmt.VarAssign != nil:
 				fieldName := stmt.VarAssign.Name
@@ -409,7 +456,6 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 					fieldName = fieldName[5:]
 				}
 
-				// Check if this field is a string type
 				isStringField := false
 				if classInfo, exists := globalClasses[className]; exists {
 					for _, field := range classInfo.Fields {
@@ -421,42 +467,35 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 				}
 
 				if isStringField {
-					// For string fields, use strcpy and ensure quotes
-					if !strings.HasPrefix(value, "\"") && !strings.HasSuffix(value, "\"") {
+					if !strings.HasPrefix(value, "\"") && !strings.HasSuffix(value, "\"") && !isValidIdentifier(value) {
 						value = fmt.Sprintf("\"%s\"", value)
 					}
-					fmt.Fprintf(b, "    strcpy(obj->%s, %s);\n", fieldName, value)
+					fmt.Fprintf(b, "    strcpy(this->%s, %s);\n", fieldName, value)
 				} else {
-					value = strings.ReplaceAll(value, "this.", "obj->")
-					fmt.Fprintf(b, "    obj->%s = %s;\n", fieldName, value)
+					value = strings.ReplaceAll(value, "this.", "this->")
+					fmt.Fprintf(b, "    this->%s = %s;\n", fieldName, value)
 				}
-			}
-		}
 
-		for _, stmt := range classDecl.Constructor.Fields {
-			if stmt.VarAssign == nil {
-				switch {
-				case stmt.Print != nil:
-					if stmt.Print.Format != "" && len(stmt.Print.Variables) > 0 {
-						args := make([]string, len(stmt.Print.Variables))
-						for i, v := range stmt.Print.Variables {
-							v = strings.ReplaceAll(v, "this.", "obj->")
-							args[i] = v
-						}
-						fmt.Fprintf(b, "    printf(\"%s\\n\", %s);\n",
-							strings.ReplaceAll(stmt.Print.Format, "\"", "\\\""),
-							strings.Join(args, ", "))
-					} else if stmt.Print.Print != "" {
-						fmt.Fprintf(b, "    printf(\"%s\\n\");\n", stmt.Print.Print)
+			case stmt.Print != nil:
+				if stmt.Print.Format != "" && len(stmt.Print.Variables) > 0 {
+					args := make([]string, len(stmt.Print.Variables))
+					for i, v := range stmt.Print.Variables {
+						v = strings.ReplaceAll(v, "this.", "this->")
+						args[i] = v
 					}
-				default:
-					renderStatements(b, []*lexer.Statement{stmt}, "    ", className, program)
+					fmt.Fprintf(b, "    printf(\"%s\\n\", %s);\n",
+						strings.ReplaceAll(stmt.Print.Format, "\"", "\\\""),
+						strings.Join(args, ", "))
+				} else if stmt.Print.Print != "" {
+					fmt.Fprintf(b, "    printf(\"%s\\n\");\n", stmt.Print.Print)
 				}
+			default:
+				renderStatements(b, []*lexer.Statement{stmt}, "    ", className, program)
 			}
 		}
 	}
 
-	b.WriteString("    return obj;\n}\n\n")
+	b.WriteString("    return this;\n}\n\n")
 
 	for _, method := range classDecl.Methods {
 		returnType := "void"
