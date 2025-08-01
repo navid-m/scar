@@ -76,8 +76,6 @@ for i = 0 to 10:
 	}
 }
 
-// --- Tests that might pass ---
-
 func TestParseNestedBlocks(t *testing.T) {
 	input := `
 for i = 0 to 10:
