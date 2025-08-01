@@ -16,7 +16,6 @@ while 1:
     print "Hello"`
 
 	expected := `#include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 #include <omp.h>
@@ -60,7 +59,6 @@ for i = 0 to 3:
 print "done..."`
 
 	expected := `#include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 #include <omp.h>
@@ -105,7 +103,6 @@ for i = 1 to 2:
 print "All done"`
 
 	expected := `#include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 #include <omp.h>

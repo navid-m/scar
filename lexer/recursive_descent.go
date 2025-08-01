@@ -599,14 +599,14 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 
 		if strings.Contains(varName, "[") && strings.Contains(varName, "]") {
 			value = handleIndexAssignment(line, varName, value)
-		} else if len(parts) >= 6 && IsOperator(parts[4]) {
-			left := parts[3]
-			operator := parts[4]
-			right := parts[5]
-			value = left + " " + operator + " " + right
 		} else if strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"") {
 			value = value[1 : len(value)-1]
 		}
+
+		// The simple operator parsing logic was removed as it was causing issues
+		// with complex expressions. The full expression is now passed as-is to ResolveSymbol.
+		//
+		// May cause issues later, need to revisit.
 
 		return &Statement{VarAssign: &VarAssignStmt{Name: varName, Value: value}}, lineNum + 1, nil
 

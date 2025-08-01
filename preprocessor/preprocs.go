@@ -13,10 +13,17 @@ func insertLen(output string) string {
 	return "#define len(x) (sizeof(x) / sizeof((x)[0]))\n" + output
 }
 
+func insertOrd(output string) string {
+	return "#define ord(x) ((int)(x))\n" + output
+}
+
 func InsertMacros(output string) string {
 	outp := output
 	if strings.Contains(output, "len") {
 		outp = insertLen(outp)
+	}
+	if strings.Contains(output, "ord") {
+		outp = insertOrd(outp)
 	}
 	return outp
 }

@@ -301,53 +301,118 @@ func ParseWithIndentation(input string) (*Program, error) {
 	return &Program{Imports: imports, Statements: nonImportStatements}, nil
 }
 
+// Converts type casting functions like float(expr) to C-style casts (float)(expr)
+func handleTypeCasting(symbolName string) string {
+	typeCasts := []string{"float", "int", "double", "char"}
+
+	result := symbolName
+	for _, typecast := range typeCasts {
+		pattern := typecast + "("
+		originalPattern := pattern
+		for {
+			startIdx := strings.LastIndex(result, pattern)
+			if startIdx == -1 {
+				break
+			}
+			if startIdx > 0 {
+				prevChar := result[startIdx-1]
+				if (prevChar >= 'a' && prevChar <= 'z') || (prevChar >= 'A' && prevChar <= 'Z') || (prevChar >= '0' && prevChar <= '9') || prevChar == '_' {
+					marker := fmt.Sprintf("__TEMP_MARKER_%s_%d__", typecast, startIdx)
+					result = result[:startIdx] + marker + result[startIdx+len(pattern):]
+					continue
+				}
+			}
+
+			var (
+				openParen  = startIdx + len(typecast)
+				parenCount = 1
+				closeParen = openParen + 1
+			)
+
+			for closeParen < len(result) && parenCount > 0 {
+				if result[closeParen] == '(' {
+					parenCount++
+				} else if result[closeParen] == ')' {
+					parenCount--
+				}
+				closeParen++
+			}
+
+			if parenCount == 0 {
+				var (
+					before = result[:startIdx]
+					after  = result[closeParen:]
+					expr   = result[openParen+1 : closeParen-1]
+				)
+				result = before + "(" + typecast + ")(" + expr + ")" + after
+			} else {
+				break
+			}
+		}
+
+		for i := 0; i < len(result); i++ {
+			markerPrefix := fmt.Sprintf("__TEMP_MARKER_%s_", typecast)
+			if strings.Contains(result, markerPrefix) {
+				for {
+					markerStart := strings.Index(result, markerPrefix)
+					if markerStart == -1 {
+						break
+					}
+					markerEnd := strings.Index(result[markerStart:], "__") + markerStart + 2
+					if markerEnd > markerStart+2 {
+						result = result[:markerStart] + originalPattern + result[markerEnd:]
+					} else {
+						break
+					}
+				}
+				break
+			}
+		}
+	}
+
+	return result
+}
+
+// Resolves a symbol.
+// Handles type casting functions like float(), int(), etc.
+//
+// Uses regex and careful parsing to find module.symbol patterns
+// without destroying the expression structure
 func ResolveSymbol(symbolName string, currentModule string) string {
-	if strings.Contains(symbolName, ".") && (strings.Contains(symbolName, " ") || strings.Contains(symbolName, "*") || strings.Contains(symbolName, "+") || strings.Contains(symbolName, "-") || strings.Contains(symbolName, "/")) {
-		result := symbolName
-		words := strings.FieldsFunc(symbolName, func(r rune) bool {
-			return r == ' ' || r == '*' || r == '+' || r == '-' || r == '/' || r == '(' || r == ')' || r == '[' || r == ']' || r == ',' || r == '=' || r == '<' || r == '>' || r == '!'
-		})
+	result := handleTypeCasting(symbolName)
+	if strings.Contains(result, ".") {
+		for moduleName, module := range LoadedModules {
+			for symbolName := range module.PublicVars {
+				pattern := moduleName + "." + symbolName
+				replacement := fmt.Sprintf("%s_%s", moduleName, symbolName)
+				result = strings.ReplaceAll(result, pattern, replacement)
+			}
+			for symbolName := range module.PublicClasses {
+				pattern := moduleName + "." + symbolName
+				replacement := fmt.Sprintf("%s_%s", moduleName, symbolName)
+				result = strings.ReplaceAll(result, pattern, replacement)
+			}
+		}
 
-		for _, word := range words {
-			if strings.Contains(word, ".") {
-				parts := strings.SplitN(word, ".", 2)
-				if len(parts) == 2 {
-					moduleName := parts[0]
-					symbol := parts[1]
+		if !strings.ContainsAny(result, " *+-/()[]<>=!") {
+			parts := strings.SplitN(result, ".", 2)
+			if len(parts) == 2 {
+				moduleName := parts[0]
+				symbol := parts[1]
 
-					if module, exists := LoadedModules[moduleName]; exists {
-						if _, exists := module.PublicVars[symbol]; exists {
-							replacement := fmt.Sprintf("%s_%s", moduleName, symbol)
-							result = strings.ReplaceAll(result, word, replacement)
-						}
-						if _, exists := module.PublicClasses[symbol]; exists {
-							replacement := fmt.Sprintf("%s_%s", moduleName, symbol)
-							result = strings.ReplaceAll(result, word, replacement)
-						}
+				if module, exists := LoadedModules[moduleName]; exists {
+					if _, exists := module.PublicVars[symbol]; exists {
+						return fmt.Sprintf("%s_%s", moduleName, symbol)
+					}
+					if _, exists := module.PublicClasses[symbol]; exists {
+						return fmt.Sprintf("%s_%s", moduleName, symbol)
 					}
 				}
 			}
 		}
-
-		return result
 	}
 
-	if strings.Contains(symbolName, ".") {
-		parts := strings.SplitN(symbolName, ".", 2)
-		moduleName := parts[0]
-		symbol := parts[1]
-
-		if module, exists := LoadedModules[moduleName]; exists {
-			if _, exists := module.PublicVars[symbol]; exists {
-				return fmt.Sprintf("%s_%s", moduleName, symbol)
-			}
-			if _, exists := module.PublicClasses[symbol]; exists {
-				return fmt.Sprintf("%s_%s", moduleName, symbol)
-			}
-		}
-	}
-
-	return symbolName
+	return result
 }
 
 func GenerateUniqueSymbol(originalName string, moduleName string) string {
