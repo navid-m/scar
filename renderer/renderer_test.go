@@ -128,7 +128,7 @@ func TestRenderCWithStringVariable(t *testing.T) {
 	}
 
 	cCode := RenderC(program, "")
-	expectedVarDecl := `char msg[256];`
+	expectedVarDecl := `char* msg[256];`
 	expectedStrcpy := `strcpy(msg, "Hello, String!");`
 	expectedPrintf := `printf("%s\n", msg);`
 
@@ -204,7 +204,7 @@ func TestRenderCWithMap(t *testing.T) {
 	}
 
 	cCode := RenderC(program, "")
-	expectedKeyDecl := `char myMap_keys[2][256];`
+	expectedKeyDecl := `char* myMap_keys[2][256];`
 	expectedValueDecl := `int myMap_values[2];`
 	expectedSize := `int myMap_size = 2;`
 	expectedKeyInit1 := `strcpy(myMap_keys[0], "one");`

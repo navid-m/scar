@@ -140,6 +140,9 @@ int _exception = 0;
 		returnType := "void"
 		if funcDecl.ReturnType != "" && funcDecl.ReturnType != "void" {
 			returnType = mapTypeToCType(funcDecl.ReturnType)
+			if funcDecl.ReturnType == "string" {
+				returnType = "char*"
+			}
 		}
 
 		fmt.Fprintf(&b, "%s %s(", returnType, funcDecl.Name)
@@ -875,6 +878,9 @@ func generateTopLevelFunctionImplementation(b *strings.Builder, funcDecl *lexer.
 	returnType := "void"
 	if funcDecl.ReturnType != "" && funcDecl.ReturnType != "void" {
 		returnType = mapTypeToCType(funcDecl.ReturnType)
+		if funcDecl.ReturnType == "string" {
+			returnType = "char*"
+		}
 	}
 
 	fmt.Fprintf(b, "%s %s(", returnType, funcDecl.Name)
@@ -893,6 +899,19 @@ func generateTopLevelFunctionImplementation(b *strings.Builder, funcDecl *lexer.
 	b.WriteString(") {\n")
 	renderStatements(b, funcDecl.Body, "    ", "", program)
 	b.WriteString("}\n\n")
+}
+
+func containsOnlyRawCode(body []*lexer.Statement) bool {
+	if len(body) == 0 {
+		return false
+	}
+
+	for _, stmt := range body {
+		if stmt.RawCode == nil {
+			return false
+		}
+	}
+	return true
 }
 
 func isValidIdentifier(s string) bool {
@@ -921,7 +940,7 @@ func mapTypeToCType(mapType string) string {
 	case "char":
 		return "char"
 	case "string":
-		return "char"
+		return "char*"
 	case "bool":
 		return "int"
 	default:
