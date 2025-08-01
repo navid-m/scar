@@ -1,6 +1,7 @@
 package oop_tests
 
 import (
+	"fmt"
 	"scar/lexer"
 	"scar/renderer"
 	"strings"
@@ -90,6 +91,58 @@ obj.doSomething()`
 	expectedCall := "TestClass_doSomething(obj);"
 	if !strings.Contains(result, expectedCall) {
 		t.Errorf("Expected method call '%s' not found in generated C code.\nGenerated code:\n%s", expectedCall, result)
+	}
+}
+
+// Tests that constructor init() works correctly, including field assignments and side effects
+func TestConstructorInitialization(t *testing.T) {
+	input := `class TestClass:
+    init(int x, int y):
+        this.x = x
+        this.y = y
+        print "Initializing with x=%d, y=%d" | x, y
+        this.z = x + y
+        print "Sum is %d" | this.z
+
+TestClass obj = new TestClass(5, 3)
+print "Final values - x: %d, y: %d, z: %d" | obj.x, obj.y, obj.z`
+
+	program, err := lexer.ParseWithIndentation(input)
+	if err != nil {
+		t.Fatalf("Failed to parse input: %v", err)
+	}
+
+	result := renderer.RenderC(program, ".")
+	expectedConstructor := "TestClass* TestClass_new(int x, int y) {"
+	if !strings.Contains(result, expectedConstructor) {
+		t.Errorf("Expected constructor signature not found. Expected: %s", expectedConstructor)
+	}
+
+	expectedInits := []string{
+		"obj->x = x;",
+		"obj->y = y;",
+		"obj->z = x + y;",
+	}
+
+	for _, init := range expectedInits {
+		if !strings.Contains(result, init) {
+			t.Errorf("Expected field initialization '%s' not found in constructor", init)
+		}
+	}
+	expectedPrints := []string{
+		`printf("Initializing with x=%d, y=%d\n", x, y);`,
+		`printf("Sum is %d\n", this->z);`,
+	}
+
+	for _, printStmt := range expectedPrints {
+		fmt.Println(result)
+		if !strings.Contains(result, printStmt) {
+			t.Errorf("Expected print statement '%s' not found in constructor", printStmt)
+		}
+	}
+	expectedMainCall := "TestClass* obj = TestClass_new(5, 3);"
+	if !strings.Contains(result, expectedMainCall) {
+		t.Errorf("Expected object creation with arguments not found. Expected: %s", expectedMainCall)
 	}
 }
 
