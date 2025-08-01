@@ -742,7 +742,6 @@ func parsePubFunctionStatement(lines []string, lineNum, currentIndent int) (*Sta
 	} else {
 		returnType = "void"
 	}
-
 	var (
 		expectedBodyIndent = currentIndent + 4
 		bodyStartLine      = lineNum + 1
