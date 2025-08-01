@@ -61,7 +61,11 @@ func main() {
 	cCode := preprocessor.InsertMacros(renderer.RenderC(program, baseDir))
 
 	if *asm {
-		cmd := exec.Command("clang", "-w", "-S", "-x", "c", "-o", "-", "-")
+		cplr := "clang"
+		if runtime.GOOS == "windows" {
+			cplr = "gcc"
+		}
+		cmd := exec.Command(cplr, "-w", "-S", "-x", "c", "-o", "-", "-")
 		cmd.Stdin = strings.NewReader(cCode)
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
