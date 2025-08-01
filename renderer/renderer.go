@@ -986,8 +986,10 @@ func resolveImportedSymbols(value string, imports []*lexer.ImportStmt) string {
 	if strings.Contains(value, ".") {
 		parts := strings.Split(value, ".")
 		if len(parts) == 2 {
-			moduleName := parts[0]
-			symbolName := parts[1]
+			var (
+				moduleName = parts[0]
+				symbolName = parts[1]
+			)
 			for _, imp := range imports {
 				if imp.Module == moduleName {
 					return strings.Replace(value, moduleName+"."+symbolName,
