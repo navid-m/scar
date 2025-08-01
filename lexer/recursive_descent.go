@@ -50,38 +50,6 @@ func parseStatements(lines []string, startLine, expectedIndent int) ([]*Statemen
 	return statements, nil
 }
 
-func parseBulkImport(lines []string, lineNum int) (*Statement, int, error) {
-	var imports []*ImportStmt
-	currentLine := lineNum + 1
-
-	for currentLine < len(lines) {
-		line := lines[currentLine]
-		trimmed := strings.TrimSpace(line)
-
-		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
-			currentLine++
-			continue
-		}
-		if getIndentation(line) == 0 {
-			break
-		}
-		moduleNames := strings.SplitSeq(trimmed, ",")
-		for moduleName := range moduleNames {
-			moduleName = strings.TrimSpace(strings.Trim(moduleName, "\""))
-			if moduleName != "" {
-				imports = append(imports, &ImportStmt{Module: moduleName})
-			}
-		}
-
-		currentLine++
-	}
-
-	if len(imports) == 0 {
-		return nil, lineNum + 1, fmt.Errorf("bulk import has no modules at line %d", lineNum+1)
-	}
-	return &Statement{Import: imports[0]}, currentLine, nil
-}
-
 func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int, error) {
 	line := strings.TrimSpace(lines[lineNum])
 
