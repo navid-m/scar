@@ -274,9 +274,10 @@ func parseClassStatement(lines []string, lineNum, currentIndent int) (*Statement
 		return nil, lineNum + 1, fmt.Errorf("class declaration format error at line %d", lineNum+1)
 	}
 
-	className := strings.TrimSuffix(parts[1], ":")
-
-	expectedBodyIndent := currentIndent + 4
+	var (
+		className          = strings.TrimSuffix(parts[1], ":")
+		expectedBodyIndent = currentIndent + 4
+	)
 	if currentIndent == 0 {
 		bodyStartLine := lineNum + 1
 		for bodyStartLine < len(lines) {
