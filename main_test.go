@@ -19,6 +19,7 @@ while 1:
 #include <string.h>
 #include <unistd.h>
 #include <omp.h>
+#include <stdlib.h>
 
 int _exception = 0;
 
@@ -62,6 +63,7 @@ print "done..."`
 #include <string.h>
 #include <unistd.h>
 #include <omp.h>
+#include <stdlib.h>
 
 int _exception = 0;
 
@@ -106,6 +108,7 @@ print "All done"`
 #include <string.h>
 #include <unistd.h>
 #include <omp.h>
+#include <stdlib.h>
 
 int _exception = 0;
 

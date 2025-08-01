@@ -73,6 +73,7 @@ func RenderC(program *lexer.Program, baseDir string) string {
 #include <string.h>
 #include <unistd.h>
 #include <omp.h>
+#include <stdlib.h>
 
 int _exception = 0;
 
