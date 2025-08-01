@@ -263,7 +263,6 @@ func collectClassInfoWithModule(classDecl *lexer.ClassDeclStmt, moduleName strin
 	}
 
 	if classDecl.Constructor != nil {
-		// We track unique fields here to avoid duplicates
 		fieldMap := make(map[string]bool)
 		for _, param := range classDecl.Constructor.Parameters {
 			if _, exists := fieldMap[param.Name]; !exists {
@@ -282,7 +281,7 @@ func collectClassInfoWithModule(classDecl *lexer.ClassDeclStmt, moduleName strin
 				if _, exists := fieldMap[fieldName]; !exists {
 					fieldInfo := FieldInfo{
 						Name: fieldName,
-						Type: stmt.VarDecl.Type,
+						Type: stmt.VarDecl.Type, // Use declared type from VarDecl
 					}
 					classInfo.Fields = append(classInfo.Fields, fieldInfo)
 					fieldMap[fieldName] = true
@@ -292,7 +291,6 @@ func collectClassInfoWithModule(classDecl *lexer.ClassDeclStmt, moduleName strin
 				fieldName := stmt.VarAssign.Name[5:]
 				if _, exists := fieldMap[fieldName]; !exists {
 					fieldType := inferTypeFromValue(stmt.VarAssign.Value)
-					// Debug: Let's make sure we're getting the right type
 					fmt.Printf("Debug: Field %s, Value %s, Inferred Type: %s\n", fieldName, stmt.VarAssign.Value, fieldType)
 					fieldInfo := FieldInfo{
 						Name: fieldName,
@@ -424,18 +422,12 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 					fieldName = fieldName[5:]
 				}
 
-				isStringField := false
-				if classInfo, exists := globalClasses[className]; exists {
-					for _, field := range classInfo.Fields {
-						if field.Name == fieldName && field.Type == "string" {
-							isStringField = true
-							break
-						}
-					}
-				}
+				isStringField := stmt.VarDecl.Type == "string"
+
+				fmt.Printf("Debug: VarDecl field %s, value %s, isStringField %v\n", fieldName, value, isStringField)
 
 				if isStringField {
-					if !strings.HasPrefix(value, "\"") && !strings.HasSuffix(value, "\"") && !isValidIdentifier(value) {
+					if !strings.HasPrefix(value, "\"") && !strings.HasSuffix(value, "\"") && isValidIdentifier(value) {
 						value = fmt.Sprintf("\"%s\"", value)
 					}
 					fmt.Fprintf(b, "    strcpy(this->%s, %s);\n", fieldName, value)
@@ -466,8 +458,11 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 					}
 				}
 
+				fmt.Printf("Debug: VarAssign field %s, value %s, isStringField %v\n", fieldName, value, isStringField)
+
 				if isStringField {
-					if !strings.HasPrefix(value, "\"") && !strings.HasSuffix(value, "\"") && !isValidIdentifier(value) {
+					// Preserve string literals
+					if !strings.HasPrefix(value, "\"") && !strings.HasSuffix(value, "\"") && isValidIdentifier(value) {
 						value = fmt.Sprintf("\"%s\"", value)
 					}
 					fmt.Fprintf(b, "    strcpy(this->%s, %s);\n", fieldName, value)
