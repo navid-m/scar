@@ -236,6 +236,44 @@ func TestRenderCWithMap(t *testing.T) {
 	}
 }
 
+func TestRenderCWithObjectConstructor(t *testing.T) {
+	program := &lexer.Program{
+		Statements: []*lexer.Statement{
+			{
+				ClassDecl: &lexer.ClassDeclStmt{
+					Name: "TestClass",
+					Constructor: &lexer.ConstructorStmt{
+						Fields: []*lexer.Statement{
+							{
+								VarDecl: &lexer.VarDeclStmt{
+									Type:  "int",
+									Name:  "this.value",
+									Value: "42",
+								},
+							},
+						},
+					},
+				},
+			},
+			{
+				ObjectDecl: &lexer.ObjectDeclStmt{
+					Type: "TestClass",
+					Name: "obj",
+				},
+			},
+		},
+	}
+
+	cCode := RenderC(program, "")
+	if !strings.Contains(cCode, "TestClass* this = malloc(sizeof(TestClass));") {
+		t.Error("Expected constructor to declare 'this' pointer")
+	}
+
+	if !strings.Contains(cCode, "this->value = 42;") {
+		t.Error("Expected constructor to use 'this' to set member variable")
+	}
+}
+
 func TestRenderCWithStringList(t *testing.T) {
 	program := &lexer.Program{
 		Statements: []*lexer.Statement{
