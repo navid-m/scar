@@ -1,7 +1,6 @@
 package oop_tests
 
 import (
-	"fmt"
 	"scar/lexer"
 	"scar/renderer"
 	"strings"
@@ -135,7 +134,6 @@ print "Final values - x: %d, y: %d, z: %d" | obj.x, obj.y, obj.z`
 	}
 
 	for _, printStmt := range expectedPrints {
-		fmt.Println(result)
 		if !strings.Contains(result, printStmt) {
 			t.Errorf("Expected print statement '%s' not found in constructor", printStmt)
 		}
