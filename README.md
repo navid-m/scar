@@ -24,3 +24,9 @@ do_thing()
 
 Reassignments are made explicit with `reassign` keyword.
 All values are constant by default.
+
+---
+
+<font color="grey">(Under construction)</font>
+
+<img src="assets/wip.png" style="border-radius: 5px;" width=35%>
