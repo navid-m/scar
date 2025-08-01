@@ -330,9 +330,10 @@ func handleTypeCasting(symbolName string) string {
 			)
 
 			for closeParen < len(result) && parenCount > 0 {
-				if result[closeParen] == '(' {
+				switch result[closeParen] {
+				case '(':
 					parenCount++
-				} else if result[closeParen] == ')' {
+				case ')':
 					parenCount--
 				}
 				closeParen++

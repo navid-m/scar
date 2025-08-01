@@ -591,6 +591,9 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			varType := mapTypeToCType(stmt.VarDecl.Type)
 			varName := lexer.ResolveSymbol(stmt.VarDecl.Name, currentModule)
 			value := stmt.VarDecl.Value
+
+			value = resolveImportedSymbols(value, program.Imports)
+
 			fmt.Printf("Debug: VarDecl var %s, value %s, type %s\n", varName, value, stmt.VarDecl.Type)
 			if strings.HasPrefix(varName, "this.") {
 				fieldName := varName[5:]
@@ -689,21 +692,29 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				Type: typeName,
 			}
 			globalObjects[stmt.ObjectDecl.Name] = objectInfo
-			argsStr := ""
-			if len(args) > 0 {
-				constructorArgs := make([]string, 0)
-				for _, arg := range args {
-					if arg != typeName && arg != resolvedType {
-						if strings.HasPrefix(arg, "\"") && strings.HasSuffix(arg, "\"") {
-							constructorArgs = append(constructorArgs, arg)
-						} else {
-							constructorArgs = append(constructorArgs, lexer.ResolveSymbol(arg, currentModule))
-						}
+
+			// Filter out module and class names from args
+			constructorArgs := make([]string, 0)
+			for _, arg := range args {
+				// Skip if arg is the module name or class name from module.Class syntax
+				if strings.Contains(typeName, ".") {
+					parts := strings.Split(typeName, ".")
+					if arg == parts[0] || arg == parts[1] {
+						continue
 					}
 				}
-				argsStr = strings.Join(constructorArgs, ", ")
+				if arg != typeName && arg != resolvedType {
+					if strings.HasPrefix(arg, "\"") && strings.HasSuffix(arg, "\"") {
+						constructorArgs = append(constructorArgs, arg)
+					} else {
+						constructorArgs = append(constructorArgs, lexer.ResolveSymbol(arg, currentModule))
+					}
+				}
 			}
+
+			argsStr := strings.Join(constructorArgs, ", ")
 			fmt.Fprintf(b, "%s%s* %s = %s_new(%s);\n", indent, resolvedType, varName, resolvedType, argsStr)
+
 		case stmt.VarDeclMethodCall != nil:
 			varType := mapTypeToCType(stmt.VarDeclMethodCall.Type)
 			varName := lexer.ResolveSymbol(stmt.VarDeclMethodCall.Name, currentModule)
@@ -923,7 +934,44 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 		}
 	}
 }
+func resolveImportedSymbols(value string, imports []*lexer.ImportStmt) string {
+	if strings.Contains(value, ".") {
+		parts := strings.Split(value, ".")
+		if len(parts) == 2 {
+			moduleName := parts[0]
+			symbolName := parts[1]
+			for _, imp := range imports {
+				if imp.Module == moduleName {
+					return strings.Replace(value, moduleName+"."+symbolName,
+						lexer.GenerateUniqueSymbol(symbolName, moduleName), 1)
+				}
+			}
+		}
+	}
 
+	result := value
+	for _, imp := range imports {
+		modulePrefix := imp.Module + "."
+		if strings.Contains(result, modulePrefix) {
+			words := strings.Fields(result)
+			for i, word := range words {
+				if strings.HasPrefix(word, modulePrefix) {
+					symbolName := word[len(modulePrefix):]
+					if idx := strings.IndexAny(symbolName, " +-*/()"); idx > 0 {
+						actualSymbol := symbolName[:idx]
+						remainder := symbolName[idx:]
+						words[i] = lexer.GenerateUniqueSymbol(actualSymbol, imp.Module) + remainder
+					} else {
+						words[i] = lexer.GenerateUniqueSymbol(symbolName, imp.Module)
+					}
+				}
+			}
+			result = strings.Join(words, " ")
+		}
+	}
+
+	return result
+}
 func generateTopLevelFunctionImplementation(b *strings.Builder, funcDecl *lexer.TopLevelFuncDeclStmt, program *lexer.Program) {
 	returnType := "void"
 	if funcDecl.ReturnType != "" && funcDecl.ReturnType != "void" {
