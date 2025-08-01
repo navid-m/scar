@@ -13,10 +13,66 @@ import (
 )
 
 func ProcessSourceLevelMacros(source string) string {
+	source = RemoveComments(source)
 	source = ProcessGetExpressions(source)
 	source = ProcessAppendExpressions(source)
 	source = ProcessDeleteExpressions(source)
 	return source
+}
+
+func RemoveComments(source string) string {
+	var result strings.Builder
+	inString := false
+	inComment := false
+	lineStart := 0
+
+	for i := 0; i < len(source); i++ {
+		if source[i] == '"' && (i == 0 || source[i-1] != '\\') {
+			inString = !inString
+		}
+		if source[i] == '\n' {
+			lineStart = i + 1
+			inComment = false
+		}
+		if !inString && source[i] == '#' {
+			isFullLineComment := true
+			for j := lineStart; j < i; j++ {
+				if source[j] != ' ' && source[j] != '\t' && source[j] != '\r' {
+					isFullLineComment = false
+					break
+				}
+			}
+
+			if isFullLineComment {
+				for i < len(source) && source[i] != '\n' {
+					i++
+				}
+				if i < len(source) {
+					result.WriteByte('\n')
+				}
+				lineStart = i + 1
+				continue
+			} else if !inComment {
+				inComment = true
+				if i > 0 && source[i-1] != '\n' {
+					result.WriteByte('\n')
+				}
+				for i < len(source) && source[i] != '\n' {
+					i++
+				}
+				if i < len(source) {
+					result.WriteByte('\n')
+				}
+				lineStart = i + 1
+				continue
+			}
+		}
+		if !inComment {
+			result.WriteByte(source[i])
+		}
+	}
+
+	return result.String()
 }
 
 // Replaces get!(x, y) with x_values[y] in the given source code.
