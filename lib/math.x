@@ -9,7 +9,7 @@ pub fn to_int(string value) -> int:
     int sign = 1
     int len = len(value)
 
-    while i < len  && (value[i] == ' ' || value[i] == '\t' || value[i] == '\n'):
+    while i < len && (value[i] == ' ' || value[i] == '\t' || value[i] == '\n'):
         reassign i = i + 1
 
     if i < len  && value[i] == '-':
