@@ -762,23 +762,26 @@ func parsePubFunctionStatement(lines []string, lineNum, currentIndent int) (*Sta
 		return nil, lineNum + 1, err
 	}
 
-	nextLine := findEndOfBlock(lines, bodyStartLine, expectedBodyIndent)
-
-	pubFuncDecl := &PubTopLevelFuncDeclStmt{
-		Name:       funcName,
-		Parameters: parameters,
-		ReturnType: returnType,
-		Body:       body,
-	}
+	var (
+		nextLine    = findEndOfBlock(lines, bodyStartLine, expectedBodyIndent)
+		pubFuncDecl = &PubTopLevelFuncDeclStmt{
+			Name:       funcName,
+			Parameters: parameters,
+			ReturnType: returnType,
+			Body:       body,
+		}
+	)
 
 	return &Statement{PubTopLevelFuncDecl: pubFuncDecl}, nextLine, nil
 }
 
 func splitRespectingParens(input string) []string {
-	var result []string
-	var current strings.Builder
-	parenCount := 0
-	inQuotes := false
+	var (
+		result     []string
+		current    strings.Builder
+		parenCount = 0
+		inQuotes   = false
+	)
 
 	for i, char := range input {
 		switch char {
