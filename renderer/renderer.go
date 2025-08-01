@@ -603,7 +603,7 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			varType := mapTypeToCType(stmt.VarDecl.Type)
 			varName := lexer.ResolveSymbol(stmt.VarDecl.Name, currentModule)
 			value := stmt.VarDecl.Value
-
+			value = fixFloatCastGranular(value)
 			value = resolveImportedSymbols(value, program.Imports)
 
 			fmt.Printf("Debug: VarDecl var %s, value %s, type %s\n", varName, value, stmt.VarDecl.Type)
@@ -634,6 +634,7 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 		case stmt.VarAssign != nil:
 			varName := lexer.ResolveSymbol(stmt.VarAssign.Name, currentModule)
 			value := stmt.VarAssign.Value
+			value = fixFloatCastGranular(value)
 			if strings.HasPrefix(varName, "this.") {
 				varName = "this->" + varName[5:]
 			}
@@ -945,6 +946,10 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			fmt.Fprintf(b, "%s}\n", indent)
 		}
 	}
+}
+
+func fixFloatCastGranular(expr string) string {
+	return strings.ReplaceAll(expr, "float(", "(float)(")
 }
 
 func reconstructMethodCalls(variables []string) []string {
