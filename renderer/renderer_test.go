@@ -300,17 +300,15 @@ func TestRenderCWithStringList(t *testing.T) {
 	}
 
 	cCode := RenderC(program, "")
-
-	// Verify the string list declaration
 	expectedListDecl := `char names[3][256]`
 	if !strings.Contains(cCode, expectedListDecl) {
 		t.Errorf("Expected C code to contain '%s', but it didn't", expectedListDecl)
 	}
-
-	// Verify string list initialization
-	expectedInit1 := `strcpy(names[0], "Alice")`
-	expectedInit2 := `strcpy(names[1], "Bob")`
-	expectedInit3 := `strcpy(names[2], "Charlie")`
+	var (
+		expectedInit1 = `strcpy(names[0], "Alice")`
+		expectedInit2 = `strcpy(names[1], "Bob")`
+		expectedInit3 = `strcpy(names[2], "Charlie")`
+	)
 	if !strings.Contains(cCode, expectedInit1) {
 		t.Errorf("Expected C code to contain '%s', but it didn't", expectedInit1)
 	}
@@ -320,14 +318,10 @@ func TestRenderCWithStringList(t *testing.T) {
 	if !strings.Contains(cCode, expectedInit3) {
 		t.Errorf("Expected C code to contain '%s', but it didn't", expectedInit3)
 	}
-
-	// Verify string list assignment
 	expectedAssign := `strcpy(names[2], "David")`
 	if !strings.Contains(cCode, expectedAssign) {
 		t.Errorf("Expected C code to contain '%s', but it didn't", expectedAssign)
 	}
-
-	// Verify the print statement
 	expectedPrintf := `printf("Name: %s\n", names[0])`
 	if !strings.Contains(cCode, expectedPrintf) {
 		t.Errorf("Expected C code to contain '%s', but it didn't", expectedPrintf)
