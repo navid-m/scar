@@ -1,4 +1,4 @@
-package main
+package oop_tests
 
 import (
 	"scar/lexer"
