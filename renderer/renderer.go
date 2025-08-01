@@ -962,14 +962,9 @@ func reconstructMethodCalls(variables []string) []string {
 
 	for i < len(variables) {
 		variable := variables[i]
-
-		// Check if this looks like the start of a split method call
 		if strings.Contains(variable, ".") && strings.Contains(variable, "(") && !strings.Contains(variable, ")") {
-			// This is likely a split method call, try to reconstruct it
 			reconstructed := variable
 			i++
-
-			// Keep adding subsequent variables until we find the closing parenthesis
 			for i < len(variables) {
 				reconstructed += ", " + variables[i]
 				if strings.Contains(variables[i], ")") {
@@ -977,7 +972,6 @@ func reconstructMethodCalls(variables []string) []string {
 				}
 				i++
 			}
-
 			result = append(result, reconstructed)
 		} else {
 			result = append(result, variable)
