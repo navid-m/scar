@@ -928,12 +928,9 @@ func splitMapPairs(input string) []string {
 			currentPair.WriteRune(char)
 		}
 	}
-
-	// Add the last pair if it exists
 	pair := strings.TrimSpace(currentPair.String())
 	if pair != "" {
 		pairs = append(pairs, pair)
 	}
-
 	return pairs
 }
