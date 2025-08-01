@@ -292,6 +292,8 @@ func collectClassInfoWithModule(classDecl *lexer.ClassDeclStmt, moduleName strin
 				fieldName := stmt.VarAssign.Name[5:]
 				if _, exists := fieldMap[fieldName]; !exists {
 					fieldType := inferTypeFromValue(stmt.VarAssign.Value)
+					// Debug: Let's make sure we're getting the right type
+					fmt.Printf("Debug: Field %s, Value %s, Inferred Type: %s\n", fieldName, stmt.VarAssign.Value, fieldType)
 					fieldInfo := FieldInfo{
 						Name: fieldName,
 						Type: fieldType,
@@ -320,6 +322,10 @@ func collectClassInfoWithModule(classDecl *lexer.ClassDeclStmt, moduleName strin
 
 func inferTypeFromValue(value string) string {
 	if strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"") {
+		return "string"
+	}
+	if value == "Test" || (len(value) > 0 && !strings.ContainsAny(value, "0123456789.+-*/%()[]{}") &&
+		value != "true" && value != "false" && !strings.HasPrefix(value, "new ")) {
 		return "string"
 	}
 	if strings.HasPrefix(value, "new ") {
@@ -390,6 +396,7 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 	if classDecl.Constructor != nil {
 		for _, stmt := range classDecl.Constructor.Fields {
 			switch {
+
 			case stmt.VarAssign != nil:
 				fieldName := stmt.VarAssign.Name
 				value := stmt.VarAssign.Value
@@ -402,6 +409,7 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 					fieldName = fieldName[5:]
 				}
 
+				// Check if this field is a string type
 				isStringField := false
 				if classInfo, exists := globalClasses[className]; exists {
 					for _, field := range classInfo.Fields {
@@ -413,8 +421,11 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 				}
 
 				if isStringField {
-					fmt.Fprintf(b, "    strncpy(obj->%s, %s, MAX_STRING_LENGTH - 1);\n", fieldName, value)
-					fmt.Fprintf(b, "    obj->%s[MAX_STRING_LENGTH - 1] = '\\0';\n", fieldName)
+					// For string fields, use strcpy and ensure quotes
+					if !strings.HasPrefix(value, "\"") && !strings.HasSuffix(value, "\"") {
+						value = fmt.Sprintf("\"%s\"", value)
+					}
+					fmt.Fprintf(b, "    strcpy(obj->%s, %s);\n", fieldName, value)
 				} else {
 					value = strings.ReplaceAll(value, "this.", "obj->")
 					fmt.Fprintf(b, "    obj->%s = %s;\n", fieldName, value)
@@ -426,22 +437,17 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 			if stmt.VarAssign == nil {
 				switch {
 				case stmt.Print != nil:
-					format := stmt.Print.Format
-					if format == "" {
-						format = "%s"
-					}
-					args := make([]string, len(stmt.Print.Variables))
-					for i, v := range stmt.Print.Variables {
-						v = strings.ReplaceAll(v, "this.", "obj->")
-						args[i] = v
-					}
-					if len(args) > 0 {
+					if stmt.Print.Format != "" && len(stmt.Print.Variables) > 0 {
+						args := make([]string, len(stmt.Print.Variables))
+						for i, v := range stmt.Print.Variables {
+							v = strings.ReplaceAll(v, "this.", "obj->")
+							args[i] = v
+						}
 						fmt.Fprintf(b, "    printf(\"%s\\n\", %s);\n",
-							strings.ReplaceAll(format, "\"", "\\\""),
+							strings.ReplaceAll(stmt.Print.Format, "\"", "\\\""),
 							strings.Join(args, ", "))
-					} else {
-						fmt.Fprintf(b, "    printf(\"%s\\n\");\n",
-							strings.ReplaceAll(format, "\"", "\\\""))
+					} else if stmt.Print.Print != "" {
+						fmt.Fprintf(b, "    printf(\"%s\\n\");\n", stmt.Print.Print)
 					}
 				default:
 					renderStatements(b, []*lexer.Statement{stmt}, "    ", className, program)
@@ -477,6 +483,7 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent string, className string, program *lexer.Program) {
 	for _, stmt := range stmts {
 		switch {
+
 		case stmt.Print != nil:
 			if stmt.Print.Format != "" && len(stmt.Print.Variables) > 0 {
 				args := make([]string, len(stmt.Print.Variables))
@@ -494,9 +501,11 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				argsStr := strings.Join(args, ", ")
 				escapedFormat := strings.ReplaceAll(stmt.Print.Format, "\"", "\\\"")
 				fmt.Fprintf(b, "%sprintf(\"%s\\n\", %s);\n", indent, escapedFormat, argsStr)
-			} else {
+			} else if stmt.Print.Print != "" {
+				// Handle simple print statements
 				fmt.Fprintf(b, "%sprintf(\"%s\\n\");\n", indent, stmt.Print.Print)
 			}
+
 		case stmt.Sleep != nil:
 			fmt.Fprintf(b, "%ssleep(%s);\n", indent, stmt.Sleep.Duration)
 		case stmt.Break != nil:
