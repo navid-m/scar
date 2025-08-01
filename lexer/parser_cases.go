@@ -749,8 +749,10 @@ func parsePubFunctionStatement(lines []string, lineNum, currentIndent int) (*Sta
 		returnType = "void"
 	}
 
-	expectedBodyIndent := currentIndent + 4
-	bodyStartLine := lineNum + 1
+	var (
+		expectedBodyIndent = currentIndent + 4
+		bodyStartLine      = lineNum + 1
+	)
 	for bodyStartLine < len(lines) {
 		bodyLine := lines[bodyStartLine]
 		if strings.TrimSpace(bodyLine) != "" && !strings.HasPrefix(strings.TrimSpace(bodyLine), "#") {
