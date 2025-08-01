@@ -1,4 +1,4 @@
-import math, isprime
+import math
 
 int area = math.PI * 5 * 5
 var calc = new math.Calculator()
