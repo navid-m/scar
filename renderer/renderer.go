@@ -553,19 +553,34 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				fmt.Fprintf(b, "%s}\n", indent)
 			}
 		case stmt.VarDecl != nil:
-			cType := mapTypeToCType(stmt.VarDecl.Type)
+			varType := mapTypeToCType(stmt.VarDecl.Type)
 			varName := lexer.ResolveSymbol(stmt.VarDecl.Name, currentModule)
 			value := lexer.ResolveSymbol(stmt.VarDecl.Value, currentModule)
-			if stmt.VarDecl.Type == "string" {
-				fmt.Fprintf(b, "%s%s %s[256];\n", indent, cType, varName)
-				if value != "" {
-					if !strings.HasPrefix(value, "\"") {
+
+			// Handle object member initialization (this.member = value)
+			if strings.HasPrefix(varName, "this.") {
+				fieldName := varName[5:]
+				if varType == "string" {
+					if !strings.HasPrefix(value, "\"") && !strings.HasSuffix(value, "\"") {
 						value = fmt.Sprintf("\"%s\"", value)
 					}
-					fmt.Fprintf(b, "%sstrcpy(%s, %s);\n", indent, varName, value)
+					fmt.Fprintf(b, "%sstrcpy(this->%s, %s);\n", indent, fieldName, value)
+				} else {
+					fmt.Fprintf(b, "%sthis->%s = %s;\n", indent, fieldName, value)
 				}
 			} else {
-				fmt.Fprintf(b, "%s%s %s = %s;\n", indent, cType, varName, value)
+				// It's a regular variable declaration
+				if varType == "string" {
+					fmt.Fprintf(b, "%s%s %s[256];\n", indent, varType, varName)
+					if value != "" {
+						if !strings.HasPrefix(value, "\"") && !strings.HasSuffix(value, "\"") {
+							value = fmt.Sprintf("\"%s\"", value)
+						}
+						fmt.Fprintf(b, "%sstrcpy(%s, %s);\n", indent, varName, value)
+					}
+				} else {
+					fmt.Fprintf(b, "%s%s %s = %s;\n", indent, varType, varName, value)
+				}
 			}
 		case stmt.VarAssign != nil:
 			varName := lexer.ResolveSymbol(stmt.VarAssign.Name, currentModule)

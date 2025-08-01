@@ -99,7 +99,6 @@ func TestRenderCWithWhileLoop(t *testing.T) {
     x = x - 1;
     }`
 
-	// Normalize whitespace for comparison
 	normalizedCCode := strings.Join(strings.Fields(cCode), " ")
 	normalizedExpected := strings.Join(strings.Fields(expected), " ")
 
