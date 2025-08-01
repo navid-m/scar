@@ -70,7 +70,6 @@ func RenderC(program *lexer.Program, baseDir string) string {
 	}
 
 	b.WriteString(`#include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 #include <omp.h>

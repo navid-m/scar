@@ -111,6 +111,7 @@ func main() {
 		outputBinary += ".exe"
 		compileArgs = []string{
 			"-fopenmp",
+			"-w",
 			tmpCPath,
 			"-o", outputBinary,
 		}
