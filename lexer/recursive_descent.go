@@ -557,59 +557,7 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 		value := strings.Join(parts[1:], " ")
 		return &Statement{Throw: &ThrowStmt{Value: value}}, lineNum + 1, nil
 
-	case "set":
-		if len(parts) < 4 || parts[2] != "=" {
-			return nil, lineNum + 1, fmt.Errorf("set statement format error at line %d (expected: set var = value)", lineNum+1)
-		}
-
-		varName := parts[1]
-		value := strings.Join(parts[3:], " ")
-
-		// Check for method call assignment
-		if strings.Contains(value, ".") && strings.Contains(value, "(") && strings.Contains(value, ")") && !strings.HasPrefix(value, "new ") {
-			dotIndex := strings.Index(value, ".")
-			parenIndex := strings.Index(value, "(")
-			if dotIndex < parenIndex {
-				objectName := strings.TrimSpace(value[:dotIndex])
-				methodPart := strings.TrimSpace(value[dotIndex+1:])
-				methodEndIndex := strings.Index(methodPart, "(")
-				methodName := strings.TrimSpace(methodPart[:methodEndIndex])
-
-				argsStart := strings.Index(value, "(")
-				argsEnd := strings.LastIndex(value, ")")
-				var args []string
-				if argsEnd > argsStart+1 {
-					argsStr := strings.TrimSpace(value[argsStart+1 : argsEnd])
-					if argsStr != "" {
-						argsList := strings.Split(argsStr, ",")
-						for _, arg := range argsList {
-							args = append(args, strings.TrimSpace(arg))
-						}
-					}
-				}
-
-				return &Statement{VarAssignMethodCall: &VarAssignMethodCallStmt{
-					Name:   varName,
-					Object: objectName,
-					Method: methodName,
-					Args:   args,
-				}}, lineNum + 1, nil
-			}
-		}
-
-		if strings.Contains(varName, "[") && strings.Contains(varName, "]") {
-			value = handleIndexAssignment(line, varName, value)
-		} else if strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"") {
-			value = value[1 : len(value)-1]
-		}
-
-		// The simple operator parsing logic was removed as it was causing issues
-		// with complex expressions. The full expression is now passed as-is to ResolveSymbol.
-		//
-		// May cause issues later, need to revisit.
-
-		return &Statement{VarAssign: &VarAssignStmt{Name: varName, Value: value}}, lineNum + 1, nil
-
+	// Handle standard assignment (var = expr)
 	case "elif":
 		return nil, lineNum + 1, fmt.Errorf("elif statement must follow an if statement at line %d", lineNum+1)
 
@@ -658,6 +606,56 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 		return &Statement{RawCode: &RawCodeStmt{Code: code}}, currentLine, nil
 
 	default:
+		if len(parts) >= 3 && parts[1] == "=" {
+			varName := parts[0]
+			value := strings.Join(parts[2:], " ")
+
+			// Check for method call assignment
+			if strings.Contains(value, ".") && strings.Contains(value, "(") && strings.Contains(value, ")") && !strings.HasPrefix(value, "new ") {
+				dotIndex := strings.Index(value, ".")
+				parenIndex := strings.Index(value, "(")
+				if dotIndex < parenIndex {
+					objectName := strings.TrimSpace(value[:dotIndex])
+					methodPart := strings.TrimSpace(value[dotIndex+1:])
+					methodEndIndex := strings.Index(methodPart, "(")
+					methodName := strings.TrimSpace(methodPart[:methodEndIndex])
+
+					argsStart := strings.Index(value, "(")
+					argsEnd := strings.LastIndex(value, ")")
+					var args []string
+					if argsEnd > argsStart+1 {
+						argsStr := strings.TrimSpace(value[argsStart+1 : argsEnd])
+						if argsStr != "" {
+							argsList := strings.Split(argsStr, ",")
+							for _, arg := range argsList {
+								args = append(args, strings.TrimSpace(arg))
+							}
+						}
+					}
+
+					return &Statement{VarAssignMethodCall: &VarAssignMethodCallStmt{
+						Name:   varName,
+						Object: objectName,
+						Method: methodName,
+						Args:   args,
+					}}, lineNum + 1, nil
+				}
+			}
+
+			if strings.Contains(varName, "[") && strings.Contains(varName, "]") {
+				value = handleIndexAssignment(line, varName, value)
+			} else if strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"") {
+				value = value[1 : len(value)-1]
+			}
+
+			// The simple operator parsing logic was removed as it was causing issues
+			// with complex expressions. The full expression is now passed as-is to ResolveSymbol.
+			//
+			// May cause issues later, need to revisit.
+
+			return &Statement{VarAssign: &VarAssignStmt{Name: varName, Value: value}}, lineNum + 1, nil
+		}
+		// If not an assignment, fall through to the error below
 		if strings.HasPrefix(parts[0], "this.") && len(parts) >= 3 && parts[1] == "=" {
 			fieldName := parts[0][5:] // Remove "this."
 			value := strings.Join(parts[2:], " ")

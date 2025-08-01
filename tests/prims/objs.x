@@ -4,11 +4,11 @@ class Cat:
         string  this.name = "Fluffy"
 
     fn setAge(int newAge) -> void:
-        set this.age = newAge
+        this.age = newAge
 
     fn setInfo(int newAge, string newName) -> void:
-        set this.age   = newAge
-        set this.name  = newName
+        this.age   = newAge
+        this.name  = newName
 
     fn getAge() -> int:
         print "Age is %d" | this.age
@@ -25,7 +25,7 @@ Cat myCat = new Cat()
 myCat.setAge(10)
 int age = myCat.getAge()
 myCat.setInfo(8, "Whiskers")
-set age = myCat.getAge()
+age = myCat.getAge()
 print "The age was %d" | age
 
 SomeOtherClass soc = new SomeOtherClass()

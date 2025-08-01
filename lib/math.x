@@ -10,15 +10,15 @@ pub fn to_int(string value) -> int:
     int len = len(value)
 
     while i < len && (value[i] == ' ' || value[i] == '\t' || value[i] == '\n'):
-        set i = i + 1
+        i = i + 1
     if i < len  && value[i] == '-':
-        set sign = -1
-        set i = i + 1
+        sign = -1
+        i = i + 1
     elif i < len  && value[i] == '+':
-        set i = i + 1
+        i = i + 1
     while i < len  && value[i] >= '0'  && value[i] <= '9':
-        set result = result * 10 + (ord(value[i]) - ord('0'))
-        set i = i + 1
+        result = result * 10 + (ord(value[i]) - ord('0'))
+        i = i + 1
 
     return result * sign
 
@@ -31,23 +31,23 @@ pub fn to_float(string value) -> float:
     int len = len(value)
 
     while i < len  && (value[i] == ' ' || value[i] == '\t' || value[i] == '\n'):
-        set i = i + 1
+        i = i + 1
         if i < len  && value[i] == '-':
-            set sign = -1
-            set i = i + 1
+            sign = -1
+            i = i + 1
         elif i < len  && value[i] == '+':
-            set i = i + 1
+            i = i + 1
 
     while i < len && value[i] >= '0' && value[i] <= '9':
-        set result = result * 10.0 + float(ord(value[i]) - ord('0'))
-        set i = i + 1
+        result = result * 10.0 + float(ord(value[i]) - ord('0'))
+        i = i + 1
 
     if i < len && value[i] == '.':
-        set i = i + 1
+        i = i + 1
         while i < len  && value[i] >= '0'  && value[i] <= '9':
-            set fraction = fraction + (float(ord(value[i]) - ord('0')) / divisor)
-            set divisor = divisor * 10.0
-            set i = i + 1
+            fraction = fraction + (float(ord(value[i]) - ord('0')) / divisor)
+            divisor = divisor * 10.0
+            i = i + 1
 
     return float(sign) * (result + fraction)
 
