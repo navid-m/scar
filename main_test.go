@@ -229,7 +229,7 @@ func TestWhileConditions(t *testing.T) {
 }
 
 func TestCompileAllTestFiles(t *testing.T) {
-	files, err := filepath.Glob("tests/prims/*.x")
+	files, err := filepath.Glob("tests/prims/*.scar")
 	if err != nil {
 		t.Fatalf("Failed to list test files: %v", err)
 	}

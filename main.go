@@ -44,14 +44,14 @@ func main() {
 		wd, _ := os.Getwd()
 		ptf = path.Join(wd, flag.Arg(0))
 		baseDir = filepath.Dir(ptf)
-		data, err := os.ReadFile(ptf)
+		data, err := os.ReadFile(ptf + ".scar")
 		if err != nil {
 			log.Fatal("Could not find file.")
 		}
 		input = string(data)
 	}
 
-	cleanedName := strings.ReplaceAll(filepath.Base(ptf), ".x", "")
+	cleanedName := strings.ReplaceAll(filepath.Base(ptf), ".scar", "")
 	input = preprocessor.ProcessSourceLevelMacros(input)
 	program, err := lexer.ParseWithIndentation(input)
 	if err != nil {

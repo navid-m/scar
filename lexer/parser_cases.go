@@ -627,9 +627,9 @@ func LoadModule(moduleName string, baseDir string) (*ModuleInfo, error) {
 
 	var modulePath string
 	possiblePaths := []string{
-		filepath.Join(baseDir, moduleName+".x"),
-		filepath.Join(baseDir, "modules", moduleName+".x"),
-		filepath.Join(".", moduleName+".x"),
+		filepath.Join(baseDir, moduleName+".scar"),
+		filepath.Join(baseDir, "modules", moduleName+".scar"),
+		filepath.Join(".", moduleName+".scar"),
 	}
 
 	for _, path := range possiblePaths {

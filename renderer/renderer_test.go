@@ -381,7 +381,7 @@ func TestTopLevelStringLiteralQuotes(t *testing.T) {
 func TestRenderCWithImports(t *testing.T) {
 	mathModule := &lexer.ModuleInfo{
 		Name:     "math",
-		FilePath: "math.x",
+		FilePath: "math.scar",
 		PublicVars: map[string]*lexer.VarDeclStmt{
 			"PI": {
 				Type:  "int",
