@@ -377,3 +377,129 @@ func TestTopLevelStringLiteralQuotes(t *testing.T) {
 		t.Errorf("Expected string initialization '%s' not found in generated code, got:\n%s", expectedInit, result)
 	}
 }
+
+func TestRenderCWithImports(t *testing.T) {
+	mathModule := &lexer.ModuleInfo{
+		Name:     "math",
+		FilePath: "math.x",
+		PublicVars: map[string]*lexer.VarDeclStmt{
+			"PI": {
+				Type:  "int",
+				Name:  "PI",
+				Value: "3",
+			},
+		},
+		PublicClasses: map[string]*lexer.ClassDeclStmt{
+			"Calculator": {
+				Name: "Calculator",
+				Constructor: &lexer.ConstructorStmt{
+					Parameters: []*lexer.MethodParameter{},
+					Fields:     []*lexer.Statement{},
+				},
+				Methods: []*lexer.MethodDeclStmt{
+					{
+						Name: "add",
+						Parameters: []*lexer.MethodParameter{
+							{Type: "int", Name: "a"},
+							{Type: "int", Name: "b"},
+						},
+						ReturnType: "int",
+						Body: []*lexer.Statement{
+							{
+								Return: &lexer.ReturnStmt{
+									Value: "a + b",
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		PublicFuncs: map[string]*lexer.MethodDeclStmt{},
+	}
+
+	lexer.LoadedModules["math"] = mathModule
+
+	program := &lexer.Program{
+		Imports: []*lexer.ImportStmt{
+			{Module: "math"},
+		},
+		Statements: []*lexer.Statement{
+			{
+				VarDecl: &lexer.VarDeclStmt{
+					Type:  "int",
+					Name:  "area",
+					Value: "math.PI * 5 * 5",
+				},
+			},
+			{
+				ObjectDecl: &lexer.ObjectDeclStmt{
+					Name: "calc",
+					Type: "math.Calculator",
+					Args: []string{"math", "Calculator"},
+				},
+			},
+			{
+				VarDeclMethodCall: &lexer.VarDeclMethodCallStmt{
+					Type:   "int",
+					Name:   "result",
+					Object: "calc",
+					Method: "add",
+					Args:   []string{"10", "20"},
+				},
+			},
+			{
+				Print: &lexer.PrintStmt{
+					Format:    "Area: %d",
+					Variables: []string{"area"},
+				},
+			},
+			{
+				Print: &lexer.PrintStmt{
+					Format:    "Result: %d",
+					Variables: []string{"result"},
+				},
+			},
+		},
+	}
+
+	cCode := RenderC(program, "")
+
+	expectedVarDecl := "int area = math_PI * 5 * 5;"
+	if !strings.Contains(cCode, expectedVarDecl) {
+		t.Errorf("Expected imported symbol resolution '%s' not found in generated code", expectedVarDecl)
+	}
+	expectedStructDef := "typedef struct math_Calculator {"
+	if !strings.Contains(cCode, expectedStructDef) {
+		t.Errorf("Expected imported class struct definition '%s' not found", expectedStructDef)
+	}
+	expectedObjectCreation := "math_Calculator* calc = math_Calculator_new();"
+	if !strings.Contains(cCode, expectedObjectCreation) {
+		t.Errorf("Expected clean object creation '%s' not found", expectedObjectCreation)
+	}
+	expectedMethodCall := "int result = math_Calculator_add(calc, 10, 20);"
+	if !strings.Contains(cCode, expectedMethodCall) {
+		t.Errorf("Expected method call '%s' not found", expectedMethodCall)
+	}
+	expectedPublicVar := "extern int math_PI;"
+	if !strings.Contains(cCode, expectedPublicVar) {
+		t.Errorf("Expected public variable declaration '%s' not found", expectedPublicVar)
+	}
+	expectedPublicVarDef := "int math_PI = 3;"
+	if !strings.Contains(cCode, expectedPublicVarDef) {
+		t.Errorf("Expected public variable definition '%s' not found", expectedPublicVarDef)
+	}
+	invalidPatterns := []string{
+		"math.PI",
+		"math, Calculator",
+		"new math.Calculator",
+	}
+
+	for _, pattern := range invalidPatterns {
+		if strings.Contains(cCode, pattern) {
+			t.Errorf("Found invalid C code pattern '%s' in generated code", pattern)
+		}
+	}
+
+	delete(lexer.LoadedModules, "math")
+}
