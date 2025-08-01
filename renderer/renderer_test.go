@@ -357,3 +357,23 @@ Cat fluffy = new Cat()
 		t.Errorf("Expected object creation with quoted string not found. Expected: %s", expectedObjectCreation)
 	}
 }
+
+func TestTopLevelStringLiteralQuotes(t *testing.T) {
+	input := `string code = "++++++++[>++++[>++>+++>+++>+<<<<-]>+>+>->>+[<]<-]>>.>---.+++++++..+++.>>.<-.<.+++.------.--------.>>+.>++."`
+
+	program, err := lexer.ParseWithIndentation(input)
+	if err != nil {
+		t.Fatalf("Failed to parse input: %v", err)
+	}
+	var (
+		result       = RenderC(program, ".")
+		expectedDecl = `char code[256];`
+		expectedInit = `strcpy(code, "++++++++[>++++[>++>+++>+++>+<<<<-]>+>+>->>+[<]<-]>>.>---.+++++++..+++.>>.<-.<.+++.------.--------.>>+.>++.");`
+	)
+	if !strings.Contains(result, expectedDecl) {
+		t.Errorf("Expected string declaration '%s' not found in generated code", expectedDecl)
+	}
+	if !strings.Contains(result, expectedInit) {
+		t.Errorf("Expected string initialization '%s' not found in generated code, got:\n%s", expectedInit, result)
+	}
+}

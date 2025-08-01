@@ -512,7 +512,6 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent string, className string, program *lexer.Program) {
 	for _, stmt := range stmts {
 		switch {
-
 		case stmt.Print != nil:
 			if stmt.Print.Format != "" && len(stmt.Print.Variables) > 0 {
 				args := make([]string, len(stmt.Print.Variables))
@@ -531,10 +530,8 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				escapedFormat := strings.ReplaceAll(stmt.Print.Format, "\"", "\\\"")
 				fmt.Fprintf(b, "%sprintf(\"%s\\n\", %s);\n", indent, escapedFormat, argsStr)
 			} else if stmt.Print.Print != "" {
-				// Handle simple print statements
 				fmt.Fprintf(b, "%sprintf(\"%s\\n\");\n", indent, stmt.Print.Print)
 			}
-
 		case stmt.Sleep != nil:
 			fmt.Fprintf(b, "%ssleep(%s);\n", indent, stmt.Sleep.Duration)
 		case stmt.Break != nil:
@@ -593,7 +590,8 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 		case stmt.VarDecl != nil:
 			varType := mapTypeToCType(stmt.VarDecl.Type)
 			varName := lexer.ResolveSymbol(stmt.VarDecl.Name, currentModule)
-			value := lexer.ResolveSymbol(stmt.VarDecl.Value, currentModule)
+			value := stmt.VarDecl.Value
+			fmt.Printf("Debug: VarDecl var %s, value %s, type %s\n", varName, value, stmt.VarDecl.Type)
 			if strings.HasPrefix(varName, "this.") {
 				fieldName := varName[5:]
 				if stmt.VarDecl.Type == "string" {
@@ -602,12 +600,16 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 					}
 					fmt.Fprintf(b, "%sstrcpy(this->%s, %s);\n", indent, fieldName, value)
 				} else {
+					value = strings.ReplaceAll(value, "this.", "this->")
 					fmt.Fprintf(b, "%sthis->%s = %s;\n", indent, fieldName, value)
 				}
 			} else {
 				if stmt.VarDecl.Type == "string" {
 					fmt.Fprintf(b, "%schar %s[256];\n", indent, varName)
 					if value != "" {
+						if !strings.HasPrefix(value, "\"") && !strings.HasSuffix(value, "\"") {
+							value = fmt.Sprintf("\"%s\"", value)
+						}
 						fmt.Fprintf(b, "%sstrcpy(%s, %s);\n", indent, varName, value)
 					}
 				} else {
@@ -616,7 +618,7 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			}
 		case stmt.VarAssign != nil:
 			varName := lexer.ResolveSymbol(stmt.VarAssign.Name, currentModule)
-			value := lexer.ResolveSymbol(stmt.VarAssign.Value, currentModule)
+			value := stmt.VarAssign.Value
 			if strings.HasPrefix(varName, "this.") {
 				varName = "this->" + varName[5:]
 			}
@@ -641,7 +643,7 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 					}
 				}
 				if varType == "string" {
-					if !strings.HasPrefix(value, "\"") && !isValidIdentifier(value) {
+					if !strings.HasPrefix(value, "\"") && !strings.HasSuffix(value, "\"") {
 						value = fmt.Sprintf("\"%s\"", value)
 					}
 					fmt.Fprintf(b, "%sstrcpy(%s, %s);\n", indent, varName, value)
@@ -661,7 +663,7 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			for i, elem := range stmt.ListDecl.Elements {
 				elem = lexer.ResolveSymbol(elem, currentModule)
 				if stmt.ListDecl.Type == "string" {
-					if !strings.HasPrefix(elem, "\"") {
+					if !strings.HasPrefix(elem, "\"") && !strings.HasSuffix(elem, "\"") {
 						elem = fmt.Sprintf("\"%s\"", elem)
 					}
 					fmt.Fprintf(b, "%sstrcpy(%s[%d], %s);\n", indent, listName, i, elem)
@@ -692,7 +694,11 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				constructorArgs := make([]string, 0)
 				for _, arg := range args {
 					if arg != typeName && arg != resolvedType {
-						constructorArgs = append(constructorArgs, lexer.ResolveSymbol(arg, currentModule))
+						if strings.HasPrefix(arg, "\"") && strings.HasSuffix(arg, "\"") {
+							constructorArgs = append(constructorArgs, arg)
+						} else {
+							constructorArgs = append(constructorArgs, lexer.ResolveSymbol(arg, currentModule))
+						}
 					}
 				}
 				argsStr = strings.Join(constructorArgs, ", ")
@@ -767,7 +773,7 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			if varType == "string" {
 				fmt.Fprintf(b, "%s%s %s[256];\n", indent, cType, varName)
 				if value != "" {
-					if !strings.HasPrefix(value, "\"") {
+					if !strings.HasPrefix(value, "\"") && !strings.HasSuffix(value, "\"") {
 						value = fmt.Sprintf("\"%s\"", value)
 					}
 					fmt.Fprintf(b, "%sstrcpy(%s, %s);\n", indent, varName, value)
@@ -889,7 +895,7 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				value := pair.Value
 
 				if stmt.MapDecl.KeyType == "string" {
-					if !strings.HasPrefix(key, "\"") {
+					if !strings.HasPrefix(key, "\"") && !strings.HasSuffix(key, "\"") {
 						key = fmt.Sprintf("\"%s\"", key)
 					}
 					fmt.Fprintf(b, "%sstrcpy(%s_keys[%d], %s);\n", indent, mapName, i, key)
@@ -898,7 +904,7 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				}
 
 				if stmt.MapDecl.ValueType == "string" {
-					if !strings.HasPrefix(value, "\"") {
+					if !strings.HasPrefix(value, "\"") && !strings.HasSuffix(value, "\"") {
 						value = fmt.Sprintf("\"%s\"", value)
 					}
 					fmt.Fprintf(b, "%sstrcpy(%s_values[%d], %s);\n", indent, mapName, i, value)
