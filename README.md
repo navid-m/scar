@@ -4,11 +4,14 @@ In-development general purpose systems programming language with abstracted conc
 
 No macros or convoluted compile-time metaprogramming.
 
+Optional GC. Standard library will work with or without GC.
+
 Prioritizes:
 
 -  immutability
 -  minimalism
 -  readability
+-  easy parallelism
 
 #### Example
 
