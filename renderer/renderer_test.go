@@ -99,8 +99,10 @@ func TestRenderCWithWhileLoop(t *testing.T) {
     x = x - 1;
     }`
 
-	normalizedCCode := strings.Join(strings.Fields(cCode), " ")
-	normalizedExpected := strings.Join(strings.Fields(expected), " ")
+	var (
+		normalizedCCode    = strings.Join(strings.Fields(cCode), " ")
+		normalizedExpected = strings.Join(strings.Fields(expected), " ")
+	)
 
 	if !strings.Contains(normalizedCCode, normalizedExpected) {
 		t.Errorf("Expected C code to contain '%s', but got '%s'", normalizedExpected, normalizedCCode)
