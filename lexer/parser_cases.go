@@ -581,7 +581,6 @@ func parseElifStatement(lines []string, lineNum, currentIndent int) (*ElifStmt, 
 	if err != nil {
 		return nil, lineNum + 1, err
 	}
-
 	nextLine := findEndOfBlock(lines, lineNum+1, expectedBodyIndent)
 
 	return &ElifStmt{Condition: condition, Body: body}, nextLine, nil
