@@ -771,6 +771,35 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 
 			fmt.Fprintf(b, "%s    fclose(%s);\n", indent, fpVarName)
 			fmt.Fprintf(b, "%s}\n", indent)
+		case stmt.MethodCall != nil:
+			objectName := lexer.ResolveSymbol(stmt.MethodCall.Object, currentModule)
+			methodName := stmt.MethodCall.Method
+			args := make([]string, len(stmt.MethodCall.Args))
+			for i, arg := range stmt.MethodCall.Args {
+				args[i] = lexer.ResolveSymbol(arg, currentModule)
+			}
+			argsStr := strings.Join(args, ", ")
+			var resolvedClassName string
+			for _, obj := range globalObjects {
+				if obj.Name == stmt.MethodCall.Object {
+					resolvedClassName = obj.Type
+					if strings.Contains(resolvedClassName, ".") {
+						parts := strings.Split(resolvedClassName, ".")
+						resolvedClassName = lexer.GenerateUniqueSymbol(parts[1], parts[0])
+					} else if moduleName, exists := isImportedType(resolvedClassName, program.Imports); exists {
+						resolvedClassName = lexer.GenerateUniqueSymbol(resolvedClassName, moduleName)
+					}
+					break
+				}
+			}
+			if resolvedClassName == "" {
+				resolvedClassName = "unknown"
+			}
+			if argsStr == "" {
+				fmt.Fprintf(b, "%s%s_%s(%s);\n", indent, resolvedClassName, methodName, objectName)
+			} else {
+				fmt.Fprintf(b, "%s%s_%s(%s, %s);\n", indent, resolvedClassName, methodName, objectName, argsStr)
+			}
 		case stmt.FunctionCall != nil:
 			funcName := lexer.ResolveSymbol(stmt.FunctionCall.Name, currentModule)
 			args := make([]string, len(stmt.FunctionCall.Args))
