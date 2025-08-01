@@ -130,7 +130,7 @@ print "Final values - x: %d, y: %d, z: %d" | obj.x, obj.y, obj.z`
 	}
 	expectedPrints := []string{
 		`printf("Initializing with x=%d, y=%d\n", x, y);`,
-		`printf("Sum is %d\n", this->z);`,
+		`printf("Sum is %d\n", obj->z);`,
 	}
 
 	for _, printStmt := range expectedPrints {

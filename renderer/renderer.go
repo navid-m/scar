@@ -416,16 +416,42 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 					fmt.Fprintf(b, "    strncpy(obj->%s, %s, MAX_STRING_LENGTH - 1);\n", fieldName, value)
 					fmt.Fprintf(b, "    obj->%s[MAX_STRING_LENGTH - 1] = '\\0';\n", fieldName)
 				} else {
+					value = strings.ReplaceAll(value, "this.", "obj->")
 					fmt.Fprintf(b, "    obj->%s = %s;\n", fieldName, value)
 				}
 			}
 		}
-		renderStatements(b, classDecl.Constructor.Fields, "    ", className, program)
+
+		for _, stmt := range classDecl.Constructor.Fields {
+			if stmt.VarAssign == nil {
+				switch {
+				case stmt.Print != nil:
+					format := stmt.Print.Format
+					if format == "" {
+						format = "%s"
+					}
+					args := make([]string, len(stmt.Print.Variables))
+					for i, v := range stmt.Print.Variables {
+						v = strings.ReplaceAll(v, "this.", "obj->")
+						args[i] = v
+					}
+					if len(args) > 0 {
+						fmt.Fprintf(b, "    printf(\"%s\\n\", %s);\n",
+							strings.ReplaceAll(format, "\"", "\\\""),
+							strings.Join(args, ", "))
+					} else {
+						fmt.Fprintf(b, "    printf(\"%s\\n\");\n",
+							strings.ReplaceAll(format, "\"", "\\\""))
+					}
+				default:
+					renderStatements(b, []*lexer.Statement{stmt}, "    ", className, program)
+				}
+			}
+		}
 	}
 
 	b.WriteString("    return obj;\n}\n\n")
 
-	// Generate method implementations
 	for _, method := range classDecl.Methods {
 		returnType := "void"
 		if method.ReturnType != "" && method.ReturnType != "void" {
