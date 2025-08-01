@@ -335,11 +335,12 @@ func inferTypeFromValue(value string) string {
 }
 
 func generateStructDefinition(b *strings.Builder, classInfo *ClassInfo, structName string) {
+	fmt.Fprintf(b, "#define MAX_STRING_LENGTH 256\n")
 	fmt.Fprintf(b, "typedef struct %s {\n", structName)
 	for _, field := range classInfo.Fields {
 		cType := mapTypeToCType(field.Type)
 		if field.Type == "string" {
-			fmt.Fprintf(b, "    %s %s[256];\n", cType, field.Name)
+			fmt.Fprintf(b, "    char %s[MAX_STRING_LENGTH];\n", field.Name)
 		} else {
 			fmt.Fprintf(b, "    %s %s;\n", cType, field.Name)
 		}
@@ -370,91 +371,60 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 		fmt.Fprintf(b, "%s* %s_new() {\n", className, className)
 	}
 
-	fmt.Fprintf(b, "    %s* obj = malloc(sizeof(%s));\n", className, className)
+	fmt.Fprintf(b, "    %s* obj = (%s*)malloc(sizeof(%s));\n", className, className, className)
 
-	if classDecl.Constructor != nil {
-		assignedFields := make(map[string]bool)
-
-		if len(classDecl.Constructor.Parameters) > 0 {
-			for _, param := range classDecl.Constructor.Parameters {
-				if _, exists := assignedFields[param.Name]; !exists {
-					if param.Type == "string" {
-						fmt.Fprintf(b, "    strcpy(obj->%s, %s);\n", param.Name, param.Name)
-					} else {
-						fmt.Fprintf(b, "    obj->%s = %s;\n", param.Name, param.Name)
-					}
-					assignedFields[param.Name] = true
-				}
+	if classInfo, exists := globalClasses[className]; exists {
+		for _, field := range classInfo.Fields {
+			switch field.Type {
+			case "int":
+				fmt.Fprintf(b, "    obj->%s = 0;\n", field.Name)
+			case "float", "double":
+				fmt.Fprintf(b, "    obj->%s = 0.0;\n", field.Name)
+			case "string":
+				fmt.Fprintf(b, "    obj->%s[0] = '\\0';\n", field.Name)
+			case "bool":
+				fmt.Fprintf(b, "    obj->%s = 0;\n", field.Name)
 			}
 		}
+	}
+	if classDecl.Constructor != nil {
+		for _, stmt := range classDecl.Constructor.Fields {
+			switch {
+			case stmt.VarAssign != nil:
+				fieldName := stmt.VarAssign.Name
+				value := stmt.VarAssign.Value
 
-		for _, field := range classDecl.Constructor.Fields {
-			if field.VarDecl != nil && strings.HasPrefix(field.VarDecl.Name, "this.") {
-				fieldName := field.VarDecl.Name[5:]
-				if _, exists := assignedFields[fieldName]; exists {
+				if fieldName == "this" {
 					continue
 				}
-				value := field.VarDecl.Value
-				fieldType := field.VarDecl.Type
 
-				if fieldType == "string" {
-					if !strings.HasPrefix(value, "\"") {
-						value = fmt.Sprintf("\"%s\"", value)
-					}
-					fmt.Fprintf(b, "    strcpy(obj->%s, %s);\n", fieldName, value)
-				} else {
-					fmt.Fprintf(b, "    obj->%s = %s;\n", fieldName, value)
+				if strings.HasPrefix(fieldName, "this.") {
+					fieldName = fieldName[5:]
 				}
-				assignedFields[fieldName] = true
-			} else if field.VarAssign != nil && strings.HasPrefix(field.VarAssign.Name, "this.") {
-				fieldName := field.VarAssign.Name[5:]
-				if _, exists := assignedFields[fieldName]; exists {
-					continue
-				}
-				value := field.VarAssign.Value
-				var fieldType string
+
+				isStringField := false
 				if classInfo, exists := globalClasses[className]; exists {
-					for _, f := range classInfo.Fields {
-						if f.Name == fieldName {
-							fieldType = f.Type
+					for _, field := range classInfo.Fields {
+						if field.Name == fieldName && field.Type == "string" {
+							isStringField = true
 							break
 						}
 					}
 				}
 
-				if fieldType == "string" {
-					if !strings.HasPrefix(value, "\"") && !isValidIdentifier(value) {
-						value = fmt.Sprintf("\"%s\"", value)
-					}
-					fmt.Fprintf(b, "    strcpy(obj->%s, %s);\n", fieldName, value)
+				if isStringField {
+					fmt.Fprintf(b, "    strncpy(obj->%s, %s, MAX_STRING_LENGTH - 1);\n", fieldName, value)
+					fmt.Fprintf(b, "    obj->%s[MAX_STRING_LENGTH - 1] = '\\0';\n", fieldName)
 				} else {
 					fmt.Fprintf(b, "    obj->%s = %s;\n", fieldName, value)
-				}
-				assignedFields[fieldName] = true
-			} else if field.Print != nil {
-				if field.Print.Format != "" && len(field.Print.Variables) > 0 {
-					args := make([]string, len(field.Print.Variables))
-					for i, v := range field.Print.Variables {
-						if strings.HasPrefix(v, "this.") {
-							fieldName := v[5:]
-							args[i] = fmt.Sprintf("obj->%s", fieldName)
-						} else {
-							args[i] = lexer.ResolveSymbol(v, currentModule)
-						}
-					}
-					argsStr := strings.Join(args, ", ")
-					escapedFormat := strings.ReplaceAll(field.Print.Format, "\"", "\\\"")
-					b.WriteString(fmt.Sprintf("    printf(\"%s\\n\", %s);\n", escapedFormat, argsStr))
-				} else {
-					fmt.Fprintf(b, "    printf(\"%s\\n\");\n", field.Print.Print)
 				}
 			}
 		}
 	}
 
-	b.WriteString("    return obj;\n")
-	b.WriteString("}\n\n")
+	b.WriteString("    return obj;\n}\n\n")
 
+	// Generate method implementations
 	for _, method := range classDecl.Methods {
 		returnType := "void"
 		if method.ReturnType != "" && method.ReturnType != "void" {
