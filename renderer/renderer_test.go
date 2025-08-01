@@ -128,7 +128,7 @@ func TestRenderCWithStringVariable(t *testing.T) {
 	}
 
 	cCode := RenderC(program, "")
-	expectedVarDecl := `char* msg[256];`
+	expectedVarDecl := `char msg[256]`
 	expectedStrcpy := `strcpy(msg, "Hello, String!");`
 	expectedPrintf := `printf("%s\n", msg);`
 
@@ -204,13 +204,13 @@ func TestRenderCWithMap(t *testing.T) {
 	}
 
 	cCode := RenderC(program, "")
-	expectedKeyDecl := `char* myMap_keys[2][256];`
-	expectedValueDecl := `int myMap_values[2];`
-	expectedSize := `int myMap_size = 2;`
-	expectedKeyInit1 := `strcpy(myMap_keys[0], "one");`
-	expectedValueInit1 := `myMap_values[0] = 1;`
-	expectedKeyInit2 := `strcpy(myMap_keys[1], "two");`
-	expectedValueInit2 := `myMap_values[1] = 2;`
+	expectedKeyDecl := `char myMap_keys[2][256]`
+	expectedValueDecl := `int myMap_values[2]`
+	expectedSize := `int myMap_size = 2`
+	expectedKeyInit1 := `strcpy(myMap_keys[0], "one")`
+	expectedValueInit1 := `myMap_values[0] = 1`
+	expectedKeyInit2 := `strcpy(myMap_keys[1], "two")`
+	expectedValueInit2 := `myMap_values[1] = 2`
 
 	if !strings.Contains(cCode, expectedKeyDecl) {
 		t.Errorf("Expected C code to contain '%s', but it didn't", expectedKeyDecl)
@@ -232,5 +232,65 @@ func TestRenderCWithMap(t *testing.T) {
 	}
 	if !strings.Contains(cCode, expectedValueInit2) {
 		t.Errorf("Expected C code to contain '%s', but it didn't", expectedValueInit2)
+	}
+}
+
+func TestRenderCWithStringList(t *testing.T) {
+	program := &lexer.Program{
+		Statements: []*lexer.Statement{
+			{
+				ListDecl: &lexer.ListDeclStmt{
+					Name:     "names",
+					Type:     "string",
+					Elements: []string{"\"Alice\"", "\"Bob\"", "\"Charlie\""},
+				},
+			},
+			{
+				VarAssign: &lexer.VarAssignStmt{
+					Name:  "names[2]",
+					Value: "\"David\"",
+				},
+			},
+			{
+				Print: &lexer.PrintStmt{
+					Format:    "Name: %s",
+					Variables: []string{"names[0]"},
+				},
+			},
+		},
+	}
+
+	cCode := RenderC(program, "")
+
+	// Verify the string list declaration
+	expectedListDecl := `char names[3][256]`
+	if !strings.Contains(cCode, expectedListDecl) {
+		t.Errorf("Expected C code to contain '%s', but it didn't", expectedListDecl)
+	}
+
+	// Verify string list initialization
+	expectedInit1 := `strcpy(names[0], "Alice")`
+	expectedInit2 := `strcpy(names[1], "Bob")`
+	expectedInit3 := `strcpy(names[2], "Charlie")`
+	if !strings.Contains(cCode, expectedInit1) {
+		t.Errorf("Expected C code to contain '%s', but it didn't", expectedInit1)
+	}
+	if !strings.Contains(cCode, expectedInit2) {
+		t.Errorf("Expected C code to contain '%s', but it didn't", expectedInit2)
+	}
+	if !strings.Contains(cCode, expectedInit3) {
+		t.Errorf("Expected C code to contain '%s', but it didn't", expectedInit3)
+	}
+
+	// Verify string list assignment
+	expectedAssign := `strcpy(names[2], "David")`
+	if !strings.Contains(cCode, expectedAssign) {
+		t.Errorf("Expected C code to contain '%s', but it didn't", expectedAssign)
+	}
+
+	// Verify the print statement
+	expectedPrintf := `printf("Name: %s\n", names[0])`
+	if !strings.Contains(cCode, expectedPrintf) {
+		t.Errorf("Expected C code to contain '%s', but it didn't", expectedPrintf)
 	}
 }

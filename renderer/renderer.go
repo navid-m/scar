@@ -576,7 +576,7 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			if strings.Contains(varName, "[") && strings.Contains(varName, "]") {
 				arrayName := varName[:strings.Index(varName, "[")]
 				if arrayType, exists := globalArrays[arrayName]; exists && arrayType == "string" {
-					if !strings.HasPrefix(value, "\"") {
+					if !strings.HasPrefix(value, "\"") && !strings.HasSuffix(value, "\"") {
 						value = fmt.Sprintf("\"%s\"", value)
 					}
 					fmt.Fprintf(b, "%sstrcpy(%s, %s);\n", indent, varName, value)
@@ -607,7 +607,7 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			listName := lexer.ResolveSymbol(stmt.ListDecl.Name, currentModule)
 			globalArrays[stmt.ListDecl.Name] = stmt.ListDecl.Type
 			if stmt.ListDecl.Type == "string" {
-				fmt.Fprintf(b, "%s%s %s[%d][256];\n", indent, listType, listName, len(stmt.ListDecl.Elements))
+				fmt.Fprintf(b, "%s%s %s[%d][256];\n", indent, "char", listName, len(stmt.ListDecl.Elements))
 			} else {
 				fmt.Fprintf(b, "%s%s %s[%d];\n", indent, listType, listName, len(stmt.ListDecl.Elements))
 			}
@@ -898,19 +898,6 @@ func generateTopLevelFunctionImplementation(b *strings.Builder, funcDecl *lexer.
 	b.WriteString("}\n\n")
 }
 
-func containsOnlyRawCode(body []*lexer.Statement) bool {
-	if len(body) == 0 {
-		return false
-	}
-
-	for _, stmt := range body {
-		if stmt.RawCode == nil {
-			return false
-		}
-	}
-	return true
-}
-
 func isValidIdentifier(s string) bool {
 	if len(s) == 0 {
 		return false
@@ -937,7 +924,9 @@ func mapTypeToCType(mapType string) string {
 	case "char":
 		return "char"
 	case "string":
-		return "char*"
+		// For string arrays, we use char[256] as the base type
+		// This is handled in a special way in the list declaration generation logic
+		return "char"
 	case "bool":
 		return "int"
 	default:
