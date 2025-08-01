@@ -2,7 +2,13 @@
 
 In-development general purpose systems programming language with abstracted concurrency constructs builtin.
 
-No macros. Scar favors immutability, minimalism and readability over convoluted compile-time metaprogramming.
+No macros or convoluted compile-time metaprogramming.
+
+Prioritizes:
+
+-  immutability
+-  minimalism
+-  readability
 
 #### Example
 
@@ -15,3 +21,6 @@ pub fn do_thing() -> void:
 
 do_thing()
 ```
+
+Reassignments are made explicit with `reassign` keyword.
+All values are constant by default.
