@@ -420,6 +420,7 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 				}
 			}
 		}
+		renderStatements(b, classDecl.Constructor.Fields, "    ", className, program)
 	}
 
 	b.WriteString("    return obj;\n}\n\n")
