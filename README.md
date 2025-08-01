@@ -29,4 +29,4 @@ All values are constant by default.
 
 <font color="grey">(Under construction)</font>
 
-<img src="assets/wip.png" style="border-radius: 5px;" width=35%>
+<img src="assets/wip.png" style="border-radius: 5px;" width=45%>
