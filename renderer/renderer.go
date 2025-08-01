@@ -281,7 +281,7 @@ func collectClassInfoWithModule(classDecl *lexer.ClassDeclStmt, moduleName strin
 				if _, exists := fieldMap[fieldName]; !exists {
 					fieldInfo := FieldInfo{
 						Name: fieldName,
-						Type: stmt.VarDecl.Type, // Use declared type from VarDecl
+						Type: stmt.VarDecl.Type,
 					}
 					classInfo.Fields = append(classInfo.Fields, fieldInfo)
 					fieldMap[fieldName] = true
