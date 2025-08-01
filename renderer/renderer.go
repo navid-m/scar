@@ -992,8 +992,12 @@ func resolveImportedSymbols(value string, imports []*lexer.ImportStmt) string {
 			)
 			for _, imp := range imports {
 				if imp.Module == moduleName {
-					return strings.Replace(value, moduleName+"."+symbolName,
-						lexer.GenerateUniqueSymbol(symbolName, moduleName), 1)
+					return strings.Replace(
+						value,
+						moduleName+"."+symbolName,
+						lexer.GenerateUniqueSymbol(symbolName, moduleName),
+						1,
+					)
 				}
 			}
 		}
