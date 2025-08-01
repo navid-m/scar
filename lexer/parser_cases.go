@@ -152,13 +152,10 @@ func parsePubClassStatement(lines []string, lineNum, currentIndent int) (*Statem
 	if len(parts) < 3 || !strings.HasSuffix(line, ":") {
 		return nil, lineNum + 1, fmt.Errorf("pub class declaration format error at line %d", lineNum+1)
 	}
-
-	className := parts[2]
-	if strings.HasSuffix(className, ":") {
-		className = className[:len(className)-1]
-	}
-
-	expectedBodyIndent := currentIndent + 4
+	var (
+		className          = strings.TrimSuffix(parts[2], ":")
+		expectedBodyIndent = currentIndent + 4
+	)
 	if currentIndent == 0 {
 		bodyStartLine := lineNum + 1
 		for bodyStartLine < len(lines) {
@@ -277,10 +274,7 @@ func parseClassStatement(lines []string, lineNum, currentIndent int) (*Statement
 		return nil, lineNum + 1, fmt.Errorf("class declaration format error at line %d", lineNum+1)
 	}
 
-	className := parts[1]
-	if strings.HasSuffix(className, ":") {
-		className = className[:len(className)-1]
-	}
+	className := strings.TrimSuffix(parts[1], ":")
 
 	expectedBodyIndent := currentIndent + 4
 	if currentIndent == 0 {
