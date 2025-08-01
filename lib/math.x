@@ -61,7 +61,7 @@ pub fn max(int a, int b) -> int:
         return a
     return b
 
-pub fn abs(float value) -> float:
+pub fn absolute(float value) -> float:
     if value < 0.0:
         return -value
     return value
