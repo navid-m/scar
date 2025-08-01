@@ -774,6 +774,48 @@ func parsePubFunctionStatement(lines []string, lineNum, currentIndent int) (*Sta
 	return &Statement{PubTopLevelFuncDecl: pubFuncDecl}, nextLine, nil
 }
 
+func splitRespectingParens(input string) []string {
+	var result []string
+	var current strings.Builder
+	parenCount := 0
+	inQuotes := false
+
+	for i, char := range input {
+		switch char {
+		case '"':
+			if i == 0 || input[i-1] != '\\' {
+				inQuotes = !inQuotes
+			}
+			current.WriteRune(char)
+		case '(':
+			if !inQuotes {
+				parenCount++
+			}
+			current.WriteRune(char)
+		case ')':
+			if !inQuotes {
+				parenCount--
+			}
+			current.WriteRune(char)
+		case ',':
+			if !inQuotes && parenCount == 0 {
+				result = append(result, strings.TrimSpace(current.String()))
+				current.Reset()
+			} else {
+				current.WriteRune(char)
+			}
+		default:
+			current.WriteRune(char)
+		}
+	}
+
+	if current.Len() > 0 {
+		result = append(result, strings.TrimSpace(current.String()))
+	}
+
+	return result
+}
+
 func parseBulkImport(lines []string, lineNum int) (*Statement, int, error) {
 	var imports []*ImportStmt
 	currentLine := lineNum + 1

@@ -514,16 +514,27 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 		switch {
 		case stmt.Print != nil:
 			if stmt.Print.Format != "" && len(stmt.Print.Variables) > 0 {
-				args := make([]string, len(stmt.Print.Variables))
-				for i, v := range stmt.Print.Variables {
-					resolvedVar := lexer.ResolveSymbol(v, currentModule)
-					if strings.HasPrefix(v, "this.") {
-						fieldName := v[5:]
-						args[i] = fmt.Sprintf("this->%s", fieldName)
-					} else if strings.Contains(v, "[") && strings.Contains(v, "]") {
-						args[i] = resolvedVar
+				// First, try to reconstruct split method calls
+				variables := reconstructMethodCalls(stmt.Print.Variables)
+
+				args := make([]string, len(variables))
+				for i, v := range variables {
+					fmt.Printf("Debug: Processing print variable: '%s'\n", v)
+					if isMethodCall(v) {
+						fmt.Printf("Debug: Detected method call: '%s'\n", v)
+						// Handle method calls like calc.add(2, 3)
+						args[i] = convertMethodCallToC(v, program)
+						fmt.Printf("Debug: Converted to: '%s'\n", args[i])
 					} else {
-						args[i] = resolvedVar
+						resolvedVar := lexer.ResolveSymbol(v, currentModule)
+						if strings.HasPrefix(v, "this.") {
+							fieldName := v[5:]
+							args[i] = fmt.Sprintf("this->%s", fieldName)
+						} else if strings.Contains(v, "[") && strings.Contains(v, "]") {
+							args[i] = resolvedVar
+						} else {
+							args[i] = resolvedVar
+						}
 					}
 				}
 				argsStr := strings.Join(args, ", ")
@@ -532,6 +543,7 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			} else if stmt.Print.Print != "" {
 				fmt.Fprintf(b, "%sprintf(\"%s\\n\");\n", indent, stmt.Print.Print)
 			}
+
 		case stmt.Sleep != nil:
 			fmt.Fprintf(b, "%ssleep(%s);\n", indent, stmt.Sleep.Duration)
 		case stmt.Break != nil:
@@ -934,6 +946,43 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 		}
 	}
 }
+
+func reconstructMethodCalls(variables []string) []string {
+	if len(variables) <= 1 {
+		return variables
+	}
+
+	var result []string
+	i := 0
+
+	for i < len(variables) {
+		variable := variables[i]
+
+		// Check if this looks like the start of a split method call
+		if strings.Contains(variable, ".") && strings.Contains(variable, "(") && !strings.Contains(variable, ")") {
+			// This is likely a split method call, try to reconstruct it
+			reconstructed := variable
+			i++
+
+			// Keep adding subsequent variables until we find the closing parenthesis
+			for i < len(variables) {
+				reconstructed += ", " + variables[i]
+				if strings.Contains(variables[i], ")") {
+					break
+				}
+				i++
+			}
+
+			result = append(result, reconstructed)
+		} else {
+			result = append(result, variable)
+		}
+		i++
+	}
+
+	return result
+}
+
 func resolveImportedSymbols(value string, imports []*lexer.ImportStmt) string {
 	if strings.Contains(value, ".") {
 		parts := strings.Split(value, ".")
@@ -970,6 +1019,115 @@ func resolveImportedSymbols(value string, imports []*lexer.ImportStmt) string {
 		}
 	}
 
+	return result
+}
+
+func isMethodCall(expr string) bool {
+	dotIndex := strings.Index(expr, ".")
+	if dotIndex == -1 {
+		return false
+	}
+
+	parenIndex := strings.Index(expr[dotIndex:], "(")
+	if parenIndex == -1 {
+		return false
+	}
+
+	return strings.Contains(expr, ")")
+}
+func convertMethodCallToC(expr string, program *lexer.Program) string {
+	fmt.Printf("Debug: Converting method call: '%s'\n", expr)
+	fmt.Printf("Debug: globalObjects count: %d\n", len(globalObjects))
+	for name, obj := range globalObjects {
+		fmt.Printf("Debug: globalObjects[%s] = %s\n", name, obj.Type)
+	}
+
+	// Parse object.method(args) and convert to Class_method(object, args)
+	dotIndex := strings.Index(expr, ".")
+	if dotIndex == -1 {
+		return expr
+	}
+
+	objectName := expr[:dotIndex]
+	remainder := expr[dotIndex+1:]
+
+	parenIndex := strings.Index(remainder, "(")
+	if parenIndex == -1 {
+		return expr
+	}
+
+	methodName := remainder[:parenIndex]
+	argsWithParens := remainder[parenIndex:]
+
+	fmt.Printf("Debug: objectName='%s', methodName='%s', argsWithParens='%s'\n", objectName, methodName, argsWithParens)
+
+	// Extract arguments from parentheses
+	args := ""
+	if len(argsWithParens) > 2 { // More than just "()"
+		args = argsWithParens[1 : len(argsWithParens)-1] // Remove ( and )
+	}
+
+	// Resolve the object name in case it needs module resolution
+	resolvedObjectName := lexer.ResolveSymbol(objectName, currentModule)
+
+	// Find the object's class type
+	var resolvedClassName string
+	for _, obj := range globalObjects {
+		if obj.Name == objectName {
+			resolvedClassName = obj.Type
+			fmt.Printf("Debug: Found object '%s' with type '%s'\n", objectName, resolvedClassName)
+			if strings.Contains(resolvedClassName, ".") {
+				parts := strings.Split(resolvedClassName, ".")
+				resolvedClassName = lexer.GenerateUniqueSymbol(parts[1], parts[0])
+			} else if moduleName, exists := isImportedType(resolvedClassName, program.Imports); exists {
+				resolvedClassName = lexer.GenerateUniqueSymbol(resolvedClassName, moduleName)
+			}
+			break
+		}
+	}
+
+	// If we can't find the object in globalObjects, try to infer from local context
+	if resolvedClassName == "" {
+		fmt.Printf("Debug: Object not found in globalObjects, trying to infer class name\n")
+		// Look for class declarations in the program to find a matching class name
+		for _, stmt := range program.Statements {
+			if stmt.ClassDecl != nil {
+				resolvedClassName = stmt.ClassDecl.Name
+				fmt.Printf("Debug: Found class declaration: '%s'\n", resolvedClassName)
+				break
+			}
+			if stmt.PubClassDecl != nil {
+				resolvedClassName = stmt.PubClassDecl.Name
+				fmt.Printf("Debug: Found pub class declaration: '%s'\n", resolvedClassName)
+				break
+			}
+		}
+		// Also check loaded modules
+		if resolvedClassName == "" {
+			for _, module := range lexer.LoadedModules {
+				for className := range module.PublicClasses {
+					resolvedClassName = className
+					fmt.Printf("Debug: Found class in module: '%s'\n", resolvedClassName)
+					break
+				}
+			}
+		}
+	}
+
+	if resolvedClassName == "" {
+		fmt.Printf("Debug: Could not determine class name, using 'unknown'\n")
+		resolvedClassName = "unknown"
+	}
+
+	// Convert to C function call format
+	var result string
+	if args == "" {
+		result = fmt.Sprintf("%s_%s(%s)", resolvedClassName, methodName, resolvedObjectName)
+	} else {
+		result = fmt.Sprintf("%s_%s(%s, %s)", resolvedClassName, methodName, resolvedObjectName, args)
+	}
+
+	fmt.Printf("Debug: Final result: '%s'\n", result)
 	return result
 }
 func generateTopLevelFunctionImplementation(b *strings.Builder, funcDecl *lexer.TopLevelFuncDeclStmt, program *lexer.Program) {
