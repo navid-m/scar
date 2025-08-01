@@ -275,9 +275,7 @@ func collectClassInfoWithModule(classDecl *lexer.ClassDeclStmt, moduleName strin
 		for _, stmt := range classDecl.Constructor.Fields {
 			if stmt.VarDecl != nil {
 				fieldName := stmt.VarDecl.Name
-				if strings.HasPrefix(fieldName, "this.") {
-					fieldName = fieldName[5:]
-				}
+				fieldName = strings.TrimPrefix(fieldName, "this.")
 				if _, exists := fieldMap[fieldName]; !exists {
 					fieldInfo := FieldInfo{
 						Name: fieldName,
