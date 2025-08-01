@@ -327,3 +327,33 @@ func TestRenderCWithStringList(t *testing.T) {
 		t.Errorf("Expected C code to contain '%s', but it didn't", expectedPrintf)
 	}
 }
+
+func TestConstructorStringLiteralQuotes(t *testing.T) {
+	input := `class Cat:
+    init():
+        string this.name = "Fluffy"
+
+Cat fluffy = new Cat()
+`
+
+	program, err := lexer.ParseWithIndentation(input)
+	if err != nil {
+		t.Fatalf("Failed to parse input: %v", err)
+	}
+
+	result := RenderC(program, ".")
+	expectedConstructor := "Cat* Cat_new() {"
+	if !strings.Contains(result, expectedConstructor) {
+		t.Errorf("Expected constructor signature not found. Expected: %s", expectedConstructor)
+	}
+
+	expectedInit := `strcpy(this->name, "Fluffy");`
+	if !strings.Contains(result, expectedInit) {
+		t.Errorf("Expected string field initialization '%s' not found in constructor", expectedInit)
+	}
+
+	expectedObjectCreation := `Cat* fluffy = Cat_new();`
+	if !strings.Contains(result, expectedObjectCreation) {
+		t.Errorf("Expected object creation with quoted string not found. Expected: %s", expectedObjectCreation)
+	}
+}
