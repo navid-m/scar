@@ -557,9 +557,9 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 		value := strings.Join(parts[1:], " ")
 		return &Statement{Throw: &ThrowStmt{Value: value}}, lineNum + 1, nil
 
-	case "reassign":
+	case "set":
 		if len(parts) < 4 || parts[2] != "=" {
-			return nil, lineNum + 1, fmt.Errorf("reassign statement format error at line %d (expected: reassign var = value)", lineNum+1)
+			return nil, lineNum + 1, fmt.Errorf("set statement format error at line %d (expected: set var = value)", lineNum+1)
 		}
 
 		varName := parts[1]

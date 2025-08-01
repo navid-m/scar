@@ -22,7 +22,7 @@ pub fn do_thing() -> void:
 do_thing()
 ```
 
-Reassignments are made explicit with `reassign` keyword.
+Reassignments are made explicit with `set` keyword.
 All values are constant by default.
 
 ---

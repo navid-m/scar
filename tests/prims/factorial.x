@@ -4,7 +4,7 @@ int fact = 1
 print "Calculating factorial of %d..." | n
 
 for i = 1 to n:
-    reassign fact = fact * i
+    set fact = fact * i
     print "i = %d, fact = %d" | i, fact
     sleep 0.2
 

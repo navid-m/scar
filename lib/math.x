@@ -10,15 +10,15 @@ pub fn to_int(string value) -> int:
     int len = len(value)
 
     while i < len && (value[i] == ' ' || value[i] == '\t' || value[i] == '\n'):
-        reassign i = i + 1
+        set i = i + 1
     if i < len  && value[i] == '-':
-        reassign sign = -1
-        reassign i = i + 1
+        set sign = -1
+        set i = i + 1
     elif i < len  && value[i] == '+':
-        reassign i = i + 1
+        set i = i + 1
     while i < len  && value[i] >= '0'  && value[i] <= '9':
-        reassign result = result * 10 + (ord(value[i]) - ord('0'))
-        reassign i = i + 1
+        set result = result * 10 + (ord(value[i]) - ord('0'))
+        set i = i + 1
 
     return result * sign
 
@@ -31,23 +31,23 @@ pub fn to_float(string value) -> float:
     int len = len(value)
 
     while i < len  && (value[i] == ' ' || value[i] == '\t' || value[i] == '\n'):
-        reassign i = i + 1
+        set i = i + 1
         if i < len  && value[i] == '-':
-            reassign sign = -1
-            reassign i = i + 1
+            set sign = -1
+            set i = i + 1
         elif i < len  && value[i] == '+':
-            reassign i = i + 1
+            set i = i + 1
 
     while i < len && value[i] >= '0' && value[i] <= '9':
-        reassign result = result * 10.0 + float(ord(value[i]) - ord('0'))
-        reassign i = i + 1
+        set result = result * 10.0 + float(ord(value[i]) - ord('0'))
+        set i = i + 1
 
     if i < len && value[i] == '.':
-        reassign i = i + 1
+        set i = i + 1
         while i < len  && value[i] >= '0'  && value[i] <= '9':
-            reassign fraction = fraction + (float(ord(value[i]) - ord('0')) / divisor)
-            reassign divisor = divisor * 10.0
-            reassign i = i + 1
+            set fraction = fraction + (float(ord(value[i]) - ord('0')) / divisor)
+            set divisor = divisor * 10.0
+            set i = i + 1
 
     return float(sign) * (result + fraction)
 

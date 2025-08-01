@@ -8,9 +8,9 @@ print "Second name: %s" | names[1]
 
 list[int] empty_list = []
 
-reassign numbers[1] = 10
+set numbers[1] = 10
 print "Modified second number: %d" | numbers[1]
-reassign names[2] = "David"
+set names[2] = "David"
 print "Modified third name: %s" | names[2]
 
 for i = 0 to 4:
