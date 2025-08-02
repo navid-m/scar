@@ -8,6 +8,7 @@ package renderer
 
 import (
 	"fmt"
+	"os"
 	"regexp"
 	"strings"
 
@@ -932,6 +933,11 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			}
 			if resolvedClassName == "" {
 				resolvedClassName = "unknown"
+				fmt.Println("Unknown class name for method call:", stmt.VarDeclMethodCall.Object)
+				fmt.Println("Object name:", stmt.VarDeclMethodCall.Object)
+				fmt.Println("Method name:", stmt.VarDeclMethodCall.Method)
+				fmt.Println("Args:", stmt.VarDeclMethodCall.Args)
+				os.Exit(1)
 			}
 			if argsStr == "" {
 				fmt.Fprintf(b, "%s%s %s = %s_%s(%s);\n", indent, varType, varName, resolvedClassName, methodName, objectName)
