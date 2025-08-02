@@ -978,10 +978,12 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				fmt.Fprintf(b, "%s%s = %s_%s(%s, %s);\n", indent, varName, resolvedClassName, methodName, objectName, argsStr)
 			}
 		case stmt.VarDeclInferred != nil:
-			varName := lexer.ResolveSymbol(stmt.VarDeclInferred.Name, currentModule)
-			value := lexer.ResolveSymbol(stmt.VarDeclInferred.Value, currentModule)
-			varType := inferTypeFromValue(stmt.VarDeclInferred.Value)
-			cType := mapTypeToCType(varType)
+			var (
+				varName = lexer.ResolveSymbol(stmt.VarDeclInferred.Name, currentModule)
+				value   = lexer.ResolveSymbol(stmt.VarDeclInferred.Value, currentModule)
+				varType = inferTypeFromValue(stmt.VarDeclInferred.Value)
+				cType   = mapTypeToCType(varType)
+			)
 			if varType == "string" {
 				fmt.Fprintf(b, "%s%s %s[256];\n", indent, cType, varName)
 				if value != "" {
@@ -994,10 +996,11 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				fmt.Fprintf(b, "%s%s %s = %s;\n", indent, cType, varName, value)
 			}
 		case stmt.VarDeclRead != nil:
-			varName := lexer.ResolveSymbol(stmt.VarDeclRead.Name, currentModule)
-			filePath := stmt.VarDeclRead.FilePath
-			fpVarName := fmt.Sprintf("fp_read_%s", varName)
-
+			var (
+				varName   = lexer.ResolveSymbol(stmt.VarDeclRead.Name, currentModule)
+				filePath  = stmt.VarDeclRead.FilePath
+				fpVarName = fmt.Sprintf("fp_read_%s", varName)
+			)
 			fmt.Fprintf(b, "%schar* %s = NULL;\n", indent, varName)
 			fmt.Fprintf(b, "%sFILE* %s = fopen(%s, \"r\");\n", indent, fpVarName, filePath)
 			fmt.Fprintf(b, "%sif (%s != NULL) {\n", indent, fpVarName)
