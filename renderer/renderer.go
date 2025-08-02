@@ -656,14 +656,11 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			varName := stmt.For.Var
 			start := lexer.ResolveSymbol(stmt.For.Start, currentModule)
 			end := stmt.For.End
-
-			// Convert 'this.' to 'this->' in the end condition
 			if strings.HasPrefix(end, "this.") {
 				end = "this->" + end[5:]
 			} else {
 				end = lexer.ResolveSymbol(end, currentModule)
 			}
-
 			fmt.Fprintf(b, "%sfor (int %s = %s; %s <= %s; %s++) {\n", indent, varName, start, varName, end, varName)
 			renderStatements(b, stmt.For.Body, indent+"    ", className, program)
 			fmt.Fprintf(b, "%s}\n", indent)
@@ -1003,9 +1000,7 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			}
 			argsStr := strings.Join(args, ", ")
 
-			// Handle 'this' method calls
 			if objectName == "this" {
-				// For 'this' method calls, use the current class name
 				resolvedClassName := className
 				if argsStr == "" {
 					fmt.Fprintf(b, "%s%s_%s(this);\n", indent, resolvedClassName, methodName)
@@ -1013,7 +1008,6 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 					fmt.Fprintf(b, "%s%s_%s(this, %s);\n", indent, resolvedClassName, methodName, argsStr)
 				}
 			} else {
-				// Handle regular object method calls
 				objectName = lexer.ResolveSymbol(objectName, currentModule)
 				var resolvedClassName string
 				for _, obj := range globalObjects {
@@ -1041,10 +1035,7 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			funcName := lexer.ResolveSymbol(stmt.FunctionCall.Name, currentModule)
 			args := make([]string, 0)
 
-			// Check if this function returns a string and we need to provide output buffer
 			if functionReturnsString(funcName) {
-				// This is a standalone function call that returns a string but result is ignored
-				// We need to create a temporary buffer
 				fmt.Fprintf(b, "%s{\n", indent)
 				fmt.Fprintf(b, "%s    char temp_buffer[256];\n", indent)
 				fmt.Fprintf(b, "%s    %s(temp_buffer", indent, funcName)
@@ -1055,7 +1046,6 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				fmt.Fprintf(b, ");\n")
 				fmt.Fprintf(b, "%s}\n", indent)
 			} else {
-				// Regular function call
 				for _, arg := range stmt.FunctionCall.Args {
 					resolvedArg := lexer.ResolveSymbol(arg, currentModule)
 					args = append(args, resolvedArg)
@@ -1360,8 +1350,8 @@ func generateTopLevelFunctionImplementation(b *strings.Builder, funcDecl *lexer.
 			if stmt.RawCode != nil {
 				modifiedCode := strings.ReplaceAll(stmt.RawCode.Code, "return buffer;", "strcpy(_output_buffer, buffer); return;")
 				modifiedCode = strings.ReplaceAll(modifiedCode, `return "";`, `strcpy(_output_buffer, ""); return;`)
-				rawLines := strings.Split(modifiedCode, "\n")
-				for _, rawLine := range rawLines {
+				rawLines := strings.SplitSeq(modifiedCode, "\n")
+				for rawLine := range rawLines {
 					if strings.TrimSpace(rawLine) != "" {
 						fmt.Fprintf(b, "    %s\n", rawLine)
 					} else {
@@ -1369,7 +1359,6 @@ func generateTopLevelFunctionImplementation(b *strings.Builder, funcDecl *lexer.
 					}
 				}
 			} else if stmt.Return != nil {
-				// Handle return statements that call string-returning functions
 				value := stmt.Return.Value
 				if isFunctionCall(value) {
 					funcName, args := parseFunctionCall(value)
