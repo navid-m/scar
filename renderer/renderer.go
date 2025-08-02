@@ -17,6 +17,7 @@ var (
 	globalObjects   = make(map[string]*ObjectInfo)
 	globalFunctions = make(map[string]*lexer.TopLevelFuncDeclStmt)
 	globalArrays    = make(map[string]string)
+	globalVars      = make(map[string]*lexer.PubVarDeclStmt)
 	currentModule   = ""
 )
 
@@ -33,6 +34,9 @@ func RenderC(program *lexer.Program, baseDir string) string {
 	for _, stmt := range program.Statements {
 		if stmt.ClassDecl != nil {
 			collectClassInfo(stmt.ClassDecl)
+		}
+		if stmt.PubVarDecl != nil {
+			globalVars[stmt.PubVarDecl.Name] = stmt.PubVarDecl
 		}
 		if stmt.PubClassDecl != nil {
 			classDecl := &lexer.ClassDeclStmt{
@@ -123,6 +127,7 @@ int _exception = 0;
 		} else {
 			fmt.Fprintf(&b, "%s* %s_new();\n", className, className)
 		}
+
 		b.WriteString("\n")
 	}
 	for _, module := range lexer.LoadedModules {
@@ -162,7 +167,26 @@ int _exception = 0;
 		b.WriteString(");\n")
 	}
 	b.WriteString("\n")
+	for varName, varDecl := range globalVars {
+		cType := mapTypeToCType(varDecl.Type)
+		value := varDecl.Value
 
+		if varDecl.Type == "string" {
+			if !strings.HasPrefix(value, "\"") {
+				value = fmt.Sprintf("\"%s\"", value)
+			}
+			fmt.Fprintf(&b, "%s %s[256];\n", cType, varName)
+			fmt.Fprintf(&b, "void init_%s() { strcpy(%s, %s); }\n", varName, varName, value)
+		} else {
+			fmt.Fprintf(&b, "%s %s = %s;\n", cType, varName, value)
+		}
+	}
+	b.WriteString("\n")
+	for varName, varDecl := range globalVars {
+		if varDecl.Type == "string" {
+			fmt.Fprintf(&b, "    init_%s();\n", varName)
+		}
+	}
 	for _, module := range lexer.LoadedModules {
 		for varName, varDecl := range module.PublicVars {
 			cType := mapTypeToCType(varDecl.Type)
@@ -230,7 +254,7 @@ int _exception = 0;
 
 	var mainStatements []*lexer.Statement
 	for _, stmt := range program.Statements {
-		if stmt.ClassDecl == nil && stmt.PubClassDecl == nil && stmt.PubVarDecl == nil {
+		if stmt.ClassDecl == nil && stmt.PubClassDecl == nil && stmt.PubVarDecl == nil && stmt.TopLevelFuncDecl == nil && stmt.PubTopLevelFuncDecl == nil {
 			mainStatements = append(mainStatements, stmt)
 		}
 	}

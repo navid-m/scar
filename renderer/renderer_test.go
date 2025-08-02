@@ -1,6 +1,7 @@
 package renderer
 
 import (
+	"fmt"
 	"scar/lexer"
 	"strings"
 	"testing"
@@ -51,7 +52,6 @@ func TestRenderCWithForLoop(t *testing.T) {
     printf("i is %d\n", i);
     }`
 
-	// Normalize whitespace for comparison
 	normalizedCCode := strings.Join(strings.Fields(cCode), " ")
 	normalizedExpected := strings.Join(strings.Fields(expected), " ")
 
@@ -562,5 +562,123 @@ tony.sing()`
 		if strings.Contains(result, pattern) {
 			t.Errorf("Found invalid dot syntax '%s' in generated code, should be converted to pointer syntax", pattern)
 		}
+	}
+}
+
+func TestGlobalVariablesRendering(t *testing.T) {
+	input := `pub float PI = 3.14159265359
+pub float E = 2.71828182846
+pub int MAX_INT = 2147483647
+pub int MIN_INT = -2147483648
+pub string GREETING = "Hello World"
+
+pub fn calculate_area(float radius) -> float:
+    return PI * radius * radius
+
+var result = calculate_area(5.0)
+print "Area: {}", result`
+
+	program, err := lexer.ParseWithIndentation(input)
+	if err != nil {
+		t.Fatalf("Failed to parse input: %v", err)
+	}
+
+	result := RenderC(program, ".")
+	expectedDeclarations := []string{
+		"float PI = 3.14159265359;",
+		"float E = 2.71828182846;",
+		"int MAX_INT = 2147483647;",
+		"int MIN_INT = -2147483648;",
+		"char GREETING[256];",
+	}
+
+	for _, expected := range expectedDeclarations {
+		if !strings.Contains(result, expected) {
+			t.Errorf("Expected global variable declaration '%s' not found in generated code", expected)
+		}
+	}
+
+	expectedStringInit := "void init_GREETING() { strcpy(GREETING, \"Hello World\"); }"
+	if !strings.Contains(result, expectedStringInit) {
+		t.Errorf("Expected string variable initialization '%s' not found in generated code", expectedStringInit)
+	}
+	expectedMainInit := "init_GREETING();"
+	if !strings.Contains(result, expectedMainInit) {
+		t.Errorf("Expected string initialization call '%s' not found in main function", expectedMainInit)
+	}
+	expectedFunctionDecl := "float calculate_area(float radius);"
+	if !strings.Contains(result, expectedFunctionDecl) {
+		t.Errorf("Expected function declaration '%s' not found", expectedFunctionDecl)
+	}
+	expectedPIUsage := "return PI * radius * radius;"
+	if !strings.Contains(result, expectedPIUsage) {
+		t.Errorf("Expected PI usage '%s' not found in function implementation", expectedPIUsage)
+	}
+	invalidPatterns := []string{
+		"pub float PI",
+		"pub int MAX",
+		"pub string",
+	}
+	for _, pattern := range invalidPatterns {
+		if strings.Contains(result, pattern) {
+			t.Errorf("Found invalid pattern '%s' in generated C code", pattern)
+		}
+	}
+	if !strings.Contains(result, "int main() {") {
+		t.Error("Expected main function declaration not found")
+	}
+	if !strings.Contains(result, "return 0;") {
+		t.Error("Expected main function return statement not found")
+	}
+}
+
+func TestMixedGlobalVariableTypes(t *testing.T) {
+	input := `pub int counter = 0
+pub bool is_active = true
+pub float temperature = 98.6
+pub string status = "running"
+
+pub fn update_status() -> void:
+    counter = counter + 1
+    if counter > 10:
+        is_active = false
+        status = "stopped"
+
+update_status()
+print "Counter: {}, Active: {}, Temp: {}, Status: {}", counter, is_active, temperature, status`
+
+	program, err := lexer.ParseWithIndentation(input)
+	if err != nil {
+		t.Fatalf("Failed to parse input: %v", err)
+	}
+
+	result := RenderC(program, ".")
+	fmt.Println(result)
+	expectedDeclarations := []string{
+		"int counter = 0;",
+		"int is_active = true;",
+		"float temperature = 98.6;",
+		"char status[256];",
+	}
+
+	for _, expected := range expectedDeclarations {
+		if !strings.Contains(result, expected) {
+			t.Errorf("Expected declaration '%s' not found in generated code", expected)
+		}
+	}
+
+	expectedStringInit := "void init_status() { strcpy(status, \"running\"); }"
+	if !strings.Contains(result, expectedStringInit) {
+		t.Errorf("Expected string initialization '%s' not found", expectedStringInit)
+	}
+
+	expectedAssignment := "counter = counter + 1;"
+	if !strings.Contains(result, expectedAssignment) {
+		t.Errorf("Expected global variable assignment '%s' not found", expectedAssignment)
+	}
+
+	expectedCondition := "if (counter > 10)"
+	if !strings.Contains(result, expectedCondition) {
+		t.Errorf("Expected global variable condition '%s' not found", expectedCondition)
 	}
 }

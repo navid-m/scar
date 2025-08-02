@@ -89,3 +89,45 @@ pub fn clamp(float value, float min_value, float max_value) -> float:
     elif value > max_value:
         return max_value
     return value
+
+pub fn normalize(float x) -> float:
+    while x > PI:
+        x = x - 2.0 * PI
+    while x < -PI:
+        x = x + 2.0 * PI
+    return x
+
+pub fn sin(float x) -> float:
+    x = normalize(x)
+    float term = x
+    float result = x
+    float x_squared = x * x
+    int i = 1
+    int sign = -1
+    while i < 10:
+        term = term * x_squared / float((2 * i) * (2 * i + 1))
+        result = result + float(sign) * term
+        sign = -sign
+        i = i + 1
+    return result
+
+pub fn cos(float x) -> float:
+    x = normalize(x)
+    float term = 1.0
+    float result = 1.0
+    float x_squared = x * x
+    int i = 1
+    int sign = -1
+    while i < 10:
+        term = term * x_squared / float((2 * i - 1) * (2 * i))
+        result = result + float(sign) * term
+        sign = -sign
+        i = i + 1
+    return result
+
+pub fn tan(float x) -> float:
+    float cos_x = cos(x)
+    if absolute(cos_x) < 0.00001:
+        print "Warning: tan() undefined at x = %.5f" | x
+        return 0.0
+    return sin(x) / cos_x
