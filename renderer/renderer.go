@@ -145,25 +145,29 @@ int _exception = 0;
 	for _, funcDecl := range globalFunctions {
 		returnType := "void"
 		if funcDecl.ReturnType != "" && funcDecl.ReturnType != "void" {
-			returnType = mapTypeToCType(funcDecl.ReturnType)
 			if funcDecl.ReturnType == "string" {
-				returnType = "char*"
+				returnType = "void"
+			} else {
+				returnType = mapTypeToCType(funcDecl.ReturnType)
 			}
 		}
 
 		fmt.Fprintf(&b, "%s %s(", returnType, funcDecl.Name)
 
-		for i, param := range funcDecl.Parameters {
-			if i > 0 {
-				b.WriteString(", ")
-			}
+		paramList := make([]string, 0)
+		if funcDecl.ReturnType == "string" {
+			paramList = append(paramList, "char* _output_buffer")
+		}
+
+		for _, param := range funcDecl.Parameters {
 			paramType := mapTypeToCType(param.Type)
 			if param.Type == "string" {
 				paramType = "char*"
 			}
-			fmt.Fprintf(&b, "%s %s", paramType, param.Name)
+			paramList = append(paramList, fmt.Sprintf("%s %s", paramType, param.Name))
 		}
 
+		b.WriteString(strings.Join(paramList, ", "))
 		b.WriteString(");\n")
 	}
 	b.WriteString("\n")
@@ -341,6 +345,24 @@ func collectClassInfoWithModule(classDecl *lexer.ClassDeclStmt, moduleName strin
 	}
 
 	globalClasses[className] = classInfo
+}
+
+func isFunctionCall(value string) bool {
+	return strings.Contains(value, "(") && strings.Contains(value, ")")
+}
+
+func resolveFunctionCall(value string) string {
+	if !isFunctionCall(value) {
+		return value
+	}
+	parenIndex := strings.Index(value, "(")
+	if parenIndex == -1 {
+		return value
+	}
+	funcName := strings.TrimSpace(value[:parenIndex])
+	argsWithParens := value[parenIndex:]
+	resolvedFuncName := lexer.ResolveSymbol(funcName, currentModule)
+	return resolvedFuncName + argsWithParens
 }
 
 func inferTypeFromValue(value string) string {
@@ -533,6 +555,18 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 	}
 }
 
+func functionReturnsString(funcName string) bool {
+	if funcDecl, exists := globalFunctions[funcName]; exists {
+		return funcDecl.ReturnType == "string"
+	}
+	for _, module := range lexer.LoadedModules {
+		if funcDecl, exists := module.PublicFuncs[funcName]; exists {
+			return funcDecl.ReturnType == "string"
+		}
+	}
+	return false
+}
+
 func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent string, className string, program *lexer.Program) {
 	for _, stmt := range stmts {
 		switch {
@@ -631,27 +665,60 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			value = resolveImportedSymbols(value, program.Imports)
 
 			fmt.Printf("Debug: VarDecl var %s, value %s, type %s\n", varName, value, stmt.VarDecl.Type)
+
 			if strings.HasPrefix(varName, "this.") {
 				fieldName := varName[5:]
 				if stmt.VarDecl.Type == "string" {
-					if !strings.HasPrefix(value, "\"") && !strings.HasSuffix(value, "\"") {
-						value = fmt.Sprintf("\"%s\"", value)
+					if isFunctionCall(value) {
+						resolvedCall := resolveFunctionCall(value)
+						parenIndex := strings.Index(resolvedCall, "(")
+						funcName := resolvedCall[:parenIndex]
+						if functionReturnsString(funcName) {
+							fmt.Fprintf(b, "%s%s(this->%s);\n", indent, funcName, fieldName)
+						} else {
+							fmt.Fprintf(b, "%sstrcpy(this->%s, %s);\n", indent, fieldName, resolvedCall)
+						}
+					} else {
+						if !strings.HasPrefix(value, "\"") && !strings.HasSuffix(value, "\"") {
+							value = fmt.Sprintf("\"%s\"", value)
+						}
+						fmt.Fprintf(b, "%sstrcpy(this->%s, %s);\n", indent, fieldName, value)
 					}
-					fmt.Fprintf(b, "%sstrcpy(this->%s, %s);\n", indent, fieldName, value)
 				} else {
 					value = strings.ReplaceAll(value, "this.", "this->")
+					if isFunctionCall(value) {
+						value = resolveFunctionCall(value)
+					}
 					fmt.Fprintf(b, "%sthis->%s = %s;\n", indent, fieldName, value)
 				}
 			} else {
 				if stmt.VarDecl.Type == "string" {
 					fmt.Fprintf(b, "%schar %s[256];\n", indent, varName)
 					if value != "" {
-						if !strings.HasPrefix(value, "\"") && !strings.HasSuffix(value, "\"") {
-							value = fmt.Sprintf("\"%s\"", value)
+						if isFunctionCall(value) {
+							resolvedCall := resolveFunctionCall(value)
+							parenIndex := strings.Index(resolvedCall, "(")
+							if parenIndex > 0 {
+								funcName := resolvedCall[:parenIndex]
+								if functionReturnsString(funcName) {
+									fmt.Fprintf(b, "%s%s(%s);\n", indent, funcName, varName)
+								} else {
+									fmt.Fprintf(b, "%sstrcpy(%s, %s);\n", indent, varName, resolvedCall)
+								}
+							} else {
+								fmt.Fprintf(b, "%sstrcpy(%s, %s);\n", indent, varName, resolvedCall)
+							}
+						} else {
+							if !strings.HasPrefix(value, "\"") && !strings.HasSuffix(value, "\"") {
+								value = fmt.Sprintf("\"%s\"", value)
+							}
+							fmt.Fprintf(b, "%sstrcpy(%s, %s);\n", indent, varName, value)
 						}
-						fmt.Fprintf(b, "%sstrcpy(%s, %s);\n", indent, varName, value)
 					}
 				} else {
+					if isFunctionCall(value) {
+						value = resolveFunctionCall(value)
+					}
 					fmt.Fprintf(b, "%s%s %s = %s;\n", indent, varType, varName, value)
 				}
 			}
@@ -660,17 +727,27 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			value := stmt.VarAssign.Value
 			value = fixFloatCastGranular(value)
 			value = convertThisReferences(value)
+
 			if strings.HasPrefix(varName, "this.") {
 				varName = "this->" + varName[5:]
 			}
+
 			if strings.Contains(varName, "[") && strings.Contains(varName, "]") {
 				arrayName := varName[:strings.Index(varName, "[")]
 				if arrayType, exists := globalArrays[arrayName]; exists && arrayType == "string" {
-					if !strings.HasPrefix(value, "\"") && !strings.HasSuffix(value, "\"") {
-						value = fmt.Sprintf("\"%s\"", value)
+					if isFunctionCall(value) {
+						value = resolveFunctionCall(value)
+						fmt.Fprintf(b, "%sstrcpy(%s, %s);\n", indent, varName, value)
+					} else {
+						if !strings.HasPrefix(value, "\"") && !strings.HasSuffix(value, "\"") {
+							value = fmt.Sprintf("\"%s\"", value)
+						}
+						fmt.Fprintf(b, "%sstrcpy(%s, %s);\n", indent, varName, value)
 					}
-					fmt.Fprintf(b, "%sstrcpy(%s, %s);\n", indent, varName, value)
 				} else {
+					if isFunctionCall(value) {
+						value = resolveFunctionCall(value)
+					}
 					fmt.Fprintf(b, "%s%s = %s;\n", indent, varName, value)
 				}
 			} else {
@@ -684,11 +761,19 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 					}
 				}
 				if varType == "string" {
-					if !strings.HasPrefix(value, "\"") && !strings.HasSuffix(value, "\"") {
-						value = fmt.Sprintf("\"%s\"", value)
+					if isFunctionCall(value) {
+						value = resolveFunctionCall(value)
+						fmt.Fprintf(b, "%sstrcpy(%s, %s);\n", indent, varName, value)
+					} else {
+						if !strings.HasPrefix(value, "\"") && !strings.HasSuffix(value, "\"") {
+							value = fmt.Sprintf("\"%s\"", value)
+						}
+						fmt.Fprintf(b, "%sstrcpy(%s, %s);\n", indent, varName, value)
 					}
-					fmt.Fprintf(b, "%sstrcpy(%s, %s);\n", indent, varName, value)
 				} else {
+					if isFunctionCall(value) {
+						value = resolveFunctionCall(value)
+					}
 					fmt.Fprintf(b, "%s%s = %s;\n", indent, varName, value)
 				}
 			}
@@ -730,11 +815,8 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				Type: typeName,
 			}
 			globalObjects[stmt.ObjectDecl.Name] = objectInfo
-
-			// Filter out module and class names from args
 			constructorArgs := make([]string, 0)
 			for _, arg := range args {
-				// Skip if arg is the module name or class name from module.Class syntax
 				if strings.Contains(typeName, ".") {
 					parts := strings.Split(typeName, ".")
 					if arg == parts[0] || arg == parts[1] {
@@ -1165,15 +1247,20 @@ func convertMethodCallToC(expr string, program *lexer.Program) string {
 func generateTopLevelFunctionImplementation(b *strings.Builder, funcDecl *lexer.TopLevelFuncDeclStmt, program *lexer.Program) {
 	returnType := "void"
 	if funcDecl.ReturnType != "" && funcDecl.ReturnType != "void" {
-		returnType = mapTypeToCType(funcDecl.ReturnType)
 		if funcDecl.ReturnType == "string" {
-			returnType = "char*"
+			returnType = "void"
+		} else {
+			returnType = mapTypeToCType(funcDecl.ReturnType)
 		}
 	}
 
 	fmt.Fprintf(b, "%s %s(", returnType, funcDecl.Name)
 
 	paramList := make([]string, 0)
+	if funcDecl.ReturnType == "string" {
+		paramList = append(paramList, "char* _output_buffer")
+	}
+
 	for _, param := range funcDecl.Parameters {
 		paramType := mapTypeToCType(param.Type)
 		paramName := param.Name
@@ -1195,10 +1282,31 @@ func generateTopLevelFunctionImplementation(b *strings.Builder, funcDecl *lexer.
 
 	b.WriteString(strings.Join(paramList, ", "))
 	b.WriteString(") {\n")
-	renderStatements(b, funcDecl.Body, "    ", "", program)
+
+	if funcDecl.ReturnType == "string" {
+		for _, stmt := range funcDecl.Body {
+			if stmt.RawCode != nil {
+				modifiedCode := strings.ReplaceAll(stmt.RawCode.Code, "return buffer;", "strcpy(_output_buffer, buffer); return;")
+				modifiedCode = strings.ReplaceAll(modifiedCode, `return "";`, `strcpy(_output_buffer, ""); return;`)
+
+				rawLines := strings.Split(modifiedCode, "\n")
+				for _, rawLine := range rawLines {
+					if strings.TrimSpace(rawLine) != "" {
+						fmt.Fprintf(b, "    %s\n", rawLine)
+					} else {
+						b.WriteString("\n")
+					}
+				}
+			} else {
+				renderStatements(b, []*lexer.Statement{stmt}, "    ", "", program)
+			}
+		}
+	} else {
+		renderStatements(b, funcDecl.Body, "    ", "", program)
+	}
+
 	b.WriteString("}\n\n")
 }
-
 func isValidIdentifier(s string) bool {
 	if len(s) == 0 {
 		return false
@@ -1229,7 +1337,6 @@ func mapTypeToCType(mapType string) string {
 	case "bool":
 		return "int"
 	default:
-		// Handle list[type]
 		if strings.HasPrefix(mapType, "list[") && strings.HasSuffix(mapType, "]") {
 			innerType := strings.TrimPrefix(strings.TrimSuffix(mapType, "]"), "list[")
 			cInnerType := mapTypeToCType(innerType)
