@@ -851,6 +851,64 @@ print "Area: {}", result`
 	}
 }
 
+func TestMethodCallOnThis(t *testing.T) {
+	program := &lexer.Program{
+		Statements: []*lexer.Statement{
+			{
+				ClassDecl: &lexer.ClassDeclStmt{
+					Name: "TestClass",
+					Methods: []*lexer.MethodDeclStmt{
+						{
+							Name: "method1",
+							Parameters: []*lexer.MethodParameter{
+								{Name: "self", Type: "TestClass*"},
+							},
+							Body: []*lexer.Statement{
+								{
+									VarDeclMethodCall: &lexer.VarDeclMethodCallStmt{
+										Type:   "int",
+										Name:   "result",
+										Object: "this",
+										Method: "internal_method",
+										Args:   []string{"42"},
+									},
+								},
+							},
+						},
+						{
+							Name: "internal_method",
+							Parameters: []*lexer.MethodParameter{
+								{Name: "self", Type: "TestClass*"},
+								{Name: "value", Type: "int"},
+							},
+							ReturnType: "int",
+							Body: []*lexer.Statement{
+								{
+									Return: &lexer.ReturnStmt{
+										Value: "value",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	cCode := RenderC(program, "")
+	tests := []string{
+		"TestClass_internal_method",
+		"result = TestClass_internal_method",
+	}
+
+	for _, test := range tests {
+		if !strings.Contains(cCode, test) {
+			t.Errorf("Expected C code to contain '%s', but it didn't. Full code:\n%s", test, cCode)
+		}
+	}
+}
+
 func TestMixedGlobalVariableTypes(t *testing.T) {
 	input := `pub int counter = 0
 pub bool is_active = true
