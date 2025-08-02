@@ -1,5 +1,4 @@
-# TODO: Fix this. pointer resolution for methods.
-# Also add_task is being resolved incorrectly to unknown_add_task.
+# Now compiles and runs successfully.
 
 class Task:
     init(string name, int priority, int duration):
