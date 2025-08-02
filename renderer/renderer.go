@@ -1018,15 +1018,32 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 		case stmt.FunctionCall != nil:
 			funcName := lexer.ResolveSymbol(stmt.FunctionCall.Name, currentModule)
 			args := make([]string, 0)
-			for _, arg := range stmt.FunctionCall.Args {
-				resolvedArg := lexer.ResolveSymbol(arg, currentModule)
-				args = append(args, resolvedArg)
-				if _, exists := globalArrays[arg]; exists {
-					args = append(args, fmt.Sprintf("len(%s)", arg))
+
+			// Check if this function returns a string and we need to provide output buffer
+			if functionReturnsString(funcName) {
+				// This is a standalone function call that returns a string but result is ignored
+				// We need to create a temporary buffer
+				fmt.Fprintf(b, "%s{\n", indent)
+				fmt.Fprintf(b, "%s    char temp_buffer[256];\n", indent)
+				fmt.Fprintf(b, "%s    %s(temp_buffer", indent, funcName)
+				for _, arg := range stmt.FunctionCall.Args {
+					resolvedArg := lexer.ResolveSymbol(arg, currentModule)
+					fmt.Fprintf(b, ", %s", resolvedArg)
 				}
+				fmt.Fprintf(b, ");\n")
+				fmt.Fprintf(b, "%s}\n", indent)
+			} else {
+				// Regular function call
+				for _, arg := range stmt.FunctionCall.Args {
+					resolvedArg := lexer.ResolveSymbol(arg, currentModule)
+					args = append(args, resolvedArg)
+					if _, exists := globalArrays[arg]; exists {
+						args = append(args, fmt.Sprintf("len(%s)", arg))
+					}
+				}
+				argsStr := strings.Join(args, ", ")
+				fmt.Fprintf(b, "%s%s(%s);\n", indent, funcName, argsStr)
 			}
-			argsStr := strings.Join(args, ", ")
-			fmt.Fprintf(b, "%s%s(%s);\n", indent, funcName, argsStr)
 		case stmt.RawCode != nil:
 			rawLines := strings.Split(stmt.RawCode.Code, "\n")
 			for _, rawLine := range rawLines {
@@ -1315,18 +1332,47 @@ func generateTopLevelFunctionImplementation(b *strings.Builder, funcDecl *lexer.
 
 	b.WriteString(strings.Join(paramList, ", "))
 	b.WriteString(") {\n")
+
 	if funcDecl.ReturnType == "string" {
 		for _, stmt := range funcDecl.Body {
 			if stmt.RawCode != nil {
 				modifiedCode := strings.ReplaceAll(stmt.RawCode.Code, "return buffer;", "strcpy(_output_buffer, buffer); return;")
 				modifiedCode = strings.ReplaceAll(modifiedCode, `return "";`, `strcpy(_output_buffer, ""); return;`)
-				rawLines := strings.SplitSeq(modifiedCode, "\n")
-				for rawLine := range rawLines {
+				rawLines := strings.Split(modifiedCode, "\n")
+				for _, rawLine := range rawLines {
 					if strings.TrimSpace(rawLine) != "" {
 						fmt.Fprintf(b, "    %s\n", rawLine)
 					} else {
 						b.WriteString("\n")
 					}
+				}
+			} else if stmt.Return != nil {
+				// Handle return statements that call string-returning functions
+				value := stmt.Return.Value
+				if isFunctionCall(value) {
+					funcName, args := parseFunctionCall(value)
+					resolvedFuncName := lexer.ResolveSymbol(funcName, currentModule)
+					if functionReturnsString(resolvedFuncName) {
+						if len(args) == 0 {
+							fmt.Fprintf(b, "    %s(_output_buffer);\n", resolvedFuncName)
+						} else {
+							resolvedArgs := make([]string, len(args))
+							for i, arg := range args {
+								resolvedArgs[i] = lexer.ResolveSymbol(arg, currentModule)
+							}
+							fmt.Fprintf(b, "    %s(_output_buffer, %s);\n", resolvedFuncName, strings.Join(resolvedArgs, ", "))
+						}
+						fmt.Fprintf(b, "    return;\n")
+					} else {
+						resolvedCall := resolveFunctionCall(value)
+						fmt.Fprintf(b, "    strcpy(_output_buffer, %s);\n", resolvedCall)
+						fmt.Fprintf(b, "    return;\n")
+					}
+				} else {
+					value = strings.ReplaceAll(value, "this.", "this->")
+					value = lexer.ResolveSymbol(value, currentModule)
+					fmt.Fprintf(b, "    strcpy(_output_buffer, %s);\n", value)
+					fmt.Fprintf(b, "    return;\n")
 				}
 			} else {
 				renderStatements(b, []*lexer.Statement{stmt}, "    ", "", program)

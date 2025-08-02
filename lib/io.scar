@@ -11,3 +11,7 @@ pub fn readln() -> string:
             return "";
         }
     )
+
+pub fn readln_with_prompt(string prompt) -> string:
+    print "%s" | prompt
+    return readln()
