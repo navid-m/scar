@@ -44,7 +44,7 @@ class GameOfLife:
                         print "Cell (%d,%d) born" | x, y
 
     fn run_simulation(int generations) -> void:
-        print "Starting Game of Life simulation..."
+        print "Starting Game of Life..."
         this.initialize_random()
         
         for gen = 1 to generations:

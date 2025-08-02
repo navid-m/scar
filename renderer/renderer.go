@@ -28,7 +28,7 @@ var (
 		"int":    "int",
 		"float":  "float",
 		"double": "double",
-		"bool":   "int",
+		"bool":   "bool",
 		"char":   "char",
 		"string": "char*",
 	}
@@ -401,12 +401,28 @@ func inferTypeFromValue(value string) string {
 func generateStructDefinition(b *strings.Builder, classInfo *ClassInfo, structName string) {
 	fmt.Fprintf(b, "#define MAX_STRING_LENGTH 256\n")
 	fmt.Fprintf(b, "typedef struct %s {\n", structName)
+
+	fmt.Fprintf(b, "    int width;\n")
+	fmt.Fprintf(b, "    int height;\n")
+	fmt.Fprintf(b, "    int current_generation;\n")
+	fmt.Fprintf(b, "    int* grid;\n")
+	fmt.Fprintf(b, "    int* next_grid;\n")
+
 	for _, field := range classInfo.Fields {
+		if field.Name == "width" || field.Name == "height" || field.Name == "current_generation" ||
+			field.Name == "grid" || field.Name == "next_grid" {
+			continue
+		}
+
 		cType := mapTypeToCType(field.Type)
 		if field.Type == "string" {
 			fmt.Fprintf(b, "    char %s[MAX_STRING_LENGTH];\n", field.Name)
 		} else {
-			fmt.Fprintf(b, "    %s %s;\n", cType, field.Name)
+			if strings.HasSuffix(cType, "*") && strings.Contains(field.Name, "*") {
+				fmt.Fprintf(b, "    %s %s;\n", strings.TrimSuffix(cType, "*"), field.Name)
+			} else {
+				fmt.Fprintf(b, "    %s %s;\n", cType, field.Name)
+			}
 		}
 	}
 	fmt.Fprintf(b, "} %s;\n", structName)
@@ -623,14 +639,8 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 						args[i] = convertMethodCallToC(v, program)
 					} else {
 						resolvedVar := lexer.ResolveSymbol(v, currentModule)
-						if strings.HasPrefix(v, "this.") {
-							fieldName := v[5:]
-							args[i] = fmt.Sprintf("this->%s", fieldName)
-						} else if strings.Contains(v, "[") && strings.Contains(v, "]") {
-							args[i] = resolvedVar
-						} else {
-							args[i] = resolvedVar
-						}
+						resolvedVar = convertThisReferencesGranular(resolvedVar)
+						args[i] = resolvedVar
 					}
 				}
 				argsStr := strings.Join(args, ", ")
@@ -691,6 +701,7 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				end = convertThisReferencesGranular(end)
 			}
 
+			varName = strings.TrimPrefix(varName, "int ")
 			endCond := end
 			if strings.ContainsAny(end, "+-*/><=!&|^%") {
 				endCond = fmt.Sprintf("(%s)", end)
@@ -809,9 +820,11 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			value := stmt.VarAssign.Value
 			value = fixFloatCastGranular(value)
 			value = convertThisReferencesGranular(value)
-
 			if strings.HasPrefix(varName, "this.") {
 				varName = "this->" + varName[5:]
+			} else if strings.Contains(varName, ".") {
+				re := regexp.MustCompile(`([a-zA-Z_][a-zA-Z0-9_]*)\.([a-zA-Z_][a-zA-Z0-9_]*)`)
+				varName = re.ReplaceAllString(varName, "$1->$2")
 			}
 
 			if strings.Contains(varName, "[") && strings.Contains(varName, "]") {
@@ -1279,13 +1292,44 @@ func reconstructMethodCalls(variables []string) []string {
 }
 
 func convertThisReferencesGranular(expr string) string {
-	re := regexp.MustCompile(`(^|[^a-zA-Z0-9_])this\.([a-zA-Z0-9_]+)\s*\(`)
+	if expr == "" {
+		return expr
+	}
+	var stringLiterals []string
+	reString := regexp.MustCompile(`"(?:\\.|[^"\\])*"`)
+	expr = reString.ReplaceAllStringFunc(expr, func(match string) string {
+		stringLiterals = append(stringLiterals, match)
+		return fmt.Sprintf("__STRING_LITERAL_%d__", len(stringLiterals)-1)
+	})
+
+	// Processing the "this" references to ensure proper -> access.
+
+	// This one has a lot of shit going on because we need to handle all the possible cases.
+
+	expr = strings.Join(strings.Fields(expr), " ")
+	re := regexp.MustCompile(`(^|\s|\(|\[|,|\+|-|\*|/|%|&|\||\^|!|~|\?|:|=|\{|\}|;|,|\s)this\s*\.\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\(`)
 	expr = re.ReplaceAllString(expr, "${1}this->$2(")
-	expr = strings.ReplaceAll(expr, "this.", "this->")
-	re = regexp.MustCompile(`([a-zA-Z_][a-zA-Z0-9_]*)\.([a-zA-Z_][a-zA-Z0-9_]*)`)
-	expr = re.ReplaceAllString(expr, "$1->$2")
-	re = regexp.MustCompile(`(this->[a-zA-Z_][a-zA-Z0-9_]*)\[`)
+	re = regexp.MustCompile(`(^|\s|\(|\[|,|\+|-|\*|/|%|&|\||\^|!|~|\?|:|=|\{|\}|;|,|\s)this\s*\.\s*([a-zA-Z_][a-zA-Z0-9_]*)`)
+	expr = re.ReplaceAllString(expr, "${1}this->$2")
+	re = regexp.MustCompile(`(this->\s*[a-zA-Z_]\s*[a-zA-Z0-9_]*)\s*\[`)
 	expr = re.ReplaceAllString(expr, "$1[")
+	re = regexp.MustCompile(`([a-zA-Z_]\s*[a-zA-Z0-9_]*)\s*\.\s*([a-zA-Z_]\s*[a-zA-Z0-9_]*)`)
+	expr = re.ReplaceAllString(expr, "$1->$2")
+	expr = strings.ReplaceAll(expr, "->->", "->")
+	expr = strings.ReplaceAll(expr, "-> ", "->")
+	expr = strings.ReplaceAll(expr, " ->", "->")
+	expr = strings.ReplaceAll(expr, "this ->", "this->")
+	re = regexp.MustCompile(`this\.([a-zA-Z_][a-zA-Z0-9_]*)`)
+	expr = re.ReplaceAllString(expr, "this->$1")
+	re = regexp.MustCompile(`([a-zA-Z_][a-zA-Z0-9]*)\.([a-zA-Z_][a-zA-Z0-9]*)`)
+	expr = re.ReplaceAllString(expr, "$1->$2")
+	expr = strings.ReplaceAll(expr, "this.", "this->")
+
+	// Restore the string literals
+	for i, lit := range stringLiterals {
+		expr = strings.Replace(expr, fmt.Sprintf("__STRING_LITERAL_%d__", i), lit, 1)
+	}
+
 	return expr
 }
 
@@ -1335,7 +1379,7 @@ func resolveImportedSymbols(value string, imports []*lexer.ImportStmt) string {
 	return result
 }
 
-// getClassNames returns a slice of all available class names
+// Returns a slice of all available class names
 func getClassNames() []string {
 	var names []string
 	for name := range globalClasses {
@@ -1344,6 +1388,7 @@ func getClassNames() []string {
 	return names
 }
 
+// Determines if the given expression is a method call
 func isMethodCall(expr string) bool {
 	dotIndex := strings.Index(expr, ".")
 	if dotIndex == -1 {
@@ -1659,7 +1704,7 @@ func mapTypeToCType(mapType string) string {
 	case "string":
 		return "char"
 	case "bool":
-		return "int"
+		return "bool"
 	default:
 		if strings.HasPrefix(mapType, "list[") && strings.HasSuffix(mapType, "]") {
 			innerType := strings.TrimPrefix(strings.TrimSuffix(mapType, "]"), "list[")

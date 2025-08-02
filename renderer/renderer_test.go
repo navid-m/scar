@@ -1,7 +1,7 @@
 package renderer
 
 import (
-	"fmt"
+	"os"
 	"scar/lexer"
 	"strings"
 	"testing"
@@ -909,6 +909,212 @@ func TestMethodCallOnThis(t *testing.T) {
 	}
 }
 
+func TestClassMemberAndForLoop(t *testing.T) {
+	input := `pub class GameOfLife:
+    init(int width, int height):
+        this.width = width
+        this.height = height
+        this.current_generation = 0
+        int size = width * height
+        list[int] grid = [0] * size
+        list[int] next_grid = [0] * size
+        for int i = 0 to (size - 1):
+            grid[i] = 0
+            next_grid[i] = 0
+        this.grid = grid
+        this.next_grid = next_grid
+    
+    fn index(int x, int y) -> int:
+        return y * this.width + x
+    
+    fn get_cell(int x, int y) -> int:
+        int i = this.index(x, y)
+        return this.grid[i]
+    
+    fn set_cell(int x, int y, int value) -> void:
+        int i = this.index(x, y)
+        this.grid[i] = value
+    
+    fn set_next_cell(int x, int y, int value) -> void:
+        int i = this.index(x, y)
+        this.next_grid[i] = value
+    
+    fn initialize_random() -> void:
+        print "Initializing random grid %dx%d..." | this.width, this.height
+        for int y = 0 to (this.height - 1):
+            for int x = 0 to (this.width - 1):
+                int val = rand(0, 1)
+                this.set_cell(x, y, val)
+                print "%d " | val
+            print ""
+        print "Generation %d initialized" | this.current_generation
+    
+    fn count_neighbors(int x, int y) -> int:
+        int count = 0
+        for int dy = -1 to 1:
+            for int dx = -1 to 1:
+                if dx == 0 && dy == 0:
+                    continue
+                int nx = x + dx
+                int ny = y + dy
+                if nx >= 0 && nx < this.width && ny >= 0 && ny < this.height:
+                    if this.get_cell(nx, ny) == 1:
+                        count = count + 1
+        return count
+    
+    fn next_generation() -> void:
+        print "Computing generation %d..." | (this.current_generation + 1)
+        for int y = 0 to (this.height - 1):
+            for int x = 0 to (this.width - 1):
+                int neighbors = this.count_neighbors(x, y)
+                int current = this.get_cell(x, y)
+                if current == 1:
+                    if neighbors < 2 || neighbors > 3:
+                        this.set_next_cell(x, y, 0)
+                    else:
+                        this.set_next_cell(x, y, 1)
+                else:
+                    if neighbors == 3:
+                        this.set_next_cell(x, y, 1)
+                    else:
+                        this.set_next_cell(x, y, 0)
+        
+        for int i = 0 to ((this.width * this.height) - 1):
+            this.grid[i] = this.next_grid[i]
+        
+        this.current_generation = this.current_generation + 1
+    
+    fn print_grid() -> void:
+        print "Current grid (Generation %d):" | this.current_generation
+        for int y = 0 to (this.height - 1):
+            for int x = 0 to (this.width - 1):
+                print "%d " | this.get_cell(x, y)
+            print ""
+    
+    fn run_simulation(int generations) -> void:
+        this.initialize_random()
+        this.print_grid()
+        for int gen = 1 to generations:
+            this.next_generation()
+            this.print_grid()`
+
+	program, err := lexer.ParseWithIndentation(input)
+	if err != nil {
+		t.Fatalf("Failed to parse input: %v", err)
+	}
+
+	result := RenderC(program, ".")
+	expectedStructFields := []string{
+		"int width;",
+		"int height;",
+		"int current_generation;",
+		"int* grid;",
+		"int* next_grid;",
+	}
+
+	for _, field := range expectedStructFields {
+		if !strings.Contains(result, field) {
+			t.Errorf("Expected struct field '%s' not found in generated code", field)
+		}
+	}
+	expectedInitializations := []string{
+		"this->width = width;",
+		"this->height = height;",
+		"this->current_generation = 0;",
+	}
+
+	for _, init := range expectedInitializations {
+		if !strings.Contains(result, init) {
+			t.Errorf("Expected initialization '%s' not found in generated code", init)
+		}
+	}
+
+	expectedForLoops := []string{
+		"for (int i = 0; i <= ((size - 1)); i++)",
+		"for (int y = 0; y <= ((this->height - 1)); y++)",
+		"for (int x = 0; x <= ((this->width - 1)); x++)",
+		"for (int dy = -1; dy <= 1; dy++)",
+		"for (int dx = -1; dx <= 1; dx++)",
+		"for (int gen = 1; gen <= generations; gen++)",
+	}
+
+	for _, loop := range expectedForLoops {
+		if !strings.Contains(result, loop) {
+			t.Errorf("Expected for loop '%s' not found in generated code", loop)
+		}
+	}
+
+	expectedMemberAccess := []string{
+		"this->width",
+		"this->height",
+		"this->grid[i]",
+		"this->next_grid[i]",
+		"this->current_generation",
+	}
+
+	for _, access := range expectedMemberAccess {
+		if !strings.Contains(result, access) {
+			t.Errorf("Expected member access '%s' not found in generated code", access)
+		}
+	}
+
+	if strings.Contains(result, "int int") {
+		t.Error("Found duplicate 'int' keywords in for-loop declarations")
+	}
+	tmpFile, err := os.CreateTemp("", "generated_code_*.c")
+	if err != nil {
+		t.Fatalf("Failed to create temp file: %v", err)
+	}
+	defer os.Remove(tmpFile.Name())
+
+	if _, err := tmpFile.WriteString(result); err != nil {
+		t.Fatalf("Failed to write to temp file: %v", err)
+	}
+	t.Logf("Full generated code saved to: %s", tmpFile.Name())
+
+	invalidPatterns := []string{
+		"this.width",
+		"this.height",
+		"this.grid",
+		"this.next_grid",
+		"this.current_generation",
+	}
+
+	for _, pattern := range invalidPatterns {
+		if strings.Contains(result, pattern) {
+			var positions []int
+			start := 0
+			for {
+				idx := strings.Index(result[start:], pattern)
+				if idx == -1 {
+					break
+				}
+				pos := start + idx
+				positions = append(positions, pos)
+				start = pos + len(pattern)
+			}
+
+			for _, pos := range positions {
+				contextStart := max(pos-50, 0)
+				contextEnd := pos + len(pattern) + 50
+				if contextEnd > len(result) {
+					contextEnd = len(result)
+				}
+				context := result[contextStart:contextEnd]
+
+				t.Logf("\n=== Found invalid dot notation '%s' at position %d ===\n%s\n%s\n%s\n",
+					pattern, pos,
+					strings.Repeat("-", 20),
+					context,
+					strings.Repeat("-", 20))
+			}
+
+			t.Errorf("Found %d occurrences of invalid dot notation '%s' in generated code, should use pointer syntax",
+				len(positions), pattern)
+		}
+	}
+}
+
 func TestMixedGlobalVariableTypes(t *testing.T) {
 	input := `pub int counter = 0
 pub bool is_active = true
@@ -930,10 +1136,10 @@ print "Counter: {}, Active: {}, Temp: {}, Status: {}", counter, is_active, tempe
 	}
 
 	result := RenderC(program, ".")
-	fmt.Println(result)
+
 	expectedDeclarations := []string{
 		"int counter = 0;",
-		"int is_active = true;",
+		"bool is_active = true;",
 		"float temperature = 98.6;",
 		"char status[256];",
 	}
