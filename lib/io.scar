@@ -1,0 +1,17 @@
+pub fn readln() -> string:
+    $raw (
+        char buffer[1024];
+        if (fgets(buffer, sizeof(buffer), stdin) != NULL) {
+            size_t len = strlen(buffer);
+            if (len > 0 && buffer[len - 1] == '\n') {
+                buffer[len - 1] = '\0';
+            }
+            return buffer;
+        } else {
+            return "";
+        }
+    )
+
+# print "Enter a line of text: "
+# string asdf = readln()
+# print "You entered: %s" | asdf
