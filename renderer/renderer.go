@@ -456,7 +456,6 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 				fmt.Printf("Debug: VarAssign field %s, value %s, isStringField %v\n", fieldName, value, isStringField)
 
 				if isStringField {
-					// Preserve string literals
 					if !strings.HasPrefix(value, "\"") && !strings.HasSuffix(value, "\"") && isValidIdentifier(value) {
 						value = fmt.Sprintf("\"%s\"", value)
 					}
@@ -514,17 +513,13 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 		switch {
 		case stmt.Print != nil:
 			if stmt.Print.Format != "" && len(stmt.Print.Variables) > 0 {
-				// First, try to reconstruct split method calls
-				variables := reconstructMethodCalls(stmt.Print.Variables)
-
-				args := make([]string, len(variables))
+				var (
+					variables = reconstructMethodCalls(stmt.Print.Variables)
+					args      = make([]string, len(variables))
+				)
 				for i, v := range variables {
-					fmt.Printf("Debug: Processing print variable: '%s'\n", v)
 					if isMethodCall(v) {
-						fmt.Printf("Debug: Detected method call: '%s'\n", v)
-						// Handle method calls like calc.add(2, 3)
 						args[i] = convertMethodCallToC(v, program)
-						fmt.Printf("Debug: Converted to: '%s'\n", args[i])
 					} else {
 						resolvedVar := lexer.ResolveSymbol(v, currentModule)
 						if strings.HasPrefix(v, "this.") {
