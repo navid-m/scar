@@ -1,0 +1,94 @@
+pub class ArrayList:
+    init:
+        int this.size = 0
+        int this.capacity = 10
+        $raw (
+            this->data = malloc(this->capacity * sizeof(void*));
+        )
+    
+    init(int initial_capacity):
+        this.size = 0
+        this.capacity = initial_capacity
+        $raw (
+            this->data = malloc(this->capacity * sizeof(void*));
+        )
+    
+    fn add_element(int value) -> void:
+        if this.size >= this.capacity:
+            this.resize()
+        $raw (
+            this->data[this->size] = malloc(sizeof(int));
+            *((int*)this->data[this->size]) = value;
+        )
+        this.size = this.size + 1
+    
+    fn get_element(int index) -> int:
+        if index < 0 || index >= this.size:
+            return -1
+        $raw (
+            return *((int*)this->data[index]);
+        )
+    
+    fn set_element(int index, int value) -> void:
+        if index >= 0 && index < this.size:
+            $raw (
+                *((int*)this->data[index]) = value;
+            )
+    
+    fn get_size() -> int:
+        return this.size
+    
+    fn resize() -> void:
+        this.capacity = this.capacity * 2
+        $raw (
+            this->data = realloc(this->data, this->capacity * sizeof(void*));
+        )
+
+pub fn array_contains(list[int] arr, int value) -> bool:
+    int arr_len = len(arr)
+    for i = 0 to (arr_len - 1):
+        if arr[i] == value:
+            return 1
+    return 0
+
+pub fn array_find_index(list[int] arr, int value) -> int:
+    int arr_len = len(arr)
+    for i = 0 to (arr_len - 1):
+        if arr[i] == value:
+            return i
+    return -1
+
+pub fn array_reverse(list[int] arr) -> void:
+    int arr_len = len(arr)
+    int temp = 0
+    for i = 0 to ((arr_len / 2) - 1):
+        temp = arr[i]
+        arr[i] = arr[arr_len - 1 - i]
+        arr[arr_len - 1 - i] = temp
+
+pub fn array_sum(list[int] arr) -> int:
+    int total = 0
+    int arr_len = len(arr)
+    for i = 0 to (arr_len - 1):
+        total = total + arr[i]
+    return total
+
+pub fn array_max_value(list[int] arr) -> int:
+    int arr_len = len(arr)
+    if arr_len == 0:
+        return 0
+    int maximum = arr[0]
+    for i = 1 to (arr_len - 1):
+        if arr[i] > maximum:
+            maximum = arr[i]
+    return maximum
+
+pub fn array_min_value(list[int] arr) -> int:
+    int arr_len = len(arr)
+    if arr_len == 0:
+        return 0
+    int minimum = arr[0]
+    for i = 1 to (arr_len - 1):
+        if arr[i] < minimum:
+            minimum = arr[i]
+    return minimum
