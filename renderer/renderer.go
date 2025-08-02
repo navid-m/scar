@@ -19,6 +19,14 @@ var (
 	globalArrays    = make(map[string]string)
 	globalVars      = make(map[string]*lexer.PubVarDeclStmt)
 	currentModule   = ""
+	primitiveTypes  = map[string]string{
+		"int":    "int",
+		"float":  "float",
+		"double": "double",
+		"bool":   "int",
+		"char":   "char",
+		"string": "char*",
+	}
 )
 
 func RenderC(program *lexer.Program, baseDir string) string {
@@ -543,7 +551,9 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 
 		for _, param := range method.Parameters {
 			paramType := mapTypeToCType(param.Type)
-			if param.Type == "string" {
+			if _, isPrimitive := primitiveTypes[param.Type]; !isPrimitive && param.Type != "string" {
+				paramType = paramType + "*"
+			} else if param.Type == "string" {
 				paramType = "char*"
 			}
 			fmt.Fprintf(b, ", %s %s", paramType, param.Name)
