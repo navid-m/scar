@@ -37,6 +37,7 @@ type Statement struct {
 	For                 *ForStmt
 	If                  *IfStmt
 	Break               *BreakStmt
+	Continue            *ContinueStmt
 	VarDecl             *VarDeclStmt
 	VarAssign           *VarAssignStmt
 	ListDecl            *ListDeclStmt
@@ -173,6 +174,10 @@ type ElseStmt struct {
 
 type BreakStmt struct {
 	Break string
+}
+
+type ContinueStmt struct {
+	Continue string
 }
 
 type VarDeclStmt struct {

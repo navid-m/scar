@@ -363,6 +363,9 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 
 	case "break":
 		return &Statement{Break: &BreakStmt{Break: "break"}}, lineNum + 1, nil
+		
+	case "continue":
+		return &Statement{Continue: &ContinueStmt{Continue: "continue"}}, lineNum + 1, nil
 
 	case "while":
 		if len(parts) < 2 || !strings.HasSuffix(line, ":") {

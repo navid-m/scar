@@ -634,6 +634,8 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			fmt.Fprintf(b, "%ssleep(%s);\n", indent, stmt.Sleep.Duration)
 		case stmt.Break != nil:
 			fmt.Fprintf(b, "%sbreak;\n", indent)
+		case stmt.Continue != nil:
+			fmt.Fprintf(b, "%scontinue;\n", indent)
 		case stmt.Return != nil:
 			value := stmt.Return.Value
 			if strings.HasPrefix(value, "this.") {
