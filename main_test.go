@@ -20,6 +20,7 @@ while 1:
 #include <unistd.h>
 #include <omp.h>
 #include <stdlib.h>
+#include <stdbool.h>
 
 int _exception = 0;
 
@@ -64,6 +65,7 @@ print "done..."`
 #include <unistd.h>
 #include <omp.h>
 #include <stdlib.h>
+#include <stdbool.h>
 
 int _exception = 0;
 
@@ -109,6 +111,7 @@ print "All done"`
 #include <unistd.h>
 #include <omp.h>
 #include <stdlib.h>
+#include <stdbool.h>
 
 int _exception = 0;
 
