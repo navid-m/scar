@@ -1,0 +1,89 @@
+# TODO: Implement correct this-> accessor for methods.
+
+class Matrix:
+    init(int rows, int cols):
+        this.rows = rows
+        this.cols = cols
+        this.size = rows * cols
+        print "Created %dx%d matrix" | rows, cols
+
+    fn set_value(int row, int col, float value) -> void:
+        int index = row * this.cols + col
+        print "Setting matrix[%d][%d] = %.2f" | row, col, value
+
+    fn get_value(int row, int col) -> float:
+        int index = row * this.cols + col
+        print "Getting matrix[%d][%d]" | row, col
+        return float(row + col)
+
+    fn print_matrix() -> void:
+        print "Matrix %dx%d:" | this.rows, this.cols
+        for row = 0 to (this.rows - 1):
+            for col = 0 to (this.cols - 1):
+                float val = this.get_value(row, col)
+                print "%.2f " | val
+            print ""
+
+    fn add_matrix(Matrix other) -> bool:
+        if this.rows != other.rows || this.cols != other.cols:
+            print "Error: Matrix dimensions don't match for addition"
+            return false
+        
+        print "Adding matrices..."
+        for row = 0 to (this.rows - 1):
+            for col = 0 to (this.cols - 1):
+                float val1 = this.get_value(row, col)
+                float val2 = other.get_value(row, col)
+                float result = val1 + val2
+                print "Result[%d][%d] = %.2f + %.2f = %.2f" | row, col, val1, val2, result
+        
+        return true
+
+    fn multiply_scalar(float scalar) -> void:
+        print "Multiplying matrix by scalar %.2f" | scalar
+        for row = 0 to (this.rows - 1):
+            for col = 0 to (this.cols - 1):
+                float val = this.get_value(row, col)
+                float result = val * scalar
+                print "%.2f * %.2f = %.2f" | val, scalar, result
+
+class MatrixCalculator:
+    init():
+        this.operations_count = 0
+        print "Matrix Calculator initialized"
+
+    fn demo_operations() -> void:
+        print "\n=== Matrix Calculator Demo ==="
+        
+        var matrix_a = new Matrix(3, 3)
+        var matrix_b = new Matrix(3, 3)
+        
+        print "\nInitializing Matrix A:"
+        matrix_a.print_matrix()
+        
+        print "\nInitializing Matrix B:"
+        matrix_b.print_matrix()
+        
+        print "\nPerforming matrix addition:"
+        bool success = matrix_a.add_matrix(matrix_b)
+        this.operations_count = this.operations_count + 1
+        
+        if success:
+            print "Matrix addition completed successfully!"
+        else:
+            print "Matrix addition failed!"
+        
+        print "\nPerforming scalar multiplication on Matrix A:"
+        matrix_a.multiply_scalar(2.5)
+        this.operations_count = this.operations_count + 1
+        
+        print "\nTrying to add incompatible matrices:"
+        var matrix_c = new Matrix(2, 4)
+        bool incompatible = matrix_a.add_matrix(matrix_c)
+        this.operations_count = this.operations_count + 1
+        
+        print "\nCalculator Statistics:"
+        print "Total operations performed: %d" | this.operations_count
+
+var calc = new MatrixCalculator()
+calc.demo_operations()

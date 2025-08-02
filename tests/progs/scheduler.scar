@@ -1,0 +1,89 @@
+# TODO: Fix this. pointer resolution for methods.
+# Also add_task is being resolved incorrectly to unknown_add_task.
+
+class Task:
+    init(string name, int priority, int duration):
+        this.name = name
+        this.priority = priority
+        this.duration = duration
+        this.completed = false
+        this.start_time = 0
+        print "Task created: %s (Priority: %d, Duration: %d)" | name, priority, duration
+
+    fn execute() -> void:
+        print "Executing task: %s" | this.name
+        this.start_time = 1
+        
+        for i = 1 to this.duration:
+            print "  %s progress: %d/%d" | this.name, i, this.duration
+            sleep 0.5
+        
+        this.completed = true
+        print "Task %s completed!" | this.name
+
+    fn get_status() -> void:
+        if this.completed:
+            print "Task %s: COMPLETED" | this.name
+        else:
+            print "Task %s: PENDING (Priority: %d)" | this.name, this.priority
+
+class TaskScheduler:
+    init():
+        this.total_tasks = 0
+        this.completed_tasks = 0
+        print "Task Scheduler initialized"
+
+    fn add_task(Task task) -> void:
+        this.total_tasks = this.total_tasks + 1
+        print "Added task to scheduler. Total tasks: %d" | this.total_tasks
+
+    fn run_scheduler() -> void:
+        print "\n=== Starting Task Execution ==="
+        
+        var task1 = new Task("Database Backup", 3, 4)
+        var task2 = new Task("Send Emails", 1, 2)
+        var task3 = new Task("Generate Reports", 2, 3)
+        var task4 = new Task("System Update", 3, 5)
+        
+        this.add_task(task1)
+        this.add_task(task2)
+        this.add_task(task3)
+        this.add_task(task4)
+        
+        print "\nTask Status Before Execution:"
+        task1.get_status()
+        task2.get_status()
+        task3.get_status()
+        task4.get_status()
+        
+        print "\nExecuting tasks by priority (1=highest)..."
+        
+        task2.execute()
+        this.completed_tasks = this.completed_tasks + 1
+        
+        task3.execute()
+        this.completed_tasks = this.completed_tasks + 1
+        
+        task1.execute()
+        this.completed_tasks = this.completed_tasks + 1
+        
+        task4.execute()
+        this.completed_tasks = this.completed_tasks + 1
+        
+        print "\nFinal Status:"
+        task1.get_status()
+        task2.get_status()
+        task3.get_status()
+        task4.get_status()
+        
+        print "\nScheduler Summary:"
+        print "Total tasks: %d" | this.total_tasks
+        print "Completed tasks: %d" | this.completed_tasks
+        
+        if this.completed_tasks == this.total_tasks:
+            print "All tasks completed successfully!"
+        else:
+            print "Some tasks remain incomplete."
+
+var scheduler = new TaskScheduler()
+scheduler.run_scheduler()

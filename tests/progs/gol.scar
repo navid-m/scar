@@ -1,0 +1,58 @@
+# TODO: Implement continue.
+
+class GameOfLife:
+    init(int width, int height):
+        this.width = width
+        this.height = height
+        this.current_generation = 0
+        
+    fn initialize_random() -> void:
+        print "Initializing random grid %dx%d..." | this.width, this.height
+        for y = 0 to (this.height - 1):
+            for x = 0 to (this.width - 1):
+                int cell = rand(0, 1)
+                print "%d " | cell
+            print ""
+        print "Generation %d initialized" | this.current_generation
+
+    fn count_neighbors(int x, int y) -> int:
+        int count = 0
+        for dy = -1 to 1:
+            for dx = -1 to 1:
+                if dx == 0 && dy == 0:
+                    continue
+                int nx = x + dx
+                int ny = y + dy
+                if nx >= 0 && nx < this.width && ny >= 0 && ny < this.height:
+                    count = count + 1
+        return count
+
+    fn next_generation() -> void:
+        this.current_generation = this.current_generation + 1
+        print "Computing generation %d..." | this.current_generation
+        
+        for y = 0 to (this.height - 1):
+            for x = 0 to (this.width - 1):
+                int neighbors = this.count_neighbors(x, y)
+                int alive = rand(0, 1)
+                
+                if alive == 1:
+                    if neighbors < 2 || neighbors > 3:
+                        print "Cell (%d,%d) dies" | x, y
+                    else:
+                        print "Cell (%d,%d) survives" | x, y
+                else:
+                    if neighbors == 3:
+                        print "Cell (%d,%d) born" | x, y
+
+    fn run_simulation(int generations) -> void:
+        print "Starting Game of Life simulation..."
+        this.initialize_random()
+        
+        for gen = 1 to generations:
+            sleep 1
+            this.next_generation()
+            print "--- End of generation %d ---" | gen
+
+var game = new GameOfLife(8, 6)
+game.run_simulation(5)
