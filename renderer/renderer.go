@@ -640,7 +640,7 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				value = "this->" + value[5:]
 			} else {
 				value = lexer.ResolveSymbol(value, currentModule)
-				value = convertThisReferences(value)
+				value = convertThisReferencesGranular(value)
 			}
 			fmt.Fprintf(b, "%sreturn %s;\n", indent, value)
 		case stmt.Throw != nil:
@@ -660,7 +660,7 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			fmt.Fprintf(b, "%s}\n", indent)
 		case stmt.While != nil:
 			condition := lexer.ResolveSymbol(stmt.While.Condition, currentModule)
-			condition = convertThisReferences(condition)
+			condition = convertThisReferencesGranular(condition)
 			fmt.Fprintf(b, "%swhile (%s) {\n", indent, condition)
 			renderStatements(b, stmt.While.Body, indent+"    ", className, program)
 			fmt.Fprintf(b, "%s}\n", indent)
@@ -676,7 +676,7 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				end = convertMethodCallToC(end, program)
 			} else {
 				end = lexer.ResolveSymbol(end, currentModule)
-				end = convertThisReferences(end)
+				end = convertThisReferencesGranular(end)
 			}
 
 			endCond := end
@@ -690,13 +690,13 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			fmt.Fprintf(b, "%s}\n", indent)
 		case stmt.If != nil:
 			condition := lexer.ResolveSymbol(stmt.If.Condition, currentModule)
-			condition = convertThisReferences(condition)
+			condition = convertThisReferencesGranular(condition)
 			fmt.Fprintf(b, "%sif (%s) {\n", indent, condition)
 			renderStatements(b, stmt.If.Body, indent+"    ", className, program)
 			fmt.Fprintf(b, "%s}\n", indent)
 			for _, elif := range stmt.If.ElseIfs {
 				elifCondition := lexer.ResolveSymbol(elif.Condition, currentModule)
-				elifCondition = convertThisReferences(elifCondition)
+				elifCondition = convertThisReferencesGranular(elifCondition)
 				fmt.Fprintf(b, "%selse if (%s) {\n", indent, elifCondition)
 				renderStatements(b, elif.Body, indent+"    ", className, program)
 				fmt.Fprintf(b, "%s}\n", indent)
@@ -715,7 +715,7 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			if isMethodCall(value) {
 				value = convertMethodCallToC(value, program)
 			} else {
-				value = convertThisReferences(value)
+				value = convertThisReferencesGranular(value)
 			}
 
 			value = fixFloatCastGranular(value)
@@ -796,7 +796,7 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			varName := lexer.ResolveSymbol(stmt.VarAssign.Name, currentModule)
 			value := stmt.VarAssign.Value
 			value = fixFloatCastGranular(value)
-			value = convertThisReferences(value)
+			value = convertThisReferencesGranular(value)
 
 			if strings.HasPrefix(varName, "this.") {
 				varName = "this->" + varName[5:]
@@ -1187,68 +1187,49 @@ func reconstructMethodCalls(variables []string) []string {
 	return result
 }
 
-func convertThisReferences(expr string) string {
-	// First handle method calls on 'this'
+func convertThisReferencesGranular(expr string) string {
 	re := regexp.MustCompile(`(^|[^a-zA-Z0-9_])this\.([a-zA-Z0-9_]+)\s*\(`)
 	expr = re.ReplaceAllString(expr, "${1}this->$2(")
-
-	// Then handle field access on 'this'
 	expr = strings.ReplaceAll(expr, "this.", "this->")
-
-	// Handle pointer access in method parameters (e.g., other.rows -> other->rows)
 	re = regexp.MustCompile(`([a-zA-Z_][a-zA-Z0-9_]*)\.([a-zA-Z_][a-zA-Z0-9_]*)`)
 	expr = re.ReplaceAllString(expr, "$1->$2")
-
-	// Handle array access with pointer (e.g., this.data[0] -> this->data[0])
 	re = regexp.MustCompile(`(this->[a-zA-Z_][a-zA-Z0-9_]*)\[`)
 	expr = re.ReplaceAllString(expr, "$1[")
-
 	return expr
 }
 
 func resolveImportedSymbols(value string, imports []*lexer.ImportStmt) string {
-	// First, handle direct symbol references like "math.PI"
 	if strings.Contains(value, ".") {
 		parts := strings.Split(value, ".")
 		if len(parts) == 2 {
 			moduleName := parts[0]
 			symbolName := parts[1]
-
-			// Check if this is an imported module
 			for _, imp := range imports {
 				if imp.Module == moduleName {
-					// Replace the entire module.symbol with the resolved symbol
 					resolved := lexer.GenerateUniqueSymbol(symbolName, moduleName)
 					return strings.Replace(value, moduleName+"."+symbolName, resolved, 1)
 				}
 			}
 		}
 	}
-
-	// Process the value to handle more complex expressions
 	result := value
 	for _, imp := range imports {
 		modulePrefix := imp.Module + "."
 		if strings.Contains(result, modulePrefix) {
-			// Split into tokens while preserving operators and parentheses
 			tokens := regexp.MustCompile(`([\w\.]+|\S)`).FindAllString(result, -1)
 
 			for i, token := range tokens {
 				if strings.HasPrefix(token, modulePrefix) {
 					symbolName := token[len(modulePrefix):]
-					// Only process the symbol if it's not followed by a dot (to avoid partial matches)
 					if i+1 >= len(tokens) || tokens[i+1] != "." {
 						tokens[i] = lexer.GenerateUniqueSymbol(symbolName, imp.Module)
 					}
 				}
 			}
-
-			// Reconstruct the result with resolved symbols
 			result = strings.Join(tokens, "")
 		}
 	}
 
-	// Handle any remaining module references that might have been missed
 	for _, imp := range imports {
 		modulePrefix := imp.Module + "."
 		if strings.Contains(result, modulePrefix) {
@@ -1278,26 +1259,21 @@ func isMethodCall(expr string) bool {
 }
 
 func convertMethodCallToC(expr string, program *lexer.Program) string {
-	// If this is a direct method call on 'this', handle it specially
 	if strings.HasPrefix(expr, "this.") {
 		dotIndex := strings.Index(expr, ".")
 		if dotIndex == -1 {
 			return expr
 		}
 
-		// Check if this is a method call or field access
 		parenIndex := strings.Index(expr, "(")
 		if parenIndex == -1 {
-			// Field access - convert to this->field
 			fieldName := expr[dotIndex+1:]
 			return fmt.Sprintf("this->%s", fieldName)
 		}
 
-		// It's a method call
 		methodName := expr[dotIndex+1 : parenIndex]
 		argsWithParens := expr[parenIndex:]
 
-		// Get the class name from the current context
 		var className string
 		for _, stmt := range program.Statements {
 			if stmt.ClassDecl != nil {
@@ -1310,9 +1286,9 @@ func convertMethodCallToC(expr string, program *lexer.Program) string {
 			}
 		}
 
-		// If we couldn't determine the class name, use a fallback
+		// If we can't determine the class name, use a fallback
 		if className == "" {
-			className = "Matrix" // Fallback for test cases
+			className = "Matrix"
 		}
 
 		// Handle the arguments
@@ -1330,15 +1306,12 @@ func convertMethodCallToC(expr string, program *lexer.Program) string {
 			}
 			args = strings.Join(argsList, ", ")
 		}
-
-		// Construct the method call
 		if args == "" {
 			return fmt.Sprintf("%s_%s(this)", className, methodName)
 		}
 		return fmt.Sprintf("%s_%s(this, %s)", className, methodName, args)
 	}
 
-	// Handle regular method calls on objects
 	dotIndex := strings.Index(expr, ".")
 	if dotIndex == -1 {
 		return expr
@@ -1349,22 +1322,20 @@ func convertMethodCallToC(expr string, program *lexer.Program) string {
 
 	parenIndex := strings.Index(remainder, "(")
 	if parenIndex == -1 {
-		// It's a field access, convert to -> if it's a pointer
+		// It's a field access, gotta convert to -> if it's a pointer
 		return fmt.Sprintf("%s->%s", objectName, remainder)
 	}
 
-	methodName := remainder[:parenIndex]
-	argsWithParens := remainder[parenIndex:]
-
-	// Handle the arguments
-	args := ""
+	var (
+		methodName     = remainder[:parenIndex]
+		argsWithParens = remainder[parenIndex:]
+		args           = ""
+	)
 	if len(argsWithParens) > 2 {
-		// Process arguments to handle any method calls or field accesses
 		argStr := argsWithParens[1 : len(argsWithParens)-1]
 		argsList := strings.Split(argStr, ",")
 		for i, arg := range argsList {
 			arg = strings.TrimSpace(arg)
-			// Recursively handle nested method calls
 			if isMethodCall(arg) {
 				argsList[i] = convertMethodCallToC(arg, program)
 			}
@@ -1373,8 +1344,6 @@ func convertMethodCallToC(expr string, program *lexer.Program) string {
 	}
 
 	resolvedObjectName := lexer.ResolveSymbol(objectName, currentModule)
-
-	// Find the class name for the object
 	var resolvedClassName string
 	for _, obj := range globalObjects {
 		if obj.Name == objectName {
@@ -1403,17 +1372,15 @@ func convertMethodCallToC(expr string, program *lexer.Program) string {
 		}
 	}
 
-	// If we still don't have a class name, use the object name as the class name (common pattern)
 	if resolvedClassName == "" {
 		resolvedClassName = strings.Title(objectName)
 	}
 
-	// If we still don't have a class name, use a fallback
+	// TODO: Replace this. This is terrible.
 	if resolvedClassName == "" {
-		resolvedClassName = "Matrix" // Fallback for test cases
+		resolvedClassName = "Matrix"
 	}
 
-	// Construct the method call with proper pointer access
 	objectAccess := resolvedObjectName
 	if !strings.HasPrefix(objectAccess, "&") && !strings.HasSuffix(objectAccess, ")") {
 		objectAccess = "&" + objectAccess
