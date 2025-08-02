@@ -1,0 +1,16 @@
+pub class Soprano:
+    init:
+        string  this.name = "vito"
+        int     this.annoyingness_level = 10
+        int     this.singing_ability = 100
+        string  this.singing_style = "opera"
+        int     this.is_singing = 0
+        int     this.is_annoying = 1
+        int     this.is_awesome = 0
+
+    fn sing() -> void:
+        if this.is_annoying == 1:
+            print "LAAAAAA OOOOO EEEEE AAAA OOO!!!!"
+
+var tony = new Soprano()
+tony.sing()
