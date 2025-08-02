@@ -1,5 +1,3 @@
-# TODO: Implement correct this-> accessor for methods.
-
 class Matrix:
     init(int rows, int cols):
         this.rows = rows
