@@ -567,6 +567,26 @@ func functionReturnsString(funcName string) bool {
 	return false
 }
 
+func parseFunctionCall(funcCall string) (string, []string) {
+	parenIndex := strings.Index(funcCall, "(")
+	if parenIndex == -1 {
+		return funcCall, []string{}
+	}
+
+	funcName := strings.TrimSpace(funcCall[:parenIndex])
+	argsStr := funcCall[parenIndex+1 : len(funcCall)-1]
+
+	var args []string
+	if strings.TrimSpace(argsStr) != "" {
+		args = strings.Split(argsStr, ",")
+		for i := range args {
+			args[i] = strings.TrimSpace(args[i])
+		}
+	}
+
+	return funcName, args
+}
+
 func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent string, className string, program *lexer.Program) {
 	for _, stmt := range stmts {
 		switch {
@@ -670,12 +690,20 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				fieldName := varName[5:]
 				if stmt.VarDecl.Type == "string" {
 					if isFunctionCall(value) {
-						resolvedCall := resolveFunctionCall(value)
-						parenIndex := strings.Index(resolvedCall, "(")
-						funcName := resolvedCall[:parenIndex]
-						if functionReturnsString(funcName) {
-							fmt.Fprintf(b, "%s%s(this->%s);\n", indent, funcName, fieldName)
+						funcName, args := parseFunctionCall(value)
+						resolvedFuncName := lexer.ResolveSymbol(funcName, currentModule)
+						if functionReturnsString(resolvedFuncName) {
+							if len(args) == 0 {
+								fmt.Fprintf(b, "%s%s(this->%s);\n", indent, resolvedFuncName, fieldName)
+							} else {
+								resolvedArgs := make([]string, len(args))
+								for i, arg := range args {
+									resolvedArgs[i] = lexer.ResolveSymbol(arg, currentModule)
+								}
+								fmt.Fprintf(b, "%s%s(this->%s, %s);\n", indent, resolvedFuncName, fieldName, strings.Join(resolvedArgs, ", "))
+							}
 						} else {
+							resolvedCall := resolveFunctionCall(value)
 							fmt.Fprintf(b, "%sstrcpy(this->%s, %s);\n", indent, fieldName, resolvedCall)
 						}
 					} else {
@@ -696,16 +724,21 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 					fmt.Fprintf(b, "%schar %s[256];\n", indent, varName)
 					if value != "" {
 						if isFunctionCall(value) {
-							resolvedCall := resolveFunctionCall(value)
-							parenIndex := strings.Index(resolvedCall, "(")
-							if parenIndex > 0 {
-								funcName := resolvedCall[:parenIndex]
-								if functionReturnsString(funcName) {
-									fmt.Fprintf(b, "%s%s(%s);\n", indent, funcName, varName)
+							funcName, args := parseFunctionCall(value)
+							resolvedFuncName := lexer.ResolveSymbol(funcName, currentModule)
+
+							if functionReturnsString(resolvedFuncName) {
+								if len(args) == 0 {
+									fmt.Fprintf(b, "%s%s(%s);\n", indent, resolvedFuncName, varName)
 								} else {
-									fmt.Fprintf(b, "%sstrcpy(%s, %s);\n", indent, varName, resolvedCall)
+									resolvedArgs := make([]string, len(args))
+									for i, arg := range args {
+										resolvedArgs[i] = lexer.ResolveSymbol(arg, currentModule)
+									}
+									fmt.Fprintf(b, "%s%s(%s, %s);\n", indent, resolvedFuncName, varName, strings.Join(resolvedArgs, ", "))
 								}
 							} else {
+								resolvedCall := resolveFunctionCall(value)
 								fmt.Fprintf(b, "%sstrcpy(%s, %s);\n", indent, varName, resolvedCall)
 							}
 						} else {
@@ -1282,15 +1315,13 @@ func generateTopLevelFunctionImplementation(b *strings.Builder, funcDecl *lexer.
 
 	b.WriteString(strings.Join(paramList, ", "))
 	b.WriteString(") {\n")
-
 	if funcDecl.ReturnType == "string" {
 		for _, stmt := range funcDecl.Body {
 			if stmt.RawCode != nil {
 				modifiedCode := strings.ReplaceAll(stmt.RawCode.Code, "return buffer;", "strcpy(_output_buffer, buffer); return;")
 				modifiedCode = strings.ReplaceAll(modifiedCode, `return "";`, `strcpy(_output_buffer, ""); return;`)
-
-				rawLines := strings.Split(modifiedCode, "\n")
-				for _, rawLine := range rawLines {
+				rawLines := strings.SplitSeq(modifiedCode, "\n")
+				for rawLine := range rawLines {
 					if strings.TrimSpace(rawLine) != "" {
 						fmt.Fprintf(b, "    %s\n", rawLine)
 					} else {
@@ -1307,6 +1338,7 @@ func generateTopLevelFunctionImplementation(b *strings.Builder, funcDecl *lexer.
 
 	b.WriteString("}\n\n")
 }
+
 func isValidIdentifier(s string) bool {
 	if len(s) == 0 {
 		return false

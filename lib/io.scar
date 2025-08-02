@@ -11,7 +11,3 @@ pub fn readln() -> string:
             return "";
         }
     )
-
-# print "Enter a line of text: "
-# string asdf = readln()
-# print "You entered: %s" | asdf
