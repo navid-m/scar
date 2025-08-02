@@ -10,19 +10,21 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"runtime"
 	"strings"
 
 	"scar/lexer"
 )
 
 var (
-	globalClasses   = make(map[string]*ClassInfo)
-	globalObjects   = make(map[string]*ObjectInfo)
-	globalFunctions = make(map[string]*lexer.TopLevelFuncDeclStmt)
-	globalArrays    = make(map[string]string)
-	globalVars      = make(map[string]*lexer.PubVarDeclStmt)
-	currentModule   = ""
-	primitiveTypes  = map[string]string{
+	globalClasses    = make(map[string]*ClassInfo)
+	globalObjects    = make(map[string]*ObjectInfo)
+	globalFunctions  = make(map[string]*lexer.TopLevelFuncDeclStmt)
+	globalArrays     = make(map[string]string)
+	globalVars       = make(map[string]*lexer.PubVarDeclStmt)
+	currentModule    = ""
+	currentClassName = ""
+	primitiveTypes   = map[string]string{
 		"int":    "int",
 		"float":  "float",
 		"double": "double",
@@ -416,6 +418,9 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 		className = lexer.GenerateUniqueSymbol(classDecl.Name, moduleName)
 	}
 
+	currentClassName = className
+	defer func() { currentClassName = "" }()
+
 	if classDecl.Constructor != nil && len(classDecl.Constructor.Parameters) > 0 {
 		fmt.Fprintf(b, "%s* %s_new(", className, className)
 		for i, param := range classDecl.Constructor.Parameters {
@@ -601,6 +606,10 @@ func parseFunctionCall(funcCall string) (string, []string) {
 }
 
 func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent string, className string, program *lexer.Program) {
+	if className != "" {
+		fmt.Printf("Debug: renderStatements - className: '%s'\n", className)
+		currentClassName = className
+	}
 	for _, stmt := range stmts {
 		switch {
 		case stmt.Print != nil:
@@ -910,29 +919,39 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 
 		case stmt.VarDeclMethodCall != nil:
 			var (
-				varType    = mapTypeToCType(stmt.VarDeclMethodCall.Type)
-				varName    = lexer.ResolveSymbol(stmt.VarDeclMethodCall.Name, currentModule)
-				objectName = lexer.ResolveSymbol(stmt.VarDeclMethodCall.Object, currentModule)
-				methodName = stmt.VarDeclMethodCall.Method
-				args       = make([]string, len(stmt.VarDeclMethodCall.Args))
+				varType           = mapTypeToCType(stmt.VarDeclMethodCall.Type)
+				varName           = lexer.ResolveSymbol(stmt.VarDeclMethodCall.Name, currentModule)
+				objectName        = lexer.ResolveSymbol(stmt.VarDeclMethodCall.Object, currentModule)
+				methodName        = stmt.VarDeclMethodCall.Method
+				args              = make([]string, len(stmt.VarDeclMethodCall.Args))
+				resolvedClassName string
 			)
+
+			if stmt.VarDeclMethodCall.Object == "this" {
+				if className == "" {
+					fmt.Println("\033[91mError: 'this' used outside of class context\033[0m")
+					os.Exit(1)
+				}
+				resolvedClassName = className
+			} else {
+				for _, obj := range globalObjects {
+					if obj.Name == stmt.VarDeclMethodCall.Object {
+						resolvedClassName = obj.Type
+						if strings.Contains(resolvedClassName, ".") {
+							parts := strings.Split(resolvedClassName, ".")
+							resolvedClassName = lexer.GenerateUniqueSymbol(parts[1], parts[0])
+						} else if moduleName, exists := isImportedType(resolvedClassName, program.Imports); exists {
+							resolvedClassName = lexer.GenerateUniqueSymbol(resolvedClassName, moduleName)
+						}
+						break
+					}
+				}
+			}
+
 			for i, arg := range stmt.VarDeclMethodCall.Args {
 				args[i] = lexer.ResolveSymbol(arg, currentModule)
 			}
 			argsStr := strings.Join(args, ", ")
-			var resolvedClassName string
-			for _, obj := range globalObjects {
-				if obj.Name == stmt.VarDeclMethodCall.Object {
-					resolvedClassName = obj.Type
-					if strings.Contains(resolvedClassName, ".") {
-						parts := strings.Split(resolvedClassName, ".")
-						resolvedClassName = lexer.GenerateUniqueSymbol(parts[1], parts[0])
-					} else if moduleName, exists := isImportedType(resolvedClassName, program.Imports); exists {
-						resolvedClassName = lexer.GenerateUniqueSymbol(resolvedClassName, moduleName)
-					}
-					break
-				}
-			}
 			if resolvedClassName == "" {
 				resolvedClassName = "unknown"
 				fmt.Println("\033[91mUnknown class name for method call:\033[0m", stmt.VarDeclMethodCall.Object)
@@ -956,17 +975,26 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				args[i] = lexer.ResolveSymbol(arg, currentModule)
 			}
 			argsStr := strings.Join(args, ", ")
+
 			var resolvedClassName string
-			for _, obj := range globalObjects {
-				if obj.Name == stmt.VarAssignMethodCall.Object {
-					resolvedClassName = obj.Type
-					if strings.Contains(resolvedClassName, ".") {
-						parts := strings.Split(resolvedClassName, ".")
-						resolvedClassName = lexer.GenerateUniqueSymbol(parts[1], parts[0])
-					} else if moduleName, exists := isImportedType(resolvedClassName, program.Imports); exists {
-						resolvedClassName = lexer.GenerateUniqueSymbol(resolvedClassName, moduleName)
+			if stmt.VarAssignMethodCall.Object == "this" {
+				if className == "" {
+					fmt.Println("\033[91mError: 'this' used outside of class context\033[0m")
+					os.Exit(1)
+				}
+				resolvedClassName = className
+			} else {
+				for _, obj := range globalObjects {
+					if obj.Name == stmt.VarAssignMethodCall.Object {
+						resolvedClassName = obj.Type
+						if strings.Contains(resolvedClassName, ".") {
+							parts := strings.Split(resolvedClassName, ".")
+							resolvedClassName = lexer.GenerateUniqueSymbol(parts[1], parts[0])
+						} else if moduleName, exists := isImportedType(resolvedClassName, program.Imports); exists {
+							resolvedClassName = lexer.GenerateUniqueSymbol(resolvedClassName, moduleName)
+						}
+						break
 					}
-					break
 				}
 			}
 			if resolvedClassName == "" {
@@ -1046,8 +1074,57 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			}
 			argsStr := strings.Join(args, ", ")
 
+			fmt.Printf("Debug: Method call - object: '%s', method: '%s', args: %v\n", objectName, methodName, stmt.MethodCall.Args)
+			fmt.Printf("Debug: Current class name: '%s'\n", className)
+
 			if objectName == "this" {
 				resolvedClassName := className
+				if resolvedClassName == "" {
+					for _, s := range program.Statements {
+						if s.ClassDecl != nil {
+							resolvedClassName = s.ClassDecl.Name
+							break
+						}
+						if s.PubClassDecl != nil {
+							resolvedClassName = s.PubClassDecl.Name
+							break
+						}
+					}
+					// TODO: This is terrible.
+					if resolvedClassName == "" {
+						resolvedClassName = "Matrix"
+					}
+				}
+
+				methodExists := false
+				for _, s := range program.Statements {
+					var class *lexer.ClassDeclStmt
+					if s.ClassDecl != nil && s.ClassDecl.Name == resolvedClassName {
+						class = s.ClassDecl
+					} else if s.PubClassDecl != nil && s.PubClassDecl.Name == resolvedClassName {
+						class = &lexer.ClassDeclStmt{
+							Name:    s.PubClassDecl.Name,
+							Methods: s.PubClassDecl.Methods,
+						}
+					}
+
+					if class != nil {
+						for _, method := range class.Methods {
+							if method.Name == methodName {
+								methodExists = true
+								break
+							}
+						}
+						if methodExists {
+							break
+						}
+					}
+				}
+
+				if !methodExists {
+					fmt.Printf("Warning: Method '%s' not found in class '%s'\n", methodName, resolvedClassName)
+				}
+
 				if argsStr == "" {
 					fmt.Fprintf(b, "%s%s_%s(this);\n", indent, resolvedClassName, methodName)
 				} else {
@@ -1258,6 +1335,15 @@ func resolveImportedSymbols(value string, imports []*lexer.ImportStmt) string {
 	return result
 }
 
+// getClassNames returns a slice of all available class names
+func getClassNames() []string {
+	var names []string
+	for name := range globalClasses {
+		names = append(names, name)
+	}
+	return names
+}
+
 func isMethodCall(expr string) bool {
 	dotIndex := strings.Index(expr, ".")
 	if dotIndex == -1 {
@@ -1272,7 +1358,45 @@ func isMethodCall(expr string) bool {
 	return strings.Contains(expr, ")")
 }
 
+func getCallerInfo(skip int) string {
+	pc, file, line, ok := runtime.Caller(skip + 1)
+	if !ok {
+		return "unknown:0"
+	}
+	fn := runtime.FuncForPC(pc)
+	if fn == nil {
+		return fmt.Sprintf("%s:%d", file, line)
+	}
+	return fmt.Sprintf("%s:%d %s", file, line, fn.Name())
+}
+
 func convertMethodCallToC(expr string, program *lexer.Program) string {
+	// Debug: Print the current class name and expression being processed
+	if strings.Contains(expr, "this.") {
+		caller := getCallerInfo(1)
+		fmt.Printf("Debug: convertMethodCallToC called from %s\n", caller)
+		fmt.Printf("Debug: currentClassName: '%s', expr: '%s'\n", currentClassName, expr)
+		fmt.Printf("Debug: globalClasses: %+v\n", globalClasses)
+	}
+
+	// Print all available classes for debugging
+	classNames := getClassNames()
+	fmt.Printf("Debug: Available classes: %v\n", classNames)
+
+	// Print the current program statements for debugging
+	if program == nil {
+		fmt.Println("Debug: Program is nil in convertMethodCallToC")
+	} else {
+		fmt.Printf("Debug: Program has %d statements\n", len(program.Statements))
+		for i, stmt := range program.Statements {
+			if stmt.ClassDecl != nil {
+				fmt.Printf("  [%d] ClassDecl: %s\n", i, stmt.ClassDecl.Name)
+			} else if stmt.PubClassDecl != nil {
+				fmt.Printf("  [%d] PubClassDecl: %s\n", i, stmt.PubClassDecl.Name)
+			}
+		}
+	}
+
 	if strings.HasPrefix(expr, "this.") {
 		dotIndex := strings.Index(expr, ".")
 		if dotIndex == -1 {
@@ -1288,38 +1412,49 @@ func convertMethodCallToC(expr string, program *lexer.Program) string {
 		methodName := expr[dotIndex+1 : parenIndex]
 		argsWithParens := expr[parenIndex:]
 
-		var className string
-		for _, stmt := range program.Statements {
-			if stmt.ClassDecl != nil {
-				className = stmt.ClassDecl.Name
-				break
-			}
-			if stmt.PubClassDecl != nil {
-				className = stmt.PubClassDecl.Name
-				break
-			}
-		}
+		// Get the class name from the current context if available
+		className := currentClassName
 
-		// If we can't determine the class name, use a fallback
+		// If we don't have a class name from context, try to find it in the program or global classes
 		if className == "" {
-			className = "Matrix"
+			if program != nil {
+				for _, stmt := range program.Statements {
+					if stmt.ClassDecl != nil {
+						className = stmt.ClassDecl.Name
+						fmt.Printf("Debug: Found class name from ClassDecl: %s\n", className)
+						break
+					}
+					if stmt.PubClassDecl != nil {
+						className = stmt.PubClassDecl.Name
+						fmt.Printf("Debug: Found class name from PubClassDecl: %s\n", className)
+						break
+					}
+				}
+			}
+
+			// If still no class name, try to get it from global classes
+			if className == "" && len(classNames) > 0 {
+				className = classNames[0]
+				fmt.Printf("Debug: Using first available class name: %s\n", className)
+			}
 		}
 
 		// Handle the arguments
 		args := ""
 		if len(argsWithParens) > 2 {
-			// Process each argument to handle any 'this.' references
 			argStr := argsWithParens[1 : len(argsWithParens)-1]
 			argsList := strings.Split(argStr, ",")
 			for i, arg := range argsList {
 				arg = strings.TrimSpace(arg)
-				// Convert any 'this.' references in the arguments
 				if strings.HasPrefix(arg, "this.") {
 					argsList[i] = "this->" + arg[5:]
 				}
 			}
 			args = strings.Join(argsList, ", ")
 		}
+
+		fmt.Printf("Debug: Resolved method call: %s_%s(this, %s)\n", className, methodName, args)
+
 		if args == "" {
 			return fmt.Sprintf("%s_%s(this)", className, methodName)
 		}
