@@ -1115,6 +1115,68 @@ func TestClassMemberAndForLoop(t *testing.T) {
 	}
 }
 
+func TestThisMethodCall(t *testing.T) {
+	program := &lexer.Program{
+		Statements: []*lexer.Statement{
+			{
+				ClassDecl: &lexer.ClassDeclStmt{
+					Name: "GameOfLife",
+					Methods: []*lexer.MethodDeclStmt{
+						{
+							Name: "count_neighbors",
+							Parameters: []*lexer.MethodParameter{
+								{Name: "x", Type: "int"},
+								{Name: "y", Type: "int"},
+							},
+							ReturnType: "int",
+							Body: []*lexer.Statement{
+								{
+									VarDecl: &lexer.VarDeclStmt{
+										Name:  "count",
+										Type:  "int",
+										Value: "0",
+									},
+								},
+								{
+									If: &lexer.IfStmt{
+										Condition: "this.get_cell(1, 2) == 1",
+										Body: []*lexer.Statement{
+											{
+												VarAssign: &lexer.VarAssignStmt{
+													Name:  "count",
+													Value: "count + 1",
+												},
+											},
+										},
+									},
+								},
+								{
+									Return: &lexer.ReturnStmt{
+										Value: "count",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	// Set the current class name for the test
+	currentClassName = "GameOfLife"
+	defer func() { currentClassName = "" }()
+
+	// Render the code
+	code := RenderC(program, "./testdata")
+
+	// Check if the method call was properly converted
+	expected := "GameOfLife_get_cell(this, 1, 2)"
+	if !strings.Contains(code, expected) {
+		t.Errorf("Expected method call to be converted to '%s', but got:\n%s", expected, code)
+	}
+}
+
 func TestMixedGlobalVariableTypes(t *testing.T) {
 	input := `pub int counter = 0
 pub bool is_active = true

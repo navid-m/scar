@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"os"
 	"regexp"
-	"runtime"
 	"strings"
 
 	"scar/lexer"
@@ -636,7 +635,7 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				)
 				for i, v := range variables {
 					if isMethodCall(v) {
-						args[i] = convertMethodCallToC(v, program)
+						args[i] = convertMethodCallToC(v)
 					} else {
 						resolvedVar := lexer.ResolveSymbol(v, currentModule)
 						resolvedVar = convertThisReferencesGranular(resolvedVar)
@@ -695,7 +694,7 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			if strings.HasPrefix(end, "this.") {
 				end = "this->" + end[5:]
 			} else if isMethodCall(end) {
-				end = convertMethodCallToC(end, program)
+				end = convertMethodCallToC(end)
 			} else {
 				end = lexer.ResolveSymbol(end, currentModule)
 				end = convertThisReferencesGranular(end)
@@ -713,12 +712,15 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			fmt.Fprintf(b, "%s}\n", indent)
 		case stmt.If != nil:
 			condition := lexer.ResolveSymbol(stmt.If.Condition, currentModule)
+			condition = convertMethodCallToC(condition)
 			condition = convertThisReferencesGranular(condition)
+			condition = resolveImportedSymbols(condition, program.Imports)
 			fmt.Fprintf(b, "%sif (%s) {\n", indent, condition)
 			renderStatements(b, stmt.If.Body, indent+"    ", className, program)
 			fmt.Fprintf(b, "%s}\n", indent)
 			for _, elif := range stmt.If.ElseIfs {
 				elifCondition := lexer.ResolveSymbol(elif.Condition, currentModule)
+				elifCondition = convertMethodCallToC(elifCondition)
 				elifCondition = convertThisReferencesGranular(elifCondition)
 				fmt.Fprintf(b, "%selse if (%s) {\n", indent, elifCondition)
 				renderStatements(b, elif.Body, indent+"    ", className, program)
@@ -736,7 +738,7 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				value   = stmt.VarDecl.Value
 			)
 			if isMethodCall(value) {
-				value = convertMethodCallToC(value, program)
+				value = convertMethodCallToC(value)
 			} else {
 				value = convertThisReferencesGranular(value)
 			}
@@ -1379,15 +1381,6 @@ func resolveImportedSymbols(value string, imports []*lexer.ImportStmt) string {
 	return result
 }
 
-// Returns a slice of all available class names
-func getClassNames() []string {
-	var names []string
-	for name := range globalClasses {
-		names = append(names, name)
-	}
-	return names
-}
-
 // Determines if the given expression is a method call
 func isMethodCall(expr string) bool {
 	dotIndex := strings.Index(expr, ".")
@@ -1403,45 +1396,29 @@ func isMethodCall(expr string) bool {
 	return strings.Contains(expr, ")")
 }
 
-func getCallerInfo(skip int) string {
-	pc, file, line, ok := runtime.Caller(skip + 1)
-	if !ok {
-		return "unknown:0"
-	}
-	fn := runtime.FuncForPC(pc)
-	if fn == nil {
-		return fmt.Sprintf("%s:%d", file, line)
-	}
-	return fmt.Sprintf("%s:%d %s", file, line, fn.Name())
-}
-
-func convertMethodCallToC(expr string, program *lexer.Program) string {
-	// Debug: Print the current class name and expression being processed
-	if strings.Contains(expr, "this.") {
-		caller := getCallerInfo(1)
-		fmt.Printf("Debug: convertMethodCallToC called from %s\n", caller)
-		fmt.Printf("Debug: currentClassName: '%s', expr: '%s'\n", currentClassName, expr)
-		fmt.Printf("Debug: globalClasses: %+v\n", globalClasses)
+// findMatchingParen finds the position of the matching closing parenthesis
+func findMatchingParen(s string, openPos int) int {
+	if openPos < 0 || openPos >= len(s) || s[openPos] != '(' {
+		return -1
 	}
 
-	// Print all available classes for debugging
-	classNames := getClassNames()
-	fmt.Printf("Debug: Available classes: %v\n", classNames)
-
-	// Print the current program statements for debugging
-	if program == nil {
-		fmt.Println("Debug: Program is nil in convertMethodCallToC")
-	} else {
-		fmt.Printf("Debug: Program has %d statements\n", len(program.Statements))
-		for i, stmt := range program.Statements {
-			if stmt.ClassDecl != nil {
-				fmt.Printf("  [%d] ClassDecl: %s\n", i, stmt.ClassDecl.Name)
-			} else if stmt.PubClassDecl != nil {
-				fmt.Printf("  [%d] PubClassDecl: %s\n", i, stmt.PubClassDecl.Name)
+	stack := 1
+	for i := openPos + 1; i < len(s); i++ {
+		switch s[i] {
+		case '(':
+			stack++
+		case ')':
+			stack--
+			if stack == 0 {
+				return i
 			}
 		}
 	}
+	return -1
+}
 
+// Converts method calls in the format 'this.method(args)' to 'ClassName_method(this, args)'
+func convertMethodCallToC(expr string) string {
 	if strings.HasPrefix(expr, "this.") {
 		dotIndex := strings.Index(expr, ".")
 		if dotIndex == -1 {
@@ -1456,134 +1433,70 @@ func convertMethodCallToC(expr string, program *lexer.Program) string {
 
 		methodName := expr[dotIndex+1 : parenIndex]
 		argsWithParens := expr[parenIndex:]
-
-		// Get the class name from the current context if available
 		className := currentClassName
-
-		// If we don't have a class name from context, try to find it in the program or global classes
 		if className == "" {
-			if program != nil {
-				for _, stmt := range program.Statements {
-					if stmt.ClassDecl != nil {
-						className = stmt.ClassDecl.Name
-						fmt.Printf("Debug: Found class name from ClassDecl: %s\n", className)
-						break
-					}
-					if stmt.PubClassDecl != nil {
-						className = stmt.PubClassDecl.Name
-						fmt.Printf("Debug: Found class name from PubClassDecl: %s\n", className)
-						break
-					}
-				}
-			}
-
-			// If still no class name, try to get it from global classes
-			if className == "" && len(classNames) > 0 {
-				className = classNames[0]
-				fmt.Printf("Debug: Using first available class name: %s\n", className)
-			}
+			return expr
 		}
 
-		// Handle the arguments
 		args := ""
 		if len(argsWithParens) > 2 {
-			argStr := argsWithParens[1 : len(argsWithParens)-1]
-			argsList := strings.Split(argStr, ",")
-			for i, arg := range argsList {
-				arg = strings.TrimSpace(arg)
-				if strings.HasPrefix(arg, "this.") {
-					argsList[i] = "this->" + arg[5:]
-				}
-			}
-			args = strings.Join(argsList, ", ")
+			args = argsWithParens[1 : len(argsWithParens)-1]
 		}
 
-		fmt.Printf("Debug: Resolved method call: %s_%s(this, %s)\n", className, methodName, args)
-
+		// Format the method call
 		if args == "" {
 			return fmt.Sprintf("%s_%s(this)", className, methodName)
 		}
 		return fmt.Sprintf("%s_%s(this, %s)", className, methodName, args)
 	}
 
-	dotIndex := strings.Index(expr, ".")
-	if dotIndex == -1 {
-		return expr
-	}
+	// Handle method calls within expressions
+	re := regexp.MustCompile(`(\bthis\.[a-zA-Z_][a-zA-Z0-9_]*\s*\()`)
+	matches := re.FindAllStringIndex(expr, -1)
 
-	objectName := expr[:dotIndex]
-	remainder := expr[dotIndex+1:]
+	// Process matches from right to left to avoid messing up string indices
+	for i := len(matches) - 1; i >= 0; i-- {
+		match := expr[matches[i][0]:matches[i][1]]
+		// Extract just the method call part (without the "this." prefix)
+		methodCall := match[5:] // Skip "this." (5 characters)
 
-	parenIndex := strings.Index(remainder, "(")
-	if parenIndex == -1 {
-		// It's a field access, gotta convert to -> if it's a pointer
-		return fmt.Sprintf("%s->%s", objectName, remainder)
-	}
-
-	var (
-		methodName     = remainder[:parenIndex]
-		argsWithParens = remainder[parenIndex:]
-		args           = ""
-	)
-	if len(argsWithParens) > 2 {
-		argStr := argsWithParens[1 : len(argsWithParens)-1]
-		argsList := strings.Split(argStr, ",")
-		for i, arg := range argsList {
-			arg = strings.TrimSpace(arg)
-			if isMethodCall(arg) {
-				argsList[i] = convertMethodCallToC(arg, program)
-			}
+		// Find the matching closing parenthesis
+		openParen := strings.Index(methodCall, "(")
+		if openParen == -1 {
+			continue
 		}
-		args = strings.Join(argsList, ", ")
-	}
 
-	resolvedObjectName := lexer.ResolveSymbol(objectName, currentModule)
-	var resolvedClassName string
-	for _, obj := range globalObjects {
-		if obj.Name == objectName {
-			resolvedClassName = obj.Type
-			if strings.Contains(resolvedClassName, ".") {
-				parts := strings.Split(resolvedClassName, ".")
-				resolvedClassName = lexer.GenerateUniqueSymbol(parts[1], parts[0])
-			} else if moduleName, exists := isImportedType(resolvedClassName, program.Imports); exists {
-				resolvedClassName = lexer.GenerateUniqueSymbol(resolvedClassName, moduleName)
-			}
-			break
+		methodName := methodCall[:openParen]
+		argsStart := openParen + 1
+		argsEnd := findMatchingParen(expr, matches[i][0]+5+openParen)
+		if argsEnd == -1 {
+			continue // No matching closing parenthesis found
 		}
-	}
 
-	// If we couldn't find the class, try to infer it from the program
-	if resolvedClassName == "" {
-		for _, stmt := range program.Statements {
-			if stmt.ClassDecl != nil {
-				resolvedClassName = stmt.ClassDecl.Name
-				break
-			}
-			if stmt.PubClassDecl != nil {
-				resolvedClassName = stmt.PubClassDecl.Name
-				break
-			}
+		// Extract arguments
+		args := ""
+		argStartPos := matches[i][0] + 5 + argsStart
+		if argsEnd > argStartPos {
+			args = expr[argStartPos:argsEnd]
 		}
+
+		// Get the class name from the current context
+		className := currentClassName
+		if className == "" {
+			continue // Skip if we can't determine the class name
+		}
+
+		// Replace the method call in the expression
+		replacement := fmt.Sprintf("%s_%s(this", className, methodName)
+		if args != "" {
+			replacement += ", " + args
+		}
+		replacement += ")"
+
+		expr = expr[:matches[i][0]] + replacement + expr[argsEnd+1:]
 	}
 
-	if resolvedClassName == "" {
-		resolvedClassName = strings.Title(objectName)
-	}
-
-	// TODO: Replace this. This is terrible.
-	if resolvedClassName == "" {
-		resolvedClassName = "Matrix"
-	}
-
-	objectAccess := resolvedObjectName
-	if !strings.HasPrefix(objectAccess, "&") && !strings.HasSuffix(objectAccess, ")") {
-		objectAccess = "&" + objectAccess
-	}
-
-	if args == "" {
-		return fmt.Sprintf("%s_%s(%s)", resolvedClassName, methodName, objectAccess)
-	}
-	return fmt.Sprintf("%s_%s(%s, %s)", resolvedClassName, methodName, objectAccess, args)
+	return expr
 }
 
 func generateTopLevelFunctionImplementation(b *strings.Builder, funcDecl *lexer.TopLevelFuncDeclStmt, program *lexer.Program) {
