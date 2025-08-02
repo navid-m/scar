@@ -1343,7 +1343,6 @@ func convertThisReferencesGranular(expr string) string {
 	expr = re.ReplaceAllString(expr, "$1->$2")
 	expr = strings.ReplaceAll(expr, "this.", "this->")
 
-	// Restore the string literals
 	for i, lit := range stringLiterals {
 		expr = strings.Replace(expr, fmt.Sprintf("__STRING_LITERAL_%d__", i), lit, 1)
 	}
