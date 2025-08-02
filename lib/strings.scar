@@ -8,10 +8,9 @@ pub fn compare(string a, string b) -> int:
         return strcmp(a, b);
     )
 
-pub fn concat(string a, string b) -> string:
+pub fn concat(string a, string b) -> void:
     $raw (
         char* result = malloc(strlen(a) + strlen(b) + 1);
         strcpy(result, a);
         strcat(result, b);
-        return result;
     )
