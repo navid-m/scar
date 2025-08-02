@@ -58,14 +58,6 @@ pub fn array_find_index(list[int] arr, int value) -> int:
             return i
     return -1
 
-pub fn array_reverse(list[int] arr) -> void:
-    int arr_len = len(arr)
-    int temp = 0
-    for i = 0 to ((arr_len / 2) - 1):
-        temp = arr[i]
-        arr[i] = arr[arr_len - 1 - i]
-        arr[arr_len - 1 - i] = temp
-
 pub fn array_sum(list[int] arr) -> int:
     int total = 0
     int arr_len = len(arr)
