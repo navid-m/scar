@@ -204,8 +204,10 @@ type ConstructorStmt struct {
 }
 
 type MethodParameter struct {
-	Type string
-	Name string
+	Type     string
+	IsList   bool
+	ListType string
+	Name     string
 }
 
 type MethodDeclStmt struct {
@@ -426,7 +428,14 @@ func GenerateUniqueSymbol(originalName string, moduleName string) string {
 var vdt = []string{"int", "float", "double", "char", "string", "bool", "map"}
 
 func isValidType(s string) bool {
-	return slices.Contains(vdt, s)
+	if slices.Contains(vdt, s) {
+		return true
+	}
+	if strings.HasPrefix(s, "list[") && strings.HasSuffix(s, "]") {
+		innerType := strings.TrimPrefix(strings.TrimSuffix(s, "]"), "list[")
+		return slices.Contains(vdt, innerType)
+	}
+	return false
 }
 
 func IsOperator(s string) bool {

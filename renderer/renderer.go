@@ -877,9 +877,13 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			}
 		case stmt.FunctionCall != nil:
 			funcName := lexer.ResolveSymbol(stmt.FunctionCall.Name, currentModule)
-			args := make([]string, len(stmt.FunctionCall.Args))
-			for i, arg := range stmt.FunctionCall.Args {
-				args[i] = lexer.ResolveSymbol(arg, currentModule)
+			args := make([]string, 0)
+			for _, arg := range stmt.FunctionCall.Args {
+				resolvedArg := lexer.ResolveSymbol(arg, currentModule)
+				args = append(args, resolvedArg)
+				if _, exists := globalArrays[arg]; exists {
+					args = append(args, fmt.Sprintf("len(%s)", arg))
+				}
 			}
 			argsStr := strings.Join(args, ", ")
 			fmt.Fprintf(b, "%s%s(%s);\n", indent, funcName, argsStr)
@@ -1140,17 +1144,27 @@ func generateTopLevelFunctionImplementation(b *strings.Builder, funcDecl *lexer.
 
 	fmt.Fprintf(b, "%s %s(", returnType, funcDecl.Name)
 
-	for i, param := range funcDecl.Parameters {
-		if i > 0 {
-			b.WriteString(", ")
-		}
+	paramList := make([]string, 0)
+	for _, param := range funcDecl.Parameters {
 		paramType := mapTypeToCType(param.Type)
-		if param.Type == "string" {
-			paramType = "char*"
+		paramName := param.Name
+
+		if param.IsList {
+			if param.Type == "string" {
+				paramList = append(paramList, fmt.Sprintf("char %s[][256]", paramName))
+			} else {
+				paramList = append(paramList, fmt.Sprintf("%s %s[]", paramType, paramName))
+			}
+			paramList = append(paramList, fmt.Sprintf("int %s_len", paramName))
+		} else {
+			if param.Type == "string" {
+				paramType = "char*"
+			}
+			paramList = append(paramList, fmt.Sprintf("%s %s", paramType, paramName))
 		}
-		fmt.Fprintf(b, "%s %s", paramType, param.Name)
 	}
 
+	b.WriteString(strings.Join(paramList, ", "))
 	b.WriteString(") {\n")
 	renderStatements(b, funcDecl.Body, "    ", "", program)
 	b.WriteString("}\n\n")
@@ -1182,12 +1196,19 @@ func mapTypeToCType(mapType string) string {
 	case "char":
 		return "char"
 	case "string":
-		// For string arrays, we use char[256] as the base type
-		// This is handled in a special way in the list declaration generation logic
 		return "char"
 	case "bool":
 		return "int"
 	default:
+		// Handle list[type]
+		if strings.HasPrefix(mapType, "list[") && strings.HasSuffix(mapType, "]") {
+			innerType := strings.TrimPrefix(strings.TrimSuffix(mapType, "]"), "list[")
+			cInnerType := mapTypeToCType(innerType)
+			if innerType == "string" {
+				return "char"
+			}
+			return cInnerType
+		}
 		return mapType
 	}
 }

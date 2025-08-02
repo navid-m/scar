@@ -121,7 +121,7 @@ func parsePubStatement(lines []string, lineNum, currentIndent int) (*Statement, 
 	parts := strings.Fields(line)
 
 	if len(parts) < 2 {
-		return nil, lineNum + 1, fmt.Errorf("pub statement requires a declaration at line %d", lineNum+1)
+		return nil, lineNum + 1, fmt.Errorf("pub statement requires a type at line %d", lineNum+1)
 	}
 
 	switch parts[1] {
@@ -390,80 +390,113 @@ func parseClassStatement(lines []string, lineNum, currentIndent int) (*Statement
 
 func parseTopLevelFunctionStatement(lines []string, lineNum, currentIndent int) (*Statement, int, error) {
 	line := strings.TrimSpace(lines[lineNum])
-
 	if !strings.HasPrefix(line, "fn ") || !strings.HasSuffix(line, ":") {
-		return nil, lineNum + 1, fmt.Errorf("invalid top-level function declaration at line %d", lineNum+1)
+		return nil, lineNum + 1, fmt.Errorf("function declaration format error at line %d", lineNum+1)
 	}
 
-	signature := strings.TrimSpace(line[3 : len(line)-1])
-	parenStart := strings.Index(signature, "(")
-	if parenStart == -1 {
-		return nil, lineNum + 1, fmt.Errorf("function declaration missing parameters at line %d", lineNum+1)
+	// Extract function name and parameters
+	parenStart := strings.Index(line, "(")
+	parenEnd := strings.LastIndex(line, ")")
+	colonIndex := strings.LastIndex(line, ":")
+	if parenStart == -1 || parenEnd == -1 || colonIndex == -1 || parenEnd < parenStart {
+		return nil, lineNum + 1, fmt.Errorf("function declaration syntax error at line %d", lineNum+1)
 	}
 
-	funcName := strings.TrimSpace(signature[:parenStart])
-	parenEnd := strings.Index(signature, ")")
-	if parenEnd == -1 || parenEnd <= parenStart {
-		return nil, lineNum + 1, fmt.Errorf("function declaration missing closing parenthesis at line %d", lineNum+1)
+	// Extract return type
+	returnTypePart := strings.TrimSpace(line[parenEnd+1 : colonIndex])
+	returnType := "void"
+	if returnTypePart != "" && returnTypePart != "->" {
+		returnType = strings.TrimSpace(strings.Split(returnTypePart, "->")[1])
 	}
 
-	paramsStr := strings.TrimSpace(signature[parenStart+1 : parenEnd])
+	// Extract function name
+	funcNamePart := strings.TrimSpace(line[3:parenStart])
+	funcName := funcNamePart
+	if strings.HasPrefix(funcName, "pub ") {
+		funcName = strings.TrimSpace(funcName[4:])
+	}
+
+	// Parse parameters
+	paramsStr := strings.TrimSpace(line[parenStart+1 : parenEnd])
 	var parameters []*MethodParameter
 	if paramsStr != "" {
-		paramList := strings.SplitSeq(paramsStr, ",")
-		for paramStr := range paramList {
-			paramStr = strings.TrimSpace(paramStr)
-			paramParts := strings.Fields(paramStr)
-			if len(paramParts) == 2 {
-				param := &MethodParameter{
-					Type: paramParts[0],
-					Name: paramParts[1],
-				}
-				parameters = append(parameters, param)
-			} else if len(paramParts) == 1 {
-				param := &MethodParameter{
-					Type: "int",
-					Name: paramParts[0],
-				}
-				parameters = append(parameters, param)
+		paramList := strings.Split(paramsStr, ",")
+		for _, param := range paramList {
+			param = strings.TrimSpace(param)
+			if param == "" {
+				continue
 			}
+			paramParts := strings.Fields(param)
+			if len(paramParts) < 2 {
+				return nil, lineNum + 1, fmt.Errorf("invalid parameter format at line %d", lineNum+1)
+			}
+
+			paramType := paramParts[0]
+			paramName := paramParts[1]
+			isList := false
+			listType := ""
+
+			if strings.HasPrefix(paramType, "list[") && strings.HasSuffix(paramType, "]") {
+				isList = true
+				listType = strings.TrimPrefix(strings.TrimSuffix(paramType, "]"), "list[")
+				paramType = listType
+			}
+
+			if !isValidType(paramType) && !isList {
+				return nil, lineNum + 1, fmt.Errorf("invalid parameter type '%s' at line %d", paramType, lineNum+1)
+			}
+
+			parameters = append(parameters, &MethodParameter{
+				Type:     paramType,
+				IsList:   isList,
+				ListType: listType,
+				Name:     paramName,
+			})
 		}
 	}
 
-	returnTypePart := strings.TrimSpace(signature[parenEnd+1:])
-	var returnType string
-	if strings.HasPrefix(returnTypePart, "->") {
-		returnType = strings.TrimSpace(returnTypePart[2:])
-	} else {
-		returnType = "void"
-	}
-
+	// Parse function body
 	expectedBodyIndent := currentIndent + 4
-	bodyStartLine := lineNum + 1
-	for bodyStartLine < len(lines) {
-		bodyLine := lines[bodyStartLine]
-		if strings.TrimSpace(bodyLine) != "" && !strings.HasPrefix(strings.TrimSpace(bodyLine), "#") {
-			expectedBodyIndent = getIndentation(bodyLine)
-			break
+	if currentIndent == 0 {
+		bodyStartLine := lineNum + 1
+		for bodyStartLine < len(lines) {
+			bodyLine := lines[bodyStartLine]
+			if strings.TrimSpace(bodyLine) != "" && !strings.HasPrefix(strings.TrimSpace(bodyLine), "#") {
+				expectedBodyIndent = getIndentation(bodyLine)
+				break
+			}
+			bodyStartLine++
 		}
-		bodyStartLine++
+		if expectedBodyIndent <= currentIndent {
+			expectedBodyIndent = currentIndent + 4
+		}
 	}
 
-	body, err := parseStatements(lines, bodyStartLine, expectedBodyIndent)
+	body, err := parseStatements(lines, lineNum+1, expectedBodyIndent)
 	if err != nil {
 		return nil, lineNum + 1, err
 	}
 
-	nextLine := findEndOfBlock(lines, bodyStartLine, expectedBodyIndent)
+	nextLine := findEndOfBlock(lines, lineNum+1, expectedBodyIndent)
 
-	funcDecl := &TopLevelFuncDeclStmt{
-		Name:       funcName,
-		Parameters: parameters,
-		ReturnType: returnType,
-		Body:       body,
+	stmt := &Statement{}
+	if strings.HasPrefix(line, "pub fn ") {
+		stmt.PubTopLevelFuncDecl = &PubTopLevelFuncDeclStmt{
+			Name:       funcName,
+			Parameters: parameters,
+			ReturnType: returnType,
+			Body:       body,
+		}
+	} else {
+		stmt.TopLevelFuncDecl = &TopLevelFuncDeclStmt{
+			Name:       funcName,
+			Parameters: parameters,
+			ReturnType: returnType,
+			Body:       body,
+		}
 	}
 
-	return &Statement{TopLevelFuncDecl: funcDecl}, nextLine, nil
+	return stmt, nextLine, nil
 }
 
 func parseMethodStatement(lines []string, lineNum, currentIndent int) (*MethodDeclStmt, int, error) {
