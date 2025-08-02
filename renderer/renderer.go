@@ -909,11 +909,13 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			fmt.Fprintf(b, "%s%s* %s = %s_new(%s);\n", indent, resolvedType, varName, resolvedType, argsStr)
 
 		case stmt.VarDeclMethodCall != nil:
-			varType := mapTypeToCType(stmt.VarDeclMethodCall.Type)
-			varName := lexer.ResolveSymbol(stmt.VarDeclMethodCall.Name, currentModule)
-			objectName := lexer.ResolveSymbol(stmt.VarDeclMethodCall.Object, currentModule)
-			methodName := stmt.VarDeclMethodCall.Method
-			args := make([]string, len(stmt.VarDeclMethodCall.Args))
+			var (
+				varType    = mapTypeToCType(stmt.VarDeclMethodCall.Type)
+				varName    = lexer.ResolveSymbol(stmt.VarDeclMethodCall.Name, currentModule)
+				objectName = lexer.ResolveSymbol(stmt.VarDeclMethodCall.Object, currentModule)
+				methodName = stmt.VarDeclMethodCall.Method
+				args       = make([]string, len(stmt.VarDeclMethodCall.Args))
+			)
 			for i, arg := range stmt.VarDeclMethodCall.Args {
 				args[i] = lexer.ResolveSymbol(arg, currentModule)
 			}
@@ -933,10 +935,10 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			}
 			if resolvedClassName == "" {
 				resolvedClassName = "unknown"
-				fmt.Println("Unknown class name for method call:", stmt.VarDeclMethodCall.Object)
-				fmt.Println("Object name:", stmt.VarDeclMethodCall.Object)
-				fmt.Println("Method name:", stmt.VarDeclMethodCall.Method)
-				fmt.Println("Args:", stmt.VarDeclMethodCall.Args)
+				fmt.Println("\033[91mUnknown class name for method call:\033[0m", stmt.VarDeclMethodCall.Object)
+				fmt.Println("\033[91mObject name:\033[0m", stmt.VarDeclMethodCall.Object)
+				fmt.Println("\033[91mMethod name:\033[0m", stmt.VarDeclMethodCall.Method)
+				fmt.Println("\033[91mArgs:\033[0m", stmt.VarDeclMethodCall.Args)
 				os.Exit(1)
 			}
 			if argsStr == "" {
