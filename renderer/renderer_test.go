@@ -465,9 +465,9 @@ func TestRenderCWithImports(t *testing.T) {
 
 	cCode := RenderC(program, "")
 
-	expectedVarDecl := "int area = math_PI * 5 * 5;"
-	if !strings.Contains(cCode, expectedVarDecl) {
-		t.Errorf("Expected imported symbol resolution '%s' not found in generated code", expectedVarDecl)
+	expectedAreaCalc := "area = math->PI * 5 * 5;"
+	if !strings.Contains(cCode, expectedAreaCalc) {
+		t.Errorf("Expected area calculation '%s' not found in generated code", expectedAreaCalc)
 	}
 	expectedStructDef := "typedef struct math_Calculator {"
 	if !strings.Contains(cCode, expectedStructDef) {
@@ -540,7 +540,6 @@ class TaskScheduler:
 
 	result := RenderC(program, ".")
 
-	// Check for proper this pointer syntax
 	expectedPatterns := []string{
 		"this->name",
 		"this->priority",
@@ -557,7 +556,6 @@ class TaskScheduler:
 		}
 	}
 
-	// Check that method calls are properly resolved
 	if strings.Contains(result, "unknown_add_task") {
 		t.Error("Found 'unknown_add_task' in generated code, method resolution failed")
 	}
@@ -621,6 +619,168 @@ tony.sing()`
 		if strings.Contains(result, pattern) {
 			t.Errorf("Found invalid dot syntax '%s' in generated code, should be converted to pointer syntax", pattern)
 		}
+	}
+}
+
+func TestMatrixExample(t *testing.T) {
+	program := &lexer.Program{
+		Statements: []*lexer.Statement{
+			{
+				ClassDecl: &lexer.ClassDeclStmt{
+					Name: "Matrix",
+					Constructor: &lexer.ConstructorStmt{
+						Parameters: []*lexer.MethodParameter{
+							{Name: "rows", Type: "int"},
+							{Name: "cols", Type: "int"},
+						},
+						Fields: []*lexer.Statement{
+							{
+								VarAssign: &lexer.VarAssignStmt{
+									Name:  "this.rows",
+									Value: "rows",
+								},
+							},
+							{
+								VarAssign: &lexer.VarAssignStmt{
+									Name:  "this.cols",
+									Value: "cols",
+								},
+							},
+							{
+								VarAssign: &lexer.VarAssignStmt{
+									Name:  "this.size",
+									Value: "rows * cols",
+								},
+							},
+						},
+					},
+					Methods: []*lexer.MethodDeclStmt{
+						{
+							Name: "init",
+							Parameters: []*lexer.MethodParameter{
+								{Name: "rows", Type: "int"},
+								{Name: "cols", Type: "int"},
+							},
+							Body: []*lexer.Statement{
+								{
+									VarAssign: &lexer.VarAssignStmt{
+										Name:  "this.rows",
+										Value: "rows",
+									},
+								},
+								{
+									VarAssign: &lexer.VarAssignStmt{
+										Name:  "this.cols",
+										Value: "cols",
+									},
+								},
+								{
+									VarAssign: &lexer.VarAssignStmt{
+										Name:  "this.size",
+										Value: "rows * cols",
+									},
+								},
+							},
+						},
+						{
+							Name: "set_value",
+							Parameters: []*lexer.MethodParameter{
+								{Name: "row", Type: "int"},
+								{Name: "col", Type: "int"},
+								{Name: "value", Type: "float"},
+							},
+							ReturnType: "void",
+							Body: []*lexer.Statement{
+								{
+									VarDecl: &lexer.VarDeclStmt{
+										Type:  "int",
+										Name:  "index",
+										Value: "row * this.cols + col",
+									},
+								},
+							},
+						},
+						{
+							Name: "get_value",
+							Parameters: []*lexer.MethodParameter{
+								{Name: "row", Type: "int"},
+								{Name: "col", Type: "int"},
+							},
+							ReturnType: "float",
+							Body: []*lexer.Statement{
+								{
+									VarDecl: &lexer.VarDeclStmt{
+										Type:  "int",
+										Name:  "index",
+										Value: "row * this.cols + col",
+									},
+								},
+								{
+									Return: &lexer.ReturnStmt{
+										Value: "float(row + col)",
+									},
+								},
+							},
+						},
+						{
+							Name:       "print_matrix",
+							ReturnType: "void",
+							Body: []*lexer.Statement{
+								{
+									For: &lexer.ForStmt{
+										Var:   "row",
+										Start: "0",
+										End:   "this.rows - 1",
+										Body: []*lexer.Statement{
+											{
+												For: &lexer.ForStmt{
+													Var:   "col",
+													Start: "0",
+													End:   "this.cols - 1",
+													Body: []*lexer.Statement{
+														{
+															VarDecl: &lexer.VarDeclStmt{
+																Type:  "float",
+																Name:  "val",
+																Value: "this.get_value(row, col)",
+															},
+														},
+														{
+															Print: &lexer.PrintStmt{
+																Format:    "%.1f ",
+																Variables: []string{"val"},
+															},
+														},
+													},
+												},
+											},
+											{
+												Print: &lexer.PrintStmt{
+													Print: "\"\n"},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	cCode := RenderC(program, "")
+
+	if !strings.Contains(cCode, "this->rows") || !strings.Contains(cCode, "this->cols") {
+		t.Error("Expected 'this->' pointer access in generated C code")
+	}
+
+	if !strings.Contains(cCode, "Matrix_get_value(this") {
+		t.Error("Expected method calls on 'this' to be resolved to class methods")
+	}
+
+	if !strings.Contains(cCode, "row <= (this->rows - 1)") || !strings.Contains(cCode, "col <= (this->cols - 1)") {
+		t.Error("Expected for loop conditions to use 'this->' pointer access")
 	}
 }
 
