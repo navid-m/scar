@@ -665,29 +665,26 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			renderStatements(b, stmt.While.Body, indent+"    ", className, program)
 			fmt.Fprintf(b, "%s}\n", indent)
 		case stmt.For != nil:
-			varName := stmt.For.Var
-			start := lexer.ResolveSymbol(stmt.For.Start, currentModule)
-			end := stmt.For.End
-			
-			// Handle 'this.' references in the end condition
+			var (
+				varName = stmt.For.Var
+				start   = lexer.ResolveSymbol(stmt.For.Start, currentModule)
+				end     = stmt.For.End
+			)
 			if strings.HasPrefix(end, "this.") {
 				end = "this->" + end[5:]
 			} else if isMethodCall(end) {
-				// If it's a method call, convert it properly
 				end = convertMethodCallToC(end, program)
 			} else {
-				// Resolve any symbols and convert this. to this->
 				end = lexer.ResolveSymbol(end, currentModule)
 				end = convertThisReferences(end)
 			}
 
-			// Ensure the end condition is properly parenthesized if it contains operators
 			endCond := end
 			if strings.ContainsAny(end, "+-*/><=!&|^%") {
 				endCond = fmt.Sprintf("(%s)", end)
 			}
 
-			fmt.Fprintf(b, "%sfor (int %s = %s; %s <= %s; %s++) {\n", 
+			fmt.Fprintf(b, "%sfor (int %s = %s; %s <= %s; %s++) {\n",
 				indent, varName, start, varName, endCond, varName)
 			renderStatements(b, stmt.For.Body, indent+"    ", className, program)
 			fmt.Fprintf(b, "%s}\n", indent)
@@ -710,18 +707,17 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				fmt.Fprintf(b, "%s}\n", indent)
 			}
 		case stmt.VarDecl != nil:
-			varType := mapTypeToCType(stmt.VarDecl.Type)
-			varName := lexer.ResolveSymbol(stmt.VarDecl.Name, currentModule)
-			value := stmt.VarDecl.Value
-			
-			// Handle method calls in variable declarations
+			var (
+				varType = mapTypeToCType(stmt.VarDecl.Type)
+				varName = lexer.ResolveSymbol(stmt.VarDecl.Name, currentModule)
+				value   = stmt.VarDecl.Value
+			)
 			if isMethodCall(value) {
 				value = convertMethodCallToC(value, program)
 			} else {
-				// Convert any 'this.' to 'this->' in the value
 				value = convertThisReferences(value)
 			}
-			
+
 			value = fixFloatCastGranular(value)
 			value = resolveImportedSymbols(value, program.Imports)
 
@@ -1195,18 +1191,18 @@ func convertThisReferences(expr string) string {
 	// First handle method calls on 'this'
 	re := regexp.MustCompile(`(^|[^a-zA-Z0-9_])this\.([a-zA-Z0-9_]+)\s*\(`)
 	expr = re.ReplaceAllString(expr, "${1}this->$2(")
-	
+
 	// Then handle field access on 'this'
 	expr = strings.ReplaceAll(expr, "this.", "this->")
-	
+
 	// Handle pointer access in method parameters (e.g., other.rows -> other->rows)
 	re = regexp.MustCompile(`([a-zA-Z_][a-zA-Z0-9_]*)\.([a-zA-Z_][a-zA-Z0-9_]*)`)
 	expr = re.ReplaceAllString(expr, "$1->$2")
-	
+
 	// Handle array access with pointer (e.g., this.data[0] -> this->data[0])
 	re = regexp.MustCompile(`(this->[a-zA-Z_][a-zA-Z0-9_]*)\[`)
 	expr = re.ReplaceAllString(expr, "$1[")
-	
+
 	return expr
 }
 
@@ -1217,7 +1213,7 @@ func resolveImportedSymbols(value string, imports []*lexer.ImportStmt) string {
 		if len(parts) == 2 {
 			moduleName := parts[0]
 			symbolName := parts[1]
-			
+
 			// Check if this is an imported module
 			for _, imp := range imports {
 				if imp.Module == moduleName {
@@ -1236,7 +1232,7 @@ func resolveImportedSymbols(value string, imports []*lexer.ImportStmt) string {
 		if strings.Contains(result, modulePrefix) {
 			// Split into tokens while preserving operators and parentheses
 			tokens := regexp.MustCompile(`([\w\.]+|\S)`).FindAllString(result, -1)
-			
+
 			for i, token := range tokens {
 				if strings.HasPrefix(token, modulePrefix) {
 					symbolName := token[len(modulePrefix):]
@@ -1246,7 +1242,7 @@ func resolveImportedSymbols(value string, imports []*lexer.ImportStmt) string {
 					}
 				}
 			}
-			
+
 			// Reconstruct the result with resolved symbols
 			result = strings.Join(tokens, "")
 		}
