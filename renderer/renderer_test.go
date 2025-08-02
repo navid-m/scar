@@ -504,6 +504,65 @@ func TestRenderCWithImports(t *testing.T) {
 	delete(lexer.LoadedModules, "math")
 }
 
+func TestSchedulerExample(t *testing.T) {
+	input := `class Task:
+    init(string name, int priority, int duration):
+        this.name = name
+        this.priority = priority
+        this.duration = duration
+        this.completed = false
+        this.start_time = 0
+
+    fn execute() -> void:
+        this.start_time = 1
+        for i = 1 to this.duration:
+            i = i + 1
+        this.completed = true
+
+class TaskScheduler:
+    init():
+        this.total_tasks = 0
+        this.completed_tasks = 0
+
+    fn add_task(Task task) -> void:
+        this.total_tasks = this.total_tasks + 1
+
+    fn run_scheduler() -> void:
+        var task1 = new Task("Task 1", 1, 1)
+        this.add_task(task1)
+        task1.execute()
+`
+
+	program, err := lexer.ParseWithIndentation(input)
+	if err != nil {
+		t.Fatalf("Failed to parse input: %v", err)
+	}
+
+	result := RenderC(program, ".")
+
+	// Check for proper this pointer syntax
+	expectedPatterns := []string{
+		"this->name",
+		"this->priority",
+		"this->duration",
+		"this->completed",
+		"this->start_time",
+		"this->total_tasks",
+		"this->completed_tasks",
+	}
+
+	for _, pattern := range expectedPatterns {
+		if !strings.Contains(result, pattern) {
+			t.Errorf("Expected pattern '%s' not found in generated code", pattern)
+		}
+	}
+
+	// Check that method calls are properly resolved
+	if strings.Contains(result, "unknown_add_task") {
+		t.Error("Found 'unknown_add_task' in generated code, method resolution failed")
+	}
+}
+
 func TestThisPointerSyntax(t *testing.T) {
 	input := `pub class Soprano:
     init:
