@@ -135,12 +135,96 @@ func TestInvalidStatement(t *testing.T) {
 
 func TestClassMethodWithNoReturn(t *testing.T) {
 	input := `
-class MyClass:
-    fn myMethod() -> int:
-        var x = 10
-`
+class Test:
+    fn method() -> int:
+        x = 10`
 	_, err := ParseWithIndentation(input)
 	if err != nil {
+		// TODO: Ensure an error gets thrown here.
 		t.Logf("Got an error as expected (or maybe not): %v", err)
+	}
+}
+
+func TestContinueStatement(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		hasError bool
+	}{
+		{
+			name: "simple continue in for loop",
+			input: `for i = 0 to 10:
+    if i % 2 == 0:
+        continue
+    print i`,
+			hasError: false,
+		},
+		{
+			name: "continue in while loop",
+			input: `i = 0
+while i < 10:
+    i = i + 1
+    if i % 2 != 0:
+        continue
+    print i`,
+			hasError: false,
+		},
+		{
+			name: "nested continue",
+			input: `for i = 0 to 5:
+    for j = 0 to 5:
+        if i == j:
+            continue
+        print i, j`,
+			hasError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			program, err := ParseWithIndentation(tt.input)
+			if tt.hasError {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("ParseWithIndentation failed: %v", err)
+			}
+
+			var foundContinue bool
+			var checkStmts func(stmts []*Statement)
+
+			checkStmts = func(stmts []*Statement) {
+				for _, stmt := range stmts {
+					if stmt.Continue != nil {
+						foundContinue = true
+					}
+					if stmt.If != nil {
+						checkStmts(stmt.If.Body)
+						for _, elif := range stmt.If.ElseIfs {
+							checkStmts(elif.Body)
+						}
+						if stmt.If.Else != nil {
+							checkStmts(stmt.If.Else.Body)
+						}
+					}
+					if stmt.For != nil {
+						checkStmts(stmt.For.Body)
+					}
+					if stmt.While != nil {
+						checkStmts(stmt.While.Body)
+					}
+				}
+			}
+
+			checkStmts(program.Statements)
+
+			if !foundContinue {
+				t.Error("expected to find a continue statement in the parsed program")
+			}
+		})
 	}
 }
