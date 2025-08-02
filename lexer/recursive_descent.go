@@ -674,8 +674,8 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 				if argsEnd > argsStart+1 {
 					argsStr := strings.TrimSpace(line[argsStart+1 : argsEnd])
 					if argsStr != "" {
-						argsList := strings.Split(argsStr, ",")
-						for _, arg := range argsList {
+						argsList := strings.SplitSeq(argsStr, ",")
+						for arg := range argsList {
 							args = append(args, strings.TrimSpace(arg))
 						}
 					}
