@@ -711,21 +711,37 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			renderStatements(b, stmt.For.Body, indent+"    ", className, program)
 			fmt.Fprintf(b, "%s}\n", indent)
 		case stmt.If != nil:
-			condition := lexer.ResolveSymbol(stmt.If.Condition, currentModule)
-			condition = convertMethodCallToC(condition)
-			condition = convertThisReferencesGranular(condition)
+			// Handle the main if condition
+			condition := stmt.If.Condition
+			if isMethodCall(condition) {
+				// If it's a method call, convert it directly without ResolveSymbol
+				condition = convertMethodCallToC(condition)
+			} else {
+				// Otherwise, resolve symbols and references as usual
+				condition = lexer.ResolveSymbol(condition, currentModule)
+				condition = convertThisReferencesGranular(condition)
+			}
 			condition = resolveImportedSymbols(condition, program.Imports)
 			fmt.Fprintf(b, "%sif (%s) {\n", indent, condition)
 			renderStatements(b, stmt.If.Body, indent+"    ", className, program)
 			fmt.Fprintf(b, "%s}\n", indent)
+
+			// Handle else if conditions
 			for _, elif := range stmt.If.ElseIfs {
-				elifCondition := lexer.ResolveSymbol(elif.Condition, currentModule)
-				elifCondition = convertMethodCallToC(elifCondition)
-				elifCondition = convertThisReferencesGranular(elifCondition)
+				elifCondition := elif.Condition
+				if isMethodCall(elifCondition) {
+					elifCondition = convertMethodCallToC(elifCondition)
+				} else {
+					elifCondition = lexer.ResolveSymbol(elifCondition, currentModule)
+					elifCondition = convertThisReferencesGranular(elifCondition)
+				}
+				elifCondition = resolveImportedSymbols(elifCondition, program.Imports)
 				fmt.Fprintf(b, "%selse if (%s) {\n", indent, elifCondition)
 				renderStatements(b, elif.Body, indent+"    ", className, program)
 				fmt.Fprintf(b, "%s}\n", indent)
 			}
+
+			// Handle else block
 			if stmt.If.Else != nil {
 				fmt.Fprintf(b, "%selse {\n", indent)
 				renderStatements(b, stmt.If.Else.Body, indent+"    ", className, program)
@@ -1419,84 +1435,62 @@ func findMatchingParen(s string, openPos int) int {
 
 // Converts method calls in the format 'this.method(args)' to 'ClassName_method(this, args)'
 func convertMethodCallToC(expr string) string {
-	if strings.HasPrefix(expr, "this.") {
-		dotIndex := strings.Index(expr, ".")
-		if dotIndex == -1 {
-			return expr
+	comparisonOps := []string{"==", "!=", ">", "<", ">=", "<="}
+	var op, left, right string
+	var hasComparison bool
+	for _, cmpOp := range comparisonOps {
+		if strings.Contains(expr, cmpOp) {
+			parts := strings.SplitN(expr, cmpOp, 2)
+			if len(parts) == 2 {
+				left = strings.TrimSpace(parts[0])
+				right = strings.TrimSpace(parts[1])
+				op = cmpOp // Store the actual operator we found
+				hasComparison = true
+				break
+			}
 		}
+	}
+	if hasComparison && (strings.HasPrefix(left, "this.") || strings.Contains(left, "(")) {
+		convertedLeft := convertSingleMethodCall(left)
+		if convertedLeft != "" {
+			return fmt.Sprintf("%s %s %s", convertedLeft, op, right)
+		}
+	}
+	return convertSingleMethodCall(expr)
+}
 
-		parenIndex := strings.Index(expr, "(")
-		if parenIndex == -1 {
-			fieldName := expr[dotIndex+1:]
-			return fmt.Sprintf("this->%s", fieldName)
-		}
-
-		methodName := expr[dotIndex+1 : parenIndex]
-		argsWithParens := expr[parenIndex:]
-		className := currentClassName
-		if className == "" {
-			return expr
-		}
-
-		args := ""
-		if len(argsWithParens) > 2 {
-			args = argsWithParens[1 : len(argsWithParens)-1]
-		}
-
-		// Format the method call
-		if args == "" {
-			return fmt.Sprintf("%s_%s(this)", className, methodName)
-		}
-		return fmt.Sprintf("%s_%s(this, %s)", className, methodName, args)
+func convertSingleMethodCall(expr string) string {
+	if !strings.HasPrefix(expr, "this.") {
+		return expr
 	}
 
-	// Handle method calls within expressions
-	re := regexp.MustCompile(`(\bthis\.[a-zA-Z_][a-zA-Z0-9_]*\s*\()`)
-	matches := re.FindAllStringIndex(expr, -1)
-
-	// Process matches from right to left to avoid messing up string indices
-	for i := len(matches) - 1; i >= 0; i-- {
-		match := expr[matches[i][0]:matches[i][1]]
-		// Extract just the method call part (without the "this." prefix)
-		methodCall := match[5:] // Skip "this." (5 characters)
-
-		// Find the matching closing parenthesis
-		openParen := strings.Index(methodCall, "(")
-		if openParen == -1 {
-			continue
-		}
-
-		methodName := methodCall[:openParen]
-		argsStart := openParen + 1
-		argsEnd := findMatchingParen(expr, matches[i][0]+5+openParen)
-		if argsEnd == -1 {
-			continue // No matching closing parenthesis found
-		}
-
-		// Extract arguments
-		args := ""
-		argStartPos := matches[i][0] + 5 + argsStart
-		if argsEnd > argStartPos {
-			args = expr[argStartPos:argsEnd]
-		}
-
-		// Get the class name from the current context
-		className := currentClassName
-		if className == "" {
-			continue // Skip if we can't determine the class name
-		}
-
-		// Replace the method call in the expression
-		replacement := fmt.Sprintf("%s_%s(this", className, methodName)
-		if args != "" {
-			replacement += ", " + args
-		}
-		replacement += ")"
-
-		expr = expr[:matches[i][0]] + replacement + expr[argsEnd+1:]
+	dotIndex := strings.Index(expr, ".")
+	if dotIndex == -1 {
+		return expr
 	}
-
-	return expr
+	parenIndex := strings.Index(expr[dotIndex:], "(")
+	if parenIndex == -1 {
+		fieldName := expr[dotIndex+1:]
+		return fmt.Sprintf("this->%s", fieldName)
+	}
+	parenIndex += dotIndex
+	methodName := expr[dotIndex+1 : parenIndex]
+	argsWithParens := expr[parenIndex:]
+	className := currentClassName
+	if className == "" {
+		return expr
+	}
+	args := ""
+	if len(argsWithParens) > 2 {
+		closeParen := findMatchingParen(expr, parenIndex)
+		if closeParen > parenIndex+1 {
+			args = expr[parenIndex+1 : closeParen]
+		}
+	}
+	if args == "" {
+		return fmt.Sprintf("%s_%s(this)", className, methodName)
+	}
+	return fmt.Sprintf("%s_%s(this, %s)", className, methodName, args)
 }
 
 func generateTopLevelFunctionImplementation(b *strings.Builder, funcDecl *lexer.TopLevelFuncDeclStmt, program *lexer.Program) {

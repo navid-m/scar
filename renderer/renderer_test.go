@@ -1162,18 +1162,57 @@ func TestThisMethodCall(t *testing.T) {
 			},
 		},
 	}
-
-	// Set the current class name for the test
 	currentClassName = "GameOfLife"
 	defer func() { currentClassName = "" }()
-
-	// Render the code
 	code := RenderC(program, "./testdata")
-
-	// Check if the method call was properly converted
 	expected := "GameOfLife_get_cell(this, 1, 2)"
 	if !strings.Contains(code, expected) {
 		t.Errorf("Expected method call to be converted to '%s', but got:\n%s", expected, code)
+	}
+}
+
+func TestMethodCallWithComplexExpression(t *testing.T) {
+	program := &lexer.Program{
+		Statements: []*lexer.Statement{
+			{
+				ClassDecl: &lexer.ClassDeclStmt{
+					Name: "GameOfLife",
+					Methods: []*lexer.MethodDeclStmt{
+						{
+							Name: "test_method",
+							Parameters: []*lexer.MethodParameter{
+								{Name: "this", Type: "GameOfLife"},
+							},
+							Body: []*lexer.Statement{
+								{
+									If: &lexer.IfStmt{
+										Condition: "this.get_cell(1, 2) == 1",
+										Body: []*lexer.Statement{
+											{
+												VarDecl: &lexer.VarDeclStmt{
+													Name:  "result",
+													Type:  "bool",
+													Value: "true",
+												},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	cCode := RenderC(program, "")
+	expected := "GameOfLife_get_cell(this, 1, 2) == 1"
+	if !strings.Contains(cCode, expected) {
+		t.Errorf("Expected method call to be converted to '%s', got: %s", expected, cCode)
+	}
+	if strings.Contains(cCode, ")") && strings.Count(cCode, ")") > strings.Count(cCode, "(") {
+		t.Errorf("Found mismatched parentheses in generated code: %s", cCode)
 	}
 }
 

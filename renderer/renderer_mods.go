@@ -27,3 +27,10 @@ type ObjectInfo struct {
 	Name string
 	Type string
 }
+
+type MethodCall struct {
+	FullMatch  string
+	ClassName  string
+	MethodName string
+	Args       string
+}
