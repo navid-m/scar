@@ -65,3 +65,27 @@ pub fn absolute(float value) -> float:
     if value < 0.0:
         return -value
     return value
+
+pub fn pow(float base, int exp) -> float:
+    float result = 1.0
+    int i = 0
+    if exp < 0:
+        return 1.0 / pow(base, -exp)
+    for i = 0 to exp - 1:
+        result = result * base
+    return result
+
+pub fn factorial(int n) -> int:
+    if n < 0:
+        return -1
+    int result = 1
+    for i = 2 to n:
+        result = result * i
+    return result
+
+pub fn clamp(float value, float min_value, float max_value) -> float:
+    if value < min_value:
+        return min_value
+    elif value > max_value:
+        return max_value
+    return value
