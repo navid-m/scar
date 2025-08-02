@@ -503,3 +503,64 @@ func TestRenderCWithImports(t *testing.T) {
 
 	delete(lexer.LoadedModules, "math")
 }
+
+func TestThisPointerSyntax(t *testing.T) {
+	input := `pub class Soprano:
+    init:
+        string  this.name = "vito"
+        int     this.annoyingness_level = 10
+        int     this.singing_ability = 100
+        string  this.singing_style = "opera"
+        int     this.is_singing = 0
+        int     this.is_annoying = 1
+        int     this.is_awesome = 0
+    fn sing() -> void:
+        if this.is_annoying == 1:
+            print "LAAAAAA OOOOO EEEEE AAAA OOO!!!!"
+        this.is_singing = 1
+        while this.singing_ability > 50:
+            this.annoyingness_level = this.annoyingness_level + 1
+            break
+    fn get_name() -> string:
+        return this.name
+var tony = new Soprano()
+tony.sing()`
+
+	program, err := lexer.ParseWithIndentation(input)
+	if err != nil {
+		t.Fatalf("Failed to parse input: %v", err)
+	}
+	result := RenderC(program, ".")
+	expectedIfCondition := "if (this->is_annoying == 1)"
+	if !strings.Contains(result, expectedIfCondition) {
+		t.Errorf("Expected if condition with pointer syntax '%s' not found in generated code", expectedIfCondition)
+	}
+	expectedWhileCondition := "while (this->singing_ability > 50)"
+	if !strings.Contains(result, expectedWhileCondition) {
+		t.Errorf("Expected while condition with pointer syntax '%s' not found in generated code", expectedWhileCondition)
+	}
+	expectedAssignment := "this->is_singing = 1;"
+	if !strings.Contains(result, expectedAssignment) {
+		t.Errorf("Expected assignment with pointer syntax '%s' not found in generated code", expectedAssignment)
+	}
+	expectedComplexAssignment := "this->annoyingness_level = this->annoyingness_level + 1;"
+	if !strings.Contains(result, expectedComplexAssignment) {
+		t.Errorf("Expected complex assignment with pointer syntax '%s' not found in generated code", expectedComplexAssignment)
+	}
+	expectedReturn := "return this->name;"
+	if !strings.Contains(result, expectedReturn) {
+		t.Errorf("Expected return with pointer syntax '%s' not found in generated code", expectedReturn)
+	}
+	invalidPatterns := []string{
+		"this.is_annoying",
+		"this.singing_ability",
+		"this.is_singing",
+		"this.annoyingness_level",
+		"this.name",
+	}
+	for _, pattern := range invalidPatterns {
+		if strings.Contains(result, pattern) {
+			t.Errorf("Found invalid dot syntax '%s' in generated code, should be converted to pointer syntax", pattern)
+		}
+	}
+}

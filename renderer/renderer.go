@@ -554,6 +554,7 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				value = "this->" + value[5:]
 			} else {
 				value = lexer.ResolveSymbol(value, currentModule)
+				value = convertThisReferences(value)
 			}
 			fmt.Fprintf(b, "%sreturn %s;\n", indent, value)
 		case stmt.Throw != nil:
@@ -573,6 +574,7 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			fmt.Fprintf(b, "%s}\n", indent)
 		case stmt.While != nil:
 			condition := lexer.ResolveSymbol(stmt.While.Condition, currentModule)
+			condition = convertThisReferences(condition)
 			fmt.Fprintf(b, "%swhile (%s) {\n", indent, condition)
 			renderStatements(b, stmt.While.Body, indent+"    ", className, program)
 			fmt.Fprintf(b, "%s}\n", indent)
@@ -585,11 +587,13 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			fmt.Fprintf(b, "%s}\n", indent)
 		case stmt.If != nil:
 			condition := lexer.ResolveSymbol(stmt.If.Condition, currentModule)
+			condition = convertThisReferences(condition)
 			fmt.Fprintf(b, "%sif (%s) {\n", indent, condition)
 			renderStatements(b, stmt.If.Body, indent+"    ", className, program)
 			fmt.Fprintf(b, "%s}\n", indent)
 			for _, elif := range stmt.If.ElseIfs {
 				elifCondition := lexer.ResolveSymbol(elif.Condition, currentModule)
+				elifCondition = convertThisReferences(elifCondition)
 				fmt.Fprintf(b, "%selse if (%s) {\n", indent, elifCondition)
 				renderStatements(b, elif.Body, indent+"    ", className, program)
 				fmt.Fprintf(b, "%s}\n", indent)
@@ -635,6 +639,7 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			varName := lexer.ResolveSymbol(stmt.VarAssign.Name, currentModule)
 			value := stmt.VarAssign.Value
 			value = fixFloatCastGranular(value)
+			value = convertThisReferences(value)
 			if strings.HasPrefix(varName, "this.") {
 				varName = "this->" + varName[5:]
 			}
@@ -984,6 +989,10 @@ func reconstructMethodCalls(variables []string) []string {
 	}
 
 	return result
+}
+
+func convertThisReferences(expr string) string {
+	return strings.ReplaceAll(expr, "this.", "this->")
 }
 
 func resolveImportedSymbols(value string, imports []*lexer.ImportStmt) string {
