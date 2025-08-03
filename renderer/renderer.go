@@ -678,7 +678,9 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			fmt.Fprintf(b, "%scontinue;\n", indent)
 		case stmt.Return != nil:
 			value := stmt.Return.Value
-			if strings.HasPrefix(value, "this.") {
+			if isMethodCall(value) {
+				value = convertMethodCallToC(value)
+			} else if strings.HasPrefix(value, "this.") {
 				value = "this->" + value[5:]
 			} else {
 				value = lexer.ResolveSymbol(value, currentModule)
@@ -1482,12 +1484,15 @@ func convertMethodCallToC(expr string) string {
 }
 
 func convertSingleMethodCall(expr string) string {
-	if !strings.HasPrefix(expr, "this.") {
+	if !strings.Contains(expr, "this.") {
 		return expr
 	}
-
-	dotIndex := strings.Index(expr, ".")
-	if dotIndex == -1 {
+	startIdx := strings.Index(expr, "this.")
+	if startIdx == -1 {
+		return expr
+	}
+	dotIndex := startIdx + 4 // length of "this" is 4
+	if dotIndex >= len(expr) || expr[dotIndex] != '.' {
 		return expr
 	}
 	parenIndex := strings.Index(expr[dotIndex:], "(")
@@ -1495,18 +1500,29 @@ func convertSingleMethodCall(expr string) string {
 		fieldName := expr[dotIndex+1:]
 		return fmt.Sprintf("this->%s", fieldName)
 	}
+
 	parenIndex += dotIndex
 	methodName := expr[dotIndex+1 : parenIndex]
-	argsWithParens := expr[parenIndex:]
 	className := currentClassName
 	if className == "" {
 		return expr
 	}
+	closeParen := findMatchingParen(expr, parenIndex)
+	if closeParen == -1 {
+		return expr
+	}
 	args := ""
-	if len(argsWithParens) > 2 {
-		closeParen := findMatchingParen(expr, parenIndex)
-		if closeParen > parenIndex+1 {
-			args = expr[parenIndex+1 : closeParen]
+	if closeParen > parenIndex+1 {
+		args = expr[parenIndex+1 : closeParen]
+	}
+
+	if args != "" {
+		if strings.Contains(args, "this.") {
+			nestedProcessed := convertMethodCallToC(args)
+			if nestedProcessed != args {
+				expr = expr[:parenIndex+1] + nestedProcessed + expr[closeParen:]
+				return convertSingleMethodCall(expr)
+			}
 		}
 	}
 	if args == "" {

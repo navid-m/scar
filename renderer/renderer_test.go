@@ -1267,6 +1267,53 @@ print "Counter: {}, Active: {}, Temp: {}, Status: {}", counter, is_active, tempe
 	}
 }
 
+func TestRecursiveMethodCall(t *testing.T) {
+	program := &lexer.Program{
+		Statements: []*lexer.Statement{
+			{
+				ClassDecl: &lexer.ClassDeclStmt{
+					Name: "FactorialCalculator",
+					Methods: []*lexer.MethodDeclStmt{
+						{
+							Name: "factorial_recursive",
+							Parameters: []*lexer.MethodParameter{
+								{Name: "n", Type: "int"},
+							},
+							ReturnType: "int",
+							Body: []*lexer.Statement{
+								{
+									If: &lexer.IfStmt{
+										Condition: "n <= 1",
+										Body: []*lexer.Statement{
+											{
+												Return: &lexer.ReturnStmt{
+													Value: "1",
+												},
+											},
+										},
+									},
+								},
+								{
+									Return: &lexer.ReturnStmt{
+										Value: "n * this.factorial_recursive(n - 1)",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	cCode := RenderC(program, "")
+	expected := "FactorialCalculator_factorial_recursive(this, n - 1)"
+
+	if !strings.Contains(cCode, expected) {
+		t.Errorf("Expected C code to contain recursive call '%s', but it didn't. Got:\n%s", expected, cCode)
+	}
+}
+
 func TestPutStatement(t *testing.T) {
 	program := &lexer.Program{
 		Statements: []*lexer.Statement{

@@ -1,0 +1,20 @@
+pub class FactorialCalculator:
+    fn factorial_recursive(int n) -> int:
+        if n <= 1:
+            return 1
+        return n * this.factorial_recursive(n - 1)
+
+    fn factorial_iterative(int n) -> int:
+        int result = 1
+        for i = 2 to n:
+            result = result * i
+        return result
+
+    fn run_demo() -> void:
+        for i = 0 to 5:
+            int rec = this.factorial_recursive(i)
+            int itr = this.factorial_iterative(i)
+            print "n=%d: recursive=%d, iterative=%d" | i, rec, itr
+
+var f = new FactorialCalculator()
+f.run_demo()
