@@ -579,6 +579,17 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 		if method.ReturnType != "" && method.ReturnType != "void" {
 			returnType = mapTypeToCType(method.ReturnType)
 		}
+		prototype := generateMethodPrototype(className, method.Name, returnType, method.Parameters)
+		b.WriteString(prototype)
+		b.WriteString(";\n")
+	}
+	b.WriteString("\n")
+
+	for _, method := range classDecl.Methods {
+		returnType := "void"
+		if method.ReturnType != "" && method.ReturnType != "void" {
+			returnType = mapTypeToCType(method.ReturnType)
+		}
 
 		fmt.Fprintf(b, "%s %s_%s(%s* this", returnType, className, method.Name, className)
 
@@ -744,13 +755,10 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			renderStatements(b, stmt.For.Body, indent+"    ", className, program)
 			fmt.Fprintf(b, "%s}\n", indent)
 		case stmt.If != nil:
-			// Handle the main if condition
 			condition := stmt.If.Condition
 			if isMethodCall(condition) {
-				// If it's a method call, convert it directly without ResolveSymbol
 				condition = convertMethodCallToC(condition)
 			} else {
-				// Otherwise, resolve symbols and references as usual
 				condition = lexer.ResolveSymbol(condition, currentModule)
 				condition = convertThisReferencesGranular(condition)
 			}
@@ -759,7 +767,6 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			renderStatements(b, stmt.If.Body, indent+"    ", className, program)
 			fmt.Fprintf(b, "%s}\n", indent)
 
-			// Handle else if conditions
 			for _, elif := range stmt.If.ElseIfs {
 				elifCondition := elif.Condition
 				if isMethodCall(elifCondition) {
@@ -774,7 +781,6 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				fmt.Fprintf(b, "%s}\n", indent)
 			}
 
-			// Handle else block
 			if stmt.If.Else != nil {
 				fmt.Fprintf(b, "%selse {\n", indent)
 				renderStatements(b, stmt.If.Else.Body, indent+"    ", className, program)
@@ -1446,7 +1452,7 @@ func isMethodCall(expr string) bool {
 	return strings.Contains(expr, ")")
 }
 
-// findMatchingParen finds the position of the matching closing parenthesis
+// Finds the position of the matching closing parenthesis
 func findMatchingParen(s string, openPos int) int {
 	if openPos < 0 || openPos >= len(s) || s[openPos] != '(' {
 		return -1
@@ -1646,7 +1652,26 @@ func isValidIdentifier(s string) bool {
 	return true
 }
 
-// generateFunctionPrototype generates a C function prototype for a given function declaration
+// Generates a C function prototype for a class method
+func generateMethodPrototype(className, methodName, returnType string, parameters []*lexer.MethodParameter) string {
+	cReturnType := "void"
+	if returnType != "" && returnType != "void" {
+		cReturnType = mapTypeToCType(returnType)
+	}
+	paramList := []string{fmt.Sprintf("%s* this", className)}
+	for _, param := range parameters {
+		paramType := mapTypeToCType(param.Type)
+		if _, isPrimitive := primitiveTypes[param.Type]; !isPrimitive && param.Type != "string" {
+			paramType = paramType + "*"
+		} else if param.Type == "string" {
+			paramType = "char*"
+		}
+		paramList = append(paramList, fmt.Sprintf("%s %s", paramType, param.Name))
+	}
+
+	return fmt.Sprintf("%s %s_%s(%s)", cReturnType, className, methodName, strings.Join(paramList, ", "))
+}
+
 func generateFunctionPrototype(funcDecl *lexer.TopLevelFuncDeclStmt) string {
 	returnType := "void"
 	if funcDecl.ReturnType != "" && funcDecl.ReturnType != "void" {
@@ -1669,8 +1694,6 @@ func generateFunctionPrototype(funcDecl *lexer.TopLevelFuncDeclStmt) string {
 		}
 		paramList = append(paramList, fmt.Sprintf("%s %s", paramType, param.Name))
 	}
-
-	// Special case for main function
 	if funcDecl.Name == "main" && len(funcDecl.Parameters) == 0 {
 		return "int main(int argc, char** argv)"
 	}

@@ -11,14 +11,14 @@ import (
 	"strings"
 )
 
-// functionNode represents a function and its dependencies in the dependency graph
+// Represents a function and its dependencies in the dependency graph
 type functionNode struct {
 	name         string
 	dependencies map[string]bool
 	statement    *Statement
 }
 
-// processFunctionDependencies analyzes a function body and extracts called function names
+// Analyzes a function body and extracts called function names
 func processFunctionDependencies(body []*Statement) map[string]bool {
 	deps := make(map[string]bool)
 
@@ -41,19 +41,14 @@ func processFunctionDependencies(body []*Statement) map[string]bool {
 			}
 
 		case stmt.If != nil:
-			// Process main if body
 			for _, s := range stmt.If.Body {
 				processStmt(s)
 			}
-
-			// Process elif branches
 			for _, elif := range stmt.If.ElseIfs {
 				for _, s := range elif.Body {
 					processStmt(s)
 				}
 			}
-
-			// Process else branch if it exists
 			if stmt.If.Else != nil {
 				for _, s := range stmt.If.Else.Body {
 					processStmt(s)
@@ -76,11 +71,9 @@ func processFunctionDependencies(body []*Statement) map[string]bool {
 			}
 
 		case stmt.TryCatch != nil:
-			// Process try block
 			for _, s := range stmt.TryCatch.TryBody {
 				processStmt(s)
 			}
-			// Process catch block
 			for _, s := range stmt.TryCatch.CatchBody {
 				processStmt(s)
 			}
@@ -105,17 +98,15 @@ func processFunctionDependencies(body []*Statement) map[string]bool {
 		processStmt(stmt)
 	}
 
-	// Remove self-references
 	delete(deps, "")
 
 	return deps
 }
 
-// buildDependencyGraph builds a dependency graph of all functions in the program
+// Builds a dependency graph of all functions in the program
 func buildDependencyGraph(statements []*Statement) (map[string]*functionNode, error) {
 	graph := make(map[string]*functionNode)
 
-	// First pass: collect all function declarations
 	for _, stmt := range statements {
 		if stmt.TopLevelFuncDecl != nil {
 			name := stmt.TopLevelFuncDecl.Name
@@ -140,7 +131,6 @@ func buildDependencyGraph(statements []*Statement) (map[string]*functionNode, er
 		}
 	}
 
-	// Second pass: analyze dependencies
 	for name, node := range graph {
 		var body []*Statement
 		if node.statement.TopLevelFuncDecl != nil {
@@ -150,7 +140,6 @@ func buildDependencyGraph(statements []*Statement) (map[string]*functionNode, er
 		}
 
 		for dep := range processFunctionDependencies(body) {
-			// Only track dependencies on other functions we know about
 			if _, exists := graph[dep]; exists && dep != name {
 				node.dependencies[dep] = true
 			}
@@ -160,7 +149,7 @@ func buildDependencyGraph(statements []*Statement) (map[string]*functionNode, er
 	return graph, nil
 }
 
-// topologicalSort performs a topological sort on the function dependency graph
+// Performs a topological sort on the function dependency graph
 func topologicalSort(graph map[string]*functionNode) ([]*Statement, error) {
 	var result []*Statement
 	visited := make(map[string]bool)
@@ -170,7 +159,6 @@ func topologicalSort(graph map[string]*functionNode) ([]*Statement, error) {
 	var visit func(string) error
 	visit = func(name string) error {
 		if temp[name] {
-			// Cycle detected
 			start := 0
 			for i, n := range cycle {
 				if n == name {
@@ -217,9 +205,8 @@ func topologicalSort(graph map[string]*functionNode) ([]*Statement, error) {
 	return result, nil
 }
 
-// HoistFunctions reorders function declarations to satisfy dependencies
+// Reorders function declarations to satisfy dependencies
 func HoistFunctions(statements []*Statement) ([]*Statement, error) {
-	// Separate function declarations from other statements
 	var funcStmts, otherStmts []*Statement
 	for _, stmt := range statements {
 		if stmt.TopLevelFuncDecl != nil || stmt.PubTopLevelFuncDecl != nil {
@@ -228,29 +215,19 @@ func HoistFunctions(statements []*Statement) ([]*Statement, error) {
 			otherStmts = append(otherStmts, stmt)
 		}
 	}
-
-	// If there are no functions or only one function, no need to hoist
 	if len(funcStmts) <= 1 {
 		return statements, nil
 	}
-
-	// Build dependency graph
 	graph, err := buildDependencyGraph(funcStmts)
 	if err != nil {
 		return nil, err
 	}
-
-	// Perform topological sort
 	sortedFuncStmts, err := topologicalSort(graph)
 	if err != nil {
 		return nil, err
 	}
-
-	// Combine non-function statements with sorted function declarations
-	// Put all non-function statements first, then sorted functions
 	var result []*Statement
 	result = append(result, otherStmts...)
 	result = append(result, sortedFuncStmts...)
-
 	return result, nil
 }
