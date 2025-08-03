@@ -1359,6 +1359,64 @@ func TestPutStatement(t *testing.T) {
 	}
 }
 
+func TestMethodCallInExpression(t *testing.T) {
+	program := &lexer.Program{
+		Statements: []*lexer.Statement{
+			{
+				ClassDecl: &lexer.ClassDeclStmt{
+					Name: "TestClass",
+					Methods: []*lexer.MethodDeclStmt{
+						{
+							Name: "get_limit",
+							Parameters: []*lexer.MethodParameter{
+								{Name: "n", Type: "int"},
+							},
+							ReturnType: "int",
+							Body: []*lexer.Statement{
+								{
+									Return: &lexer.ReturnStmt{
+										Value: "n * 2",
+									},
+								},
+							},
+						},
+						{
+							Name: "bar",
+							Parameters: []*lexer.MethodParameter{
+								{Name: "count", Type: "int"},
+							},
+							ReturnType: "void",
+							Body: []*lexer.Statement{
+								{
+									For: &lexer.ForStmt{
+										Var:   "i",
+										Start: "0",
+										End:   "this.get_limit(count)",
+										Body: []*lexer.Statement{
+											{
+												Print: &lexer.PrintStmt{
+													Variables: []string{"i"},
+												},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	cCode := RenderC(program, "")
+	expected := "for (int i = 0; i <= (TestClass_get_limit(this, count)); i++)"
+
+	if !strings.Contains(cCode, expected) {
+		t.Errorf("Expected C code to contain for loop with method call '%s', but it didn't. Got:\n%s", expected, cCode)
+	}
+}
+
 func TestFunctionHoisting(t *testing.T) {
 	// Create a program with functions declared out of order
 	program := &lexer.Program{

@@ -735,18 +735,12 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				start   = lexer.ResolveSymbol(stmt.For.Start, currentModule)
 				end     = stmt.For.End
 			)
-			if strings.HasPrefix(end, "this.") {
-				end = "this->" + end[5:]
-			} else if isMethodCall(end) {
-				end = convertMethodCallToC(end)
-			} else {
-				end = lexer.ResolveSymbol(end, currentModule)
-				end = convertThisReferencesGranular(end)
-			}
+			end = convertThisReferencesGranular(end)
+			end = lexer.ResolveSymbol(end, currentModule)
 
 			varName = strings.TrimPrefix(varName, "int ")
 			endCond := end
-			if strings.ContainsAny(end, "+-*/><=!&|^%") {
+			if strings.ContainsAny(end, "+-*/><=!&|^%(") {
 				endCond = fmt.Sprintf("(%s)", end)
 			}
 
@@ -1306,6 +1300,7 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			varName := lexer.ResolveSymbol(stmt.ParallelFor.Var, currentModule)
 			start := lexer.ResolveSymbol(stmt.ParallelFor.Start, currentModule)
 			end := lexer.ResolveSymbol(stmt.ParallelFor.End, currentModule)
+			end = convertThisReferencesGranular(end)
 			fmt.Fprintf(b, "%s#pragma omp parallel for\n", indent)
 			fmt.Fprintf(b, "%sfor (int %s = %s; %s <= %s; %s++) {\n", indent, varName, start, varName, end, varName)
 			renderStatements(b, stmt.ParallelFor.Body, indent+"    ", className, program)
@@ -1359,28 +1354,31 @@ func convertThisReferencesGranular(expr string) string {
 		return fmt.Sprintf("__STRING_LITERAL_%d__", len(stringLiterals)-1)
 	})
 
-	// Processing the "this" references to ensure proper -> access.
-
-	// This one has a lot of shit going on because we need to handle all the possible cases.
+	if isMethodCall(expr) {
+		expr = convertMethodCallToC(expr)
+	}
 
 	expr = strings.Join(strings.Fields(expr), " ")
-	re := regexp.MustCompile(`(^|\s|\(|\[|,|\+|-|\*|/|%|&|\||\^|!|~|\?|:|=|\{|\}|;|,|\s)this\s*\.\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\(`)
-	expr = re.ReplaceAllString(expr, "${1}this->$2(")
-	re = regexp.MustCompile(`(^|\s|\(|\[|,|\+|-|\*|/|%|&|\||\^|!|~|\?|:|=|\{|\}|;|,|\s)this\s*\.\s*([a-zA-Z_][a-zA-Z0-9_]*)`)
+	re := regexp.MustCompile(`(^|\s|\(|\[|,|\+|-|\*|/|%|&|\||\^|!|~|\?|:|=|\{|\}|;|,|\s)this\s*\.\s*([a-zA-Z_][a-zA-Z0-9]*)`)
 	expr = re.ReplaceAllString(expr, "${1}this->$2")
-	re = regexp.MustCompile(`(this->\s*[a-zA-Z_]\s*[a-zA-Z0-9_]*)\s*\[`)
+	re = regexp.MustCompile(`(this->\s*[a-zA-Z_]\s*[a-zA-Z0-9]*)\s*\[`)
 	expr = re.ReplaceAllString(expr, "$1[")
-	re = regexp.MustCompile(`([a-zA-Z_]\s*[a-zA-Z0-9_]*)\s*\.\s*([a-zA-Z_]\s*[a-zA-Z0-9_]*)`)
+	re = regexp.MustCompile(`([a-zA-Z_]\s*[a-zA-Z0-9]*)\s*\.\s*([a-zA-Z_]\s*[a-zA-Z0-9]*)`)
 	expr = re.ReplaceAllString(expr, "$1->$2")
 	expr = strings.ReplaceAll(expr, "->->", "->")
 	expr = strings.ReplaceAll(expr, "-> ", "->")
 	expr = strings.ReplaceAll(expr, " ->", "->")
 	expr = strings.ReplaceAll(expr, "this ->", "this->")
-	re = regexp.MustCompile(`this\.([a-zA-Z_][a-zA-Z0-9_]*)`)
+	re = regexp.MustCompile(`this\.([a-zA-Z_][a-zA-Z0-9]*)`)
 	expr = re.ReplaceAllString(expr, "this->$1")
 	re = regexp.MustCompile(`([a-zA-Z_][a-zA-Z0-9]*)\.([a-zA-Z_][a-zA-Z0-9]*)`)
 	expr = re.ReplaceAllString(expr, "$1->$2")
 	expr = strings.ReplaceAll(expr, "this.", "this->")
+
+	// Handle any remaining method calls that might have been part of a larger expression
+	if isMethodCall(expr) {
+		expr = convertMethodCallToC(expr)
+	}
 
 	for i, lit := range stringLiterals {
 		expr = strings.Replace(expr, fmt.Sprintf("__STRING_LITERAL_%d__", i), lit, 1)
