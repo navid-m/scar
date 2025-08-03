@@ -363,7 +363,7 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 
 	case "break":
 		return &Statement{Break: &BreakStmt{Break: "break"}}, lineNum + 1, nil
-		
+
 	case "continue":
 		return &Statement{Continue: &ContinueStmt{Continue: "continue"}}, lineNum + 1, nil
 
@@ -518,6 +518,58 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 
 		return &Statement{If: &IfStmt{Condition: condition, Body: body, ElseIfs: elseIfs, Else: elseStmt}}, nextLine, nil
 
+	case "put":
+		if len(parts) < 2 {
+			return nil, lineNum + 1, fmt.Errorf("put statement requires a string at line %d", lineNum+1)
+		}
+
+		if strings.Contains(line, "|") {
+			var (
+				pipeIndex  = strings.Index(line, "|")
+				formatPart = strings.TrimSpace(line[3:pipeIndex])
+				varPart    = strings.TrimSpace(line[pipeIndex+1:])
+			)
+			if strings.HasPrefix(formatPart, "\"") && strings.HasSuffix(formatPart, "\"") {
+				formatPart = formatPart[1 : len(formatPart)-1]
+			}
+
+			var variables []string
+			if varPart != "" {
+				varList := splitRespectingParens(varPart)
+				for _, v := range varList {
+					variables = append(variables, strings.TrimSpace(v))
+				}
+			}
+
+			return &Statement{Put: &PutStmt{Format: formatPart, Variables: variables}}, lineNum + 1, nil
+		} else if strings.Contains(line, ",") && strings.Contains(line, "\"") {
+			quoteStart := strings.Index(line, "\"")
+			quoteEnd := strings.LastIndex(line, "\"")
+			if quoteStart != -1 && quoteEnd != -1 && quoteEnd > quoteStart {
+				afterQuote := strings.TrimSpace(line[quoteEnd+1:])
+				if strings.HasPrefix(afterQuote, ",") {
+					formatPart := strings.TrimSpace(line[quoteStart+1 : quoteEnd])
+					varPart := strings.TrimSpace(line[quoteEnd+1:])
+
+					var variables []string
+					if varPart != "" && strings.HasPrefix(varPart, ",") {
+						varPart = strings.TrimSpace(varPart[1:])
+						varList := splitRespectingParens(varPart)
+						for _, v := range varList {
+							variables = append(variables, strings.TrimSpace(v))
+						}
+					}
+
+					return &Statement{Put: &PutStmt{Format: formatPart, Variables: variables}}, lineNum + 1, nil
+				}
+			}
+		}
+
+		str := strings.TrimSpace(line[3:])
+		if strings.HasPrefix(str, "\"") && strings.HasSuffix(str, "\"") {
+			str = str[1 : len(str)-1]
+		}
+		return &Statement{Put: &PutStmt{Put: str}}, lineNum + 1, nil
 	case "try":
 		if !strings.HasSuffix(line, ":") {
 			return nil, lineNum + 1, fmt.Errorf("try statement must end with ':' at line %d", lineNum+1)

@@ -1266,3 +1266,48 @@ print "Counter: {}, Active: {}, Temp: {}, Status: {}", counter, is_active, tempe
 		t.Errorf("Expected global variable condition '%s' not found", expectedCondition)
 	}
 }
+
+func TestPutStatement(t *testing.T) {
+	program := &lexer.Program{
+		Statements: []*lexer.Statement{
+			{
+				Put: &lexer.PutStmt{
+					Put: "Hello world",
+				},
+			},
+			{
+				Put: &lexer.PutStmt{
+					Format:    "Value: %d",
+					Variables: []string{"x"},
+				},
+			},
+			{
+				Put: &lexer.PutStmt{
+					Format:    "Name: %s, Age: %d",
+					Variables: []string{"name", "age"},
+				},
+			},
+		},
+	}
+
+	code := RenderC(program, "./testdata")
+
+	expected1 := `printf("Hello world");`
+	if !strings.Contains(code, expected1) {
+		t.Errorf("Expected simple put statement to be '%s', but got:\n%s", expected1, code)
+	}
+
+	expected2 := `printf("Value: %d", x);`
+	if !strings.Contains(code, expected2) {
+		t.Errorf("Expected formatted put statement to be '%s', but got:\n%s", expected2, code)
+	}
+
+	expected3 := `printf("Name: %s, Age: %d", name, age);`
+	if !strings.Contains(code, expected3) {
+		t.Errorf("Expected multi-variable put statement to be '%s', but got:\n%s", expected3, code)
+	}
+
+	if strings.Contains(code, `printf("Hello world\n");`) {
+		t.Errorf("Put statement should not add newlines, but found newline in output")
+	}
+}

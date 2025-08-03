@@ -35,6 +35,7 @@ type Statement struct {
 	Sleep               *SleepStmt
 	While               *WhileStmt
 	For                 *ForStmt
+	Put                 *PutStmt
 	If                  *IfStmt
 	Break               *BreakStmt
 	Continue            *ContinueStmt
@@ -60,6 +61,12 @@ type Statement struct {
 	MapDecl             *MapDeclStmt
 	ParallelFor         *ParallelForStmt
 	PubTopLevelFuncDecl *PubTopLevelFuncDeclStmt
+}
+
+type PutStmt struct {
+	Put       string
+	Format    string
+	Variables []string
 }
 
 type PubTopLevelFuncDeclStmt struct {

@@ -627,6 +627,27 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 	}
 	for _, stmt := range stmts {
 		switch {
+		case stmt.Put != nil:
+			if stmt.Put.Format != "" && len(stmt.Put.Variables) > 0 {
+				var (
+					variables = reconstructMethodCalls(stmt.Put.Variables)
+					args      = make([]string, len(variables))
+				)
+				for i, v := range variables {
+					if isMethodCall(v) {
+						args[i] = convertMethodCallToC(v)
+					} else {
+						resolvedVar := lexer.ResolveSymbol(v, currentModule)
+						resolvedVar = convertThisReferencesGranular(resolvedVar)
+						args[i] = resolvedVar
+					}
+				}
+				argsStr := strings.Join(args, ", ")
+				escapedFormat := strings.ReplaceAll(stmt.Put.Format, "\"", "\\\"")
+				fmt.Fprintf(b, "%sprintf(\"%s\", %s);\n", indent, escapedFormat, argsStr)
+			} else if stmt.Put.Put != "" {
+				fmt.Fprintf(b, "%sprintf(\"%s\");\n", indent, stmt.Put.Put)
+			}
 		case stmt.Print != nil:
 			if stmt.Print.Format != "" && len(stmt.Print.Variables) > 0 {
 				var (
