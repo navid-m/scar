@@ -1358,3 +1358,81 @@ func TestPutStatement(t *testing.T) {
 		t.Errorf("Put statement should not add newlines, but found newline in output")
 	}
 }
+
+func TestFunctionHoisting(t *testing.T) {
+	// Create a program with functions declared out of order
+	program := &lexer.Program{
+		Imports: []*lexer.ImportStmt{},
+		Statements: []*lexer.Statement{
+			{
+				TopLevelFuncDecl: &lexer.TopLevelFuncDeclStmt{
+					Name:       "main",
+					Parameters: []*lexer.MethodParameter{},
+					ReturnType: "void",
+					Body: []*lexer.Statement{
+						{
+							FunctionCall: &lexer.FunctionCallStmt{
+								Name: "print",
+								Args: []string{"calculate(5)"},
+							},
+						},
+					},
+				},
+			},
+			{
+				TopLevelFuncDecl: &lexer.TopLevelFuncDeclStmt{
+					Name: "calculate",
+					Parameters: []*lexer.MethodParameter{
+						{
+							Type: "int",
+							Name: "x",
+						},
+					},
+					ReturnType: "int",
+					Body: []*lexer.Statement{
+						{
+							Return: &lexer.ReturnStmt{
+								Value: "x * 2",
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	// Generate the C code
+	cCode := RenderC(program, "")
+
+	// Verify the output contains the function prototype before the main function
+	prototypeIndex := strings.Index(cCode, "int calculate(int x);")
+	mainFuncIndex := strings.Index(cCode, "void main()")
+	calculateFuncIndex := strings.Index(cCode, "int calculate(int x) {")
+
+	// The prototype should appear before both function implementations
+	if prototypeIndex == -1 {
+		t.Error("Function prototype not found in generated code")
+	} else if prototypeIndex >= mainFuncIndex || prototypeIndex >= calculateFuncIndex {
+		t.Error("Function prototype not emitted before function implementations")
+	}
+
+	// Both function implementations should be present
+	if mainFuncIndex == -1 {
+		t.Error("main function not found in generated code")
+	}
+
+	if calculateFuncIndex == -1 {
+		t.Error("calculate function not found in generated code")
+	}
+
+	// The function call in main should be correct
+	if !strings.Contains(cCode, "print(calculate(5))") {
+		t.Error("Function call in main is incorrect")
+	}
+
+	// Verify the function prototype is correct
+	expectedPrototype := "int calculate(int x);"
+	if !strings.Contains(cCode, expectedPrototype) {
+		t.Errorf("Expected prototype '%s' not found in generated code", expectedPrototype)
+	}
+}

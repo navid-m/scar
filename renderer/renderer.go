@@ -154,6 +154,16 @@ int _exception = 0;
 		}
 	}
 
+	// Generate function prototypes first
+	for _, funcDecl := range globalFunctions {
+		// Skip main function as it's handled separately
+		if funcDecl.Name == "main" {
+			continue
+		}
+		prototype := generateFunctionPrototype(funcDecl)
+		b.WriteString(fmt.Sprintf("%s;\n", prototype))
+	}
+	b.WriteString("\n")
 	for _, funcDecl := range globalFunctions {
 		returnType := "void"
 		if funcDecl.ReturnType != "" && funcDecl.ReturnType != "void" {
@@ -1634,6 +1644,38 @@ func isValidIdentifier(s string) bool {
 		}
 	}
 	return true
+}
+
+// generateFunctionPrototype generates a C function prototype for a given function declaration
+func generateFunctionPrototype(funcDecl *lexer.TopLevelFuncDeclStmt) string {
+	returnType := "void"
+	if funcDecl.ReturnType != "" && funcDecl.ReturnType != "void" {
+		if funcDecl.ReturnType == "string" {
+			returnType = "void"
+		} else {
+			returnType = mapTypeToCType(funcDecl.ReturnType)
+		}
+	}
+
+	var paramList []string
+	if funcDecl.ReturnType == "string" {
+		paramList = append(paramList, "char* _output_buffer")
+	}
+
+	for _, param := range funcDecl.Parameters {
+		paramType := mapTypeToCType(param.Type)
+		if paramType == "string" {
+			paramType = "char*"
+		}
+		paramList = append(paramList, fmt.Sprintf("%s %s", paramType, param.Name))
+	}
+
+	// Special case for main function
+	if funcDecl.Name == "main" && len(funcDecl.Parameters) == 0 {
+		return "int main(int argc, char** argv)"
+	}
+
+	return fmt.Sprintf("%s %s(%s)", returnType, funcDecl.Name, strings.Join(paramList, ", "))
 }
 
 func mapTypeToCType(mapType string) string {
