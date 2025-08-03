@@ -75,7 +75,6 @@ pub class GameOfLife:
 
         for int i = 0 to ((this.width * this.height) - 1):
             this.grid[i] = this.next_grid[i]
-
         this.current_generation = this.current_generation + 1
 
     fn print_grid() -> void:
