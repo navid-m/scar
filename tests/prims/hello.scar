@@ -1,1 +1,4 @@
 print "Hello, World"
+
+put "Hello, "
+put "World"
