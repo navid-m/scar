@@ -1,0 +1,31 @@
+class RandomWalker:
+    init(int start_x, int start_y, int steps):
+        this.x = start_x
+        this.y = start_y
+        this.steps = steps
+        this.step_count = 0
+
+    fn move() -> void:
+        int direction = rand(0, 3)
+        if direction == 0:
+            this.x = this.x + 1
+            print "Step %d: Moved right to (%d, %d)" | this.step_count, this.x, this.y
+        elif direction == 1:
+            this.x = this.x - 1
+            print "Step %d: Moved left to (%d, %d)" | this.step_count, this.x, this.y
+        elif direction == 2:
+            this.y = this.y + 1
+            print "Step %d: Moved up to (%d, %d)" | this.step_count, this.x, this.y
+        else:
+            this.y = this.y - 1
+            print "Step %d: Moved down to (%d, %d)" | this.step_count, this.x, this.y
+
+    fn walk() -> void:
+        print "Starting random walk at (%d, %d) for %d steps" | this.x, this.y, this.steps
+        for i = 1 to this.steps:
+            this.step_count = i
+            this.move()
+        print "Finished walk at (%d, %d)" | this.x, this.y
+
+var walker = new RandomWalker(0, 0, 20)
+walker.walk()

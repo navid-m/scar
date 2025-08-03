@@ -1,0 +1,29 @@
+class RecursiveMadness:
+    init():
+        this.depth = 0
+
+    fn start(int x) -> void:
+        print "Starting madness with %d" | x
+        this.foo(x)
+
+    fn foo(int level) -> void:
+        int result = level
+        if result > 0:
+            int level = result - 1
+            this.bar(level)
+        else:
+            print "Reached base in foo"
+
+    fn bar(int count) -> void:
+        for i = 0 to this.get_limit(count):
+            int count = i
+            print "bar loop i=%d, count=%d" | i, count
+        this.foo(count - 1)
+
+    fn get_limit(int x) -> int:
+        if x < 0:
+            return 0
+        return x % 4 + 2  # something bounded but dynamic
+
+var insane = new RecursiveMadness()
+insane.start(6)
