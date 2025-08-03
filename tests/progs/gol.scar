@@ -9,8 +9,8 @@ class GameOfLife:
         for y = 0 to (this.height - 1):
             for x = 0 to (this.width - 1):
                 int cell = rand(0, 1)
-                print "%d " | cell
-            print ""
+                put "%d " | cell
+            put "\n"
         print "Generation %d initialized" | this.current_generation
 
     fn count_neighbors(int x, int y) -> int:

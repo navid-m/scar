@@ -34,8 +34,8 @@ pub class GameOfLife:
             for int x = 0 to (this.width - 1):
                 int val = rand(0, 1)
                 this.set_cell(x, y, val)
-                print "%d " | val
-            print ""
+                put "%d " | val
+            put "\n"
         print "Generation %d initialized" | this.current_generation
 
     fn count_neighbors(int x, int y) -> int:
@@ -82,8 +82,8 @@ pub class GameOfLife:
         for int y = 0 to (this.height - 1):
             for int x = 0 to (this.width - 1):
                 int val = this.get_cell(x, y)
-                print "%d " | val
-            print ""
+                put "%d " | val
+            put "\n"
 
     fn run_simulation(int generations) -> void:
         print "Starting Game of Life..."
