@@ -129,7 +129,65 @@ func TestInvalidStatement(t *testing.T) {
 	input := `let x = 10`
 	_, err := ParseWithIndentation(input)
 	if err == nil {
-		t.Error("expected an error for invalid statement, but got nil")
+		t.Error("expected an error for invalid statement, got nil")
+	}
+}
+
+func TestFunctionHoisting(t *testing.T) {
+	input := `
+fn main() -> int:
+    # Call functions before they're defined
+    result1 = add(5, 3)
+    result2 = multiply(4, 6)
+    return subtract(result2, result1)
+
+fn add(int a, int b) -> int:
+    return a + b
+
+fn multiply(int a, int b) -> int:
+    return a * b
+
+fn subtract(int a, int b) -> int:
+    return a - b
+`
+
+	program, err := ParseWithIndentation(input)
+	if err != nil {
+		t.Fatalf("ParseWithIndentation failed: %v", err)
+	}
+
+	// Verify that all functions were parsed
+	var funcNames []string
+	for _, stmt := range program.Statements {
+		if stmt.TopLevelFuncDecl != nil {
+			funcNames = append(funcNames, stmt.TopLevelFuncDecl.Name)
+		}
+	}
+
+	// Check that all expected functions are present
+	expectedFuncs := map[string]bool{
+		"main":     true,
+		"add":      true,
+		"multiply": true,
+		"subtract": true,
+	}
+
+	for _, name := range funcNames {
+		if !expectedFuncs[name] {
+			t.Errorf("unexpected function name: %s", name)
+		}
+		delete(expectedFuncs, name)
+	}
+
+	// Check if any expected functions are missing
+	for name := range expectedFuncs {
+		t.Errorf("missing expected function: %s", name)
+	}
+
+	// The main function should be the first statement after hoisting
+	if len(program.Statements) == 0 || program.Statements[0].TopLevelFuncDecl == nil ||
+		program.Statements[0].TopLevelFuncDecl.Name != "main" {
+		t.Error("expected 'main' function to be the first statement after hoisting")
 	}
 }
 
