@@ -87,7 +87,7 @@ pub class GameOfLife:
             print ""
 
     fn run_simulation(int generations) -> void:
-        print "Starting Game of Life simulation..."
+        print "Starting Game of Life..."
         this.initialize_random()
         for int gen = 1 to generations:
             sleep 1
