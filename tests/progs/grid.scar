@@ -1,19 +1,17 @@
-class GameOfLife:
-    fn init(int width, int height):
+pub class GameOfLife:
+    init(int width, int height):
         this.width = width
         this.height = height
         this.current_generation = 0
         int size = width * height
-
-        list[int] grid = [0] * size
-        list[int] next_grid = [0] * size
-
-        for int i = 0 to (size - 1):
-            grid[i] = 0
-            next_grid[i] = 0
-
-        this.grid = grid
-        this.next_grid = next_grid
+        $raw (
+            this->grid = malloc(sizeof(int) * this->size);
+            this->next_grid = malloc(sizeof(int) * this->size);
+            for (int i = 0; i < this->size; i++) {
+                this->grid[i] = 0;
+                this->next_grid[i] = 0;
+            }
+        )
 
     fn index(int x, int y) -> int:
         return y * this.width + x
@@ -75,7 +73,6 @@ class GameOfLife:
                     else:
                         this.set_next_cell(x, y, 0)
 
-        # Copy next_grid back to grid
         for int i = 0 to ((this.width * this.height) - 1):
             this.grid[i] = this.next_grid[i]
 
@@ -98,6 +95,5 @@ class GameOfLife:
             this.print_grid()
             print "--- End of generation %d ---" | gen
 
-# Main
 GameOfLife game = new GameOfLife(8, 6)
 game.run_simulation(5)
