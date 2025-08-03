@@ -331,19 +331,23 @@ func parseClassStatement(lines []string, lineNum, currentIndent int) (*Statement
 						for paramStr := range paramList {
 							paramStr = strings.TrimSpace(paramStr)
 							paramParts := strings.Fields(paramStr)
-							if len(paramParts) == 2 {
-								param := &MethodParameter{
-									Type: paramParts[0],
-									Name: paramParts[1],
-								}
-								parameters = append(parameters, param)
+
+							param := &MethodParameter{}
+
+							// Handle ref parameters
+							if len(paramParts) >= 3 && paramParts[0] == "ref" {
+								param.IsRef = true
+								param.Type = paramParts[1]
+								param.Name = paramParts[2]
+							} else if len(paramParts) == 2 {
+								param.Type = paramParts[0]
+								param.Name = paramParts[1]
 							} else if len(paramParts) == 1 {
-								param := &MethodParameter{
-									Type: "int",
-									Name: paramParts[0],
-								}
-								parameters = append(parameters, param)
+								param.Type = "int"
+								param.Name = paramParts[0]
 							}
+
+							parameters = append(parameters, param)
 						}
 					}
 				}

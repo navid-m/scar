@@ -227,9 +227,29 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 		if len(parts) < 4 || parts[2] != "=" {
 			return nil, lineNum + 1, fmt.Errorf("var declaration format error at line %d (expected: var name = value)", lineNum+1)
 		}
+
+		isRef := false
 		varName := parts[1]
 		value := strings.Join(parts[3:], " ")
+		varType := ""
 
+		if parts[1] == "ref" && len(parts) >= 5 {
+			isRef = true
+			varType = parts[2]
+			varName = parts[3]
+			if parts[4] == "=" {
+				value = strings.Join(parts[5:], " ")
+			}
+		}
+
+		if strings.HasPrefix(varName, "this.") && isRef {
+			return &Statement{VarDecl: &VarDeclStmt{
+				Type:  varType,
+				Name:  varName,
+				Value: value,
+				IsRef: true,
+			}}, lineNum + 1, nil
+		}
 		if strings.HasPrefix(value, "new ") {
 			newPart := strings.TrimSpace(value[4:]) // Remove "new "
 			parenStart := strings.Index(newPart, "(")

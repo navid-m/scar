@@ -13,8 +13,9 @@ type MethodInfo struct {
 }
 
 type FieldInfo struct {
-	Name string
-	Type string
+	Name  string
+	Type  string
+	IsRef bool
 }
 
 type ClassInfo struct {

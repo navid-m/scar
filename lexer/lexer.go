@@ -191,6 +191,7 @@ type VarDeclStmt struct {
 	Type  string
 	Name  string
 	Value string
+	IsRef bool
 }
 
 type VarAssignStmt struct {
@@ -220,6 +221,7 @@ type MethodParameter struct {
 	IsList   bool
 	ListType string
 	Name     string
+	IsRef    bool
 }
 
 type MethodDeclStmt struct {
