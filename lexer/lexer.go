@@ -297,15 +297,17 @@ type VarDeclReadStmt struct {
 var LoadedModules = make(map[string]*ModuleInfo)
 
 func ParseWithIndentation(input string) (*Program, error) {
-	lines := strings.Split(input, "\n")
-	statements, err := parseStatements(lines, 0, 0)
+	var (
+		lines           = strings.Split(input, "\n")
+		statements, err = parseStatements(lines, 0, 0)
+	)
 	if err != nil {
 		return nil, err
 	}
-
-	var imports []*ImportStmt
-	var nonImportStatements []*Statement
-
+	var (
+		imports             []*ImportStmt
+		nonImportStatements []*Statement
+	)
 	for _, stmt := range statements {
 		if stmt.Import != nil {
 			imports = append(imports, stmt.Import)
