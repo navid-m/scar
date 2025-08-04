@@ -62,6 +62,7 @@ type Statement struct {
 	ParallelFor         *ParallelForStmt
 	PubTopLevelFuncDecl *PubTopLevelFuncDeclStmt
 	PutMap              *PutMapStmt
+	GetMap              *GetMapStmt
 }
 
 type PutStmt struct {
@@ -74,6 +75,11 @@ type PutMapStmt struct {
 	MapName string
 	Key     string
 	Value   string
+}
+
+type GetMapStmt struct {
+	MapName string
+	Key     string
 }
 
 type PubTopLevelFuncDeclStmt struct {

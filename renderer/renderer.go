@@ -1389,24 +1389,51 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 					}
 				}
 			}
+		case stmt.GetMap != nil:
+			mapName := lexer.ResolveSymbol(stmt.GetMap.MapName, currentModule)
+			key := stmt.GetMap.Key
+
+			// Find the map to determine key type
+			var keyType string
+			for _, s := range program.Statements {
+				if s.MapDecl != nil && s.MapDecl.Name == stmt.GetMap.MapName {
+					keyType = s.MapDecl.KeyType
+					break
+				}
+			}
+
+			// Generate code to look up the key in the map
+			if keyType == "string" {
+				// For string keys, generate a linear search with strcmp
+				if strings.HasPrefix(key, "\"") && strings.HasSuffix(key, "\"") {
+					// String literal key
+					keyStr := key[1:len(key)-1] // Remove quotes
+					keyStr = strings.ReplaceAll(keyStr, "\"", "\\\"") // Escape quotes
+					fmt.Fprintf(b, "%s/* Found by key: %s */\n", indent, keyStr)
+					fmt.Fprintf(b, "%sfor (int i = 0; i < %s_size; i++) {\n", indent, mapName)
+					fmt.Fprintf(b, "%s    if (strcmp(%s_keys[i], \"%s\") == 0) {\n", indent, mapName, keyStr)
+					fmt.Fprintf(b, "%s        %s_values[i]\n", indent, mapName)
+					fmt.Fprintf(b, "%s    }\n", indent)
+					fmt.Fprintf(b, "%s}\n", indent)
+				} else {
+					// Variable key
+					resolvedKey := lexer.ResolveSymbol(key, currentModule)
+					fmt.Fprintf(b, "%s/* Looking up key: %s */\n", indent, resolvedKey)
+					fmt.Fprintf(b, "%sfor (int i = 0; i < %s_size; i++) {\n", indent, mapName)
+					fmt.Fprintf(b, "%s    if (strcmp(%s_keys[i], %s) == 0) {\n", indent, mapName, resolvedKey)
+					fmt.Fprintf(b, "%s        %s_values[i]\n", indent, mapName)
+					fmt.Fprintf(b, "%s    }\n", indent)
+					fmt.Fprintf(b, "%s}\n", indent)
+				}
+			} else {
+				// For non-string keys, generate direct array access
+				fmt.Fprintf(b, "%s%s_values[%s]\n", indent, mapName, key)
+			}
+
 		case stmt.PutMap != nil:
 			mapName := lexer.ResolveSymbol(stmt.PutMap.MapName, currentModule)
 			key := stmt.PutMap.Key
 			value := stmt.PutMap.Value
-
-			// Remove quotes if they exist for processing, but keep track of original format
-			keyForComparison := key
-			valueForAssignment := value
-
-			if strings.HasPrefix(key, "\"") && strings.HasSuffix(key, "\"") {
-				keyForComparison = key[1 : len(key)-1]
-			}
-			if strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"") {
-				valueForAssignment = value
-			} else {
-				// If value doesn't have quotes and we need string type, add them
-				valueForAssignment = value
-			}
 
 			// Find the map to determine key/value types
 			var keyType, valueType string
@@ -1423,42 +1450,79 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			fmt.Fprintf(b, "%s    int found = 0;\n", indent)
 			fmt.Fprintf(b, "%s    for (int i = 0; i < %s_size; i++) {\n", indent, mapName)
 
+			// Handle key comparison based on type
 			if keyType == "string" {
-				fmt.Fprintf(b, "%s        if (strcmp(%s_keys[i], \"%s\") == 0) {\n", indent, mapName, keyForComparison)
-				if valueType == "string" {
-					fmt.Fprintf(b, "%s            strcpy(%s_values[i], %s);\n", indent, mapName, valueForAssignment)
+				// For string keys, use strcmp
+				if strings.HasPrefix(key, "\"") && strings.HasSuffix(key, "\"") {
+					// String literal key
+					keyStr := key[1 : len(key)-1] // Remove quotes
+					keyStr = strings.ReplaceAll(keyStr, "\"", "\\\"") // Escape quotes in the string
+					fmt.Fprintf(b, "%s        if (strcmp(%s_keys[i], \"%s\") == 0) {\n", indent, mapName, keyStr)
 				} else {
-					fmt.Fprintf(b, "%s            %s_values[i] = %s;\n", indent, mapName, valueForAssignment)
+					// Variable key
+					resolvedKey := lexer.ResolveSymbol(key, currentModule)
+					fmt.Fprintf(b, "%s        if (strcmp(%s_keys[i], %s) == 0) {\n", indent, mapName, resolvedKey)
 				}
 			} else {
+				// For non-string keys, use direct comparison
 				fmt.Fprintf(b, "%s        if (%s_keys[i] == %s) {\n", indent, mapName, key)
-				if valueType == "string" {
-					fmt.Fprintf(b, "%s            strcpy(%s_values[i], %s);\n", indent, mapName, valueForAssignment)
+			}
+
+			// Handle value assignment based on type
+			if valueType == "string" {
+				if strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"") {
+					// String literal value - copy directly
+					fmt.Fprintf(b, "%s            strcpy(%s_values[i], %s);\n", indent, mapName, value)
 				} else {
-					fmt.Fprintf(b, "%s            %s_values[i] = %s;\n", indent, mapName, valueForAssignment)
+					// Variable value - resolve symbol first
+					resolvedValue := lexer.ResolveSymbol(value, currentModule)
+					fmt.Fprintf(b, "%s            strcpy(%s_values[i], %s);\n", indent, mapName, resolvedValue)
 				}
+			} else {
+				// Non-string value - direct assignment
+				resolvedValue := lexer.ResolveSymbol(value, currentModule)
+				fmt.Fprintf(b, "%s            %s_values[i] = %s;\n", indent, mapName, resolvedValue)
 			}
 
 			fmt.Fprintf(b, "%s            found = 1;\n", indent)
 			fmt.Fprintf(b, "%s            break;\n", indent)
 			fmt.Fprintf(b, "%s        }\n", indent)
 			fmt.Fprintf(b, "%s    }\n", indent)
+
+			// Add new key-value pair if not found and there's space
 			fmt.Fprintf(b, "%s    if (!found && %s_size < 100) {\n", indent, mapName)
 
+			// Handle key assignment based on type
 			if keyType == "string" {
-				fmt.Fprintf(b, "%s        strcpy(%s_keys[%s_size], \"%s\");\n", indent, mapName, mapName, keyForComparison)
-				if valueType == "string" {
-					fmt.Fprintf(b, "%s        strcpy(%s_values[%s_size], %s);\n", indent, mapName, mapName, valueForAssignment)
+				if strings.HasPrefix(key, "\"") && strings.HasSuffix(key, "\"") {
+					// String literal key - copy directly
+					keyStr := key[1 : len(key)-1] // Remove quotes
+					keyStr = strings.ReplaceAll(keyStr, "\"", "\\\"") // Escape quotes in the string
+					fmt.Fprintf(b, "%s        strcpy(%s_keys[%s_size], \"%s\");\n", indent, mapName, mapName, keyStr)
 				} else {
-					fmt.Fprintf(b, "%s        %s_values[%s_size] = %s;\n", indent, mapName, mapName, valueForAssignment)
+					// Variable key - resolve symbol first
+					resolvedKey := lexer.ResolveSymbol(key, currentModule)
+					fmt.Fprintf(b, "%s        strcpy(%s_keys[%s_size], %s);\n", indent, mapName, mapName, resolvedKey)
 				}
 			} else {
+				// Non-string key - direct assignment
 				fmt.Fprintf(b, "%s        %s_keys[%s_size] = %s;\n", indent, mapName, mapName, key)
-				if valueType == "string" {
-					fmt.Fprintf(b, "%s        strcpy(%s_values[%s_size], %s);\n", indent, mapName, mapName, valueForAssignment)
+			}
+
+			// Handle value assignment based on type
+			if valueType == "string" {
+				if strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"") {
+					// String literal value - copy directly
+					fmt.Fprintf(b, "%s        strcpy(%s_values[%s_size], %s);\n", indent, mapName, mapName, value)
 				} else {
-					fmt.Fprintf(b, "%s        %s_values[%s_size] = %s;\n", indent, mapName, mapName, valueForAssignment)
+					// Variable value - resolve symbol first
+					resolvedValue := lexer.ResolveSymbol(value, currentModule)
+					fmt.Fprintf(b, "%s        strcpy(%s_values[%s_size], %s);\n", indent, mapName, mapName, resolvedValue)
 				}
+			} else {
+				// Non-string value - direct assignment
+				resolvedValue := lexer.ResolveSymbol(value, currentModule)
+				fmt.Fprintf(b, "%s        %s_values[%s_size] = %s;\n", indent, mapName, mapName, resolvedValue)
 			}
 
 			fmt.Fprintf(b, "%s        %s_size++;\n", indent, mapName)

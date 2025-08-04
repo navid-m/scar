@@ -207,6 +207,20 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 			Key:     key,
 			Value:   value,
 		}}, lineNum + 1, nil
+	} else if strings.HasPrefix(line, "get!(") && strings.HasSuffix(line, ")") {
+		argsStr := strings.TrimSpace(line[5 : len(line)-1])
+		args := splitRespectingQuotes(argsStr)
+		if len(args) != 2 {
+			return nil, lineNum + 1, fmt.Errorf("get! statement requires exactly 2 arguments at line %d (mapName, key)", lineNum+1)
+		}
+		var (
+			mapName = strings.TrimSpace(args[0])
+			key     = strings.TrimSpace(args[1])
+		)
+		return &Statement{GetMap: &GetMapStmt{
+			MapName: mapName,
+			Key:     key,
+		}}, lineNum + 1, nil
 	}
 	switch parts[0] {
 	case "parallel":
