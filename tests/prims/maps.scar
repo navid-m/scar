@@ -5,5 +5,10 @@ print "This is the second value of the map: %s" | get!(x, 1)
 
 put!(x, 3, "new value")
 put!(y, "new key", "new value")
+put!(y, "new key 2", "some other value value")
 
 print "This is the second value of the map: %s" | get!(y, "new key")
+
+foreach (string z in y.values):
+    print "Value: %s" | z
+

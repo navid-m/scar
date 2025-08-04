@@ -524,6 +524,63 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 
 		return &Statement{While: &WhileStmt{Condition: condition, Body: body}}, nextLine, nil
 
+	case "foreach":
+		if !strings.HasSuffix(line, ":") {
+			return nil, lineNum + 1, fmt.Errorf("foreach statement must end with ':' at line %d", lineNum+1)
+		}
+		content := strings.TrimSpace(line[7 : len(line)-1])
+		if !strings.HasPrefix(content, "(") || !strings.HasSuffix(content, ")") {
+			return nil, lineNum + 1, fmt.Errorf("foreach statement format error at line %d (expected: foreach (type var in collection):)", lineNum+1)
+		}
+
+		content = content[1 : len(content)-1] // Remove parentheses
+		inIndex := strings.Index(content, " in ")
+		if inIndex == -1 {
+			return nil, lineNum + 1, fmt.Errorf("foreach statement missing 'in' keyword at line %d", lineNum+1)
+		}
+
+		varPart := strings.TrimSpace(content[:inIndex])
+		collection := strings.TrimSpace(content[inIndex+4:])
+		varParts := strings.Fields(varPart)
+		if len(varParts) != 2 {
+			return nil, lineNum + 1, fmt.Errorf("foreach statement variable format error at line %d (expected: type varname)", lineNum+1)
+		}
+
+		varType := varParts[0]
+		varName := varParts[1]
+		if !strings.HasSuffix(collection, ".keys") && !strings.HasSuffix(collection, ".values") {
+			return nil, lineNum + 1, fmt.Errorf("foreach statement collection must be 'mapname.keys' or 'mapname.values' at line %d", lineNum+1)
+		}
+		expectedBodyIndent := currentIndent + 4
+		if currentIndent == 0 {
+			bodyStartLine := lineNum + 1
+			for bodyStartLine < len(lines) {
+				bodyLine := lines[bodyStartLine]
+				if strings.TrimSpace(bodyLine) != "" && !strings.HasPrefix(strings.TrimSpace(bodyLine), "#") {
+					expectedBodyIndent = getIndentation(bodyLine)
+					break
+				}
+				bodyStartLine++
+			}
+			if expectedBodyIndent <= currentIndent {
+				expectedBodyIndent = currentIndent + 4
+			}
+		}
+
+		body, err := parseStatements(lines, lineNum+1, expectedBodyIndent)
+		if err != nil {
+			return nil, lineNum + 1, err
+		}
+
+		nextLine := findEndOfBlock(lines, lineNum+1, expectedBodyIndent)
+
+		return &Statement{Foreach: &ForeachStmt{
+			VarType:    varType,
+			VarName:    varName,
+			Collection: collection,
+			Body:       body,
+		}}, nextLine, nil
+
 	case "for":
 		equalsIndex := strings.Index(line, "=")
 		toIndex := strings.Index(line, "to")

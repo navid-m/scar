@@ -63,6 +63,14 @@ type Statement struct {
 	PubTopLevelFuncDecl *PubTopLevelFuncDeclStmt
 	PutMap              *PutMapStmt
 	GetMap              *GetMapStmt
+	Foreach             *ForeachStmt
+}
+
+type ForeachStmt struct {
+	VarType    string
+	VarName    string
+	Collection string
+	Body       []*Statement
 }
 
 type PutStmt struct {
