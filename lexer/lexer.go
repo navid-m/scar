@@ -61,12 +61,19 @@ type Statement struct {
 	MapDecl             *MapDeclStmt
 	ParallelFor         *ParallelForStmt
 	PubTopLevelFuncDecl *PubTopLevelFuncDeclStmt
+	PutMap              *PutMapStmt
 }
 
 type PutStmt struct {
 	Put       string
 	Format    string
 	Variables []string
+}
+
+type PutMapStmt struct {
+	MapName string
+	Key     string
+	Value   string
 }
 
 type PubTopLevelFuncDeclStmt struct {

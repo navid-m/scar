@@ -1344,51 +1344,134 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			}
 		case stmt.MapDecl != nil:
 			mapName := lexer.ResolveSymbol(stmt.MapDecl.Name, currentModule)
-			keyType := mapTypeToCType(stmt.MapDecl.KeyType)
+			keyType := "char" // Always use char for the array type, we'll handle the array dimensions separately
 			valueType := mapTypeToCType(stmt.MapDecl.ValueType)
 			mapSize := len(stmt.MapDecl.Pairs)
 			initialSize := mapSize
 			if initialSize == 0 {
 				initialSize = 10
 			}
+
+			// Declare keys array - always use char[] for string keys, otherwise use the mapped type
 			if stmt.MapDecl.KeyType == "string" {
 				fmt.Fprintf(b, "%s%s %s_keys[%d][256];\n", indent, keyType, mapName, initialSize)
 			} else {
+				keyType = mapTypeToCType(stmt.MapDecl.KeyType)
 				fmt.Fprintf(b, "%s%s %s_keys[%d];\n", indent, keyType, mapName, initialSize)
 			}
 
+			// Declare values array - handle string values specially
 			if stmt.MapDecl.ValueType == "string" {
-				fmt.Fprintf(b, "%s%s %s_values[%d][256];\n", indent, valueType, mapName, initialSize)
+				fmt.Fprintf(b, "%schar %s_values[%d][256];\n", indent, mapName, initialSize)
 			} else {
 				fmt.Fprintf(b, "%s%s %s_values[%d];\n", indent, valueType, mapName, initialSize)
 			}
 
+			// Declare size variable
 			fmt.Fprintf(b, "%sint %s_size = %d;\n", indent, mapName, mapSize)
 
-			if len(stmt.MapDecl.Pairs) > 0 {
+			// Initialize key-value pairs if any
+			if mapSize > 0 {
 				for i, pair := range stmt.MapDecl.Pairs {
 					key := pair.Key
 					value := pair.Value
 
+					// Handle key initialization
 					if stmt.MapDecl.KeyType == "string" {
-						if !strings.HasPrefix(key, "\"") && !strings.HasSuffix(key, "\"") {
-							key = fmt.Sprintf("\"%s\"", key)
-						}
-						fmt.Fprintf(b, "%sstrcpy(%s_keys[%d], %s);\n", indent, mapName, i, key)
+						// Remove any existing quotes to avoid double-quoting
+						key = strings.Trim(key, "\"")
+						fmt.Fprintf(b, "%sstrcpy(%s_keys[%d], \"%s\");\n", indent, mapName, i, key)
 					} else {
+						// For non-string keys, just assign directly
 						fmt.Fprintf(b, "%s%s_keys[%d] = %s;\n", indent, mapName, i, key)
 					}
 
+					// Handle value initialization
 					if stmt.MapDecl.ValueType == "string" {
-						if !strings.HasPrefix(value, "\"") && !strings.HasSuffix(value, "\"") {
-							value = fmt.Sprintf("\"%s\"", value)
-						}
-						fmt.Fprintf(b, "%sstrcpy(%s_values[%d], %s);\n", indent, mapName, i, value)
+						// Remove any existing quotes to avoid double-quoting
+						value = strings.Trim(value, "\"")
+						fmt.Fprintf(b, "%sstrcpy(%s_values[%d], \"%s\");\n", indent, mapName, i, value)
 					} else {
+						// For non-string values, just assign directly
 						fmt.Fprintf(b, "%s%s_values[%d] = %s;\n", indent, mapName, i, value)
 					}
 				}
 			}
+		case stmt.PutMap != nil:
+			mapName := lexer.ResolveSymbol(stmt.PutMap.MapName, currentModule)
+			key := stmt.PutMap.Key
+			value := stmt.PutMap.Value
+
+			// Remove quotes if they exist for processing, but keep track of original format
+			keyForComparison := key
+			valueForAssignment := value
+
+			if strings.HasPrefix(key, "\"") && strings.HasSuffix(key, "\"") {
+				keyForComparison = key[1 : len(key)-1]
+			}
+			if strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"") {
+				valueForAssignment = value
+			} else {
+				// If value doesn't have quotes and we need string type, add them
+				valueForAssignment = value
+			}
+
+			// Find the map to determine key/value types
+			var keyType, valueType string
+			for _, s := range program.Statements {
+				if s.MapDecl != nil && s.MapDecl.Name == stmt.PutMap.MapName {
+					keyType = s.MapDecl.KeyType
+					valueType = s.MapDecl.ValueType
+					break
+				}
+			}
+
+			// Generate code to add the key-value pair
+			fmt.Fprintf(b, "%s{\n", indent)
+			fmt.Fprintf(b, "%s    int found = 0;\n", indent)
+			fmt.Fprintf(b, "%s    for (int i = 0; i < %s_size; i++) {\n", indent, mapName)
+
+			if keyType == "string" {
+				fmt.Fprintf(b, "%s        if (strcmp(%s_keys[i], \"%s\") == 0) {\n", indent, mapName, keyForComparison)
+				if valueType == "string" {
+					fmt.Fprintf(b, "%s            strcpy(%s_values[i], %s);\n", indent, mapName, valueForAssignment)
+				} else {
+					fmt.Fprintf(b, "%s            %s_values[i] = %s;\n", indent, mapName, valueForAssignment)
+				}
+			} else {
+				fmt.Fprintf(b, "%s        if (%s_keys[i] == %s) {\n", indent, mapName, key)
+				if valueType == "string" {
+					fmt.Fprintf(b, "%s            strcpy(%s_values[i], %s);\n", indent, mapName, valueForAssignment)
+				} else {
+					fmt.Fprintf(b, "%s            %s_values[i] = %s;\n", indent, mapName, valueForAssignment)
+				}
+			}
+
+			fmt.Fprintf(b, "%s            found = 1;\n", indent)
+			fmt.Fprintf(b, "%s            break;\n", indent)
+			fmt.Fprintf(b, "%s        }\n", indent)
+			fmt.Fprintf(b, "%s    }\n", indent)
+			fmt.Fprintf(b, "%s    if (!found && %s_size < 100) {\n", indent, mapName)
+
+			if keyType == "string" {
+				fmt.Fprintf(b, "%s        strcpy(%s_keys[%s_size], \"%s\");\n", indent, mapName, mapName, keyForComparison)
+				if valueType == "string" {
+					fmt.Fprintf(b, "%s        strcpy(%s_values[%s_size], %s);\n", indent, mapName, mapName, valueForAssignment)
+				} else {
+					fmt.Fprintf(b, "%s        %s_values[%s_size] = %s;\n", indent, mapName, mapName, valueForAssignment)
+				}
+			} else {
+				fmt.Fprintf(b, "%s        %s_keys[%s_size] = %s;\n", indent, mapName, mapName, key)
+				if valueType == "string" {
+					fmt.Fprintf(b, "%s        strcpy(%s_values[%s_size], %s);\n", indent, mapName, mapName, valueForAssignment)
+				} else {
+					fmt.Fprintf(b, "%s        %s_values[%s_size] = %s;\n", indent, mapName, mapName, valueForAssignment)
+				}
+			}
+
+			fmt.Fprintf(b, "%s        %s_size++;\n", indent, mapName)
+			fmt.Fprintf(b, "%s    }\n", indent)
+			fmt.Fprintf(b, "%s}\n", indent)
 		case stmt.ParallelFor != nil:
 			varName := lexer.ResolveSymbol(stmt.ParallelFor.Var, currentModule)
 			start := lexer.ResolveSymbol(stmt.ParallelFor.Start, currentModule)
@@ -1828,7 +1911,7 @@ func mapTypeToCType(mapType string) string {
 	case "char":
 		return "char"
 	case "string":
-		return "char"
+		return "char*"
 	case "bool":
 		return "bool"
 	default:

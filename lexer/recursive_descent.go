@@ -50,6 +50,39 @@ func parseStatements(lines []string, startLine, expectedIndent int) ([]*Statemen
 	return statements, nil
 }
 
+func splitRespectingQuotes(input string) []string {
+	var result []string
+	var current strings.Builder
+	inQuotes := false
+
+	for i, char := range input {
+		switch char {
+		case '"':
+			if i > 0 && input[i-1] == '\\' {
+				current.WriteRune(char)
+			} else {
+				inQuotes = !inQuotes
+				current.WriteRune(char)
+			}
+		case ',':
+			if !inQuotes {
+				result = append(result, strings.TrimSpace(current.String()))
+				current.Reset()
+			} else {
+				current.WriteRune(char)
+			}
+		default:
+			current.WriteRune(char)
+		}
+	}
+
+	if current.Len() > 0 {
+		result = append(result, strings.TrimSpace(current.String()))
+	}
+
+	return result
+}
+
 func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int, error) {
 	line := strings.TrimSpace(lines[lineNum])
 
@@ -157,6 +190,24 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 	if len(parts) == 0 {
 		return nil, lineNum + 1, fmt.Errorf("empty statement at line %d", lineNum+1)
 	}
+
+	if strings.HasPrefix(line, "put!(") && strings.HasSuffix(line, ")") {
+		argsStr := strings.TrimSpace(line[5 : len(line)-1])
+		args := splitRespectingQuotes(argsStr)
+		if len(args) != 3 {
+			return nil, lineNum + 1, fmt.Errorf("put! statement requires exactly 3 arguments at line %d", lineNum+1)
+		}
+		var (
+			mapName = strings.TrimSpace(args[0])
+			key     = strings.TrimSpace(args[1])
+			value   = strings.TrimSpace(args[2])
+		)
+		return &Statement{PutMap: &PutMapStmt{
+			MapName: mapName,
+			Key:     key,
+			Value:   value,
+		}}, lineNum + 1, nil
+	}
 	switch parts[0] {
 	case "parallel":
 		if len(parts) < 5 || parts[1] != "for" || parts[3] != "=" || !strings.Contains(line, "to") || !strings.HasSuffix(line, ":") {
@@ -203,6 +254,7 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 		nextLine := findEndOfBlock(lines, lineNum+1, expectedBodyIndent)
 
 		return &Statement{ParallelFor: &ParallelForStmt{Var: varName, Start: start, End: end, Body: body}}, nextLine, nil
+
 	case "import":
 		if len(parts) < 2 {
 			return nil, lineNum + 1, fmt.Errorf("import statement requires a module name at line %d", lineNum+1)
