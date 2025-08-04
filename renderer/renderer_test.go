@@ -204,15 +204,16 @@ func TestRenderCWithMap(t *testing.T) {
 			},
 		}
 
-		cCode := RenderC(program, "")
-		expectedKeyDecl := `char myMap_keys[2][256]`
-		expectedValueDecl := `int myMap_values[2]`
-		expectedSize := `int myMap_size = 2`
-		expectedKeyInit1 := `strcpy(myMap_keys[0], "one")`
-		expectedValueInit1 := `myMap_values[0] = 1`
-		expectedKeyInit2 := `strcpy(myMap_keys[1], "two")`
-		expectedValueInit2 := `myMap_values[1] = 2`
-
+		var (
+			cCode              = RenderC(program, "")
+			expectedKeyDecl    = `char myMap_keys[2][256]`
+			expectedValueDecl  = `int myMap_values[2]`
+			expectedSize       = `int myMap_size = 2`
+			expectedKeyInit1   = `strcpy(myMap_keys[0], "one")`
+			expectedValueInit1 = `myMap_values[0] = 1`
+			expectedKeyInit2   = `strcpy(myMap_keys[1], "two")`
+			expectedValueInit2 = `myMap_values[1] = 2`
+		)
 		if !strings.Contains(cCode, expectedKeyDecl) {
 			t.Errorf("Expected C code to contain '%s', but it didn't", expectedKeyDecl)
 		}
