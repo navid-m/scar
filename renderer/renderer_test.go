@@ -187,52 +187,96 @@ func TestRenderCWithList(t *testing.T) {
 }
 
 func TestRenderCWithMap(t *testing.T) {
-	program := &lexer.Program{
-		Statements: []*lexer.Statement{
-			{
-				MapDecl: &lexer.MapDeclStmt{
-					Name:      "myMap",
-					KeyType:   "string",
-					ValueType: "int",
-					Pairs: []lexer.MapPair{
-						{Key: "\"one\"", Value: "1"},
-						{Key: "\"two\"", Value: "2"},
+	t.Run("map with elements", func(t *testing.T) {
+		program := &lexer.Program{
+			Statements: []*lexer.Statement{
+				{
+					MapDecl: &lexer.MapDeclStmt{
+						Name:      "myMap",
+						KeyType:   "string",
+						ValueType: "int",
+						Pairs: []lexer.MapPair{
+							{Key: "\"one\"", Value: "1"},
+							{Key: "\"two\"", Value: "2"},
+						},
 					},
 				},
 			},
-		},
-	}
+		}
 
-	cCode := RenderC(program, "")
-	expectedKeyDecl := `char myMap_keys[2][256]`
-	expectedValueDecl := `int myMap_values[2]`
-	expectedSize := `int myMap_size = 2`
-	expectedKeyInit1 := `strcpy(myMap_keys[0], "one")`
-	expectedValueInit1 := `myMap_values[0] = 1`
-	expectedKeyInit2 := `strcpy(myMap_keys[1], "two")`
-	expectedValueInit2 := `myMap_values[1] = 2`
+		cCode := RenderC(program, "")
+		expectedKeyDecl := `char myMap_keys[2][256]`
+		expectedValueDecl := `int myMap_values[2]`
+		expectedSize := `int myMap_size = 2`
+		expectedKeyInit1 := `strcpy(myMap_keys[0], "one")`
+		expectedValueInit1 := `myMap_values[0] = 1`
+		expectedKeyInit2 := `strcpy(myMap_keys[1], "two")`
+		expectedValueInit2 := `myMap_values[1] = 2`
 
-	if !strings.Contains(cCode, expectedKeyDecl) {
-		t.Errorf("Expected C code to contain '%s', but it didn't", expectedKeyDecl)
-	}
-	if !strings.Contains(cCode, expectedValueDecl) {
-		t.Errorf("Expected C code to contain '%s', but it didn't", expectedValueDecl)
-	}
-	if !strings.Contains(cCode, expectedSize) {
-		t.Errorf("Expected C code to contain '%s', but it didn't", expectedSize)
-	}
-	if !strings.Contains(cCode, expectedKeyInit1) {
-		t.Errorf("Expected C code to contain '%s', but it didn't", expectedKeyInit1)
-	}
-	if !strings.Contains(cCode, expectedValueInit1) {
-		t.Errorf("Expected C code to contain '%s', but it didn't", expectedValueInit1)
-	}
-	if !strings.Contains(cCode, expectedKeyInit2) {
-		t.Errorf("Expected C code to contain '%s', but it didn't", expectedKeyInit2)
-	}
-	if !strings.Contains(cCode, expectedValueInit2) {
-		t.Errorf("Expected C code to contain '%s', but it didn't", expectedValueInit2)
-	}
+		if !strings.Contains(cCode, expectedKeyDecl) {
+			t.Errorf("Expected C code to contain '%s', but it didn't", expectedKeyDecl)
+		}
+		if !strings.Contains(cCode, expectedValueDecl) {
+			t.Errorf("Expected C code to contain '%s', but it didn't", expectedValueDecl)
+		}
+		if !strings.Contains(cCode, expectedSize) {
+			t.Errorf("Expected C code to contain '%s', but it didn't", expectedSize)
+		}
+		if !strings.Contains(cCode, expectedKeyInit1) {
+			t.Errorf("Expected C code to contain '%s', but it didn't", expectedKeyInit1)
+		}
+		if !strings.Contains(cCode, expectedValueInit1) {
+			t.Errorf("Expected C code to contain '%s', but it didn't", expectedValueInit1)
+		}
+		if !strings.Contains(cCode, expectedKeyInit2) {
+			t.Errorf("Expected C code to contain '%s', but it didn't", expectedKeyInit2)
+		}
+		if !strings.Contains(cCode, expectedValueInit2) {
+			t.Errorf("Expected C code to contain '%s', but it didn't", expectedValueInit2)
+		}
+	})
+
+	t.Run("empty map", func(t *testing.T) {
+		program := &lexer.Program{
+			Statements: []*lexer.Statement{
+				{
+					MapDecl: &lexer.MapDeclStmt{
+						Name:      "emptyMap",
+						KeyType:   "string",
+						ValueType: "int",
+						Pairs:     []lexer.MapPair{},
+					},
+				},
+			},
+		}
+
+		cCode := RenderC(program, "")
+		expectedCode := []string{
+			`char emptyMap_keys[10][256];`,
+			`int emptyMap_values[10];`,
+			`int emptyMap_size = 0;`,
+		}
+
+		unexpectedCode := []string{
+			`strcpy(emptyMap_keys[`,
+		}
+
+		for _, code := range expectedCode {
+			if !strings.Contains(cCode, code) {
+				t.Errorf("Expected C code to contain '%s', but it didn't", code)
+			}
+		}
+
+		for _, code := range unexpectedCode {
+			if strings.Contains(cCode, code) {
+				if !strings.Contains(cCode, code+"]") &&
+					!strings.Contains(cCode, code+" ") &&
+					!strings.Contains(cCode, code+";") {
+					t.Errorf("Expected C code to not contain '%s' for empty map, but it did", code)
+				}
+			}
+		}
+	})
 }
 
 func TestRenderCWithObjectConstructor(t *testing.T) {

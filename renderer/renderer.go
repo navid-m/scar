@@ -1347,43 +1347,46 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			keyType := mapTypeToCType(stmt.MapDecl.KeyType)
 			valueType := mapTypeToCType(stmt.MapDecl.ValueType)
 			mapSize := len(stmt.MapDecl.Pairs)
-			if mapSize == 0 {
-				mapSize = 10
+			initialSize := mapSize
+			if initialSize == 0 {
+				initialSize = 10
 			}
 			if stmt.MapDecl.KeyType == "string" {
-				fmt.Fprintf(b, "%s%s %s_keys[%d][256];\n", indent, keyType, mapName, mapSize)
+				fmt.Fprintf(b, "%s%s %s_keys[%d][256];\n", indent, keyType, mapName, initialSize)
 			} else {
-				fmt.Fprintf(b, "%s%s %s_keys[%d];\n", indent, keyType, mapName, mapSize)
+				fmt.Fprintf(b, "%s%s %s_keys[%d];\n", indent, keyType, mapName, initialSize)
 			}
 
 			if stmt.MapDecl.ValueType == "string" {
-				fmt.Fprintf(b, "%s%s %s_values[%d][256];\n", indent, valueType, mapName, mapSize)
+				fmt.Fprintf(b, "%s%s %s_values[%d][256];\n", indent, valueType, mapName, initialSize)
 			} else {
-				fmt.Fprintf(b, "%s%s %s_values[%d];\n", indent, valueType, mapName, mapSize)
+				fmt.Fprintf(b, "%s%s %s_values[%d];\n", indent, valueType, mapName, initialSize)
 			}
 
-			fmt.Fprintf(b, "%sint %s_size = %d;\n", indent, mapName, len(stmt.MapDecl.Pairs))
+			fmt.Fprintf(b, "%sint %s_size = %d;\n", indent, mapName, mapSize)
 
-			for i, pair := range stmt.MapDecl.Pairs {
-				key := pair.Key
-				value := pair.Value
+			if len(stmt.MapDecl.Pairs) > 0 {
+				for i, pair := range stmt.MapDecl.Pairs {
+					key := pair.Key
+					value := pair.Value
 
-				if stmt.MapDecl.KeyType == "string" {
-					if !strings.HasPrefix(key, "\"") && !strings.HasSuffix(key, "\"") {
-						key = fmt.Sprintf("\"%s\"", key)
+					if stmt.MapDecl.KeyType == "string" {
+						if !strings.HasPrefix(key, "\"") && !strings.HasSuffix(key, "\"") {
+							key = fmt.Sprintf("\"%s\"", key)
+						}
+						fmt.Fprintf(b, "%sstrcpy(%s_keys[%d], %s);\n", indent, mapName, i, key)
+					} else {
+						fmt.Fprintf(b, "%s%s_keys[%d] = %s;\n", indent, mapName, i, key)
 					}
-					fmt.Fprintf(b, "%sstrcpy(%s_keys[%d], %s);\n", indent, mapName, i, key)
-				} else {
-					fmt.Fprintf(b, "%s%s_keys[%d] = %s;\n", indent, mapName, i, key)
-				}
 
-				if stmt.MapDecl.ValueType == "string" {
-					if !strings.HasPrefix(value, "\"") && !strings.HasSuffix(value, "\"") {
-						value = fmt.Sprintf("\"%s\"", value)
+					if stmt.MapDecl.ValueType == "string" {
+						if !strings.HasPrefix(value, "\"") && !strings.HasSuffix(value, "\"") {
+							value = fmt.Sprintf("\"%s\"", value)
+						}
+						fmt.Fprintf(b, "%sstrcpy(%s_values[%d], %s);\n", indent, mapName, i, value)
+					} else {
+						fmt.Fprintf(b, "%s%s_values[%d] = %s;\n", indent, mapName, i, value)
 					}
-					fmt.Fprintf(b, "%sstrcpy(%s_values[%d], %s);\n", indent, mapName, i, value)
-				} else {
-					fmt.Fprintf(b, "%s%s_values[%d] = %s;\n", indent, mapName, i, value)
 				}
 			}
 		case stmt.ParallelFor != nil:
