@@ -9,7 +9,7 @@ class LinkedList:
         ref Node this.head = NULL
 
     fn append(int value) -> void:
-        var new_node = new Node(value, false)
+        ref Node new_node = Node_new(value, false)
         new_node.next = NULL
 
         if this.head == NULL:
@@ -17,7 +17,7 @@ class LinkedList:
             print "Inserted %d as head" | value
             return 0
 
-        var current = this.head
+        ref Node current = this.head
         while current.has_next != NULL:
             current = current.next
 
