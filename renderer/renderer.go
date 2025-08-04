@@ -411,27 +411,24 @@ func generateStructDefinition(b *strings.Builder, classInfo *ClassInfo, structNa
 	fmt.Fprintf(b, "#define MAX_STRING_LENGTH 256\n")
 	fmt.Fprintf(b, "typedef struct %s {\n", structName)
 
-	fmt.Fprintf(b, "    int width;\n")
-	fmt.Fprintf(b, "    int height;\n")
-	fmt.Fprintf(b, "    int current_generation;\n")
-	fmt.Fprintf(b, "    int* grid;\n")
-	fmt.Fprintf(b, "    int* next_grid;\n")
-
 	for _, field := range classInfo.Fields {
-		if field.Name == "width" || field.Name == "height" || field.Name == "current_generation" ||
-			field.Name == "grid" || field.Name == "next_grid" {
-			continue
-		}
-
-		cType := mapTypeToCType(field.Type)
-		if field.Type == "string" {
+		if strings.HasPrefix(field.Type, "ref ") {
+			// Handle reference types - they become pointers
+			innerType := strings.TrimPrefix(field.Type, "ref ")
+			switch innerType {
+			case "int", "float", "double", "bool", "char":
+				fmt.Fprintf(b, "    %s* %s;\n", mapTypeToCType(innerType), field.Name)
+			case "string":
+				fmt.Fprintf(b, "    char* %s;\n", field.Name)
+			default:
+				// For custom object references like "ref Node"
+				fmt.Fprintf(b, "    struct %s* %s;\n", innerType, field.Name)
+			}
+		} else if field.Type == "string" {
 			fmt.Fprintf(b, "    char %s[MAX_STRING_LENGTH];\n", field.Name)
 		} else {
-			if strings.HasSuffix(cType, "*") && strings.Contains(field.Name, "*") {
-				fmt.Fprintf(b, "    %s %s;\n", strings.TrimSuffix(cType, "*"), field.Name)
-			} else {
-				fmt.Fprintf(b, "    %s %s;\n", cType, field.Name)
-			}
+			cType := mapTypeToCType(field.Type)
+			fmt.Fprintf(b, "    %s %s;\n", cType, field.Name)
 		}
 	}
 	fmt.Fprintf(b, "} %s;\n", structName)
@@ -467,15 +464,19 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 
 	if classInfo, exists := globalClasses[className]; exists {
 		for _, field := range classInfo.Fields {
-			switch field.Type {
-			case "int":
-				fmt.Fprintf(b, "    this->%s = 0;\n", field.Name)
-			case "float", "double":
-				fmt.Fprintf(b, "    this->%s = 0.0;\n", field.Name)
-			case "string":
-				fmt.Fprintf(b, "    this->%s[0] = '\\0';\n", field.Name)
-			case "bool":
-				fmt.Fprintf(b, "    this->%s = 0;\n", field.Name)
+			if strings.HasPrefix(field.Type, "ref ") {
+				fmt.Fprintf(b, "    this->%s = NULL;\n", field.Name)
+			} else {
+				switch field.Type {
+				case "int":
+					fmt.Fprintf(b, "    this->%s = 0;\n", field.Name)
+				case "float", "double":
+					fmt.Fprintf(b, "    this->%s = 0.0;\n", field.Name)
+				case "string":
+					fmt.Fprintf(b, "    this->%s[0] = '\\0';\n", field.Name)
+				case "bool":
+					fmt.Fprintf(b, "    this->%s = 0;\n", field.Name)
+				}
 			}
 		}
 	}
@@ -507,15 +508,26 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 				}
 
 				fieldName = strings.TrimPrefix(fieldName, "this.")
-				isStringField := stmt.VarDecl.Type == "string"
 
-				fmt.Printf("Debug: VarDecl field %s, value %s, isStringField %v\n", fieldName, value, isStringField)
-
-				if isStringField {
-					if !strings.HasPrefix(value, "\"") && !strings.HasSuffix(value, "\"") && isValidIdentifier(value) {
-						value = fmt.Sprintf("\"%s\"", value)
+				if stmt.VarDecl.IsRef {
+					// Reference fields are initialized as pointers
+					if value == "0" || value == "NULL" {
+						fmt.Fprintf(b, "    this->%s = NULL;\n", fieldName)
+					} else {
+						// For object references, we need to handle assignment differently
+						fmt.Fprintf(b, "    this->%s = %s;\n", fieldName, value)
 					}
-					fmt.Fprintf(b, "    strcpy(this->%s, %s);\n", fieldName, value)
+				} else if stmt.VarDecl.Type == "string" {
+					isStringField := stmt.VarDecl.Type == "string"
+
+					fmt.Printf("Debug: VarDecl field %s, value %s, isStringField %v\n", fieldName, value, isStringField)
+
+					if isStringField {
+						if !strings.HasPrefix(value, "\"") && !strings.HasSuffix(value, "\"") && isValidIdentifier(value) {
+							value = fmt.Sprintf("\"%s\"", value)
+						}
+						fmt.Fprintf(b, "    strcpy(this->%s, %s);\n", fieldName, value)
+					}
 				} else {
 					value = strings.ReplaceAll(value, "this.", "this->")
 					fmt.Fprintf(b, "    this->%s = %s;\n", fieldName, value)
@@ -782,10 +794,36 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			}
 		case stmt.VarDecl != nil:
 			var (
-				varType = mapTypeToCType(stmt.VarDecl.Type)
+				varType = stmt.VarDecl.Type
 				varName = lexer.ResolveSymbol(stmt.VarDecl.Name, currentModule)
 				value   = stmt.VarDecl.Value
 			)
+
+			if stmt.VarDecl.IsRef {
+				// Handle reference declarations
+				if strings.HasPrefix(varName, "this.") {
+					fieldName := varName[5:]
+					if value == "0" || value == "NULL" {
+						fmt.Fprintf(b, "%sthis->%s = NULL;\n", indent, fieldName)
+					} else {
+						fmt.Fprintf(b, "%sthis->%s = %s;\n", indent, fieldName, value)
+					}
+				} else {
+					// Local reference variable
+					innerType := varType
+					if innerType == "int" || innerType == "float" || innerType == "double" || innerType == "bool" || innerType == "char" {
+						fmt.Fprintf(b, "%s%s* %s = ", indent, mapTypeToCType(innerType), varName)
+					} else {
+						fmt.Fprintf(b, "%sstruct %s* %s = ", indent, innerType, varName)
+					}
+
+					if value == "0" || value == "NULL" {
+						fmt.Fprintf(b, "NULL;\n")
+					} else {
+						fmt.Fprintf(b, "%s;\n", value)
+					}
+				}
+			}
 			if isMethodCall(value) {
 				value = convertMethodCallToC(value)
 			} else {

@@ -223,6 +223,33 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 			moduleName := strings.Trim(strings.Join(parts[1:], " "), "\"")
 			return &Statement{Import: &ImportStmt{Module: moduleName}}, lineNum + 1, nil
 		}
+	case "ref":
+		if len(parts) < 5 || parts[3] != "=" {
+			return nil, lineNum + 1, fmt.Errorf("ref declaration format error at line %d (expected: ref type name = value)", lineNum+1)
+		}
+
+		varType := parts[1]
+		varName := parts[2]
+		value := strings.Join(parts[4:], " ")
+
+		// Handle ref declarations for class fields
+		if strings.HasPrefix(varName, "this.") {
+			return &Statement{VarDecl: &VarDeclStmt{
+				Type:  varType,
+				Name:  varName,
+				Value: value,
+				IsRef: true,
+			}}, lineNum + 1, nil
+		}
+
+		// Handle local ref declarations
+		return &Statement{VarDecl: &VarDeclStmt{
+			Type:  varType,
+			Name:  varName,
+			Value: value,
+			IsRef: true,
+		}}, lineNum + 1, nil
+
 	case "var":
 		if len(parts) < 4 || parts[2] != "=" {
 			return nil, lineNum + 1, fmt.Errorf("var declaration format error at line %d (expected: var name = value)", lineNum+1)
