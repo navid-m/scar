@@ -1344,55 +1344,47 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			}
 		case stmt.MapDecl != nil:
 			mapName := lexer.ResolveSymbol(stmt.MapDecl.Name, currentModule)
-			keyType := "char" // Always use char for the array type, we'll handle the array dimensions separately
+			keyType := mapTypeToCType(stmt.MapDecl.KeyType)
 			valueType := mapTypeToCType(stmt.MapDecl.ValueType)
 			mapSize := len(stmt.MapDecl.Pairs)
 			initialSize := mapSize
 			if initialSize == 0 {
 				initialSize = 10
 			}
-
-			// Declare keys array - always use char[] for string keys, otherwise use the mapped type
 			if stmt.MapDecl.KeyType == "string" {
 				fmt.Fprintf(b, "%s%s %s_keys[%d][256];\n", indent, keyType, mapName, initialSize)
 			} else {
-				keyType = mapTypeToCType(stmt.MapDecl.KeyType)
 				fmt.Fprintf(b, "%s%s %s_keys[%d];\n", indent, keyType, mapName, initialSize)
 			}
 
-			// Declare values array - handle string values specially
 			if stmt.MapDecl.ValueType == "string" {
-				fmt.Fprintf(b, "%schar %s_values[%d][256];\n", indent, mapName, initialSize)
+				fmt.Fprintf(b, "%s%s %s_values[%d][256];\n", indent, valueType, mapName, initialSize)
 			} else {
 				fmt.Fprintf(b, "%s%s %s_values[%d];\n", indent, valueType, mapName, initialSize)
 			}
 
-			// Declare size variable
 			fmt.Fprintf(b, "%sint %s_size = %d;\n", indent, mapName, mapSize)
 
-			// Initialize key-value pairs if any
-			if mapSize > 0 {
+			if len(stmt.MapDecl.Pairs) > 0 {
 				for i, pair := range stmt.MapDecl.Pairs {
 					key := pair.Key
 					value := pair.Value
 
-					// Handle key initialization
 					if stmt.MapDecl.KeyType == "string" {
-						// Remove any existing quotes to avoid double-quoting
-						key = strings.Trim(key, "\"")
-						fmt.Fprintf(b, "%sstrcpy(%s_keys[%d], \"%s\");\n", indent, mapName, i, key)
+						if !strings.HasPrefix(key, "\"") && !strings.HasSuffix(key, "\"") {
+							key = fmt.Sprintf("\"%s\"", key)
+						}
+						fmt.Fprintf(b, "%sstrcpy(%s_keys[%d], %s);\n", indent, mapName, i, key)
 					} else {
-						// For non-string keys, just assign directly
 						fmt.Fprintf(b, "%s%s_keys[%d] = %s;\n", indent, mapName, i, key)
 					}
 
-					// Handle value initialization
 					if stmt.MapDecl.ValueType == "string" {
-						// Remove any existing quotes to avoid double-quoting
-						value = strings.Trim(value, "\"")
-						fmt.Fprintf(b, "%sstrcpy(%s_values[%d], \"%s\");\n", indent, mapName, i, value)
+						if !strings.HasPrefix(value, "\"") && !strings.HasSuffix(value, "\"") {
+							value = fmt.Sprintf("\"%s\"", value)
+						}
+						fmt.Fprintf(b, "%sstrcpy(%s_values[%d], %s);\n", indent, mapName, i, value)
 					} else {
-						// For non-string values, just assign directly
 						fmt.Fprintf(b, "%s%s_values[%d] = %s;\n", indent, mapName, i, value)
 					}
 				}
@@ -1911,7 +1903,7 @@ func mapTypeToCType(mapType string) string {
 	case "char":
 		return "char"
 	case "string":
-		return "char*"
+		return "char"
 	case "bool":
 		return "bool"
 	default:
