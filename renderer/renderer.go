@@ -1420,6 +1420,7 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			key := stmt.PutMap.Key
 			value := stmt.PutMap.Value
 
+			// Find the map to determine key/value types
 			var keyType, valueType string
 			for _, s := range program.Statements {
 				if s.MapDecl != nil && s.MapDecl.Name == stmt.PutMap.MapName {
@@ -1429,25 +1430,33 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				}
 			}
 
+			// Generate code to add the key-value pair
 			fmt.Fprintf(b, "%s{\n", indent)
 			fmt.Fprintf(b, "%s    int found = 0;\n", indent)
 			fmt.Fprintf(b, "%s    for (int i = 0; i < %s_size; i++) {\n", indent, mapName)
+
+			// Handle key comparison based on type
 			if keyType == "string" {
+				// For string keys, use strcmp
 				if strings.HasPrefix(key, "\"") && strings.HasSuffix(key, "\"") {
-					keyStr := key[1 : len(key)-1]
-					keyStr = strings.ReplaceAll(keyStr, "\"", "\\\"")
+					// String literal key
+					keyStr := key[1 : len(key)-1]                     // Remove quotes
+					keyStr = strings.ReplaceAll(keyStr, "\"", "\\\"") // Escape quotes in the string
 					fmt.Fprintf(b, "%s        if (strcmp(%s_keys[i], \"%s\") == 0) {\n", indent, mapName, keyStr)
 				} else {
+					// Variable key
 					resolvedKey := lexer.ResolveSymbol(key, currentModule)
 					fmt.Fprintf(b, "%s        if (strcmp(%s_keys[i], %s) == 0) {\n", indent, mapName, resolvedKey)
 				}
 			} else {
-				fmt.Fprintf(b, "%s        if (%s_keys[i] == %s) {\n", indent, mapName, key)
+				// For non-string keys, use direct comparison
 				fmt.Fprintf(b, "%s        if (%s_keys[i] == %s) {\n", indent, mapName, key)
 			}
 
+			// Handle value assignment based on type
 			if valueType == "string" {
 				if strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"") {
+					// String literal value - copy directly
 					fmt.Fprintf(b, "%s            strcpy(%s_values[i], %s);\n", indent, mapName, value)
 				} else {
 					resolvedValue := lexer.ResolveSymbol(value, currentModule)
