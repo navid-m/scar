@@ -2,23 +2,23 @@ class Node:
     init(int value, bool has_next):
         int this.value = value
         bool this.has_next = has_next
-        ref Node this.next = NULL
+        ref Node this.next = nil
 
 class LinkedList:
     init:
-        ref Node this.head = NULL
+        ref Node this.head = nil
 
     fn append(int value) -> void:
         ref Node new_node = new Node(value, false)
-        new_node.next = NULL
+        new_node.next = nil
 
-        if this.head == NULL:
+        if this.head == nil:
             this.head = new_node
             print "Inserted %d as head" | value
             return
 
         ref Node current = this.head
-        while current.has_next != NULL:
+        while current.has_next != nil:
             current = current.next
 
         current.next = new_node
@@ -29,7 +29,7 @@ class LinkedList:
         ref Node current = this.head
         int index = 0
 
-        while current != NULL:
+        while current != nil:
             print "Node %d: %d" | index, current.value
             if current.has_next:
                 current = current.next

@@ -14,6 +14,9 @@ import (
 
 func InsertMacros(output string) string {
 	outp := output
+	if strings.Contains(output, "nil") {
+		outp = insertNilMacro(outp)
+	}
 	if strings.Contains(output, "len") {
 		outp = insertLen(outp)
 	}
@@ -25,6 +28,10 @@ func InsertMacros(output string) string {
 		outp = insertRand(outp)
 	}
 	return outp
+}
+
+func insertNilMacro(output string) string {
+	return "#define nil NULL\n" + output
 }
 
 func insertLen(output string) string {
