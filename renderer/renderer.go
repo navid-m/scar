@@ -855,7 +855,15 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			end = convertThisReferencesGranular(end)
 			end = lexer.ResolveSymbol(end, currentModule)
 
-			varName = strings.TrimPrefix(varName, "int ")
+			// Clean up variable name - remove type prefix if present
+			if strings.HasPrefix(varName, "int ") {
+				varName = strings.TrimPrefix(varName, "int ")
+			}
+
+			// Clean up any malformed characters that might have been introduced
+			varName = strings.ReplaceAll(varName, "*", "")
+			varName = strings.ReplaceAll(varName, "_", "")
+
 			endCond := end
 			if strings.ContainsAny(end, "+-*/><=!&|^%(") {
 				endCond = fmt.Sprintf("(%s)", end)
@@ -1820,6 +1828,33 @@ func generateMapAccessHelper(b *strings.Builder, mapName, keyType, valueType str
 		fmt.Fprintf(b, "    return 0;\n")
 	}
 
+	fmt.Fprintf(b, "}\n\n")
+	fmt.Fprintf(b, "// Helper to get key at index for %s\n", mapName)
+
+	if keyType == "string" {
+		fmt.Fprintf(b, "char* __get_%s_key_at(int index) {\n", mapName)
+		fmt.Fprintf(b, "    if (index >= 0 && index < %s_size) {\n", mapName)
+		fmt.Fprintf(b, "        return %s_keys[index];\n", mapName)
+		fmt.Fprintf(b, "    }\n")
+		fmt.Fprintf(b, "    return \"\";\n")
+		fmt.Fprintf(b, "}\n\n")
+	} else {
+		cKeyType := mapTypeToCType(keyType)
+		fmt.Fprintf(b, "%s __get_%s_key_at(int index) {\n", cKeyType, mapName)
+		fmt.Fprintf(b, "    if (index >= 0 && index < %s_size) {\n", mapName)
+		fmt.Fprintf(b, "        return %s_keys[index];\n", mapName)
+		fmt.Fprintf(b, "    }\n")
+		if keyType == "char" {
+			fmt.Fprintf(b, "    return '\\0';\n")
+		} else {
+			fmt.Fprintf(b, "    return 0;\n")
+		}
+		fmt.Fprintf(b, "}\n\n")
+	}
+
+	// Add a size getter
+	fmt.Fprintf(b, "int __get_%s_size() {\n", mapName)
+	fmt.Fprintf(b, "    return %s_size;\n", mapName)
 	fmt.Fprintf(b, "}\n\n")
 }
 
