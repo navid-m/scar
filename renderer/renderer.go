@@ -442,7 +442,6 @@ func inferTypeFromValue(value string) string {
 func generateStructDefinition(b *strings.Builder, classInfo *ClassInfo, structName string) {
 	fmt.Fprintf(b, "#define MAX_STRING_LENGTH 256\n")
 
-	// First, check if this struct contains any self-referential fields
 	hasSelfReference := false
 	for _, field := range classInfo.Fields {
 		if field.Type == structName && field.IsRef {
@@ -451,17 +450,14 @@ func generateStructDefinition(b *strings.Builder, classInfo *ClassInfo, structNa
 		}
 	}
 
-	// If it's a self-referential struct, add a forward declaration
 	if hasSelfReference {
 		fmt.Fprintf(b, "struct %s;\n", structName)
 	}
 
-	// Then define the struct
 	fmt.Fprintf(b, "typedef struct %s {\n", structName)
 
 	for _, field := range classInfo.Fields {
 		if field.IsRef {
-			// Handle reference types - they become pointers
 			switch field.Type {
 			case "int", "float", "double", "bool", "char":
 				fmt.Fprintf(b, "    %s* %s;\n", mapTypeToCType(field.Type), field.Name)
@@ -848,7 +844,6 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			)
 
 			if stmt.VarDecl.IsRef {
-				// Handle reference declarations
 				if strings.HasPrefix(varName, "this.") {
 					fieldName := varName[5:]
 					if value == "0" || value == "NULL" {
@@ -857,13 +852,13 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 						fmt.Fprintf(b, "%sthis->%s = %s;\n", indent, fieldName, value)
 					}
 				} else {
-					// Local reference variable
 					innerType := strings.TrimPrefix(varType, "ref ")
-					if innerType == "int" || innerType == "float" || innerType == "double" || innerType == "bool" || innerType == "char" {
+					switch innerType {
+					case "int", "float", "double", "bool", "char":
 						fmt.Fprintf(b, "%s%s* %s = ", indent, mapTypeToCType(innerType), varName)
-					} else if innerType == "string" {
+					case "string":
 						fmt.Fprintf(b, "%schar* %s = ", indent, varName)
-					} else {
+					default:
 						fmt.Fprintf(b, "%s%s* %s = ", indent, innerType, varName)
 					}
 
@@ -871,10 +866,11 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 						fmt.Fprintf(b, "NULL;\n")
 					} else {
 						value = convertThisReferencesGranular(value)
+						value = convertNewToConstructor(value)
 						fmt.Fprintf(b, "%s;\n", value)
 					}
 				}
-				continue // Skip the rest of VarDecl processing for ref types
+				continue
 			}
 			if isMethodCall(value) {
 				value = convertMethodCallToC(value)
@@ -1401,6 +1397,31 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 
 func fixFloatCastGranular(expr string) string {
 	return strings.ReplaceAll(expr, "float(", "(float)(")
+}
+
+// Converts 'new ClassName(args)' to 'ClassName_new(args)'
+func convertNewToConstructor(expr string) string {
+	if !strings.HasPrefix(expr, "new ") {
+		return expr
+	}
+
+	src := strings.TrimSpace(expr[3:])
+	if src == "" {
+		return expr
+	}
+	parenPos := strings.Index(src, "(")
+	if parenPos == -1 {
+		return fmt.Sprintf("%s_new()", strings.TrimSpace(src))
+	}
+
+	className := strings.TrimSpace(src[:parenPos])
+	closeParen := findMatchingParen(src, parenPos)
+	if closeParen == -1 {
+		return expr
+	}
+	args := src[parenPos : closeParen+1]
+
+	return fmt.Sprintf("%s_new%s", className, args)
 }
 
 func reconstructMethodCalls(variables []string) []string {

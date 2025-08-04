@@ -9,7 +9,7 @@ class LinkedList:
         ref Node this.head = NULL
 
     fn append(int value) -> void:
-        ref Node new_node = Node_new(value, false)
+        ref Node new_node = new Node(value, false)
         new_node.next = NULL
 
         if this.head == NULL:
