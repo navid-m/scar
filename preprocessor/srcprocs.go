@@ -74,8 +74,6 @@ func RemoveComments(source string) string {
 	return result.String()
 }
 
-
-
 func ProcessAppendExpressions(source string) string {
 	var result bytes.Buffer
 	inString := false
