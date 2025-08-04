@@ -15,8 +15,7 @@ class LinkedList:
         if this.head == NULL:
             this.head = new_node
             print "Inserted %d as head" | value
-            return 0
-
+            
         ref Node current = this.head
         while current.has_next != NULL:
             current = current.next

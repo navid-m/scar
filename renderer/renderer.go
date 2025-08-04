@@ -96,11 +96,19 @@ int _exception = 0;
 
 `)
 
+	// First, output forward declarations for all structs
+	for className := range globalClasses {
+		fmt.Fprintf(&b, "struct %s;\n", className)
+	}
+	b.WriteString("\n")
+
+	// Then output typedefs
 	for className := range globalClasses {
 		fmt.Fprintf(&b, "typedef struct %s %s;\n", className, className)
 	}
 	b.WriteString("\n")
 
+	// Then output the full struct definitions
 	for className, classInfo := range globalClasses {
 		generateStructDefinition(&b, classInfo, className)
 		b.WriteString("\n")
@@ -322,9 +330,15 @@ func collectClassInfoWithModule(classDecl *lexer.ClassDeclStmt, moduleName strin
 		fieldMap := make(map[string]bool)
 		for _, param := range classDecl.Constructor.Parameters {
 			if _, exists := fieldMap[param.Name]; !exists {
+				fieldType := param.Type
+				// If the type starts with 'ref ' (old style), clean it up
+				if after, ok := strings.CutPrefix(fieldType, "ref "); ok {
+					fieldType = after
+				}
 				fieldInfo := FieldInfo{
-					Name: param.Name,
-					Type: param.Type,
+					Name:  param.Name,
+					Type:  fieldType,
+					IsRef: param.IsRef,
 				}
 				classInfo.Fields = append(classInfo.Fields, fieldInfo)
 				fieldMap[param.Name] = true
@@ -335,9 +349,15 @@ func collectClassInfoWithModule(classDecl *lexer.ClassDeclStmt, moduleName strin
 				fieldName := stmt.VarDecl.Name
 				fieldName = strings.TrimPrefix(fieldName, "this.")
 				if _, exists := fieldMap[fieldName]; !exists {
+					isRef := stmt.VarDecl.IsRef
+					fieldType := stmt.VarDecl.Type
+					if after, ok := strings.CutPrefix(fieldType, "ref "); ok {
+						fieldType = after
+					}
 					fieldInfo := FieldInfo{
-						Name: fieldName,
-						Type: stmt.VarDecl.Type,
+						Name:  fieldName,
+						Type:  fieldType,
+						IsRef: isRef,
 					}
 					classInfo.Fields = append(classInfo.Fields, fieldInfo)
 					fieldMap[fieldName] = true
@@ -347,10 +367,15 @@ func collectClassInfoWithModule(classDecl *lexer.ClassDeclStmt, moduleName strin
 				fieldName := stmt.VarAssign.Name[5:]
 				if _, exists := fieldMap[fieldName]; !exists {
 					fieldType := inferTypeFromValue(stmt.VarAssign.Value)
-					fmt.Printf("Debug: Field %s, Value %s, Inferred Type: %s\n", fieldName, stmt.VarAssign.Value, fieldType)
+					isRef := strings.HasPrefix(fieldType, "ref ")
+					if isRef {
+						fieldType = strings.TrimPrefix(fieldType, "ref ")
+					}
+					fmt.Printf("Debug: Field %s, Value %s, Inferred Type: %s, IsRef: %v\n", fieldName, stmt.VarAssign.Value, fieldType, isRef)
 					fieldInfo := FieldInfo{
-						Name: fieldName,
-						Type: fieldType,
+						Name:  fieldName,
+						Type:  fieldType,
+						IsRef: isRef,
 					}
 					classInfo.Fields = append(classInfo.Fields, fieldInfo)
 					fieldMap[fieldName] = true
@@ -416,19 +441,36 @@ func inferTypeFromValue(value string) string {
 
 func generateStructDefinition(b *strings.Builder, classInfo *ClassInfo, structName string) {
 	fmt.Fprintf(b, "#define MAX_STRING_LENGTH 256\n")
+
+	// First, check if this struct contains any self-referential fields
+	hasSelfReference := false
+	for _, field := range classInfo.Fields {
+		if field.Type == structName && field.IsRef {
+			hasSelfReference = true
+			break
+		}
+	}
+
+	// If it's a self-referential struct, add a forward declaration
+	if hasSelfReference {
+		fmt.Fprintf(b, "struct %s;\n", structName)
+	}
+
+	// Then define the struct
 	fmt.Fprintf(b, "typedef struct %s {\n", structName)
 
 	for _, field := range classInfo.Fields {
-		if strings.HasPrefix(field.Type, "ref ") {
+		if field.IsRef {
 			// Handle reference types - they become pointers
-			innerType := strings.TrimPrefix(field.Type, "ref ")
-			switch innerType {
+			switch field.Type {
 			case "int", "float", "double", "bool", "char":
-				fmt.Fprintf(b, "    %s* %s;\n", mapTypeToCType(innerType), field.Name)
+				fmt.Fprintf(b, "    %s* %s;\n", mapTypeToCType(field.Type), field.Name)
 			case "string":
 				fmt.Fprintf(b, "    char* %s;\n", field.Name)
 			default:
-				fmt.Fprintf(b, "    struct %s* %s;\n", innerType, field.Name)
+				// For custom types, use the type name directly (without 'struct')
+				// since we have a forward declaration with 'typedef struct X X;'
+				fmt.Fprintf(b, "    %s* %s;\n", field.Type, field.Name)
 			}
 		} else if field.Type == "string" {
 			fmt.Fprintf(b, "    char %s[MAX_STRING_LENGTH];\n", field.Name)
@@ -518,11 +560,9 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 				fieldName = strings.TrimPrefix(fieldName, "this.")
 
 				if stmt.VarDecl.IsRef {
-					// Reference fields are initialized as pointers
 					if value == "0" || value == "NULL" {
 						fmt.Fprintf(b, "    this->%s = NULL;\n", fieldName)
 					} else {
-						// For object references, we need to handle assignment differently
 						fmt.Fprintf(b, "    this->%s = %s;\n", fieldName, value)
 					}
 				} else if stmt.VarDecl.Type == "string" {
