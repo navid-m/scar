@@ -26,7 +26,7 @@ class LinkedList:
         print "Appended %d to list" | value
 
     fn print_list() -> void:
-        var current = this.head
+        ref Node current = this.head
         int index = 0
 
         while current != NULL:

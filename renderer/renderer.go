@@ -96,6 +96,11 @@ int _exception = 0;
 
 `)
 
+	for className := range globalClasses {
+		fmt.Fprintf(&b, "typedef struct %s %s;\n", className, className)
+	}
+	b.WriteString("\n")
+
 	for className, classInfo := range globalClasses {
 		generateStructDefinition(&b, classInfo, className)
 		b.WriteString("\n")
@@ -391,9 +396,8 @@ func inferTypeFromValue(value string) string {
 	if strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"") {
 		return "string"
 	}
-	if value == "Test" || (len(value) > 0 && !strings.ContainsAny(value, "0123456789.+-*/%()[]{}") &&
-		value != "true" && value != "false" && !strings.HasPrefix(value, "new ")) {
-		return "string"
+	if value == "NULL" {
+		return "ref void"
 	}
 	if strings.HasPrefix(value, "new ") {
 		return "object"
@@ -403,6 +407,9 @@ func inferTypeFromValue(value string) string {
 	}
 	if value == "true" || value == "false" {
 		return "bool"
+	}
+	if strings.HasPrefix(value, "this.") {
+		return "ref object"
 	}
 	return "int"
 }
@@ -421,7 +428,6 @@ func generateStructDefinition(b *strings.Builder, classInfo *ClassInfo, structNa
 			case "string":
 				fmt.Fprintf(b, "    char* %s;\n", field.Name)
 			default:
-				// For custom object references like "ref Node"
 				fmt.Fprintf(b, "    struct %s* %s;\n", innerType, field.Name)
 			}
 		} else if field.Type == "string" {
@@ -486,7 +492,9 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 			for _, param := range classDecl.Constructor.Parameters {
 				for _, field := range classInfo.Fields {
 					if field.Name == param.Name {
-						if param.Type == "string" {
+						if strings.HasPrefix(field.Type, "ref ") {
+							fmt.Fprintf(b, "    this->%s = %s;\n", param.Name, param.Name)
+						} else if param.Type == "string" {
 							fmt.Fprintf(b, "    strcpy(this->%s, %s);\n", param.Name, param.Name)
 						} else {
 							fmt.Fprintf(b, "    this->%s = %s;\n", param.Name, param.Name)
@@ -810,19 +818,23 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 					}
 				} else {
 					// Local reference variable
-					innerType := varType
+					innerType := strings.TrimPrefix(varType, "ref ")
 					if innerType == "int" || innerType == "float" || innerType == "double" || innerType == "bool" || innerType == "char" {
 						fmt.Fprintf(b, "%s%s* %s = ", indent, mapTypeToCType(innerType), varName)
+					} else if innerType == "string" {
+						fmt.Fprintf(b, "%schar* %s = ", indent, varName)
 					} else {
-						fmt.Fprintf(b, "%sstruct %s* %s = ", indent, innerType, varName)
+						fmt.Fprintf(b, "%s%s* %s = ", indent, innerType, varName)
 					}
 
 					if value == "0" || value == "NULL" {
 						fmt.Fprintf(b, "NULL;\n")
 					} else {
+						value = convertThisReferencesGranular(value)
 						fmt.Fprintf(b, "%s;\n", value)
 					}
 				}
+				continue // Skip the rest of VarDecl processing for ref types
 			}
 			if isMethodCall(value) {
 				value = convertMethodCallToC(value)
