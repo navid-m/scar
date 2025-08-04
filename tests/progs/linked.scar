@@ -2,23 +2,23 @@ class Node:
     init(int value, bool has_next):
         int this.value = value
         bool this.has_next = has_next
-        ref int this.next = 0
+        ref Node this.next = NULL
 
 class LinkedList:
     init:
-        ref int this.head = 0 
+        ref Node this.head = NULL
 
     fn append(int value) -> void:
         var new_node = new Node(value, false)
-        new_node.next = 0 
+        new_node.next = NULL
 
-        if this.head == 0:
+        if this.head == NULL:
             this.head = new_node
             print "Inserted %d as head" | value
             return 0
 
         var current = this.head
-        while current.has_next != 0:
+        while current.has_next != NULL:
             current = current.next
 
         current.next = new_node
