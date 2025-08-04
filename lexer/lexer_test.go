@@ -156,7 +156,6 @@ fn subtract(int a, int b) -> int:
 		t.Fatalf("ParseWithIndentation failed: %v", err)
 	}
 
-	// Verify that all functions were parsed
 	var funcNames []string
 	for _, stmt := range program.Statements {
 		if stmt.TopLevelFuncDecl != nil {
@@ -164,7 +163,6 @@ fn subtract(int a, int b) -> int:
 		}
 	}
 
-	// Check that all expected functions are present
 	expectedFuncs := map[string]bool{
 		"main":     true,
 		"add":      true,
@@ -179,7 +177,6 @@ fn subtract(int a, int b) -> int:
 		delete(expectedFuncs, name)
 	}
 
-	// Check if any expected functions are missing
 	for name := range expectedFuncs {
 		t.Errorf("missing expected function: %s", name)
 	}
@@ -200,6 +197,32 @@ class Test:
 	if err != nil {
 		// TODO: Ensure an error gets thrown here.
 		t.Logf("Got an error as expected (or maybe not): %v", err)
+	}
+}
+
+func TestReturnWithoutValue(t *testing.T) {
+	input := `
+fn test():
+    return
+`
+	program, err := ParseWithIndentation(input)
+	if err != nil {
+		t.Fatalf("ParseWithIndentation failed: %v", err)
+	}
+	if len(program.Statements) != 1 {
+		t.Fatalf("expected 1 statement, got %d", len(program.Statements))
+	}
+	if program.Statements[0].TopLevelFuncDecl == nil {
+		t.Fatal("expected a TopLevelFuncDecl statement, got nil")
+	}
+	if len(program.Statements[0].TopLevelFuncDecl.Body) != 1 {
+		t.Fatalf("expected 1 statement in function body, got %d", len(program.Statements[0].TopLevelFuncDecl.Body))
+	}
+	if program.Statements[0].TopLevelFuncDecl.Body[0].Return == nil {
+		t.Fatal("expected a Return statement in function body, got nil")
+	}
+	if program.Statements[0].TopLevelFuncDecl.Body[0].Return.Value != "" {
+		t.Errorf("expected empty return value, got '%s'", program.Statements[0].TopLevelFuncDecl.Body[0].Return.Value)
 	}
 }
 

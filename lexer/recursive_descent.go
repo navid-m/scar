@@ -331,13 +331,13 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 		return parsePubStatement(lines, lineNum, currentIndent)
 
 	case "return":
-		if len(parts) < 2 {
-			return nil, lineNum + 1, fmt.Errorf("return statement requires a value at line %d", lineNum+1)
-		}
-		value := strings.Join(parts[1:], " ")
-		if strings.HasPrefix(value, "this.") {
-			fieldName := value[5:]
-			value = "this->" + fieldName
+		value := ""
+		if len(parts) >= 2 {
+			value = strings.Join(parts[1:], " ")
+			if strings.HasPrefix(value, "this.") {
+				fieldName := value[5:]
+				value = "this->" + fieldName
+			}
 		}
 		return &Statement{Return: &ReturnStmt{Value: value}}, lineNum + 1, nil
 

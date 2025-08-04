@@ -754,16 +754,20 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 		case stmt.Continue != nil:
 			fmt.Fprintf(b, "%scontinue;\n", indent)
 		case stmt.Return != nil:
-			value := stmt.Return.Value
-			if isMethodCall(value) {
-				value = convertMethodCallToC(value)
-			} else if strings.HasPrefix(value, "this.") {
-				value = "this->" + value[5:]
+			if stmt.Return.Value == "" {
+				fmt.Fprintf(b, "%sreturn;\n", indent)
 			} else {
-				value = lexer.ResolveSymbol(value, currentModule)
-				value = convertThisReferencesGranular(value)
+				value := stmt.Return.Value
+				if isMethodCall(value) {
+					value = convertMethodCallToC(value)
+				} else if strings.HasPrefix(value, "this.") {
+					value = "this->" + value[5:]
+				} else {
+					value = lexer.ResolveSymbol(value, currentModule)
+					value = convertThisReferencesGranular(value)
+				}
+				fmt.Fprintf(b, "%sreturn %s;\n", indent, value)
 			}
-			fmt.Fprintf(b, "%sreturn %s;\n", indent, value)
 		case stmt.Throw != nil:
 			value := lexer.ResolveSymbol(stmt.Throw.Value, currentModule)
 			fmt.Fprintf(b, "%s_exception = %s;\n", indent, value)
