@@ -11,6 +11,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"unicode"
 
 	"scar/lexer"
 )
@@ -732,7 +733,19 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 					args      = make([]string, len(variables))
 				)
 				for i, v := range variables {
-					if isMethodCall(v) {
+					if strings.HasPrefix(v, "get!") {
+						// Handle get! macro in print statement
+						getArgs := v[4:]                                         // Remove 'get!' prefix
+						getArgs = strings.TrimSpace(getArgs[1 : len(getArgs)-1]) // Remove parentheses
+						parts := strings.SplitN(getArgs, ",", 2)
+						if len(parts) == 2 {
+							mapName := strings.TrimSpace(parts[0])
+							key := strings.TrimSpace(parts[1])
+							args[i] = renderMapAccess(mapName, key, program)
+						} else {
+							args[i] = v // Fallback to original if parsing fails
+						}
+					} else if isMethodCall(v) {
 						args[i] = convertMethodCallToC(v)
 					} else {
 						resolvedVar := lexer.ResolveSymbol(v, currentModule)
@@ -744,7 +757,11 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				escapedFormat := strings.ReplaceAll(stmt.Print.Format, "\"", "\\\"")
 				fmt.Fprintf(b, "%sprintf(\"%s\\n\", %s);\n", indent, escapedFormat, argsStr)
 			} else if stmt.Print.Print != "" {
-				fmt.Fprintf(b, "%sprintf(\"%s\\n\");\n", indent, stmt.Print.Print)
+				if strings.Contains(stmt.Print.Print, "get!") {
+					fmt.Fprintf(b, "%sprintf(\"%%s\\n\", %s);\n", indent, stmt.Print.Print)
+				} else {
+					fmt.Fprintf(b, "%sprintf(\"%s\\n\");\n", indent, stmt.Print.Print)
+				}
 			}
 
 		case stmt.Sleep != nil:
@@ -1344,33 +1361,37 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			}
 		case stmt.MapDecl != nil:
 			mapName := lexer.ResolveSymbol(stmt.MapDecl.Name, currentModule)
-			keyType := mapTypeToCType(stmt.MapDecl.KeyType)
-			valueType := mapTypeToCType(stmt.MapDecl.ValueType)
+			keyType := stmt.MapDecl.KeyType
+			valueType := stmt.MapDecl.ValueType
+			cKeyType := mapTypeToCType(keyType)
+			cValueType := mapTypeToCType(valueType)
 			mapSize := len(stmt.MapDecl.Pairs)
 			initialSize := mapSize
 			if initialSize == 0 {
 				initialSize = 10
 			}
-			if stmt.MapDecl.KeyType == "string" {
-				fmt.Fprintf(b, "%s%s %s_keys[%d][256];\n", indent, keyType, mapName, initialSize)
+
+			if keyType == "string" {
+				fmt.Fprintf(b, "%s %s_keys[%d][256];\n", cKeyType, mapName, initialSize)
 			} else {
-				fmt.Fprintf(b, "%s%s %s_keys[%d];\n", indent, keyType, mapName, initialSize)
+				fmt.Fprintf(b, "%s %s_keys[%d];\n", cKeyType, mapName, initialSize)
 			}
 
-			if stmt.MapDecl.ValueType == "string" {
-				fmt.Fprintf(b, "%s%s %s_values[%d][256];\n", indent, valueType, mapName, initialSize)
+			if valueType == "string" {
+				fmt.Fprintf(b, "%s %s_values[%d][256];\n", cValueType, mapName, initialSize)
 			} else {
-				fmt.Fprintf(b, "%s%s %s_values[%d];\n", indent, valueType, mapName, initialSize)
+				fmt.Fprintf(b, "%s %s_values[%d];\n", cValueType, mapName, initialSize)
 			}
 
 			fmt.Fprintf(b, "%sint %s_size = %d;\n", indent, mapName, mapSize)
+			generateMapAccessHelper(b, mapName, keyType, valueType)
 
 			if len(stmt.MapDecl.Pairs) > 0 {
 				for i, pair := range stmt.MapDecl.Pairs {
 					key := pair.Key
 					value := pair.Value
 
-					if stmt.MapDecl.KeyType == "string" {
+					if keyType == "string" {
 						if !strings.HasPrefix(key, "\"") && !strings.HasSuffix(key, "\"") {
 							key = fmt.Sprintf("\"%s\"", key)
 						}
@@ -1379,7 +1400,7 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 						fmt.Fprintf(b, "%s%s_keys[%d] = %s;\n", indent, mapName, i, key)
 					}
 
-					if stmt.MapDecl.ValueType == "string" {
+					if valueType == "string" {
 						if !strings.HasPrefix(value, "\"") && !strings.HasSuffix(value, "\"") {
 							value = fmt.Sprintf("\"%s\"", value)
 						}
@@ -1389,53 +1410,16 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 					}
 				}
 			}
+
 		case stmt.GetMap != nil:
-			mapName := lexer.ResolveSymbol(stmt.GetMap.MapName, currentModule)
-			key := stmt.GetMap.Key
-
-			// Find the map to determine key type
-			var keyType string
-			for _, s := range program.Statements {
-				if s.MapDecl != nil && s.MapDecl.Name == stmt.GetMap.MapName {
-					keyType = s.MapDecl.KeyType
-					break
-				}
-			}
-
-			// Generate code to look up the key in the map
-			if keyType == "string" {
-				// For string keys, generate a linear search with strcmp
-				if strings.HasPrefix(key, "\"") && strings.HasSuffix(key, "\"") {
-					// String literal key
-					keyStr := key[1:len(key)-1] // Remove quotes
-					keyStr = strings.ReplaceAll(keyStr, "\"", "\\\"") // Escape quotes
-					fmt.Fprintf(b, "%s/* Found by key: %s */\n", indent, keyStr)
-					fmt.Fprintf(b, "%sfor (int i = 0; i < %s_size; i++) {\n", indent, mapName)
-					fmt.Fprintf(b, "%s    if (strcmp(%s_keys[i], \"%s\") == 0) {\n", indent, mapName, keyStr)
-					fmt.Fprintf(b, "%s        %s_values[i]\n", indent, mapName)
-					fmt.Fprintf(b, "%s    }\n", indent)
-					fmt.Fprintf(b, "%s}\n", indent)
-				} else {
-					// Variable key
-					resolvedKey := lexer.ResolveSymbol(key, currentModule)
-					fmt.Fprintf(b, "%s/* Looking up key: %s */\n", indent, resolvedKey)
-					fmt.Fprintf(b, "%sfor (int i = 0; i < %s_size; i++) {\n", indent, mapName)
-					fmt.Fprintf(b, "%s    if (strcmp(%s_keys[i], %s) == 0) {\n", indent, mapName, resolvedKey)
-					fmt.Fprintf(b, "%s        %s_values[i]\n", indent, mapName)
-					fmt.Fprintf(b, "%s    }\n", indent)
-					fmt.Fprintf(b, "%s}\n", indent)
-				}
-			} else {
-				// For non-string keys, generate direct array access
-				fmt.Fprintf(b, "%s%s_values[%s]\n", indent, mapName, key)
-			}
+			expr := renderMapAccess(stmt.GetMap.MapName, stmt.GetMap.Key, program)
+			fmt.Fprintf(b, "%s%s", indent, expr)
 
 		case stmt.PutMap != nil:
 			mapName := lexer.ResolveSymbol(stmt.PutMap.MapName, currentModule)
 			key := stmt.PutMap.Key
 			value := stmt.PutMap.Value
 
-			// Find the map to determine key/value types
 			var keyType, valueType string
 			for _, s := range program.Statements {
 				if s.MapDecl != nil && s.MapDecl.Name == stmt.PutMap.MapName {
@@ -1445,41 +1429,31 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				}
 			}
 
-			// Generate code to add the key-value pair
 			fmt.Fprintf(b, "%s{\n", indent)
 			fmt.Fprintf(b, "%s    int found = 0;\n", indent)
 			fmt.Fprintf(b, "%s    for (int i = 0; i < %s_size; i++) {\n", indent, mapName)
-
-			// Handle key comparison based on type
 			if keyType == "string" {
-				// For string keys, use strcmp
 				if strings.HasPrefix(key, "\"") && strings.HasSuffix(key, "\"") {
-					// String literal key
-					keyStr := key[1 : len(key)-1] // Remove quotes
-					keyStr = strings.ReplaceAll(keyStr, "\"", "\\\"") // Escape quotes in the string
+					keyStr := key[1 : len(key)-1]
+					keyStr = strings.ReplaceAll(keyStr, "\"", "\\\"")
 					fmt.Fprintf(b, "%s        if (strcmp(%s_keys[i], \"%s\") == 0) {\n", indent, mapName, keyStr)
 				} else {
-					// Variable key
 					resolvedKey := lexer.ResolveSymbol(key, currentModule)
 					fmt.Fprintf(b, "%s        if (strcmp(%s_keys[i], %s) == 0) {\n", indent, mapName, resolvedKey)
 				}
 			} else {
-				// For non-string keys, use direct comparison
+				fmt.Fprintf(b, "%s        if (%s_keys[i] == %s) {\n", indent, mapName, key)
 				fmt.Fprintf(b, "%s        if (%s_keys[i] == %s) {\n", indent, mapName, key)
 			}
 
-			// Handle value assignment based on type
 			if valueType == "string" {
 				if strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"") {
-					// String literal value - copy directly
 					fmt.Fprintf(b, "%s            strcpy(%s_values[i], %s);\n", indent, mapName, value)
 				} else {
-					// Variable value - resolve symbol first
 					resolvedValue := lexer.ResolveSymbol(value, currentModule)
 					fmt.Fprintf(b, "%s            strcpy(%s_values[i], %s);\n", indent, mapName, resolvedValue)
 				}
 			} else {
-				// Non-string value - direct assignment
 				resolvedValue := lexer.ResolveSymbol(value, currentModule)
 				fmt.Fprintf(b, "%s            %s_values[i] = %s;\n", indent, mapName, resolvedValue)
 			}
@@ -1489,14 +1463,13 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			fmt.Fprintf(b, "%s        }\n", indent)
 			fmt.Fprintf(b, "%s    }\n", indent)
 
-			// Add new key-value pair if not found and there's space
 			fmt.Fprintf(b, "%s    if (!found && %s_size < 100) {\n", indent, mapName)
 
 			// Handle key assignment based on type
 			if keyType == "string" {
 				if strings.HasPrefix(key, "\"") && strings.HasSuffix(key, "\"") {
 					// String literal key - copy directly
-					keyStr := key[1 : len(key)-1] // Remove quotes
+					keyStr := key[1 : len(key)-1]                     // Remove quotes
 					keyStr = strings.ReplaceAll(keyStr, "\"", "\\\"") // Escape quotes in the string
 					fmt.Fprintf(b, "%s        strcpy(%s_keys[%s_size], \"%s\");\n", indent, mapName, mapName, keyStr)
 				} else {
@@ -1752,6 +1725,114 @@ func convertMethodCallToC(expr string) string {
 		}
 	}
 	return convertSingleMethodCall(expr)
+}
+
+// generateMapAccessHelper generates a helper function for map access
+func generateMapAccessHelper(b *strings.Builder, mapName, keyType, valueType string) {
+	helperName := fmt.Sprintf("__get_%s_value", mapName)
+
+	// Handle key type conversion
+	var cKeyType string
+	switch keyType {
+	case "string":
+		cKeyType = "char*"
+	case "char":
+		cKeyType = "char"
+	default:
+		cKeyType = mapTypeToCType(keyType)
+	}
+
+	// Handle value type conversion - for return type
+	var cValueType string
+	switch valueType {
+	case "string":
+		cValueType = "char*"
+	case "char":
+		cValueType = "char"
+	default:
+		cValueType = mapTypeToCType(valueType)
+	}
+
+	// Generate the helper function
+	fmt.Fprintf(b, "%s %s(%s key) {\n", cValueType, helperName, cKeyType)
+	fmt.Fprintf(b, "    for (int i = 0; i < %s_size; i++) {\n", mapName)
+
+	// Key comparison
+	if keyType == "string" {
+		// String key comparison
+		fmt.Fprintf(b, "        if (strcmp(%s_keys[i], key) == 0) {\n", mapName)
+	} else {
+		// Numeric or char key comparison
+		fmt.Fprintf(b, "        if (%s_keys[i] == key) {\n", mapName)
+	}
+
+	// Return value - for string values, x_values[i] is already char*
+	fmt.Fprintf(b, "            return %s_values[i];\n", mapName)
+
+	fmt.Fprintf(b, "        }\n")
+	fmt.Fprintf(b, "    }\n")
+
+	// Default return value
+	switch valueType {
+	case "string":
+		fmt.Fprintf(b, "    return \"\";\n")
+	case "char":
+		fmt.Fprintf(b, "    return '\\0';\n")
+	default:
+		fmt.Fprintf(b, "    return 0;\n")
+	}
+
+	fmt.Fprintf(b, "}\n\n")
+}
+
+// renderMapAccess generates a C expression for accessing a map value by key
+func renderMapAccess(mapName, key string, program *lexer.Program) string {
+	resolvedMapName := lexer.ResolveSymbol(mapName, currentModule)
+
+	// Find the map to determine key type
+	var keyType string
+	for _, s := range program.Statements {
+		if s.MapDecl != nil && s.MapDecl.Name == mapName {
+			keyType = s.MapDecl.KeyType
+			break
+		}
+	}
+
+	// Generate the helper function name
+	helperName := fmt.Sprintf("__get_%s_value", resolvedMapName)
+
+	// Generate the key expression
+	var keyExpr string
+	if keyType == "string" || keyType == "char*" {
+		// String key - handle string literals and variables
+		if strings.HasPrefix(key, "\"") && strings.HasSuffix(key, "\"") {
+			// String literal key
+			keyStr := key[1 : len(key)-1]                     // Remove quotes
+			keyStr = strings.ReplaceAll(keyStr, "\"", "\\\"") // Escape quotes
+			keyExpr = fmt.Sprintf(`"%s"`, keyStr)
+		} else {
+			// Variable key - resolve symbol
+			keyExpr = lexer.ResolveSymbol(key, currentModule)
+			// If it's not a string literal and not a variable (could be a character literal)
+			if keyExpr == key && len(key) == 3 && key[0] == '\'' && key[2] == '\'' {
+				keyExpr = fmt.Sprintf("'%c'", key[1])
+			}
+		}
+	} else {
+		// Non-string key - resolve symbol if it's an identifier
+		if !unicode.IsDigit(rune(key[0])) && !(key[0] == '-' && len(key) > 1 && unicode.IsDigit(rune(key[1]))) {
+			key = lexer.ResolveSymbol(key, currentModule)
+		}
+		keyExpr = key
+
+		// Handle character literals for char keys
+		if keyType == "char" && len(keyExpr) == 3 && keyExpr[0] == '\'' && keyExpr[2] == '\'' {
+			keyExpr = fmt.Sprintf("'%c'", keyExpr[1])
+		}
+	}
+
+	// The helper function already has the correct return type, so we don't need to cast
+	return fmt.Sprintf("%s(%s)", helperName, keyExpr)
 }
 
 func convertSingleMethodCall(expr string) string {

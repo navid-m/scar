@@ -1570,6 +1570,45 @@ func TestMethodCallInExpression(t *testing.T) {
 // 	}
 // }
 
+func TestGetInPrintStatement(t *testing.T) {
+	program := &lexer.Program{
+		Statements: []*lexer.Statement{
+			{
+				MapDecl: &lexer.MapDeclStmt{
+					Name:     "myMap",
+					KeyType:  "string",
+					ValueType: "int",
+					Pairs: []lexer.MapPair{
+						{Key: "one", Value: "1"},
+						{Key: "two", Value: "2"},
+					},
+				},
+			},
+			{
+				Print: &lexer.PrintStmt{
+					Format: "The value is: %d",
+					Variables: []string{
+						"get!(myMap, \"one\")",
+					},
+				},
+			},
+		},
+	}
+
+	cCode := RenderC(program, "")
+
+	// Check that the helper function was generated
+	if !strings.Contains(cCode, "__get_myMap_value") {
+		t.Error("Expected helper function __get_myMap_value not found in generated code")
+	}
+
+	// Check that the print statement uses the helper function
+	expectedPrint := `printf("The value is: %d\n", __get_myMap_value("one"))`
+	if !strings.Contains(cCode, expectedPrint) {
+		t.Errorf("Expected print statement not found in generated code. Expected to find: %s", expectedPrint)
+	}
+}
+
 func TestFunctionHoisting(t *testing.T) {
 	// Create a program with functions declared out of order
 	program := &lexer.Program{
