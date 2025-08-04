@@ -1,0 +1,146 @@
+class GameOfLife:
+    init(int width, int height):
+        this.width = width
+        this.height = height
+        this.current_generation = 0
+        ref int[][] this.grid = new int[height][width]
+        ref int[][] this.next_grid = new int[height][width]
+        
+    fn initialize_random() -> void:
+        print "Initializing random grid %dx%d..." | this.width, this.height
+        for y = 0 to (this.height - 1):
+            for x = 0 to (this.width - 1):
+                int cell = rand(0, 1)
+                this.grid[y][x] = cell
+        print "Generation %d initialized" | this.current_generation
+        
+    fn initialize_pattern() -> void:
+        print "Initializing with glider pattern..."
+        for y = 0 to (this.height - 1):
+            for x = 0 to (this.width - 1):
+                this.grid[y][x] = 0
+        if this.width >= 5 && this.height >= 5:
+            this.grid[1][2] = 1
+            this.grid[2][3] = 1
+            this.grid[3][1] = 1
+            this.grid[3][2] = 1
+            this.grid[3][3] = 1
+            print "Glider pattern created"
+        else:
+            print "Grid too small for glider, using random"
+            this.initialize_random()
+            
+    fn print_grid() -> void:
+        print "Generation %d:" | this.current_generation
+        for y = 0 to (this.height - 1):
+            for x = 0 to (this.width - 1):
+                if this.grid[y][x] == 1:
+                    put "█ "
+                else:
+                    put "· "
+            put "\n"
+        put "\n"
+        
+    fn count_neighbors(int x, int y) -> int:
+        int count = 0
+        for dy = -1 to 1:
+            for dx = -1 to 1:
+                if dx == 0 && dy == 0:
+                    continue
+                int nx = x + dx
+                int ny = y + dy
+                if nx >= 0 && nx < this.width && ny >= 0 && ny < this.height:
+                    if this.grid[ny][nx] == 1:
+                        count = count + 1
+        return count
+        
+    fn compute_next_generation() -> void:
+        for y = 0 to (this.height - 1):
+            for x = 0 to (this.width - 1):
+                int neighbors = this.count_neighbors(x, y)
+                int current_cell = this.grid[y][x]
+                
+                if current_cell == 1:
+                    if neighbors < 2:
+                        this.next_grid[y][x] = 0
+                    elif neighbors == 2 || neighbors == 3:
+                        this.next_grid[y][x] = 1
+                    else:
+                        this.next_grid[y][x] = 0
+                else:
+                    if neighbors == 3:
+                        this.next_grid[y][x] = 1
+                    else:
+                        this.next_grid[y][x] = 0                        
+    fn advance_generation() -> void:
+        this.compute_next_generation()        
+        for y = 0 to (this.height - 1):
+            for x = 0 to (this.width - 1):
+                this.grid[y][x] = this.next_grid[y][x]        
+        this.current_generation = this.current_generation + 1
+        
+    fn count_living_cells() -> int:
+        int count = 0
+        for y = 0 to (this.height - 1):
+            for x = 0 to (this.width - 1):
+                if this.grid[y][x] == 1:
+                    count = count + 1
+        return count
+        
+    fn is_stable() -> bool:
+        this.compute_next_generation()
+        for y = 0 to (this.height - 1):
+            for x = 0 to (this.width - 1):
+                if this.grid[y][x] != this.next_grid[y][x]:
+                    return false
+        return true
+        
+    fn run_simulation(int max_generations) -> void:
+        print "Starting Conway's Game of Life simulation..."
+        print "Grid size: %dx%d" | this.width, this.height
+        
+        this.initialize_pattern()
+        this.print_grid()
+        
+        for gen = 1 to max_generations:
+            int living = this.count_living_cells()
+            print "Generation %d - Living cells: %d" | this.current_generation, living
+            
+            if living == 0:
+                print "All cells died. Simulation ended."
+                break
+                
+            if this.is_stable():
+                print "Stable state reached. Simulation ended."
+                break
+                
+            this.advance_generation()
+            this.print_grid()
+            
+            sleep 1
+            
+        print "Simulation completed after %d generations" | this.current_generation
+        
+    fn run_interactive() -> void:
+        print "Interactive Game of Life"
+        this.initialize_random()
+        
+        for gen = 1 to 1000: 
+            this.print_grid()
+            int living = this.count_living_cells()
+            print "Generation %d - Living: %d (Press any key to continue)" | this.current_generation, living
+            sleep 2
+            if living == 0:
+                print "Extinction occurred."
+                break
+            this.advance_generation()
+
+var small_game = new GameOfLife(10, 8)
+small_game.run_simulation(15)
+
+var big_game = new GameOfLife(20, 15)
+big_game.initialize_random()
+big_game.run_simulation(10)
+
+var interactive_game = new GameOfLife(12, 8)
+interactive_game.run_interactive()
