@@ -90,10 +90,20 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 		}
 
 		pairsStr := strings.TrimSpace(line[pairsStart:pairsEnd])
+		var pairs []MapPair
+
+		if pairsStr == "[]" {
+			return &Statement{MapDecl: &MapDeclStmt{
+				KeyType:   keyType,
+				ValueType: valueType,
+				Name:      mapName,
+				Pairs:     pairs,
+			}}, lineNum + 1, nil
+		}
+
 		if strings.HasPrefix(pairsStr, "[") {
 			pairsStr = strings.TrimSpace(pairsStr[1:])
 		}
-		var pairs []MapPair
 
 		if pairsStr != "" {
 			if strings.Contains(pairsStr, ":") {
@@ -118,7 +128,7 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 						pairs = append(pairs, MapPair{Key: key, Value: value})
 					}
 				}
-			} else {
+			} else if strings.TrimSpace(pairsStr) != "" { // Only process non-empty string
 				valuesList := strings.Split(pairsStr, ",")
 				for i, valueStr := range valuesList {
 					valueStr = strings.TrimSpace(valueStr)

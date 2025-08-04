@@ -226,6 +226,33 @@ fn test():
 	}
 }
 
+func TestEmptyMapDeclaration(t *testing.T) {
+	input := `map[string:int] emptyMap = []`
+	program, err := ParseWithIndentation(input)
+	if err != nil {
+		t.Fatalf("ParseWithIndentation failed: %v", err)
+	}
+	if len(program.Statements) != 1 {
+		t.Fatalf("expected 1 statement, got %d", len(program.Statements))
+	}
+	stmt := program.Statements[0]
+	if stmt.MapDecl == nil {
+		t.Fatal("expected a MapDecl statement, got nil")
+	}
+	if stmt.MapDecl.Name != "emptyMap" {
+		t.Errorf("expected map name 'emptyMap', got '%s'", stmt.MapDecl.Name)
+	}
+	if stmt.MapDecl.KeyType != "string" {
+		t.Errorf("expected key type 'string', got '%s'", stmt.MapDecl.KeyType)
+	}
+	if stmt.MapDecl.ValueType != "int" {
+		t.Errorf("expected value type 'int', got '%s'", stmt.MapDecl.ValueType)
+	}
+	if len(stmt.MapDecl.Pairs) != 0 {
+		t.Errorf("expected 0 pairs in empty map, got %d", len(stmt.MapDecl.Pairs))
+	}
+}
+
 func TestContinueStatement(t *testing.T) {
 	tests := []struct {
 		name     string
