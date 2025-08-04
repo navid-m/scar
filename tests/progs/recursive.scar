@@ -1,5 +1,5 @@
 class RecursiveMadness:
-    init():
+    init:
         this.depth = 0
 
     fn start(int x) -> void:
