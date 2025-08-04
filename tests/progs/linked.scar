@@ -29,7 +29,7 @@ class LinkedList:
         var current = this.head
         int index = 0
 
-        while current != 0:
+        while current != NULL:
             print "Node %d: %d" | index, current.value
             if current.has_next:
                 current = current.next
