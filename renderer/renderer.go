@@ -807,9 +807,11 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			renderStatements(b, stmt.While.Body, indent+"    ", className, program)
 			fmt.Fprintf(b, "%s}\n", indent)
 		case stmt.Foreach != nil:
-			collection := stmt.Foreach.Collection
-			varType := mapTypeToCType(stmt.Foreach.VarType)
-			varName := stmt.Foreach.VarName
+			var (
+				collection = stmt.Foreach.Collection
+				varType    = mapTypeToCType(stmt.Foreach.VarType)
+				varName    = stmt.Foreach.VarName
+			)
 
 			var mapName, accessType string
 			if strings.HasSuffix(collection, ".keys") {
