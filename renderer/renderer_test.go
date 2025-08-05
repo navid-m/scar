@@ -1606,6 +1606,47 @@ func TestGetInPrintStatement(t *testing.T) {
 	}
 }
 
+func TestListParameterInFunction(t *testing.T) {
+	program := &lexer.Program{
+		Statements: []*lexer.Statement{
+			{
+				TopLevelFuncDecl: &lexer.TopLevelFuncDeclStmt{
+					Name: "processNumbers",
+					Parameters: []*lexer.MethodParameter{
+						{
+							Name:   "numbers",
+							Type:   "list[int]",
+							IsList: true,
+						},
+					},
+					Body: []*lexer.Statement{
+						{
+							Print: &lexer.PrintStmt{
+								Format:    "First number: %d, Length: %d",
+								Variables: []string{"numbers[0]", "numbers_len"},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	cCode := RenderC(program, "")
+
+	// Check that the function prototype has both array and length parameters
+	expectedPrototype := "void processNumbers(int numbers[], int numbers_len)"
+	if !strings.Contains(cCode, expectedPrototype) {
+		t.Errorf("Expected function prototype '%s' not found in generated code", expectedPrototype)
+	}
+
+	// Check that the function implementation uses the parameters correctly
+	expectedPrint := `printf("First number: %d, Length: %d\n", numbers[0], numbers_len)`
+	if !strings.Contains(cCode, expectedPrint) {
+		t.Errorf("Expected print statement not found in generated code. Expected to find: %s", expectedPrint)
+	}
+}
+
 func TestFunctionHoisting(t *testing.T) {
 	program := &lexer.Program{
 		Imports: []*lexer.ImportStmt{},
