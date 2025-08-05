@@ -747,6 +747,9 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				}
 				fmt.Fprintf(b, "%sreturn %s;\n", indent, value)
 			}
+		case stmt.GetMap != nil:
+			mapAccess := renderMapAccess(stmt.GetMap.MapName, stmt.GetMap.Key, program)
+			fmt.Fprintf(b, "%s%s;\n", indent, mapAccess)
 		case stmt.Throw != nil:
 			value := lexer.ResolveSymbol(stmt.Throw.Value, currentModule)
 			fmt.Fprintf(b, "%s_exception = %s;\n", indent, value)
@@ -898,17 +901,15 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 					} else {
 						value = convertThisReferencesGranular(value)
 						value = convertNewToConstructor(value)
-						fmt.Fprintf(b, "%s;\n", value)
 					}
 				}
-				continue
-			}
-			if isMethodCall(value) {
+			} else if isMethodCall(value) {
 				value = convertMethodCallToC(value)
 			} else {
 				value = convertThisReferencesGranular(value)
 			}
 
+			value = processGetExpressions(value, program)
 			value = fixFloatCastGranular(value)
 			value = resolveImportedSymbols(value, program.Imports)
 
@@ -1628,6 +1629,63 @@ func convertThisReferencesGranular(expr string) string {
 	}
 
 	return expr
+}
+
+// Processes all get! expressions in a string and replaces them with the appropriate C code
+func processGetExpressions(expr string, program *lexer.Program) string {
+	re := regexp.MustCompile(`get!\s*\(([^)]+)\)`)
+	matches := re.FindAllStringSubmatchIndex(expr, -1)
+	if len(matches) == 0 {
+		return expr
+	}
+
+	result := expr
+	offset := 0
+
+	for _, match := range matches {
+		fullMatch := expr[match[0]:match[1]]
+		argsStr := expr[match[2]:match[3]]
+		args := []string{}
+		start := 0
+		parenCount := 0
+
+		for i, c := range argsStr {
+			switch c {
+			case '(':
+				parenCount++
+			case ')':
+				parenCount--
+			case ',':
+				if parenCount == 0 {
+					arg := strings.TrimSpace(argsStr[start:i])
+					if arg != "" {
+						args = append(args, arg)
+					}
+					start = i + 1
+				}
+			}
+		}
+
+		if start < len(argsStr) {
+			arg := strings.TrimSpace(argsStr[start:])
+			if arg != "" {
+				args = append(args, arg)
+			}
+		}
+		if len(args) == 2 {
+			var (
+				mapName = args[0]
+				key     = args[1]
+				cCode   = renderMapAccess(mapName, key, program)
+				before  = result[:match[0]+offset]
+				after   = result[match[1]+offset:]
+			)
+			result = before + cCode + after
+			offset += len(cCode) - len(fullMatch)
+		}
+	}
+
+	return result
 }
 
 func resolveImportedSymbols(value string, imports []*lexer.ImportStmt) string {

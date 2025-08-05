@@ -1,11 +1,12 @@
 string code = "++++++++[>++++[>++>+++>+++>+<<<<-]>+>+>->>+[<]<-]>>.>---.+++++++..+++.>>.<-.<.+++.------.--------.>>+.>++." 
-list[int] tape = []
+map[int: int] tape = []
 int ptr = 0
 int pc = 0
 int code_len = len(code)
 
 for i = 0 to 299:
-    tape[i] = 0
+    print "Setting tape %d to 0" | i
+    put!(tape, i, 0)
 
 print "Running the brainfuck code..."
 
@@ -19,19 +20,23 @@ while pc < code_len:
         ptr = ptr - 1
 
     elif chara == '+':
-        tape[ptr] = tape[ptr] + 1
+        int val = get!(tape, ptr) + 1
+        put!(tape, ptr, val)
 
     elif chara == '-':
-        tape[ptr] = tape[ptr] - 1
+        int val = get!(tape, ptr) - 1
+        put!(tape, ptr, val)
 
     elif chara == '.':
-        print "%c" | tape[ptr]
+        int val = get!(tape, ptr)
+        put "%c" | val
 
     elif chara == ',':
-        tape[ptr] = 0
+        put!(tape, ptr, 0)
 
     elif chara == '[':
-        if tape[ptr] == 0:
+        int val = get!(tape, ptr)
+        if val == 0:
             int loop = 1
             while loop > 0:
                 pc = pc + 1
@@ -41,7 +46,8 @@ while pc < code_len:
                     loop = loop - 1
 
     elif chara == ']':
-        if tape[ptr] != 0:
+        int val = get!(tape, ptr)
+        if val != 0:
             int loop = 1
             while loop > 0:
                 pc = pc - 1
