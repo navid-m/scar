@@ -1734,7 +1734,7 @@ func convertMethodCallToC(expr string) string {
 	return convertSingleMethodCall(expr)
 }
 
-// generateMapAccessHelper generates a helper function for map access
+// Generates a function for map access
 func generateMapAccessHelper(b *strings.Builder, mapName, keyType, valueType string) {
 	helperName := fmt.Sprintf("__get_%s_value", mapName)
 
@@ -1760,7 +1760,6 @@ func generateMapAccessHelper(b *strings.Builder, mapName, keyType, valueType str
 		cValueType = mapTypeToCType(valueType)
 	}
 
-	// Generate the helper function
 	fmt.Fprintf(b, "%s %s(%s key) {\n", cValueType, helperName, cKeyType)
 	fmt.Fprintf(b, "    for (int i = 0; i < %s_size; i++) {\n", mapName)
 
@@ -1790,7 +1789,6 @@ func generateMapAccessHelper(b *strings.Builder, mapName, keyType, valueType str
 	}
 
 	fmt.Fprintf(b, "}\n\n")
-	fmt.Fprintf(b, "// Helper to get key at index for %s\n", mapName)
 
 	if keyType == "string" {
 		fmt.Fprintf(b, "char* __get_%s_key_at(int index) {\n", mapName)
@@ -1832,7 +1830,6 @@ func renderMapAccess(mapName, key string, program *lexer.Program) string {
 		}
 	}
 
-	// Generate the helper function name
 	helperName := fmt.Sprintf("__get_%s_value", resolvedMapName)
 
 	// Generate the key expression
@@ -1865,7 +1862,6 @@ func renderMapAccess(mapName, key string, program *lexer.Program) string {
 		}
 	}
 
-	// The helper function already has the correct return type, so we don't need to cast
 	return fmt.Sprintf("%s(%s)", helperName, keyExpr)
 }
 

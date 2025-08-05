@@ -1575,8 +1575,8 @@ func TestGetInPrintStatement(t *testing.T) {
 		Statements: []*lexer.Statement{
 			{
 				MapDecl: &lexer.MapDeclStmt{
-					Name:     "myMap",
-					KeyType:  "string",
+					Name:      "myMap",
+					KeyType:   "string",
 					ValueType: "int",
 					Pairs: []lexer.MapPair{
 						{Key: "one", Value: "1"},
@@ -1596,13 +1596,10 @@ func TestGetInPrintStatement(t *testing.T) {
 	}
 
 	cCode := RenderC(program, "")
-
-	// Check that the helper function was generated
 	if !strings.Contains(cCode, "__get_myMap_value") {
 		t.Error("Expected helper function __get_myMap_value not found in generated code")
 	}
 
-	// Check that the print statement uses the helper function
 	expectedPrint := `printf("The value is: %d\n", __get_myMap_value("one"))`
 	if !strings.Contains(cCode, expectedPrint) {
 		t.Errorf("Expected print statement not found in generated code. Expected to find: %s", expectedPrint)
