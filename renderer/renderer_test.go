@@ -1723,3 +1723,55 @@ func TestFunctionHoisting(t *testing.T) {
 		t.Errorf("Expected prototype '%s' not found in generated code", expectedPrototype)
 	}
 }
+
+func TestMethodCallTranslation(t *testing.T) {
+	input := `pub int PI = 3
+pub class Calculator:
+    fn add(int a, int b) -> int:
+        return a + b
+var calc = new Calculator()
+print "%d" | calc.add(2, 3)`
+
+	program, err := lexer.ParseWithIndentation(input)
+	if err != nil {
+		t.Fatalf("Failed to parse input: %v", err)
+	}
+
+	result := RenderC(program, ".")
+
+	expectedClassDecl := "typedef struct Calculator Calculator;"
+	if !strings.Contains(result, expectedClassDecl) {
+		t.Errorf("Expected class typedef '%s' not found in generated code", expectedClassDecl)
+	}
+	expectedConstructor := "Calculator* Calculator_new();"
+	if !strings.Contains(result, expectedConstructor) {
+		t.Errorf("Expected constructor declaration '%s' not found in generated code", expectedConstructor)
+	}
+	expectedMethodDecl := "int Calculator_add(Calculator* this, int a, int b);"
+	if !strings.Contains(result, expectedMethodDecl) {
+		t.Errorf("Expected method declaration '%s' not found in generated code", expectedMethodDecl)
+	}
+	expectedInstantiation := "Calculator* calc = Calculator_new();"
+	if !strings.Contains(result, expectedInstantiation) {
+		t.Errorf("Expected object instantiation '%s' not found in generated code", expectedInstantiation)
+	}
+	expectedMethodCall := "Calculator_add(calc, 2, 3)"
+	if !strings.Contains(result, expectedMethodCall) {
+		t.Errorf("Expected method call '%s' not found in generated code", expectedMethodCall)
+	}
+	incorrectMethodCall := "Calc_add(calc, 2, 3)"
+	if strings.Contains(result, incorrectMethodCall) {
+		t.Errorf("Found incorrect method call '%s' in generated code - this indicates a regression", incorrectMethodCall)
+	}
+	expectedPrintCall := `printf("%d\n", Calculator_add(calc, 2, 3));`
+	if !strings.Contains(result, expectedPrintCall) {
+		t.Errorf("Expected print statement '%s' not found in generated code", expectedPrintCall)
+	}
+	expectedGlobalVar := "int PI = 3;"
+	if !strings.Contains(result, expectedGlobalVar) {
+		t.Errorf("Expected global variable '%s' not found in generated code", expectedGlobalVar)
+	}
+	if t.Failed() {
+		t.Logf("Full generated C code:\n%s", result)
+	}
+}
