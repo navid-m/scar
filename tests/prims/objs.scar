@@ -27,6 +27,6 @@ int age = myCat.getAge()
 myCat.setInfo(8, "Whiskers")
 age = myCat.getAge()
 print "The age was %d" | age
-
+print "The name was %s" | myCat.name
 SomeOtherClass soc = new SomeOtherClass()
 soc.sayThing()

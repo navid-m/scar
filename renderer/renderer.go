@@ -168,7 +168,7 @@ int _exception = 0;
 		}
 	}
 
-	// Generate function prototypes first
+	// Generate function prototypes
 	for _, funcDecl := range globalFunctions {
 		// Skip main function as it's handled separately
 		if funcDecl.Name == "main" {
@@ -176,35 +176,6 @@ int _exception = 0;
 		}
 		prototype := generateFunctionPrototype(funcDecl)
 		b.WriteString(fmt.Sprintf("%s;\n", prototype))
-	}
-	b.WriteString("\n")
-	for _, funcDecl := range globalFunctions {
-		returnType := "void"
-		if funcDecl.ReturnType != "" && funcDecl.ReturnType != "void" {
-			if funcDecl.ReturnType == "string" {
-				returnType = "void"
-			} else {
-				returnType = mapTypeToCType(funcDecl.ReturnType)
-			}
-		}
-
-		fmt.Fprintf(&b, "%s %s(", returnType, funcDecl.Name)
-
-		paramList := make([]string, 0)
-		if funcDecl.ReturnType == "string" {
-			paramList = append(paramList, "char* _output_buffer")
-		}
-
-		for _, param := range funcDecl.Parameters {
-			paramType := mapTypeToCType(param.Type)
-			if param.Type == "string" {
-				paramType = "char*"
-			}
-			paramList = append(paramList, fmt.Sprintf("%s %s", paramType, param.Name))
-		}
-
-		b.WriteString(strings.Join(paramList, ", "))
-		b.WriteString(");\n")
 	}
 	b.WriteString("\n")
 	for varName, varDecl := range globalVars {

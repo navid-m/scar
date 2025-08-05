@@ -24,3 +24,5 @@ print "First score: %.1f" | scores[0]
 
 fn hi(list[int] numbers):
     print "First number: %d" | numbers[0]
+
+hi(numbers)
