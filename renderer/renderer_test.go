@@ -1607,7 +1607,6 @@ func TestGetInPrintStatement(t *testing.T) {
 }
 
 func TestFunctionHoisting(t *testing.T) {
-	// Create a program with functions declared out of order
 	program := &lexer.Program{
 		Imports: []*lexer.ImportStmt{},
 		Statements: []*lexer.Statement{
