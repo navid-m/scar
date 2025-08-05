@@ -4,7 +4,7 @@ class SideEffectsConstructorClass:
 
 class TestClass:
     init:
-        this.name = "Test"
+        string this.name = "Test"
         print "Created TestClass with name: %s", this.name
 
 var scc = new SideEffectsConstructorClass()
