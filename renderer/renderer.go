@@ -696,16 +696,15 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				)
 				for i, v := range variables {
 					if strings.HasPrefix(v, "get!") {
-						// Handle get! macro in print statement
-						getArgs := v[4:]                                         // Remove 'get!' prefix
-						getArgs = strings.TrimSpace(getArgs[1 : len(getArgs)-1]) // Remove parentheses
+						getArgs := v[4:]
+						getArgs = strings.TrimSpace(getArgs[1 : len(getArgs)-1])
 						parts := strings.SplitN(getArgs, ",", 2)
 						if len(parts) == 2 {
 							mapName := strings.TrimSpace(parts[0])
 							key := strings.TrimSpace(parts[1])
 							args[i] = renderMapAccess(mapName, key, program)
 						} else {
-							args[i] = v // Fallback to original if parsing fails
+							args[i] = v
 						}
 					} else if isMethodCall(v) {
 						args[i] = convertMethodCallToC(v)
@@ -719,10 +718,14 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				escapedFormat := strings.ReplaceAll(stmt.Print.Format, "\"", "\\\"")
 				fmt.Fprintf(b, "%sprintf(\"%s\\n\", %s);\n", indent, escapedFormat, argsStr)
 			} else if stmt.Print.Print != "" {
-				if strings.Contains(stmt.Print.Print, "get!") {
-					fmt.Fprintf(b, "%sprintf(\"%%s\\n\", %s);\n", indent, stmt.Print.Print)
+				printValue := stmt.Print.Print
+				if isMethodCall(printValue) {
+					printValue = convertMethodCallToC(printValue)
+				}
+				if strings.Contains(printValue, "get!") {
+					fmt.Fprintf(b, "%sprintf(\"%%s\\n\", %s);\n", indent, printValue)
 				} else {
-					fmt.Fprintf(b, "%sprintf(\"%s\\n\");\n", indent, stmt.Print.Print)
+					fmt.Fprintf(b, "%sprintf(\"%s\\n\");\n", indent, printValue)
 				}
 			}
 
@@ -1776,7 +1779,7 @@ func convertMethodCallToC(expr string) string {
 			if len(parts) == 2 {
 				left = strings.TrimSpace(parts[0])
 				right = strings.TrimSpace(parts[1])
-				op = cmpOp // Store the actual operator we found
+				op = cmpOp
 				hasComparison = true
 				break
 			}
@@ -1923,53 +1926,102 @@ func renderMapAccess(mapName, key string, program *lexer.Program) string {
 }
 
 func convertSingleMethodCall(expr string) string {
-	if !strings.Contains(expr, "this.") {
-		return expr
+	if strings.Contains(expr, "this.") {
+		startIdx := strings.Index(expr, "this.")
+		if startIdx == -1 {
+			return expr
+		}
+		dotIndex := startIdx + 4
+		if dotIndex >= len(expr) || expr[dotIndex] != '.' {
+			return expr
+		}
+		parenIndex := strings.Index(expr[dotIndex:], "(")
+		if parenIndex == -1 {
+			fieldName := expr[dotIndex+1:]
+			return fmt.Sprintf("this->%s", fieldName)
+		}
+
+		parenIndex += dotIndex
+		var (
+			methodName = expr[dotIndex+1 : parenIndex]
+			className  = currentClassName
+		)
+		if className == "" {
+			return expr
+		}
+		closeParen := findMatchingParen(expr, parenIndex)
+		if closeParen == -1 {
+			return expr
+		}
+		args := ""
+		if closeParen > parenIndex+1 {
+			args = expr[parenIndex+1 : closeParen]
+		}
+
+		if args != "" {
+			if strings.Contains(args, "this.") {
+				nestedProcessed := convertMethodCallToC(args)
+				if nestedProcessed != args {
+					expr = expr[:parenIndex+1] + nestedProcessed + expr[closeParen:]
+					return convertSingleMethodCall(expr)
+				}
+			}
+		}
+		if args == "" {
+			return fmt.Sprintf("%s_%s(this)", className, methodName)
+		}
+		return fmt.Sprintf("%s_%s(this, %s)", className, methodName, args)
 	}
-	startIdx := strings.Index(expr, "this.")
-	if startIdx == -1 {
+	dotIndex := strings.Index(expr, ".")
+	if dotIndex == -1 {
 		return expr
-	}
-	dotIndex := startIdx + 4 // length of "this" is 4
-	if dotIndex >= len(expr) || expr[dotIndex] != '.' {
-		return expr
-	}
-	parenIndex := strings.Index(expr[dotIndex:], "(")
-	if parenIndex == -1 {
-		fieldName := expr[dotIndex+1:]
-		return fmt.Sprintf("this->%s", fieldName)
 	}
 
-	parenIndex += dotIndex
-	var (
-		methodName = expr[dotIndex+1 : parenIndex]
-		className  = currentClassName
-	)
-	if className == "" {
+	parenIndex := strings.Index(expr[dotIndex:], "(")
+	if parenIndex == -1 {
 		return expr
 	}
+	parenIndex += dotIndex
+
+	if !strings.Contains(expr, ")") {
+		return expr
+	}
+
+	objectName := strings.TrimSpace(expr[:dotIndex])
+	methodName := strings.TrimSpace(expr[dotIndex+1 : parenIndex])
+
 	closeParen := findMatchingParen(expr, parenIndex)
 	if closeParen == -1 {
 		return expr
 	}
+
 	args := ""
 	if closeParen > parenIndex+1 {
 		args = expr[parenIndex+1 : closeParen]
 	}
 
-	if args != "" {
-		if strings.Contains(args, "this.") {
-			nestedProcessed := convertMethodCallToC(args)
-			if nestedProcessed != args {
-				expr = expr[:parenIndex+1] + nestedProcessed + expr[closeParen:]
-				return convertSingleMethodCall(expr)
+	var resolvedClassName string
+	for objName, obj := range globalObjects {
+		if objName == objectName {
+			resolvedClassName = obj.Type
+			if strings.Contains(resolvedClassName, ".") {
+				parts := strings.Split(resolvedClassName, ".")
+				resolvedClassName = lexer.GenerateUniqueSymbol(parts[1], parts[0])
 			}
+			break
 		}
 	}
-	if args == "" {
-		return fmt.Sprintf("%s_%s(this)", className, methodName)
+
+	if resolvedClassName == "" {
+		return expr
 	}
-	return fmt.Sprintf("%s_%s(this, %s)", className, methodName, args)
+
+	resolvedObjectName := lexer.ResolveSymbol(objectName, currentModule)
+
+	if args == "" {
+		return fmt.Sprintf("%s_%s(%s)", resolvedClassName, methodName, resolvedObjectName)
+	}
+	return fmt.Sprintf("%s_%s(%s, %s)", resolvedClassName, methodName, resolvedObjectName, args)
 }
 
 func generateTopLevelFunctionImplementation(b *strings.Builder, funcDecl *lexer.TopLevelFuncDeclStmt, program *lexer.Program) {
