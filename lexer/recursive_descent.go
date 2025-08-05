@@ -103,9 +103,10 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 		if len(typeParts) != 2 {
 			return nil, lineNum + 1, fmt.Errorf("map type must specify key:value types at line %d", lineNum+1)
 		}
-
-		keyType := strings.TrimSpace(typeParts[0])
-		valueType := strings.TrimSpace(typeParts[1])
+		var (
+			keyType   = strings.TrimSpace(typeParts[0])
+			valueType = strings.TrimSpace(typeParts[1])
+		)
 		if keyType == "" || valueType == "" {
 			return nil, lineNum + 1, fmt.Errorf("map type must specify valid key and value types at line %d", lineNum+1)
 		}
@@ -161,7 +162,7 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 						pairs = append(pairs, MapPair{Key: key, Value: value})
 					}
 				}
-			} else if strings.TrimSpace(pairsStr) != "" { // Only process non-empty string
+			} else if strings.TrimSpace(pairsStr) != "" {
 				valuesList := strings.Split(pairsStr, ",")
 				for i, valueStr := range valuesList {
 					valueStr = strings.TrimSpace(valueStr)
