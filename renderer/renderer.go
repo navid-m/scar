@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 	"unicode"
 
@@ -1027,10 +1028,15 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 						value = resolveFunctionCall(value)
 						fmt.Fprintf(b, "%sstrcpy(%s, %s);\n", indent, varName, value)
 					} else {
-						if !strings.HasPrefix(value, "\"") && !strings.HasSuffix(value, "\"") {
-							value = fmt.Sprintf("\"%s\"", value)
+						// Only quote the value if it's a literal string (starts and ends with quotes)
+						// and not a variable/parameter name or expression
+						if strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"") {
+							fmt.Fprintf(b, "%sstrcpy(%s, %s);\n", indent, varName, value)
+						} else if isNumericOrBoolean(value) || isValidIdentifier(value) {
+							fmt.Fprintf(b, "%sstrcpy(%s, %s);\n", indent, varName, value)
+						} else {
+							fmt.Fprintf(b, "%sstrcpy(%s, \"%s\");\n", indent, varName, value)
 						}
-						fmt.Fprintf(b, "%sstrcpy(%s, %s);\n", indent, varName, value)
 					}
 				} else {
 					if isFunctionCall(value) {
@@ -2005,15 +2011,28 @@ func generateTopLevelFunctionImplementation(b *strings.Builder, funcDecl *lexer.
 	b.WriteString("}\n\n")
 }
 
+func isNumericOrBoolean(s string) bool {
+	if s == "true" || s == "false" {
+		return true
+	}
+	if _, err := strconv.Atoi(s); err == nil {
+		return true
+	}
+	if _, err := strconv.ParseFloat(s, 64); err == nil {
+		return true
+	}
+	return false
+}
+
 func isValidIdentifier(s string) bool {
-	if len(s) == 0 {
+	if s == "" {
 		return false
 	}
-	if !((s[0] >= 'a' && s[0] <= 'z') || (s[0] >= 'A' && s[0] <= 'Z') || s[0] == '_') {
+	if !unicode.IsLetter(rune(s[0])) && s[0] != '_' {
 		return false
 	}
-	for i := 1; i < len(s); i++ {
-		if !((s[i] >= 'a' && s[i] <= 'z') || (s[i] >= 'A' && s[i] <= 'Z') || (s[i] >= '0' && s[i] <= '9') || s[i] == '_') {
+	for _, c := range s[1:] {
+		if !unicode.IsLetter(c) && !unicode.IsDigit(c) && c != '_' {
 			return false
 		}
 	}
