@@ -294,7 +294,6 @@ func collectClassInfoWithModule(classDecl *lexer.ClassDeclStmt, moduleName strin
 		for _, param := range classDecl.Constructor.Parameters {
 			if _, exists := fieldMap[param.Name]; !exists {
 				fieldType := param.Type
-				// If the type starts with 'ref ' (old style), clean it up
 				if after, ok := strings.CutPrefix(fieldType, "ref "); ok {
 					fieldType = after
 				}
