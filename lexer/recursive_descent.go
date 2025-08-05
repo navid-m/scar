@@ -115,10 +115,11 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 		if len(parts) < 3 || parts[1] != "=" {
 			return nil, lineNum + 1, fmt.Errorf("map declaration format error at line %d (expected: map[keyType: valueType] name = [key: value, ...])", lineNum+1)
 		}
-
-		mapName := parts[0]
-		pairsStart := strings.Index(line, "=") + 1
-		pairsEnd := strings.LastIndex(line, "]")
+		var (
+			mapName    = parts[0]
+			pairsStart = strings.Index(line, "=") + 1
+			pairsEnd   = strings.LastIndex(line, "]")
+		)
 		if pairsStart == -1 || pairsEnd == -1 || pairsEnd <= pairsStart {
 			return nil, lineNum + 1, fmt.Errorf("map declaration missing initialization at line %d", lineNum+1)
 		}
