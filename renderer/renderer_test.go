@@ -509,7 +509,7 @@ func TestRenderCWithImports(t *testing.T) {
 
 	cCode := RenderC(program, "")
 
-	expectedAreaCalc := "area = math->PI * 5 * 5;"
+	expectedAreaCalc := "area = math_PI * 5 * 5;"
 	if !strings.Contains(cCode, expectedAreaCalc) {
 		t.Errorf("Expected area calculation '%s' not found in generated code", expectedAreaCalc)
 	}

@@ -1597,29 +1597,22 @@ func convertThisReferencesGranular(expr string) string {
 		stringLiterals = append(stringLiterals, match)
 		return fmt.Sprintf("__STRING_LITERAL_%d__", len(stringLiterals)-1)
 	})
-
 	if isMethodCall(expr) {
 		expr = convertMethodCallToC(expr)
 	}
 
 	expr = strings.Join(strings.Fields(expr), " ")
-	re := regexp.MustCompile(`(^|\s|\(|\[|,|\+|-|\*|/|%|&|\||\^|!|~|\?|:|=|\{|\}|;|,|\s)this\s*\.\s*([a-zA-Z_][a-zA-Z0-9]*)`)
-	expr = re.ReplaceAllString(expr, "${1}this->$2")
-	re = regexp.MustCompile(`(this->\s*[a-zA-Z_]\s*[a-zA-Z0-9]*)\s*\[`)
-	expr = re.ReplaceAllString(expr, "$1[")
-	re = regexp.MustCompile(`([a-zA-Z_]\s*[a-zA-Z0-9]*)\s*\.\s*([a-zA-Z_]\s*[a-zA-Z0-9]*)`)
-	expr = re.ReplaceAllString(expr, "$1->$2")
+	reModuleMember := regexp.MustCompile(`\b([a-zA-Z_][a-zA-Z0-9]*)\.([A-Z_][A-Z0-9_]*)\b`)
+	expr = reModuleMember.ReplaceAllString(expr, "${1}_$2")
+	reThisMember := regexp.MustCompile(`(^|\s|\(|\[|,|\+|-|\*|/|%|&|\||\^|!|~|\?|:|=|\{|\}|;|,|\s)this\s*\.\s*([a-zA-Z_][a-zA-Z0-9]*)`)
+	expr = reThisMember.ReplaceAllString(expr, "${1}this->$2")
+	reObjMember := regexp.MustCompile(`\b([a-zA-Z_][a-zA-Z0-9]*)\s*\.\s*([a-zA-Z_][a-zA-Z0-9]*)\b`)
+	expr = reObjMember.ReplaceAllString(expr, "$1->$2")
 	expr = strings.ReplaceAll(expr, "->->", "->")
 	expr = strings.ReplaceAll(expr, "-> ", "->")
 	expr = strings.ReplaceAll(expr, " ->", "->")
 	expr = strings.ReplaceAll(expr, "this ->", "this->")
-	re = regexp.MustCompile(`this\.([a-zA-Z_][a-zA-Z0-9]*)`)
-	expr = re.ReplaceAllString(expr, "this->$1")
-	re = regexp.MustCompile(`([a-zA-Z_][a-zA-Z0-9]*)\.([a-zA-Z_][a-zA-Z0-9]*)`)
-	expr = re.ReplaceAllString(expr, "$1->$2")
-	expr = strings.ReplaceAll(expr, "this.", "this->")
 
-	// Handle any remaining method calls that might have been part of a larger expression
 	if isMethodCall(expr) {
 		expr = convertMethodCallToC(expr)
 	}
