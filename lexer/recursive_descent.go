@@ -238,9 +238,11 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 			return nil, lineNum + 1, fmt.Errorf("parallel for statement format error at line %d", lineNum+1)
 		}
 
-		varName := strings.TrimSpace(line[strings.Index(line, "for")+len("for") : equalsIndex])
-		start := strings.TrimSpace(line[equalsIndex+1 : toIndex])
-		end := strings.TrimSpace(line[toIndex+len("to") : colonIndex])
+		var (
+			varName = strings.TrimSpace(line[strings.Index(line, "for")+len("for") : equalsIndex])
+			start   = strings.TrimSpace(line[equalsIndex+1 : toIndex])
+			end     = strings.TrimSpace(line[toIndex+len("to") : colonIndex])
+		)
 
 		if varName == "" || start == "" || end == "" {
 			return nil, lineNum + 1, fmt.Errorf("parallel for statement missing variable, start, or end expression at line %d", lineNum+1)
