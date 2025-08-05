@@ -477,8 +477,7 @@ func isValidType(s string) bool {
 }
 
 func IsOperator(s string) bool {
-	operators := []string{"+", "-", "*", "/", "%"}
-	return slices.Contains(operators, s)
+	return slices.Contains([]string{"+", "-", "*", "/", "%"}, s)
 }
 
 func getIndentation(line string) int {
