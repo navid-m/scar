@@ -96,20 +96,14 @@ func RenderC(program *lexer.Program, baseDir string) string {
 int _exception = 0;
 
 `)
-
-	// First, output forward declarations for all structs
 	for className := range globalClasses {
 		fmt.Fprintf(&b, "struct %s;\n", className)
 	}
 	b.WriteString("\n")
-
-	// Then output typedefs
 	for className := range globalClasses {
 		fmt.Fprintf(&b, "typedef struct %s %s;\n", className, className)
 	}
 	b.WriteString("\n")
-
-	// Then output the full struct definitions
 	for className, classInfo := range globalClasses {
 		generateStructDefinition(&b, classInfo, className)
 		b.WriteString("\n")
@@ -167,10 +161,7 @@ int _exception = 0;
 			globalFunctions[lexer.GenerateUniqueSymbol(funcName, module.Name)] = topLevelFunc
 		}
 	}
-
-	// Generate function prototypes
 	for _, funcDecl := range globalFunctions {
-		// Skip main function as it's handled separately
 		if funcDecl.Name == "main" {
 			continue
 		}
