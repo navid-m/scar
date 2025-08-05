@@ -2042,9 +2042,10 @@ func generateTopLevelFunctionImplementation(b *strings.Builder, funcDecl *lexer.
 	}
 
 	for _, param := range funcDecl.Parameters {
-		paramType := mapTypeToCType(param.Type)
-		paramName := param.Name
-
+		var (
+			paramType = mapTypeToCType(param.Type)
+			paramName = param.Name
+		)
 		if param.IsList {
 			if param.Type == "string" {
 				paramList = append(paramList, fmt.Sprintf("char %s[][256]", paramName))
