@@ -1888,8 +1888,10 @@ func convertSingleMethodCall(expr string) string {
 	}
 
 	parenIndex += dotIndex
-	methodName := expr[dotIndex+1 : parenIndex]
-	className := currentClassName
+	var (
+		methodName = expr[dotIndex+1 : parenIndex]
+		className  = currentClassName
+	)
 	if className == "" {
 		return expr
 	}
