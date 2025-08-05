@@ -21,3 +21,6 @@ if numbers[0]:
 
 list[float] scores = [95.5, 87.2, 92.8]
 print "First score: %.1f" | scores[0]
+
+fn hi(list[int] numbers):
+    print "First number: %d" | numbers[0]

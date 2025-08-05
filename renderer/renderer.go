@@ -2098,10 +2098,21 @@ func generateFunctionPrototype(funcDecl *lexer.TopLevelFuncDeclStmt) string {
 
 	for _, param := range funcDecl.Parameters {
 		paramType := mapTypeToCType(param.Type)
-		if paramType == "string" {
-			paramType = "char*"
+		paramName := param.Name
+
+		if param.IsList {
+			if param.Type == "string" {
+				paramList = append(paramList, fmt.Sprintf("char %s[][256]", paramName))
+			} else {
+				paramList = append(paramList, fmt.Sprintf("%s %s[]", paramType, paramName))
+			}
+			paramList = append(paramList, fmt.Sprintf("int %s_len", paramName))
+		} else {
+			if param.Type == "string" {
+				paramType = "char*"
+			}
+			paramList = append(paramList, fmt.Sprintf("%s %s", paramType, paramName))
 		}
-		paramList = append(paramList, fmt.Sprintf("%s %s", paramType, param.Name))
 	}
 	if funcDecl.Name == "main" && len(funcDecl.Parameters) == 0 {
 		return "int main(int argc, char** argv)"
