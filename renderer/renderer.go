@@ -886,6 +886,8 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 					if value == "0" || value == "NULL" {
 						fmt.Fprintf(b, "%sthis->%s = NULL;\n", indent, fieldName)
 					} else {
+						value = convertThisReferencesGranular(value)
+						value = convertNewToConstructor(value)
 						fmt.Fprintf(b, "%sthis->%s = %s;\n", indent, fieldName, value)
 					}
 				} else {
@@ -899,14 +901,18 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 						fmt.Fprintf(b, "%s%s* %s = ", indent, innerType, varName)
 					}
 
-					if value == "0" || value == "NULL" {
+					if value == "0" || value == "NULL" || value == "nil" {
 						fmt.Fprintf(b, "NULL;\n")
 					} else {
 						value = convertThisReferencesGranular(value)
 						value = convertNewToConstructor(value)
+						fmt.Fprintf(b, "%s;\n", value)
 					}
 				}
-			} else if isMethodCall(value) {
+				return
+			}
+
+			if isMethodCall(value) {
 				value = convertMethodCallToC(value)
 			} else {
 				value = convertThisReferencesGranular(value)
@@ -1609,12 +1615,38 @@ func convertThisReferencesGranular(expr string) string {
 	expr = reModuleMember.ReplaceAllString(expr, "${1}_$2")
 	reThisMember := regexp.MustCompile(`(^|\s|\(|\[|,|\+|-|\*|/|%|&|\||\^|!|~|\?|:|=|\{|\}|;|,|\s)this\s*\.\s*([a-zA-Z_][a-zA-Z0-9]*)`)
 	expr = reThisMember.ReplaceAllString(expr, "${1}this->$2")
+
+	// Handle pointer member access for non-this objects
 	reObjMember := regexp.MustCompile(`\b([a-zA-Z_][a-zA-Z0-9]*)\s*\.\s*([a-zA-Z_][a-zA-Z0-9]*)\b`)
-	expr = reObjMember.ReplaceAllString(expr, "$1->$2")
+	expr = reObjMember.ReplaceAllStringFunc(expr, func(match string) string {
+		parts := strings.Split(match, ".")
+		if len(parts) == 2 {
+			varName := strings.TrimSpace(parts[0])
+			fieldName := strings.TrimSpace(parts[1])
+
+			for _, obj := range globalObjects {
+				if obj.Name == varName {
+					return fmt.Sprintf("%s->%s", varName, fieldName)
+				}
+			}
+
+			return fmt.Sprintf("%s->%s", varName, fieldName)
+		}
+		return match
+	})
+
 	expr = strings.ReplaceAll(expr, "->->", "->")
 	expr = strings.ReplaceAll(expr, "-> ", "->")
 	expr = strings.ReplaceAll(expr, " ->", "->")
 	expr = strings.ReplaceAll(expr, "this ->", "this->")
+
+	// Handle nil conversion
+	expr = strings.ReplaceAll(expr, " nil", " NULL")
+	expr = strings.ReplaceAll(expr, "nil ", "NULL ")
+	expr = strings.ReplaceAll(expr, "(nil)", "(NULL)")
+	if expr == "nil" {
+		expr = "NULL"
+	}
 
 	if isMethodCall(expr) {
 		expr = convertMethodCallToC(expr)
