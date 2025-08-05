@@ -817,8 +817,8 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			end = lexer.ResolveSymbol(end, currentModule)
 
 			// Clean up variable name - remove type prefix if present
-			if strings.HasPrefix(varName, "int ") {
-				varName = strings.TrimPrefix(varName, "int ")
+			if after, ok := strings.CutPrefix(varName, "int "); ok {
+				varName = after
 			}
 
 			// Clean up any malformed characters that might have been introduced
