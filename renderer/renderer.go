@@ -939,6 +939,23 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 					value = lexer.ResolveSymbol(value, currentModule)
 					value = convertThisReferencesGranular(value)
 				}
+
+				if strings.Contains(value, " | ") {
+					parts := strings.Split(value, " | ")
+					if strings.HasPrefix(parts[0], "\"") && strings.HasSuffix(parts[0], "\"") {
+						format := parts[0][1 : len(parts[0])-1] // Remove quotes
+						specifierCount := strings.Count(format, "%")
+						if specifierCount == len(parts)-1 {
+							args := strings.Join(parts[1:], ", ")
+							tempVar := "_temp_ret_" + strconv.Itoa(len(b.String())%1000)
+							fmt.Fprintf(b, "%schar %s[256];\n", indent, tempVar)
+							fmt.Fprintf(b, "%ssprintf(%s, \"%s\", %s);\n", indent, tempVar, format, args)
+							fmt.Fprintf(b, "%sreturn %s;\n", indent, tempVar)
+							break
+						}
+					}
+				}
+
 				fmt.Fprintf(b, "%sreturn %s;\n", indent, value)
 			}
 		case stmt.GetMap != nil:
