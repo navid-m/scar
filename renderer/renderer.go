@@ -560,7 +560,6 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 				fieldName := strings.TrimPrefix(stmt.MapDecl.Name, "this.")
 				mapSize := len(stmt.MapDecl.Pairs)
 
-				// Set initial capacity - use a reasonable default for empty maps
 				initialCapacity := 10
 				if mapSize > 0 {
 					initialCapacity = mapSize * 2 // Allow for growth
@@ -569,7 +568,6 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 				fmt.Fprintf(b, "    this->%s_size = %d;\n", fieldName, mapSize)
 				fmt.Fprintf(b, "    this->%s_capacity = %d;\n", fieldName, initialCapacity)
 
-				// Initialize map pairs
 				for i, pair := range stmt.MapDecl.Pairs {
 					key := pair.Key
 					value := pair.Value
@@ -1060,6 +1058,9 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 					}
 				}
 
+				if strings.Contains(value, "get!") {
+					value = processGetExpressions(value, program)
+				}
 				if isMethodCall(value) {
 					value = convertMethodCallToC(value)
 				} else if strings.HasPrefix(value, "this.") {
@@ -1419,25 +1420,13 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				resolvedType = lexer.GenerateUniqueSymbol(typeName, moduleName)
 			}
 
-			objectInfo := &ObjectInfo{
-				Name: stmt.ObjectDecl.Name,
-				Type: typeName,
-			}
-			globalObjects[stmt.ObjectDecl.Name] = objectInfo
-			constructorArgs := make([]string, 0)
+			var constructorArgs []string
 			for _, arg := range args {
-				if strings.Contains(typeName, ".") {
-					parts := strings.Split(typeName, ".")
-					if arg == parts[0] || arg == parts[1] {
-						continue
-					}
-				}
-				if arg != typeName && arg != resolvedType {
-					if strings.HasPrefix(arg, "\"") && strings.HasSuffix(arg, "\"") {
-						constructorArgs = append(constructorArgs, arg)
-					} else {
-						constructorArgs = append(constructorArgs, lexer.ResolveSymbol(arg, currentModule))
-					}
+				if len(arg) >= 2 && ((arg[0] == '&' && arg[1] == '"') || (arg[0] == '"')) {
+					constructorArgs = append(constructorArgs, arg)
+				} else {
+					resolvedArg := lexer.ResolveSymbol(arg, currentModule)
+					constructorArgs = append(constructorArgs, resolvedArg)
 				}
 			}
 
