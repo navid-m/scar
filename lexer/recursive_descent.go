@@ -913,8 +913,8 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 			if dotIndex < parenIndex {
 				objectName := strings.TrimSpace(line[:dotIndex])
 				methodPart := strings.TrimSpace(line[dotIndex+1:])
-
 				methodEndIndex := strings.Index(methodPart, "(")
+
 				if methodEndIndex == -1 {
 					return nil, lineNum + 1, fmt.Errorf("invalid method call syntax at line %d", lineNum+1)
 				}
