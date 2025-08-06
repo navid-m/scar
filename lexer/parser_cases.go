@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode"
 )
 
 func parseAllImports(lines []string, startLine int) ([]*ImportStmt, error) {
@@ -698,7 +699,7 @@ func LoadModule(moduleName string, baseDir string) (*ModuleInfo, error) {
 		return nil, fmt.Errorf("failed to read module '%s': %v", moduleName, err)
 	}
 
-	program, err := ParseWithIndentation(string(data))
+	program, err := ParseWithIndentation(replaceDotsOutsideStrings(string(data)))
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse module '%s': %v", moduleName, err)
 	}
@@ -748,6 +749,37 @@ func LoadModule(moduleName string, baseDir string) (*ModuleInfo, error) {
 
 	LoadedModules[moduleName] = module
 	return module, nil
+}
+
+func replaceDotsOutsideStrings(input string) string {
+	var result strings.Builder
+	inString := false
+	for i := 0; i < len(input); i++ {
+		ch := input[i]
+
+		if ch == '"' {
+			inString = !inString
+			result.WriteByte(ch)
+			continue
+		}
+		if ch == '.' && !inString {
+			var prev, next byte
+			if i > 0 {
+				prev = input[i-1]
+			}
+			if i < len(input)-1 {
+				next = input[i+1]
+			}
+			if unicode.IsDigit(rune(prev)) && unicode.IsDigit(rune(next)) {
+				result.WriteByte('.')
+			} else {
+				result.WriteByte('_')
+			}
+		} else {
+			result.WriteByte(ch)
+		}
+	}
+	return result.String()
 }
 
 func parsePubFunctionStatement(lines []string, lineNum, currentIndent int) (*Statement, int, error) {
@@ -904,4 +936,15 @@ func parseBulkImport(lines []string, lineNum int) (*Statement, int, error) {
 		return nil, lineNum + 1, fmt.Errorf("bulk import has no modules at line %d", lineNum+1)
 	}
 	return &Statement{Import: imports[0]}, currentLine, nil
+}
+
+func resolveModuleCall(value string) string {
+	if !strings.Contains(value, ".") {
+		return value
+	}
+	parts := strings.SplitN(value, ".", 2)
+	if len(parts) != 2 {
+		return value
+	}
+	return parts[0] + "_" + parts[1]
 }
