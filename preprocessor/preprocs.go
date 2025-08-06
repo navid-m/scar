@@ -29,7 +29,6 @@ func InsertMacros(output string) string {
 	}
 	if strings.Contains(output, "cat") {
 		outp = insertCat(outp)
-		outp = strings.ReplaceAll(outp, "cat!(", "cat(")
 	}
 	return outp
 }
@@ -41,7 +40,7 @@ func insertCat(output string) string {
         strcpy(__cat_buf, (x)); \
         strcat(__cat_buf, (y)); \
         __cat_buf; \
-    })` + "\n" + output
+    })` + "\n" + strings.ReplaceAll(output, "cat!(", "cat(")
 }
 
 func insertNilMacro(output string) string {
