@@ -27,7 +27,28 @@ func InsertMacros(output string) string {
 		outp = replaceRandCalls(outp)
 		outp = insertRand(outp)
 	}
+	outp = replaceOutsideLiterals(outp, "this.", "this->")
 	return outp
+}
+
+func replaceOutsideLiterals(s, old, new string) string {
+	var result strings.Builder
+	inString := false
+	escaped := false
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c == '"' && (i == 0 || s[i-1] != '\\') {
+			inString = !inString
+		}
+		if !inString && i+len(old) <= len(s) && s[i:i+len(old)] == old {
+			result.WriteString(new)
+			i += len(old) - 1
+		} else {
+			result.WriteByte(c)
+		}
+		escaped = !escaped && c == '\\'
+	}
+	return result.String()
 }
 
 func insertNilMacro(output string) string {
