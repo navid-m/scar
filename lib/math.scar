@@ -209,7 +209,6 @@ pub fn round(float value, int decimalPlaces) -> float:
     return float(int(value * factor + 0.5)) / factor
 
 ## Print float with specified number of decimal places without trailing zeroes
+## e.g. run math::print_float(3.14159265359, 2)
 pub fn print_float(float value, int decimalPlaces) -> void:
     put "%.*f" | decimalPlaces, math::round(value, decimalPlaces)
-
-# run print_float(3.14159265359, 2)
