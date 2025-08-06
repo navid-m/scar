@@ -3,6 +3,7 @@ import "std/math"
 import "std/strings"
 import "std/test"
 
+# Setup
 var list = new collections::ArrayList(4)
 
 list.add_element(10)
@@ -10,10 +11,12 @@ list.add_element(20)
 list.add_element(30)
 
 var t = new test::UnitTest()
-
 int size = list.get_size()
 
+# Collections Tests
 t.assert_equals(3, size, "List size should be 3")
+
+# Math Tests
 t.assert_float_equals(3.14, math::round(3.14159265359, 2), 0.01, "Rounding error should be within tolerance")
 t.assert_equals(0, math::asin(2.0), "asin(2.0) should return 0.0")
 t.assert_equals(0, math::acos(2.0), "acos(2.0) should return 0.0")
