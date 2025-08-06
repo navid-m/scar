@@ -204,10 +204,11 @@ int _exception = 0;
 
 	for _, module := range lexer.LoadedModules {
 		for varName, varDecl := range module.PublicVars {
-			cType := mapTypeToCType(varDecl.Type)
-			uniqueName := lexer.GenerateUniqueSymbol(varName, module.Name)
-			value := varDecl.Value
-
+			var (
+				cType      = mapTypeToCType(varDecl.Type)
+				uniqueName = lexer.GenerateUniqueSymbol(varName, module.Name)
+				value      = varDecl.Value
+			)
 			if varDecl.Type == "string" {
 				if !strings.HasPrefix(value, "\"") {
 					value = fmt.Sprintf("\"%s\"", value)
