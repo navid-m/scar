@@ -125,8 +125,8 @@ func main() {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	err = cmd.Run()
-
 	success := false
+
 	if err == nil {
 		fmt.Printf("Compiled %s\n", outputBinary)
 		success = true
