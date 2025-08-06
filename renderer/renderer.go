@@ -905,6 +905,69 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 	}
 	for _, stmt := range stmts {
 		switch {
+		case stmt.CatStrings != nil:
+			if len(stmt.CatStrings.Args) == 0 {
+				fmt.Fprintf(b, "%s\"\"\n", indent)
+			} else if len(stmt.CatStrings.Args) == 1 {
+				arg := stmt.CatStrings.Args[0]
+				if isMethodCall(arg) {
+					arg = convertMethodCallToC(arg)
+				} else {
+					arg = lexer.ResolveSymbol(arg, currentModule)
+					arg = convertThisReferencesGranular(arg)
+				}
+				if strings.HasPrefix(stmt.CatStrings.Args[0], "line") {
+					fmt.Fprintf(b, "%sstrcpy(%s, %s);\n", indent, stmt.CatStrings.Args[0], arg)
+				} else {
+					fmt.Fprintf(b, "%s%s\n", indent, arg)
+				}
+			} else {
+				isStatement := strings.HasPrefix(stmt.CatStrings.Args[0], "line") || strings.HasSuffix(strings.TrimSpace(stmt.CatStrings.Args[0]), ";")
+				if isStatement {
+					targetVar := stmt.CatStrings.Args[0]
+					fmt.Fprintf(b, "%s{ \n", indent)
+					fmt.Fprintf(b, "%s    char _cat_buf[4096] = {0}; \n", indent)
+					fmt.Fprintf(b, "%s    char* _cat_ptr = _cat_buf; \n", indent)
+					for i, arg := range stmt.CatStrings.Args {
+						resolvedArg := arg
+						if isMethodCall(arg) {
+							resolvedArg = convertMethodCallToC(arg)
+						} else {
+							resolvedArg = lexer.ResolveSymbol(arg, currentModule)
+							resolvedArg = convertThisReferencesGranular(resolvedArg)
+						}
+						if i == 0 {
+							fmt.Fprintf(b, "%s    strcpy(_cat_ptr, (char*)%s); \n", indent, resolvedArg)
+						} else {
+							fmt.Fprintf(b, "%s    strcat(_cat_ptr, (char*)%s); \n", indent, resolvedArg)
+						}
+					}
+					fmt.Fprintf(b, "%s    strcpy(%s, _cat_ptr); \n", indent, targetVar)
+					fmt.Fprintf(b, "%s}\n", indent)
+				} else {
+					fmt.Fprintf(b, "%s({ \n", indent)
+					fmt.Fprintf(b, "%s    char _cat_buf[4096] = {0}; \n", indent)
+					fmt.Fprintf(b, "%s    char* _cat_ptr = _cat_buf; \n", indent)
+					for i, arg := range stmt.CatStrings.Args {
+						resolvedArg := arg
+						if isMethodCall(arg) {
+							resolvedArg = convertMethodCallToC(arg)
+						} else {
+							resolvedArg = lexer.ResolveSymbol(arg, currentModule)
+							resolvedArg = convertThisReferencesGranular(resolvedArg)
+						}
+
+						if i == 0 {
+							fmt.Fprintf(b, "%s    strcpy(_cat_ptr, (char*)%s); \n", indent, resolvedArg)
+						} else {
+							fmt.Fprintf(b, "%s    strcat(_cat_ptr, (char*)%s); \n", indent, resolvedArg)
+						}
+					}
+
+					fmt.Fprintf(b, "%s    _cat_ptr; \n", indent)
+					fmt.Fprintf(b, "%s});\n", indent)
+				}
+			}
 		case stmt.Put != nil:
 			if stmt.Put.Format != "" && len(stmt.Put.Variables) > 0 {
 				var (
@@ -1875,7 +1938,7 @@ func convertThisReferencesGranular(expr string) string {
 		if len(parts) == 2 {
 			left := strings.TrimSpace(parts[0])
 			right := strings.TrimSpace(parts[1])
-			
+
 			// If left is a string literal, we need to use a temporary buffer
 			if strings.HasPrefix(left, "\"") && strings.HasSuffix(left, "\"") {
 				// Create a temporary buffer and use strcpy + strcat

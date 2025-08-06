@@ -195,7 +195,20 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 		return nil, lineNum + 1, fmt.Errorf("empty statement at line %d", lineNum+1)
 	}
 
-	if strings.HasPrefix(line, "put!(") && strings.HasSuffix(line, ")") {
+	if strings.HasPrefix(line, "cat!(") && strings.HasSuffix(line, ")") {
+		argsStr := strings.TrimSpace(line[5 : len(line)-1])
+		args := splitRespectingQuotes(argsStr)
+		if len(args) < 1 {
+			return nil, lineNum + 1, fmt.Errorf("cat! statement requires at least 1 argument at line %d", lineNum+1)
+		}
+		// Trim whitespace from each argument
+		for i := range args {
+			args[i] = strings.TrimSpace(args[i])
+		}
+		return &Statement{CatStrings: &CatStmt{
+			Args: args,
+		}}, lineNum + 1, nil
+	} else if strings.HasPrefix(line, "put!(") && strings.HasSuffix(line, ")") {
 		argsStr := strings.TrimSpace(line[5 : len(line)-1])
 		args := splitRespectingQuotes(argsStr)
 		if len(args) != 3 {

@@ -29,6 +29,10 @@ type Program struct {
 	Statements []*Statement
 }
 
+type CatStmt struct {
+	Args []string
+}
+
 type Statement struct {
 	Import              *ImportStmt
 	Print               *PrintStmt
@@ -64,6 +68,7 @@ type Statement struct {
 	PutMap              *PutMapStmt
 	GetMap              *GetMapStmt
 	Foreach             *ForeachStmt
+	CatStrings          *CatStmt
 }
 
 type ForeachStmt struct {
