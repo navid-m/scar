@@ -344,6 +344,34 @@ func collectClassInfoWithModule(classDecl *lexer.ClassDeclStmt, moduleName strin
 					fieldMap[fieldName] = true
 				}
 			}
+			if stmt.MapDecl != nil && strings.HasPrefix(stmt.MapDecl.Name, "this.") {
+				fieldName := strings.TrimPrefix(stmt.MapDecl.Name, "this.")
+				if _, exists := fieldMap[fieldName]; !exists {
+					// For map fields, we need to store key/value arrays and size
+					keyFieldInfo := FieldInfo{
+						Name:  fieldName + "_keys",
+						Type:  stmt.MapDecl.KeyType,
+						IsRef: false,
+					}
+					valueFieldInfo := FieldInfo{
+						Name:  fieldName + "_values",
+						Type:  stmt.MapDecl.ValueType,
+						IsRef: false,
+					}
+					capacityFieldInfo := FieldInfo{
+						Name:  fieldName + "_capacity",
+						Type:  "int",
+						IsRef: false,
+					}
+					sizeFieldInfo := FieldInfo{
+						Name:  fieldName + "_size",
+						Type:  "int",
+						IsRef: false,
+					}
+					classInfo.Fields = append(classInfo.Fields, keyFieldInfo, valueFieldInfo, capacityFieldInfo, sizeFieldInfo)
+					fieldMap[fieldName] = true
+				}
+			}
 		}
 	}
 
@@ -401,9 +429,9 @@ func inferTypeFromValue(value string) string {
 	}
 	return "int"
 }
-
 func generateStructDefinition(b *strings.Builder, classInfo *ClassInfo, structName string) {
 	fmt.Fprintf(b, "#define MAX_STRING_LENGTH 256\n")
+	fmt.Fprintf(b, "#define MAX_MAP_SIZE 100\n")
 
 	hasSelfReference := false
 	for _, field := range classInfo.Fields {
@@ -420,7 +448,23 @@ func generateStructDefinition(b *strings.Builder, classInfo *ClassInfo, structNa
 	fmt.Fprintf(b, "typedef struct %s {\n", structName)
 
 	for _, field := range classInfo.Fields {
-		if field.IsRef {
+		if strings.HasSuffix(field.Name, "_keys") {
+			if field.Type == "string" {
+				fmt.Fprintf(b, "    char %s[MAX_MAP_SIZE][MAX_STRING_LENGTH];\n", field.Name)
+			} else {
+				cType := mapTypeToCType(field.Type)
+				fmt.Fprintf(b, "    %s %s[MAX_MAP_SIZE];\n", cType, field.Name)
+			}
+		} else if strings.HasSuffix(field.Name, "_values") {
+			if field.Type == "string" {
+				fmt.Fprintf(b, "    char %s[MAX_MAP_SIZE][MAX_STRING_LENGTH];\n", field.Name)
+			} else {
+				cType := mapTypeToCType(field.Type)
+				fmt.Fprintf(b, "    %s %s[MAX_MAP_SIZE];\n", cType, field.Name)
+			}
+		} else if strings.HasSuffix(field.Name, "_size") || strings.HasSuffix(field.Name, "_capacity") {
+			fmt.Fprintf(b, "    int %s;\n", field.Name)
+		} else if field.IsRef {
 			switch field.Type {
 			case "int", "float", "double", "bool", "char":
 				fmt.Fprintf(b, "    %s* %s;\n", mapTypeToCType(field.Type), field.Name)
@@ -440,7 +484,6 @@ func generateStructDefinition(b *strings.Builder, classInfo *ClassInfo, structNa
 	}
 	fmt.Fprintf(b, "} %s;\n", structName)
 }
-
 func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclStmt, moduleName string, program *lexer.Program) {
 	className := classDecl.Name
 	if moduleName != "" {
@@ -471,7 +514,9 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 
 	if classInfo, exists := globalClasses[className]; exists {
 		for _, field := range classInfo.Fields {
-			if strings.HasPrefix(field.Type, "ref ") {
+			if strings.HasSuffix(field.Name, "_size") || strings.HasSuffix(field.Name, "_capacity") {
+				fmt.Fprintf(b, "    this->%s = 0;\n", field.Name)
+			} else if strings.HasPrefix(field.Type, "ref ") {
 				fmt.Fprintf(b, "    this->%s = NULL;\n", field.Name)
 			} else {
 				switch field.Type {
@@ -480,7 +525,9 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 				case "float", "double":
 					fmt.Fprintf(b, "    this->%s = 0.0;\n", field.Name)
 				case "string":
-					fmt.Fprintf(b, "    this->%s[0] = '\\0';\n", field.Name)
+					if !strings.HasSuffix(field.Name, "_keys") && !strings.HasSuffix(field.Name, "_values") {
+						fmt.Fprintf(b, "    this->%s[0] = '\\0';\n", field.Name)
+					}
 				case "bool":
 					fmt.Fprintf(b, "    this->%s = 0;\n", field.Name)
 				}
@@ -508,6 +555,43 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 
 		for _, stmt := range classDecl.Constructor.Fields {
 			switch {
+			case stmt.MapDecl != nil && strings.HasPrefix(stmt.MapDecl.Name, "this."):
+				fieldName := strings.TrimPrefix(stmt.MapDecl.Name, "this.")
+				mapSize := len(stmt.MapDecl.Pairs)
+
+				// Set initial capacity - use a reasonable default for empty maps
+				initialCapacity := 10
+				if mapSize > 0 {
+					initialCapacity = mapSize * 2 // Allow for growth
+				}
+
+				fmt.Fprintf(b, "    this->%s_size = %d;\n", fieldName, mapSize)
+				fmt.Fprintf(b, "    this->%s_capacity = %d;\n", fieldName, initialCapacity)
+
+				// Initialize map pairs
+				for i, pair := range stmt.MapDecl.Pairs {
+					key := pair.Key
+					value := pair.Value
+
+					if stmt.MapDecl.KeyType == "string" {
+						if !strings.HasPrefix(key, "\"") && !strings.HasSuffix(key, "\"") {
+							key = fmt.Sprintf("\"%s\"", key)
+						}
+						fmt.Fprintf(b, "    strcpy(this->%s_keys[%d], %s);\n", fieldName, i, key)
+					} else {
+						fmt.Fprintf(b, "    this->%s_keys[%d] = %s;\n", fieldName, i, key)
+					}
+
+					if stmt.MapDecl.ValueType == "string" {
+						if !strings.HasPrefix(value, "\"") && !strings.HasSuffix(value, "\"") {
+							value = fmt.Sprintf("\"%s\"", value)
+						}
+						fmt.Fprintf(b, "    strcpy(this->%s_values[%d], %s);\n", fieldName, i, value)
+					} else {
+						fmt.Fprintf(b, "    this->%s_values[%d] = %s;\n", fieldName, i, value)
+					}
+				}
+
 			case stmt.VarDecl != nil:
 				fieldName := stmt.VarDecl.Name
 				value := stmt.VarDecl.Value
@@ -593,6 +677,17 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 
 	b.WriteString("    return this;\n}\n\n")
 
+	// Generate instance map access helper functions after constructor
+	if classDecl.Constructor != nil {
+		for _, stmt := range classDecl.Constructor.Fields {
+			if stmt.MapDecl != nil && strings.HasPrefix(stmt.MapDecl.Name, "this.") {
+				fieldName := strings.TrimPrefix(stmt.MapDecl.Name, "this.")
+				generateInstanceMapAccessHelper(b, className, fieldName, stmt.MapDecl.KeyType, stmt.MapDecl.ValueType)
+				generateInstanceMapPutHelper(b, className, fieldName, stmt.MapDecl.KeyType, stmt.MapDecl.ValueType)
+			}
+		}
+	}
+
 	for _, method := range classDecl.Methods {
 		returnType := "void"
 		if method.ReturnType != "" && method.ReturnType != "void" {
@@ -626,6 +721,101 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 		renderStatements(b, method.Body, "    ", className, program)
 		b.WriteString("}\n\n")
 	}
+}
+func generateInstanceMapAccessHelper(b *strings.Builder, className, fieldName, keyType, valueType string) {
+	cKeyType := mapTypeToCType(keyType)
+	if keyType == "string" {
+		cKeyType = "char*"
+	}
+
+	cValueType := mapTypeToCType(valueType)
+	if valueType == "string" {
+		cValueType = "char*"
+	}
+
+	helperName := fmt.Sprintf("%s_get_%s_value", className, fieldName)
+
+	fmt.Fprintf(b, "%s %s(%s* this, %s key) {\n", cValueType, helperName, className, cKeyType)
+	fmt.Fprintf(b, "    for (int i = 0; i < this->%s_size; i++) {\n", fieldName)
+
+	if keyType == "string" {
+		fmt.Fprintf(b, "        if (strcmp(this->%s_keys[i], key) == 0) {\n", fieldName)
+	} else {
+		fmt.Fprintf(b, "        if (this->%s_keys[i] == key) {\n", fieldName)
+	}
+
+	if valueType == "string" {
+		fmt.Fprintf(b, "            return this->%s_values[i];\n", fieldName)
+	} else {
+		fmt.Fprintf(b, "            return this->%s_values[i];\n", fieldName)
+	}
+	fmt.Fprintf(b, "        }\n")
+	fmt.Fprintf(b, "    }\n")
+
+	// Default return value
+	switch valueType {
+	case "string":
+		fmt.Fprintf(b, "    return \"\";\n")
+	case "char":
+		fmt.Fprintf(b, "    return '\\0';\n")
+	default:
+		fmt.Fprintf(b, "    return 0;\n")
+	}
+
+	fmt.Fprintf(b, "}\n\n")
+}
+
+// New helper function for instance map put:
+func generateInstanceMapPutHelper(b *strings.Builder, className, fieldName, keyType, valueType string) {
+	cKeyType := mapTypeToCType(keyType)
+	if keyType == "string" {
+		cKeyType = "char*"
+	}
+
+	cValueType := mapTypeToCType(valueType)
+	if valueType == "string" {
+		cValueType = "char*"
+	}
+
+	helperName := fmt.Sprintf("%s_put_%s_value", className, fieldName)
+
+	fmt.Fprintf(b, "void %s(%s* this, %s key, %s value) {\n", helperName, className, cKeyType, cValueType)
+	fmt.Fprintf(b, "    int found = 0;\n")
+	fmt.Fprintf(b, "    for (int i = 0; i < this->%s_size; i++) {\n", fieldName)
+
+	if keyType == "string" {
+		fmt.Fprintf(b, "        if (strcmp(this->%s_keys[i], key) == 0) {\n", fieldName)
+	} else {
+		fmt.Fprintf(b, "        if (this->%s_keys[i] == key) {\n", fieldName)
+	}
+
+	if valueType == "string" {
+		fmt.Fprintf(b, "            strcpy(this->%s_values[i], value);\n", fieldName)
+	} else {
+		fmt.Fprintf(b, "            this->%s_values[i] = value;\n", fieldName)
+	}
+	fmt.Fprintf(b, "            found = 1;\n")
+	fmt.Fprintf(b, "            break;\n")
+	fmt.Fprintf(b, "        }\n")
+	fmt.Fprintf(b, "    }\n")
+
+	fmt.Fprintf(b, "    if (!found && this->%s_size < MAX_MAP_SIZE) {\n", fieldName)
+
+	if keyType == "string" {
+		fmt.Fprintf(b, "        strcpy(this->%s_keys[this->%s_size], key);\n", fieldName, fieldName)
+	} else {
+		fmt.Fprintf(b, "        this->%s_keys[this->%s_size] = key;\n", fieldName, fieldName)
+	}
+
+	if valueType == "string" {
+		fmt.Fprintf(b, "        strcpy(this->%s_values[this->%s_size], value);\n", fieldName, fieldName)
+	} else {
+		fmt.Fprintf(b, "        this->%s_values[this->%s_size] = value;\n", fieldName, fieldName)
+	}
+
+	fmt.Fprintf(b, "        this->%s_size++;\n", fieldName)
+	fmt.Fprintf(b, "    }\n")
+	fmt.Fprintf(b, "}\n\n")
 }
 
 func functionReturnsString(funcName string) bool {
@@ -1903,14 +2093,62 @@ func generateMapAccessHelper(b *strings.Builder, mapName, keyType, valueType str
 		fmt.Fprintf(b, "}\n\n")
 	}
 
-	// Add a size getter
 	fmt.Fprintf(b, "int __get_%s_size() {\n", mapName)
 	fmt.Fprintf(b, "    return %s_size;\n", mapName)
 	fmt.Fprintf(b, "}\n\n")
 }
 
-// renderMapAccess generates a C expression for accessing a map value by key
+// Generates a C expression for accessing a map value by key
 func renderMapAccess(mapName, key string, program *lexer.Program) string {
+	if strings.HasPrefix(mapName, "this.") {
+		fieldName := strings.TrimPrefix(mapName, "this.")
+		var keyType string
+		for _, s := range program.Statements {
+			if s.ClassDecl != nil && s.ClassDecl.Constructor != nil {
+				for _, stmt := range s.ClassDecl.Constructor.Fields {
+					if stmt.MapDecl != nil && strings.HasPrefix(stmt.MapDecl.Name, "this.") {
+						declFieldName := strings.TrimPrefix(stmt.MapDecl.Name, "this.")
+						if declFieldName == fieldName {
+							keyType = stmt.MapDecl.KeyType
+							break
+						}
+					}
+				}
+			}
+			if s.PubClassDecl != nil && s.PubClassDecl.Constructor != nil {
+				for _, stmt := range s.PubClassDecl.Constructor.Fields {
+					if stmt.MapDecl != nil && strings.HasPrefix(stmt.MapDecl.Name, "this.") {
+						declFieldName := strings.TrimPrefix(stmt.MapDecl.Name, "this.")
+						if declFieldName == fieldName {
+							keyType = stmt.MapDecl.KeyType
+							break
+						}
+					}
+				}
+			}
+		}
+
+		helperName := fmt.Sprintf("%s_get_%s_value", currentClassName, fieldName)
+
+		var keyExpr string
+		if keyType == "string" {
+			if strings.HasPrefix(key, "\"") && strings.HasSuffix(key, "\"") {
+				keyStr := key[1 : len(key)-1]
+				keyStr = strings.ReplaceAll(keyStr, "\"", "\\\"")
+				keyExpr = fmt.Sprintf(`"%s"`, keyStr)
+			} else {
+				keyExpr = lexer.ResolveSymbol(key, currentModule)
+			}
+		} else {
+			if !unicode.IsDigit(rune(key[0])) && !(key[0] == '-' && len(key) > 1 && unicode.IsDigit(rune(key[1]))) {
+				key = lexer.ResolveSymbol(key, currentModule)
+			}
+			keyExpr = key
+		}
+
+		return fmt.Sprintf("%s(this, %s)", helperName, keyExpr)
+	}
+
 	resolvedMapName := lexer.ResolveSymbol(mapName, currentModule)
 
 	// Find the map to determine key type
