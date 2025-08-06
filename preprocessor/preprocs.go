@@ -84,7 +84,6 @@ func replaceOutsideStringLiterals(code, target, replacement string) string {
 	)
 	for i < len(code) {
 		ch := code[i]
-
 		if inString {
 			if ch == '\\' && !escaped {
 				escaped = true
