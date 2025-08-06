@@ -33,6 +33,12 @@ func InsertMacros(output string) string {
 	if strings.Contains(output, "this.") {
 		outp = replaceOutsideStringLiterals(outp, "this.", "this->")
 	}
+	if strings.Contains(output, " and ") {
+		outp = replaceOutsideStringLiterals(outp, " and ", " && ")
+	}
+	if strings.Contains(output, " or ") {
+		outp = replaceOutsideStringLiterals(outp, " or ", " || ")
+	}
 	return outp
 }
 
