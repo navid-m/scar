@@ -64,6 +64,12 @@ type Statement struct {
 	PutMap              *PutMapStmt
 	GetMap              *GetMapStmt
 	Foreach             *ForeachStmt
+	CatString           *CatStringStmt
+}
+
+type CatStringStmt struct {
+	Target string
+	Value  string
 }
 
 type ForeachStmt struct {

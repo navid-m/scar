@@ -965,6 +965,23 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			fmt.Fprintf(b, "%swhile (%s) {\n", indent, condition)
 			renderStatements(b, stmt.While.Body, indent+"    ", className, program)
 			fmt.Fprintf(b, "%s}\n", indent)
+		case stmt.CatString != nil:
+			target := lexer.ResolveSymbol(stmt.CatString.Target, currentModule)
+			value := stmt.CatString.Value
+			if strings.HasPrefix(target, "this.") {
+				target = "this->" + target[5:]
+			}
+			if !strings.HasPrefix(value, "\"") && !strings.HasSuffix(value, "\"") {
+				if isValidIdentifier(value) {
+					value = lexer.ResolveSymbol(value, currentModule)
+					if strings.HasPrefix(value, "this.") {
+						value = "this->" + value[5:]
+					}
+				} else {
+					value = fmt.Sprintf("\"%s\"", value)
+				}
+			}
+			fmt.Fprintf(b, "%sstrcat(%s, %s);\n", indent, target, value)
 		case stmt.Foreach != nil:
 			var (
 				collection = stmt.Foreach.Collection
