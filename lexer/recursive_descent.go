@@ -919,9 +919,11 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 					return nil, lineNum + 1, fmt.Errorf("invalid method call syntax at line %d", lineNum+1)
 				}
 
-				methodName := strings.TrimSpace(methodPart[:methodEndIndex])
-				argsStart := strings.Index(line, "(")
-				argsEnd := strings.LastIndex(line, ")")
+				var (
+					methodName = strings.TrimSpace(methodPart[:methodEndIndex])
+					argsStart  = strings.Index(line, "(")
+					argsEnd    = strings.LastIndex(line, ")")
+				)
 
 				var args []string
 				if argsEnd > argsStart+1 {
