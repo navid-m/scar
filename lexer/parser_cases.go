@@ -937,14 +937,3 @@ func parseBulkImport(lines []string, lineNum int) (*Statement, int, error) {
 	}
 	return &Statement{Import: imports[0]}, currentLine, nil
 }
-
-func resolveModuleCall(value string) string {
-	if !strings.Contains(value, ".") {
-		return value
-	}
-	parts := strings.SplitN(value, ".", 2)
-	if len(parts) != 2 {
-		return value
-	}
-	return parts[0] + "_" + parts[1]
-}
