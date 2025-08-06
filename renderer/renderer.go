@@ -517,7 +517,7 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 		for _, field := range classInfo.Fields {
 			if strings.HasSuffix(field.Name, "_size") || strings.HasSuffix(field.Name, "_capacity") {
 				fmt.Fprintf(b, "    this->%s = 0;\n", field.Name)
-			} else if strings.HasPrefix(field.Type, "ref ") {
+			} else if field.IsRef {
 				fmt.Fprintf(b, "    this->%s = NULL;\n", field.Name)
 			} else {
 				switch field.Type {
@@ -530,7 +530,7 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 						fmt.Fprintf(b, "    this->%s[0] = '\\0';\n", field.Name)
 					}
 				case "bool":
-					fmt.Fprintf(b, "    this->%s = 0;\n", field.Name)
+					fmt.Fprintf(b, "    this->%s = false;\n", field.Name)
 				}
 			}
 		}
@@ -692,7 +692,11 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 	for _, method := range classDecl.Methods {
 		returnType := "void"
 		if method.ReturnType != "" && method.ReturnType != "void" {
-			returnType = mapTypeToCType(method.ReturnType)
+			if method.ReturnType == "string" {
+				returnType = "char*"
+			} else {
+				returnType = mapTypeToCType(method.ReturnType)
+			}
 		}
 		prototype := generateMethodPrototype(className, method.Name, returnType, method.Parameters)
 		b.WriteString(prototype)
@@ -723,6 +727,7 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 		b.WriteString("}\n\n")
 	}
 }
+
 func generateInstanceMapAccessHelper(b *strings.Builder, className, fieldName, keyType, valueType string) {
 	cKeyType := mapTypeToCType(keyType)
 	if keyType == "string" {
@@ -851,6 +856,43 @@ func parseFunctionCall(funcCall string) (string, []string) {
 	return funcName, args
 }
 
+func processMapMacros(expr string, program *lexer.Program) string {
+	// Handle has! macro
+	hasRe := regexp.MustCompile(`has!\s*\(([^)]+)\)`)
+	expr = hasRe.ReplaceAllStringFunc(expr, func(match string) string {
+		argsStr := hasRe.FindStringSubmatch(match)[1]
+		args := strings.Split(argsStr, ",")
+		if len(args) == 2 {
+			mapName := strings.TrimSpace(args[0])
+			key := strings.TrimSpace(args[1])
+
+			// For instance maps
+			if strings.HasPrefix(mapName, "this->") {
+				fieldName := strings.TrimPrefix(mapName, "this->")
+				return fmt.Sprintf("(%s_has_%s_key(this, %s))", currentClassName, fieldName, key)
+			} else {
+				return fmt.Sprintf("(__has_%s_key(%s))", mapName, key)
+			}
+		}
+		return match
+	})
+
+	// Handle get! macro
+	getRe := regexp.MustCompile(`get!\s*\(([^)]+)\)`)
+	expr = getRe.ReplaceAllStringFunc(expr, func(match string) string {
+		argsStr := getRe.FindStringSubmatch(match)[1]
+		args := strings.Split(argsStr, ",")
+		if len(args) == 2 {
+			mapName := strings.TrimSpace(args[0])
+			key := strings.TrimSpace(args[1])
+			return renderMapAccess(mapName, key, program)
+		}
+		return match
+	})
+
+	return expr
+}
+
 func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent string, className string, program *lexer.Program) {
 	if className != "" {
 		fmt.Printf("Debug: renderStatements - className: '%s'\n", className)
@@ -931,6 +973,25 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				fmt.Fprintf(b, "%sreturn;\n", indent)
 			} else {
 				value := stmt.Return.Value
+				// Handle string formatting expressions like "%d,%d" | x, y
+				if strings.Contains(value, "|") && strings.Contains(value, "%") {
+					parts := strings.Split(value, "|")
+					if len(parts) == 2 {
+						format := strings.TrimSpace(parts[0])
+						args := strings.TrimSpace(parts[1])
+						if strings.HasPrefix(format, "\"") && strings.HasSuffix(format, "\"") {
+							// Convert to sprintf for string returns
+							if className != "" { // we're in a method that should return a string
+								fmt.Fprintf(b, "%ssprintf(_output_buffer, %s, %s);\n", indent, format, args)
+								fmt.Fprintf(b, "%sreturn _output_buffer;\n", indent)
+								return
+							} else {
+								value = fmt.Sprintf("sprintf(temp_buffer, %s, %s)", format, args)
+							}
+						}
+					}
+				}
+
 				if isMethodCall(value) {
 					value = convertMethodCallToC(value)
 				} else if strings.HasPrefix(value, "this.") {
@@ -941,6 +1002,7 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				}
 				fmt.Fprintf(b, "%sreturn %s;\n", indent, value)
 			}
+
 		case stmt.GetMap != nil:
 			mapAccess := renderMapAccess(stmt.GetMap.MapName, stmt.GetMap.Key, program)
 			fmt.Fprintf(b, "%s%s;\n", indent, mapAccess)
@@ -1185,10 +1247,12 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				}
 			}
 		case stmt.VarAssign != nil:
+
 			varName := lexer.ResolveSymbol(stmt.VarAssign.Name, currentModule)
 			value := stmt.VarAssign.Value
 			value = fixFloatCastGranular(value)
 			value = convertThisReferencesGranular(value)
+
 			if strings.HasPrefix(varName, "this.") {
 				varName = "this->" + varName[5:]
 			} else if strings.Contains(varName, ".") {
@@ -1245,7 +1309,16 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 					}
 					fmt.Fprintf(b, "%s%s = %s;\n", indent, varName, value)
 				}
+				if strings.Contains(value, "+") && varType == "string" {
+					parts := strings.Split(value, "+")
+					if len(parts) == 2 {
+						right := strings.TrimSpace(parts[1])
+						fmt.Fprintf(b, "%sstrcat(%s, %s);\n", indent, varName, right)
+						return
+					}
+				}
 			}
+
 		case stmt.ListDecl != nil:
 			listType := mapTypeToCType(stmt.ListDecl.Type)
 			listName := lexer.ResolveSymbol(stmt.ListDecl.Name, currentModule)
@@ -1830,8 +1903,8 @@ func convertThisReferencesGranular(expr string) string {
 	expr = strings.ReplaceAll(expr, "-> ", "->")
 	expr = strings.ReplaceAll(expr, " ->", "->")
 	expr = strings.ReplaceAll(expr, "this ->", "this->")
-
-	// Handle nil conversion
+	expr = strings.ReplaceAll(expr, " and ", " && ")
+	expr = strings.ReplaceAll(expr, " or ", " || ")
 	expr = strings.ReplaceAll(expr, " nil", " NULL")
 	expr = strings.ReplaceAll(expr, "nil ", "NULL ")
 	expr = strings.ReplaceAll(expr, "(nil)", "(NULL)")
