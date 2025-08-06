@@ -1252,7 +1252,6 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				}
 			}
 		case stmt.VarAssign != nil:
-
 			varName := lexer.ResolveSymbol(stmt.VarAssign.Name, currentModule)
 			value := stmt.VarAssign.Value
 			value = fixFloatCastGranular(value)
@@ -1876,11 +1875,14 @@ func convertThisReferencesGranular(expr string) string {
 		if len(parts) == 2 {
 			left := strings.TrimSpace(parts[0])
 			right := strings.TrimSpace(parts[1])
-			// If right side is a string literal, handle it properly
-			if strings.HasPrefix(right, "\"") && strings.HasSuffix(right, "\"") {
-				return fmt.Sprintf("strcat(strdup(%s), %s)", left, right)
+			
+			// If left is a string literal, we need to use a temporary buffer
+			if strings.HasPrefix(left, "\"") && strings.HasSuffix(left, "\"") {
+				// Create a temporary buffer and use strcpy + strcat
+				return fmt.Sprintf("(strcpy(_temp_buf, %s), strcat(_temp_buf, %s), _temp_buf)", left, right)
 			}
-			return fmt.Sprintf("strcat(strdup(%s), %s)", left, right)
+			// For variables, assume it's a properly initialized buffer
+			return fmt.Sprintf("strcat(%s, %s)", left, right)
 		}
 	}
 	var stringLiterals []string
