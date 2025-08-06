@@ -833,31 +833,34 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 	default:
 		if len(parts) >= 3 && parts[1] == "=" {
 			varName := parts[0]
-			value := strings.Join(parts[2:], " ")
+			eqIndex := strings.Index(line, "=")
+			if eqIndex == -1 {
+				return nil, lineNum, fmt.Errorf("malformed assignment")
+			}
 
-			// Check for method call assignment
+			value := strings.TrimSpace(line[eqIndex+1:])
 			if strings.Contains(value, ".") && strings.Contains(value, "(") && strings.Contains(value, ")") && !strings.HasPrefix(value, "new ") {
 				dotIndex := strings.Index(value, ".")
 				parenIndex := strings.Index(value, "(")
 				if dotIndex < parenIndex {
-					objectName := strings.TrimSpace(value[:dotIndex])
-					methodPart := strings.TrimSpace(value[dotIndex+1:])
-					methodEndIndex := strings.Index(methodPart, "(")
-					methodName := strings.TrimSpace(methodPart[:methodEndIndex])
-
-					argsStart := strings.Index(value, "(")
-					argsEnd := strings.LastIndex(value, ")")
-					var args []string
+					var (
+						objectName     = strings.TrimSpace(value[:dotIndex])
+						methodPart     = strings.TrimSpace(value[dotIndex+1:])
+						methodEndIndex = strings.Index(methodPart, "(")
+						methodName     = strings.TrimSpace(methodPart[:methodEndIndex])
+						argsStart      = strings.Index(value, "(")
+						argsEnd        = strings.LastIndex(value, ")")
+						args           []string
+					)
 					if argsEnd > argsStart+1 {
 						argsStr := strings.TrimSpace(value[argsStart+1 : argsEnd])
 						if argsStr != "" {
-							argsList := strings.Split(argsStr, ",")
-							for _, arg := range argsList {
+							argsList := strings.SplitSeq(argsStr, ",")
+							for arg := range argsList {
 								args = append(args, strings.TrimSpace(arg))
 							}
 						}
 					}
-
 					return &Statement{VarAssignMethodCall: &VarAssignMethodCallStmt{
 						Name:   varName,
 						Object: objectName,
@@ -873,16 +876,11 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 				value = value[1 : len(value)-1]
 			}
 
-			// The simple operator parsing logic was removed as it was causing issues
-			// with complex expressions. The full expression is now passed as-is to ResolveSymbol.
-			//
-			// May cause issues later, need to revisit.
-
 			return &Statement{VarAssign: &VarAssignStmt{Name: varName, Value: value}}, lineNum + 1, nil
 		}
-		// If not an assignment, fall through to the error below
+
 		if strings.HasPrefix(parts[0], "this.") && len(parts) >= 3 && parts[1] == "=" {
-			fieldName := parts[0][5:] // Remove "this."
+			fieldName := parts[0][5:]
 			value := strings.Join(parts[2:], " ")
 			return &Statement{VarAssign: &VarAssignStmt{Name: "this." + fieldName, Value: value}}, lineNum + 1, nil
 		}
@@ -898,8 +896,8 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 				if parenEnd > parenStart+1 {
 					argsStr := strings.TrimSpace(line[parenStart+1 : parenEnd])
 					if argsStr != "" {
-						argsList := strings.Split(argsStr, ",")
-						for _, arg := range argsList {
+						argsList := strings.SplitSeq(argsStr, ",")
+						for arg := range argsList {
 							args = append(args, strings.TrimSpace(arg))
 						}
 					}

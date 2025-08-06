@@ -1,6 +1,9 @@
+pub fn some_fucking_function() -> float:
+    return 5.0
+
 pub fn test() -> float:
     float result = 0.0
-    result = result * 10.0 + float(5)
+    result = (result) * 10.0 + some_fucking_function()
     return result
 
 print "Result: %f" | test()
