@@ -27,7 +27,21 @@ func InsertMacros(output string) string {
 		outp = replaceRandCalls(outp)
 		outp = insertRand(outp)
 	}
+	if strings.Contains(output, "cat") {
+		outp = insertCat(outp)
+		outp = strings.ReplaceAll(outp, "cat!(", "cat(")
+	}
 	return outp
+}
+
+func insertCat(output string) string {
+	return `#define cat(x, y) \
+    ({ \
+        static char __cat_buf[256]; \
+        strcpy(__cat_buf, (x)); \
+        strcat(__cat_buf, (y)); \
+        __cat_buf; \
+    })` + "\n" + output
 }
 
 func insertNilMacro(output string) string {
