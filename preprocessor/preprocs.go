@@ -30,6 +30,9 @@ func InsertMacros(output string) string {
 	if strings.Contains(output, "cat") {
 		outp = insertCat(outp)
 	}
+	if strings.Contains(output, "this.") {
+		outp = replaceOutsideStringLiterals(outp, "this.", "this->")
+	}
 	return outp
 }
 
@@ -63,4 +66,45 @@ func insertRand(output string) string {
 func replaceRandCalls(output string) string {
 	randRegex := regexp.MustCompile(`\brand\s*\(([^,)]+),\s*([^)]+)\)`)
 	return randRegex.ReplaceAllString(output, "rand__internal($1, $2)")
+}
+
+func replaceOutsideStringLiterals(code, target, replacement string) string {
+	var (
+		result    strings.Builder
+		inString  = false
+		escaped   = false
+		targetLen = len(target)
+		i         = 0
+	)
+	for i < len(code) {
+		ch := code[i]
+
+		if inString {
+			if ch == '\\' && !escaped {
+				escaped = true
+				result.WriteByte(ch)
+				i++
+				continue
+			}
+			if ch == '"' && !escaped {
+				inString = false
+			}
+			escaped = false
+			result.WriteByte(ch)
+			i++
+		} else {
+			if ch == '"' {
+				inString = true
+				result.WriteByte(ch)
+				i++
+			} else if i+targetLen <= len(code) && code[i:i+targetLen] == target {
+				result.WriteString(replacement)
+				i += targetLen
+			} else {
+				result.WriteByte(ch)
+				i++
+			}
+		}
+	}
+	return result.String()
 }
