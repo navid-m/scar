@@ -4,5 +4,4 @@ vendor/
 *.test
 *.out
 errors
-scar
 *.DS_Store

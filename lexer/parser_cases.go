@@ -663,21 +663,34 @@ func LoadModule(moduleName string, baseDir string) (*ModuleInfo, error) {
 	}
 
 	var modulePath string
-	possiblePaths := []string{
-		filepath.Join(baseDir, moduleName+".scar"),
-		filepath.Join(baseDir, "modules", moduleName+".scar"),
-		filepath.Join(".", moduleName+".scar"),
-	}
-
-	for _, path := range possiblePaths {
-		if _, err := os.Stat(path); err == nil {
-			modulePath = path
-			break
+	if strings.HasPrefix(moduleName, "std/") {
+		exePath, err := os.Executable()
+		if err != nil {
+			return nil, fmt.Errorf("could not resolve std module path: %v", err)
 		}
-	}
+		baseExeDir := filepath.Dir(exePath)
+		moduleName = strings.TrimPrefix(moduleName, "std/")
+		modulePath = filepath.Join(baseExeDir, "lib", moduleName+".scar")
+		if _, err := os.Stat(modulePath); err != nil {
+			return nil, fmt.Errorf("std module '%s' not found at '%s'", moduleName, modulePath)
+		}
+	} else {
+		possiblePaths := []string{
+			filepath.Join(baseDir, moduleName+".scar"),
+			filepath.Join(baseDir, "modules", moduleName+".scar"),
+			filepath.Join(".", moduleName+".scar"),
+		}
 
-	if modulePath == "" {
-		return nil, fmt.Errorf("module '%s' not found", moduleName)
+		for _, path := range possiblePaths {
+			if _, err := os.Stat(path); err == nil {
+				modulePath = path
+				break
+			}
+		}
+
+		if modulePath == "" {
+			return nil, fmt.Errorf("module '%s' not found", moduleName)
+		}
 	}
 
 	data, err := os.ReadFile(modulePath)
