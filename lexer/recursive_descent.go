@@ -51,9 +51,11 @@ func parseStatements(lines []string, startLine, expectedIndent int) ([]*Statemen
 }
 
 func splitRespectingQuotes(input string) []string {
-	var result []string
-	var current strings.Builder
-	inQuotes := false
+	var (
+		result   []string
+		current  strings.Builder
+		inQuotes = false
+	)
 
 	for i, char := range input {
 		switch char {
