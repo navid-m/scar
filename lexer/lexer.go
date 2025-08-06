@@ -65,6 +65,11 @@ type Statement struct {
 	GetMap              *GetMapStmt
 	Foreach             *ForeachStmt
 	CatString           *CatStringStmt
+	Run                 *RunStmt
+}
+
+type RunStmt struct {
+	FunctionCall string
 }
 
 type CatStringStmt struct {

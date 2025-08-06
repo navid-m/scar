@@ -197,3 +197,13 @@ pub fn atan(float x) -> float:
         sign = -sign
         i = i + 1
     return result
+
+pub fn round(float value, int decimalPlaces) -> float:
+    float factor = pow(10.0, float(decimalPlaces))
+    return float(int(value * factor + 0.5)) / factor
+
+## Print float with specified number of decimal places without trailing zeroes
+pub fn print_float(float value, int decimalPlaces) -> void:
+    put "%.*f" | decimalPlaces, round(value, decimalPlaces)
+
+# run print_float(3.14159265359, 2)

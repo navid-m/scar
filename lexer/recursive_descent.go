@@ -510,6 +510,16 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 	case "continue":
 		return &Statement{Continue: &ContinueStmt{Continue: "continue"}}, lineNum + 1, nil
 
+	case "run":
+		if len(parts) < 2 {
+			return nil, lineNum + 1, fmt.Errorf("run statement requires a function call at line %d", lineNum+1)
+		}
+		funcCall := strings.TrimSpace(line[3:])
+		if !strings.Contains(funcCall, "(") || !strings.HasSuffix(funcCall, ")") {
+			return nil, lineNum + 1, fmt.Errorf("run statement requires a function call with parentheses at line %d", lineNum+1)
+		}
+		return &Statement{Run: &RunStmt{FunctionCall: funcCall}}, lineNum + 1, nil
+
 	case "while":
 		if len(parts) < 2 || !strings.HasSuffix(line, ":") {
 			return nil, lineNum + 1, fmt.Errorf("while statement format error at line %d", lineNum+1)

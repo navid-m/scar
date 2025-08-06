@@ -926,6 +926,10 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			fmt.Fprintf(b, "%sbreak;\n", indent)
 		case stmt.Continue != nil:
 			fmt.Fprintf(b, "%scontinue;\n", indent)
+		case stmt.Run != nil:
+			funcCall := stmt.Run.FunctionCall
+			fmt.Fprintf(b, "%s%s;\n", indent, funcCall)
+
 		case stmt.Return != nil:
 			if stmt.Return.Value == "" {
 				fmt.Fprintf(b, "%sreturn;\n", indent)
