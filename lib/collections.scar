@@ -5,25 +5,24 @@ pub class ArrayList:
     init:
         int this.size = 0
         int this.capacity = 10
-        ref void this.data = nil 
+        ref int this.data = nil
         $raw (
-            this->data = malloc(this->capacity * sizeof(void*));
+            this->data = malloc(this->capacity * sizeof(int));
         )
     
     init(int initial_capacity):
         this.size = 0
         this.capacity = initial_capacity
-        ref void this.data = nil 
+        ref int this.data = nil
         $raw (
-            this->data = malloc(this->capacity * sizeof(void*));
+            this->data = malloc(this->capacity * sizeof(int));
         )
     
     fn add_element(int value) -> void:
         if this.size >= this.capacity:
             this.resize()
         $raw (
-            ((void**)this->data)[this->size] = malloc(sizeof(int));
-            *((int*)((void**)this->data)[this->size]) = value;
+            ((int*)this->data)[this->size] = value;
         )
         this.size = this.size + 1
     
@@ -31,13 +30,13 @@ pub class ArrayList:
         if index < 0 || index >= this.size:
             return -1
         $raw (
-            return *((int*)((void**)this->data)[index]);
+            return ((int*)this->data)[index];
         )
     
     fn set_element(int index, int value) -> void:
         if index >= 0 && index < this.size:
             $raw (
-                *((int*)((void**)this->data)[index]) = value;
+                ((int*)this->data)[index] = value;
             )
     
     fn get_size() -> int:
@@ -46,9 +45,11 @@ pub class ArrayList:
     fn resize() -> void:
         this.capacity = this.capacity * 2
         $raw (
-            this->data = realloc(this->data, this->capacity * sizeof(void*));
+            this->data = realloc(this->data, this->capacity * sizeof(int));
         )
 
+
+    
 # Example usage:
 
 # var list = new ArrayList(4)
