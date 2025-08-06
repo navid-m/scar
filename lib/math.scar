@@ -2,6 +2,8 @@ pub float PI = 3.14159265359
 pub float E = 2.71828182846
 pub int MAX_INT = 2147483647
 pub int MIN_INT = -2147483648
+pub float TAU = 6.28318530718
+pub float PHI = 1.61803398875 
 
 pub fn to_int(string value) -> int:
     int i = 0
@@ -125,9 +127,73 @@ pub fn cos(float x) -> float:
         i = i + 1
     return result
 
+## Will return 0.0 if cos(x) is too close to 0.0
 pub fn tan(float x) -> float:
     float cos_x = cos(x)
     if absolute(cos_x) < 0.00001:
-        print "Warning: tan() undefined at x = %.5f" | x
         return 0.0
     return sin(x) / cos_x
+
+pub fn exp(float x) -> float:
+    float sum = 1.0
+    float term = 1.0
+    int i = 1
+    while i < 20:
+        term = term * x / float(i)
+        sum = sum + term
+        i = i + 1
+    return sum
+
+## Will return -1.0 if x <= 0.0
+pub fn ln(float x) -> float:
+    if x <= 0.0:
+        return -1.0
+    float y = (x - 1) / (x + 1)
+    float y2 = y * y
+    float sum = 0.0
+    float term = y
+    int i = 1
+    while i < 20:
+        sum = sum + term / float(2 * i - 1)
+        term = term * y2
+        i = i + 1
+    return 2.0 * sum
+
+## Will return 0.0 if x < -1.0 || x > 1.0
+pub fn asin(float x) -> float:
+    if x < -1.0 || x > 1.0:
+        return 0.0
+    float result = 0.0
+    float term = x
+    float x2 = x * x
+    int i = 0
+    int sign = 1
+    while i < 10:
+        result = result + float(sign) * term / (2 * i + 1)
+        term = term * x2 * float((2 * i + 1)*(2 * i + 1)) / float((2 * i + 2)*(2 * i + 3))
+        sign = -sign
+        i = i + 1
+    return result
+
+pub fn acos(float x) -> float:
+    return PI / 2 - asin(x)
+
+pub fn atan(float x) -> float:
+    if x == 0.0:
+        return 0.0
+    if absolute(x) > 1.0:
+        float result = PI / 2 - atan(1 / x)
+        if x < 0.0:
+            result = result - PI
+        return result
+    float term = x
+    float result = x
+    float x2 = x * x
+    int i = 1
+    int sign = -1
+    while i < 10:
+        term = term * x2
+        result = result + float(sign) * term / (2 * i + 1)
+        sign = -sign
+        i = i + 1
+    return result
