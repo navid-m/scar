@@ -72,7 +72,7 @@ pub fn pow(float base, int exp) -> float:
     float result = 1.0
     int i = 0
     if exp < 0:
-        return 1.0 / pow(base, -exp)
+        return 1.0 / math::pow(base, -exp)
     for i = 0 to exp - 1:
         result = result * base
     return result
@@ -93,14 +93,14 @@ pub fn clamp(float value, float min_value, float max_value) -> float:
     return value
 
 pub fn normalize(float x) -> float:
-    while x > PI:
-        x = x - 2.0 * PI
-    while x < -PI:
-        x = x + 2.0 * PI
+    while x > math::PI:
+        x = x - 2.0 * math::PI
+    while x < -math::PI:
+        x = x + 2.0 * math::PI
     return x
 
 pub fn sin(float x) -> float:
-    x = normalize(x)
+    x = math::normalize(x)
     float term = x
     float result = x
     float x_squared = x * x
@@ -114,7 +114,7 @@ pub fn sin(float x) -> float:
     return result
 
 pub fn cos(float x) -> float:
-    x = normalize(x)
+    x = math::normalize(x)
     float term = 1.0
     float result = 1.0
     float x_squared = x * x
@@ -129,10 +129,10 @@ pub fn cos(float x) -> float:
 
 ## Will return 0.0 if cos(x) is too close to 0.0
 pub fn tan(float x) -> float:
-    float cos_x = cos(x)
-    if absolute(cos_x) < 0.00001:
+    float cos_x = math::cos(x)
+    if math::absolute(cos_x) < 0.00001:
         return 0.0
-    return sin(x) / cos_x
+    return math::sin(x) / cos_x
 
 pub fn exp(float x) -> float:
     float sum = 1.0
@@ -176,15 +176,15 @@ pub fn asin(float x) -> float:
     return result
 
 pub fn acos(float x) -> float:
-    return PI / 2 - asin(x)
+    return math::PI / 2 - math::asin(x)
 
 pub fn atan(float x) -> float:
     if x == 0.0:
         return 0.0
-    if absolute(x) > 1.0:
-        float result = PI / 2 - atan(1 / x)
+    if math::absolute(x) > 1.0:
+        float result = math::PI / 2 - math::atan(1 / x)
         if x < 0.0:
-            result = result - PI
+            result = result - math::PI
         return result
     float term = x
     float result = x
@@ -199,11 +199,11 @@ pub fn atan(float x) -> float:
     return result
 
 pub fn round(float value, int decimalPlaces) -> float:
-    float factor = pow(10.0, float(decimalPlaces))
+    float factor = math::pow(10.0, float(decimalPlaces))
     return float(int(value * factor + 0.5)) / factor
 
 ## Print float with specified number of decimal places without trailing zeroes
 pub fn print_float(float value, int decimalPlaces) -> void:
-    put "%.*f" | decimalPlaces, round(value, decimalPlaces)
+    put "%.*f" | decimalPlaces, math::round(value, decimalPlaces)
 
 # run print_float(3.14159265359, 2)

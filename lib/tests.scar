@@ -1,0 +1,17 @@
+import "std/collections"
+import "std/math"
+import "std/strings"
+
+var list = new collections::ArrayList(4)
+
+list.add_element(10)
+list.add_element(20)
+list.add_element(30)
+
+for i = 0 to list.get_size() - 1:
+    int val = list.get_element(i)
+    print "Element %d = %d" | i, val
+
+run math::print_float(3.14159265359, 2)
+
+print "\nLength of 'Hello World' = %d" | strings::length("Hello World")
