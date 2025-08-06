@@ -2,14 +2,6 @@
 # TODO: Remove them.
 
 pub class ArrayList:
-    init:
-        int this.size = 0
-        int this.capacity = 10
-        ref int this.data = nil
-        $raw (
-            this->data = malloc(this->capacity * sizeof(int));
-        )
-    
     init(int initial_capacity):
         this.size = 0
         this.capacity = initial_capacity

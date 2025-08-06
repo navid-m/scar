@@ -12,7 +12,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"unicode"
 )
 
 func parseAllImports(lines []string, startLine int) ([]*ImportStmt, error) {
@@ -699,7 +698,7 @@ func LoadModule(moduleName string, baseDir string) (*ModuleInfo, error) {
 		return nil, fmt.Errorf("failed to read module '%s': %v", moduleName, err)
 	}
 
-	program, err := ParseWithIndentation(replaceDotsOutsideStrings(string(data)))
+	program, err := ParseWithIndentation(ReplaceDoubleColonsOutsideStrings(string(data)))
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse module '%s': %v", moduleName, err)
 	}
@@ -751,34 +750,29 @@ func LoadModule(moduleName string, baseDir string) (*ModuleInfo, error) {
 	return module, nil
 }
 
-func replaceDotsOutsideStrings(input string) string {
+func ReplaceDoubleColonsOutsideStrings(input string) string {
 	var result strings.Builder
 	inString := false
 	for i := 0; i < len(input); i++ {
 		ch := input[i]
-
 		if ch == '"' {
+			if i > 0 && input[i-1] == '\\' {
+				result.WriteByte(ch)
+				continue
+			}
 			inString = !inString
 			result.WriteByte(ch)
 			continue
 		}
-		if ch == '.' && !inString {
-			var prev, next byte
-			if i > 0 {
-				prev = input[i-1]
-			}
-			if i < len(input)-1 {
-				next = input[i+1]
-			}
-			if unicode.IsDigit(rune(prev)) && unicode.IsDigit(rune(next)) {
-				result.WriteByte('.')
-			} else {
-				result.WriteByte('_')
-			}
-		} else {
-			result.WriteByte(ch)
+		if !inString && ch == ':' && i+1 < len(input) && input[i+1] == ':' {
+			result.WriteByte('_')
+			i++
+			continue
 		}
+
+		result.WriteByte(ch)
 	}
+
 	return result.String()
 }
 

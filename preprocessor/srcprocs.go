@@ -9,6 +9,7 @@ package preprocessor
 
 import (
 	"bytes"
+	"scar/lexer"
 	"strings"
 )
 
@@ -16,6 +17,7 @@ func ProcessSourceLevelMacros(source string) string {
 	source = RemoveComments(source)
 	source = ProcessAppendExpressions(source)
 	source = ProcessDeleteExpressions(source)
+	source = lexer.ReplaceDoubleColonsOutsideStrings(source)
 	return source
 }
 
