@@ -1,0 +1,75 @@
+pub class GameOfLife:
+    init:
+        map[string: bool] this.grid = []
+        int this.width = 5
+        int this.height = 5
+
+    fn set_alive(int x, int y) -> void:
+        string k = this.key(x, y)
+        put!(this.grid, k, true)
+
+    fn key(int x, int y) -> string:
+        return "%d,%d" | x, y
+
+    fn get(int x, int y) -> bool:
+        string k = this.key(x, y)
+        if has!(this.grid, k):
+            return get!(this.grid, k)
+        return false
+
+    fn count_neighbors(int x, int y) -> int:
+        int count = 0
+        for dx = -1 to 1:
+            for dy = -1 to 1:
+                if dx == 0 and dy == 0:
+                    continue
+                int nx = x + dx
+                int ny = y + dy
+                if this.get(nx, ny):
+                    count = count + 1
+        return count
+
+    fn step() -> void:
+        map[string: bool] new_grid = []
+        for x = 0 to this.width - 1:
+            for y = 0 to this.height - 1:
+                bool alive = this.get(x, y)
+                int neighbors = this.count_neighbors(x, y)
+                string k = this.key(x, y)
+                if alive and (neighbors == 2 or neighbors == 3):
+                    put!(new_grid, k, true)
+                elif !alive and neighbors == 3:
+                    put!(new_grid, k, true)
+                else:
+                    put!(new_grid, k, false)
+        this.grid = new_grid
+
+    fn print_grid() -> void:
+        for y = 0 to this.height - 1:
+            string line = ""
+            for x = 0 to this.width - 1:
+                if this.get(x, y):
+                    cat!(line, "O")
+                else:
+                    cat!(line, ".")
+            print "%s" | line
+        print ""
+
+    fn run(int steps) -> void:
+        for i = 0 to steps - 1:
+            print "Step %d:" | i
+            this.print_grid()
+            this.step()
+
+
+# Initialize and run
+var game = new GameOfLife()
+
+# Set up a "glider" pattern
+game.set_alive(1, 0)
+game.set_alive(2, 1)
+game.set_alive(0, 2)
+game.set_alive(1, 2)
+game.set_alive(2, 2)
+
+game.run(5)
