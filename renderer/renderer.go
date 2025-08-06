@@ -858,34 +858,39 @@ func parseFunctionCall(funcCall string) (string, []string) {
 
 func processMapMacros(expr string, program *lexer.Program) string {
 	// Handle has! macro
-	hasRe := regexp.MustCompile(`has!\s*\(([^)]+)\)`)
+	hasRe := regexp.MustCompile(`has!\s*\(\s*([^,]+)\s*,\s*([^)]+)\s*\)`)
 	expr = hasRe.ReplaceAllStringFunc(expr, func(match string) string {
-		argsStr := hasRe.FindStringSubmatch(match)[1]
-		args := strings.Split(argsStr, ",")
-		if len(args) == 2 {
-			mapName := strings.TrimSpace(args[0])
-			key := strings.TrimSpace(args[1])
+		matches := hasRe.FindStringSubmatch(match)
+		if len(matches) == 3 {
+			mapName := strings.TrimSpace(matches[1])
+			key := strings.TrimSpace(matches[2])
 
 			// For instance maps
 			if strings.HasPrefix(mapName, "this->") {
 				fieldName := strings.TrimPrefix(mapName, "this->")
 				return fmt.Sprintf("(%s_has_%s_key(this, %s))", currentClassName, fieldName, key)
 			} else {
-				return fmt.Sprintf("(__has_%s_key(%s))", mapName, key)
+				return fmt.Sprintf("(map_has_%s_key(%s, %s))", mapName, mapName, key)
 			}
 		}
 		return match
 	})
 
-	// Handle get! macro
-	getRe := regexp.MustCompile(`get!\s*\(([^)]+)\)`)
+	// Handle get! macro with proper parameter parsing
+	getRe := regexp.MustCompile(`get!\s*\(\s*([^,]+)\s*,\s*([^)]+)\s*\)`)
 	expr = getRe.ReplaceAllStringFunc(expr, func(match string) string {
-		argsStr := getRe.FindStringSubmatch(match)[1]
-		args := strings.Split(argsStr, ",")
-		if len(args) == 2 {
-			mapName := strings.TrimSpace(args[0])
-			key := strings.TrimSpace(args[1])
-			return renderMapAccess(mapName, key, program)
+		matches := getRe.FindStringSubmatch(match)
+		if len(matches) == 3 {
+			mapName := strings.TrimSpace(matches[1])
+			key := strings.TrimSpace(matches[2])
+
+			// For instance maps
+			if strings.HasPrefix(mapName, "this->") {
+				fieldName := strings.TrimPrefix(mapName, "this->")
+				return fmt.Sprintf("(%s_get_%s_value(this, %s))", currentClassName, fieldName, key)
+			} else {
+				return fmt.Sprintf("(map_get_%s_value(%s, %s))", mapName, mapName, key)
+			}
 		}
 		return match
 	})
@@ -1134,7 +1139,7 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			)
 
 			if stmt.VarDecl.IsRef {
-				if strings.HasPrefix(varName, "this.") {
+				if strings.HasPrefix(varName, "this->") {
 					fieldName := varName[5:]
 					if value == "0" || value == "NULL" {
 						fmt.Fprintf(b, "%sthis->%s = NULL;\n", indent, fieldName)
@@ -1722,8 +1727,8 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			fmt.Fprintf(b, "%s    for (int i = 0; i < %s_size; i++) {\n", indent, mapName)
 			if keyType == "string" {
 				if strings.HasPrefix(key, "\"") && strings.HasSuffix(key, "\"") {
-					keyStr := key[1 : len(key)-1]                     // Remove quotes
-					keyStr = strings.ReplaceAll(keyStr, "\"", "\\\"") // Escape quotes in the string
+					keyStr := key[1 : len(key)-1]
+					keyStr = strings.ReplaceAll(keyStr, "\"", "\\\"")
 					fmt.Fprintf(b, "%s        if (strcmp(%s_keys[i], \"%s\") == 0) {\n", indent, mapName, keyStr)
 				} else {
 					resolvedKey := lexer.ResolveSymbol(key, currentModule)
@@ -1756,8 +1761,8 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			if keyType == "string" {
 				if strings.HasPrefix(key, "\"") && strings.HasSuffix(key, "\"") {
 					// String literal key - copy directly
-					keyStr := key[1 : len(key)-1]                     // Remove quotes
-					keyStr = strings.ReplaceAll(keyStr, "\"", "\\\"") // Escape quotes in the string
+					keyStr := key[1 : len(key)-1]
+					keyStr = strings.ReplaceAll(keyStr, "\"", "\\\"")
 					fmt.Fprintf(b, "%s        strcpy(%s_keys[%s_size], \"%s\");\n", indent, mapName, mapName, keyStr)
 				} else {
 					// Variable key - resolve symbol first
@@ -1863,6 +1868,20 @@ func reconstructMethodCalls(variables []string) []string {
 func convertThisReferencesGranular(expr string) string {
 	if expr == "" {
 		return expr
+	}
+
+	// Handle string concatenation with ~ operator first
+	if strings.Contains(expr, "~") {
+		parts := strings.Split(expr, "~")
+		if len(parts) == 2 {
+			left := strings.TrimSpace(parts[0])
+			right := strings.TrimSpace(parts[1])
+			// If right side is a string literal, handle it properly
+			if strings.HasPrefix(right, "\"") && strings.HasSuffix(right, "\"") {
+				return fmt.Sprintf("strcat(strdup(%s), %s)", left, right)
+			}
+			return fmt.Sprintf("strcat(strdup(%s), %s)", left, right)
+		}
 	}
 	var stringLiterals []string
 	reString := regexp.MustCompile(`"(?:\\.|[^"\\])*"`)
