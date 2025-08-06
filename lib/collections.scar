@@ -47,8 +47,6 @@ pub class ArrayList:
         $raw (
             this->data = realloc(this->data, this->capacity * sizeof(int));
         )
-
-
     
 # Example usage:
 
