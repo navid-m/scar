@@ -1,0 +1,51 @@
+import "std/math"
+
+pub class UnitTest:
+    init:
+        int this.tests_run = 0
+        int this.tests_failed = 0
+
+    fn assert(bool condition, string message) -> void:
+        this.tests_run = this.tests_run + 1
+        if !condition:
+            this.tests_failed = this.tests_failed + 1
+            print "ASSERT FAILED: %s" | message
+        else:
+            print "ASSERT PASSED: %s" | message
+
+    fn assert_equals(int expected, int actual, string message) -> void:
+        this.tests_run = this.tests_run + 1
+        if expected != actual:
+            this.tests_failed = this.tests_failed + 1
+            print "ASSERT FAILED: %s (Expected %d, got %d)" | message, expected, actual
+        else:
+            print "ASSERT PASSED: %s" | message
+
+    fn assert_string_equals(string expected, string actual, string message) -> void:
+        this.tests_run = this.tests_run + 1
+        if expected != actual:
+            this.tests_failed = this.tests_failed + 1
+            print "ASSERT FAILED: %s (Expected '%s', got '%s')" | message, expected, actual
+        else:
+            print "ASSERT PASSED: %s (Expected '%s', got '%s')" | message, expected, actual
+    
+    fn assert_float_equals(float expected, float actual, float tolerance, string message) -> void:
+        this.tests_run = this.tests_run + 1
+        if math::absolute(expected - actual) > tolerance:
+            this.tests_failed = this.tests_failed + 1
+            print "ASSERT FAILED: %s (Expected %.6f, got %.6f)" | message, expected, actual
+        else:
+            print "ASSERT PASSED: %s" | message
+
+    fn assert_true(bool condition, string message) -> void:
+        this.assert(condition, message)
+
+    fn assert_false(bool condition, string message) -> void:
+        this.assert(!condition, message)
+
+    fn test_summary() -> void:
+        print "\nTests run: %d, Failures: %d" | this.tests_run, this.tests_failed
+        if this.tests_failed == 0:
+            print "All tests passed."
+        else:
+            print "Some tests failed."

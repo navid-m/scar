@@ -176,6 +176,12 @@ pub fn asin(float x) -> float:
     return result
 
 pub fn acos(float x) -> float:
+    if x < -1.0 || x > 1.0:
+        return 0.0
+    if x == 1.0:
+        return 0.0
+    if x == -1.0:
+        return math::PI
     return math::PI / 2 - math::asin(x)
 
 pub fn atan(float x) -> float:
