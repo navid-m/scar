@@ -26,3 +26,10 @@ fn hi(list[int] numbers):
     print "First number: %d" | numbers[0]
 
 hi(numbers)
+catlist!(empty_list, numbers)
+
+print "Concatenated list i0: %d" | empty_list[0]
+print "Concatenated list i1: %d" | empty_list[1]
+print "Concatenated list i2: %d" | empty_list[2]
+print "Concatenated list i3: %d" | empty_list[3]
+print "Concatenated list i4: %d" | empty_list[4]

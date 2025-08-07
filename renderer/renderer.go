@@ -880,6 +880,95 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			} else if stmt.Put.Put != "" {
 				fmt.Fprintf(b, "%sprintf(\"%s\");\n", indent, stmt.Put.Put)
 			}
+
+		case stmt.CatList != nil:
+			if stmt.CatList.Target != "" {
+				targetVar := lexer.ResolveSymbol(stmt.CatList.Target, currentModule)
+				// Determine the array type from the first list
+				// lexer.ResolveSymbol(stmt.CatList.Lists[0], currentModule)
+				listType := "int"
+				for listName, arrayType := range globalArrays {
+					if listName == stmt.CatList.Lists[0] {
+						listType = arrayType
+						break
+					}
+				}
+				if listType == "string" {
+					fmt.Fprintf(b, "%schar %s[1000][256]; // Concatenated list\n", indent, targetVar)
+					fmt.Fprintf(b, "%sint %s_len = 0;\n", indent, targetVar)
+				} else {
+					cType := mapTypeToCType(listType)
+					fmt.Fprintf(b, "%s%s %s[1000]; // Concatenated list\n", indent, cType, targetVar)
+					fmt.Fprintf(b, "%sint %s_len = 0;\n", indent, targetVar)
+				}
+				for _, listName := range stmt.CatList.Lists {
+					resolvedListName := lexer.ResolveSymbol(listName, currentModule)
+
+					if listType == "string" {
+						fmt.Fprintf(b, "%s// Copy from %s\n", indent, resolvedListName)
+						fmt.Fprintf(b, "%sfor (int __i = 0; __i < %s_len && %s_len < 1000; __i++) {\n",
+							indent, resolvedListName, targetVar)
+						fmt.Fprintf(b, "%s    strcpy(%s[%s_len], %s[__i]);\n",
+							indent, targetVar, targetVar, resolvedListName)
+						fmt.Fprintf(b, "%s    %s_len++;\n", indent, targetVar)
+						fmt.Fprintf(b, "%s}\n", indent)
+					} else {
+						fmt.Fprintf(b, "%s// Copy from %s\n", indent, resolvedListName)
+						fmt.Fprintf(b, "%sfor (int __i = 0; __i < %s_len && %s_len < 1000; __i++) {\n",
+							indent, resolvedListName, targetVar)
+						fmt.Fprintf(b, "%s    %s[%s_len] = %s[__i];\n",
+							indent, targetVar, targetVar, resolvedListName)
+						fmt.Fprintf(b, "%s    %s_len++;\n", indent, targetVar)
+						fmt.Fprintf(b, "%s}\n", indent)
+					}
+				}
+				globalArrays[stmt.CatList.Target] = listType
+
+			} else {
+				if len(stmt.CatList.Lists) < 2 {
+					fmt.Fprintf(b, "%s// Error: catlist! requires at least 2 lists\n", indent)
+					break
+				}
+
+				targetList := lexer.ResolveSymbol(stmt.CatList.Lists[0], currentModule)
+				listType := "int"
+
+				// TODO: Maybe change the default later?
+				// Can be done after implementing generics.
+
+				for listName, arrayType := range globalArrays {
+					if listName == stmt.CatList.Lists[0] {
+						listType = arrayType
+						break
+					}
+				}
+
+				for i := 1; i < len(stmt.CatList.Lists); i++ {
+					sourceList := lexer.ResolveSymbol(stmt.CatList.Lists[i], currentModule)
+
+					if listType == "string" {
+						fmt.Fprintf(b, "%s// Concatenate %s into %s\n", indent, sourceList, targetList)
+						fmt.Fprintf(b, "%sfor (int __i = 0; __i < %s_len; __i++) {\n",
+							indent, sourceList)
+						fmt.Fprintf(b, "%s    if (%s_len < 1000) {\n", indent, targetList)
+						fmt.Fprintf(b, "%s        strcpy(%s[%s_len], %s[__i]);\n",
+							indent, targetList, targetList, sourceList)
+						fmt.Fprintf(b, "%s        %s_len++;\n", indent, targetList)
+						fmt.Fprintf(b, "%s    }\n", indent)
+						fmt.Fprintf(b, "%s}\n", indent)
+					} else {
+						fmt.Fprintf(b, "%s// Concatenate %s into %s\n", indent, sourceList, targetList)
+						fmt.Fprintf(b, "%sfor (int __i = 0; __i < %s_len; __i++) {\n",
+							indent, sourceList)
+						fmt.Fprintf(b, "%s    if (%s_len < 1000) {\n", indent, targetList)
+						fmt.Fprintf(b, "%s        %s[%s_len] = %s[__i];\n",
+							indent, targetList, targetList, sourceList)
+						fmt.Fprintf(b, "%s        %s_len++;\n", indent, targetList)
+						fmt.Fprintf(b, "%s    }\n", indent)
+						fmt.Fprintf(b, "%s}\n", indent)
+					}
+				}
+			}
 		case stmt.Print != nil:
 			if stmt.Print.Format != "" && len(stmt.Print.Variables) > 0 {
 				var (
@@ -1305,6 +1394,7 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 					fmt.Fprintf(b, "%s%s[%d] = %s;\n", indent, listName, i, elem)
 				}
 			}
+			fmt.Fprintf(b, "%sint %s_len = %d;\n", indent, listName, len(stmt.ListDecl.Elements))
 		case stmt.ObjectDecl != nil:
 			varName := lexer.ResolveSymbol(stmt.ObjectDecl.Name, currentModule)
 			typeName := stmt.ObjectDecl.Type

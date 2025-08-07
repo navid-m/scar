@@ -88,6 +88,47 @@ func splitRespectingQuotes(input string) []string {
 func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int, error) {
 	line := strings.TrimSpace(lines[lineNum])
 
+	if strings.HasPrefix(line, "catlist!(") && strings.HasSuffix(line, ")") {
+		argsStr := strings.TrimSpace(line[9 : len(line)-1]) // Remove "catlist!(" and ")"
+		args := splitRespectingQuotes(argsStr)
+		if len(args) < 2 {
+			return nil, lineNum + 1, fmt.Errorf("catlist! statement requires at least 2 arguments at line %d", lineNum+1)
+		}
+		return &Statement{CatList: &CatListStmt{
+			Target: "",
+			Lists:  args,
+		}}, lineNum + 1, nil
+	}
+
+	if strings.Contains(line, "=") && strings.Contains(line, "catlist!(") {
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) == 2 {
+			leftSide := strings.TrimSpace(parts[0])
+			rightSide := strings.TrimSpace(parts[1])
+
+			if strings.HasPrefix(rightSide, "catlist!(") && strings.HasSuffix(rightSide, ")") {
+				argsStr := strings.TrimSpace(rightSide[9 : len(rightSide)-1])
+				args := splitRespectingQuotes(argsStr)
+
+				if len(args) < 2 {
+					return nil, lineNum + 1, fmt.Errorf("catlist! assignment requires at least 2 list arguments at line %d", lineNum+1)
+				}
+
+				var targetVar string
+				if strings.HasPrefix(leftSide, "var ") {
+					targetVar = strings.TrimSpace(leftSide[4:])
+				} else {
+					targetVar = leftSide
+				}
+
+				return &Statement{CatList: &CatListStmt{
+					Target: targetVar,
+					Lists:  args,
+				}}, lineNum + 1, nil
+			}
+		}
+	}
+
 	if strings.HasPrefix(line, "map[") && strings.Contains(line, "]") && strings.Contains(line, "=") {
 		typeEnd := strings.Index(line, "]")
 		if typeEnd == -1 {
