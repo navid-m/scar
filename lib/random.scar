@@ -1,10 +1,9 @@
 pub fn uuid(int length) -> char*:
     $raw (
-        static char buffer[64]; // max supported length is 63 chars + null
+        static char buffer[64];
         static const char chars[] = "0123456789abcdef";
         static int seeded = 0;
-
-        if (length > 63) return NULL; // prevent overflow
+        if (length > 63) return NULL;
         if (!seeded) {
             srand((unsigned int)time(NULL));
             seeded = 1;
