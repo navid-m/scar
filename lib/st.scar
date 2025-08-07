@@ -51,7 +51,9 @@ t.assert_string_equals("/base/path", path::dirname("/base/path/file.txt"), "Dirn
 
 # Random Tests
 t.assert_equals(6, strings::length(random::uuid(7)), "UUID length should be 6 characters")
+
 log::success(fmt!("ASSERT PASSED: Generated UUID: %s", random::uuid(12)))
+log::success(fmt!("ASSERT PASSED: Random number between 1 and 10: %d", random::num(1, 10)))
 
 t.test_summary()
 
