@@ -1,3 +1,5 @@
+import "std/math"
+
 pub fn some_fucking_function() -> float:
     return 5.0
 
@@ -6,4 +8,5 @@ pub fn test() -> float:
     result = (result) * 10.0 + some_fucking_function()
     return result
 
-print "Result: %f" | test()
+put "Result: "
+math::print_float(test(), 2)
