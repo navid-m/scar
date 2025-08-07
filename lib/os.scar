@@ -1,0 +1,9 @@
+pub fn exec(string command) -> int:
+    $raw (
+        return system(command);
+    )
+
+pub fn exit(int code):
+    $raw (
+        exit(code);
+    )
