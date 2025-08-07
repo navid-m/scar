@@ -40,6 +40,45 @@ pub class ArrayList:
             this->data = realloc(this->data, this->capacity * sizeof(int));
         )
     
+pub class StringArrayList:
+    init(i32 initial_capacity):
+        this.size = 0
+        this.capacity = initial_capacity
+        ref char this.data = nil
+        $raw (
+            this->data = malloc(this->capacity * sizeof(char*));
+        )
+                
+    fn add_element(string value) -> void:
+        if this.size >= this.capacity:
+            this.resize()
+        $raw (
+            ((char**)this->data)[this->size] = strdup(value);
+        )
+        this.size = this.size + 1
+    
+    fn get_element(int index) -> string:
+        if index < 0 || index >= this.size:
+            return ""
+        $raw (
+            return ((char**)this->data)[index];
+        )
+    
+    fn set_element(int index, string value) -> void:
+        if index >= 0 && index < this.size:
+            $raw (
+                free(((char**)this->data)[index]);
+                ((char**)this->data)[index] = strdup(value);
+            )
+    
+    fn get_size() -> int:
+        return this.size
+    
+    fn resize() -> void:
+        this.capacity = this.capacity * 2
+        $raw (
+            this->data = realloc(this->data, this->capacity * sizeof(char*));
+        )
 # Example usage:
 
 # var list = new ArrayList(4)

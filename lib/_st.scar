@@ -61,6 +61,21 @@ log::success(fmt!("ASSERT PASSED: Random float between 0 and 1: %f", random::flo
 log::success(fmt!("ASSERT PASSED: Current timestamp: %d", time::timestamp()))
 log::success(fmt!("ASSERT PASSED: Current time: %s", time::format_date(time::now())))
 
+
+collections::StringArrayList strList = new collections::StringArrayList(5)
+strList.add_element("hello")
+strList.add_element("world")
+strList.add_element("scar")
+
+# string hi = strList.get_element(0)
+# string hi2 = strList.get_element(1)
+# string hi3 = strList.get_element(2)
+
+# t.assert_string_equals("hello", hi, "String ArrayList element 0 should be 'hello'")
+# t.assert_string_equals("world", hi2, "String ArrayList element 1 should be 'world'")
+# t.assert_string_equals("scar", hi3, "String ArrayList element 2 should be 'scar'")
+
 t.test_summary()
+
 
 os::exit(0)
