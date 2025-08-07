@@ -48,7 +48,7 @@ pub class StringArrayList:
         $raw (
             this->data = malloc(this->capacity * sizeof(char*));
         )
-                
+
     fn add_element(string value) -> void:
         if this.size >= this.capacity:
             this.resize()
@@ -61,9 +61,13 @@ pub class StringArrayList:
         if index < 0 || index >= this.size:
             return ""
         $raw (
-            return ((char**)this->data)[index];
+            char* value = ((char**)this->data)[index];
+            if (value == nil) {
+                return "";
+            }
+            return value;
         )
-    
+
     fn set_element(int index, string value) -> void:
         if index >= 0 && index < this.size:
             $raw (
