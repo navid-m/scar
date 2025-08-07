@@ -2,10 +2,10 @@
 # TODO: Remove them.
 
 pub class ArrayList:
-    init(int initial_capacity):
+    init(i32 initial_capacity):
         this.size = 0
         this.capacity = initial_capacity
-        ref int this.data = nil
+        ref i32 this.data = nil
         $raw (
             this->data = malloc(this->capacity * sizeof(int));
         )

@@ -57,6 +57,17 @@ func parseAllImports(lines []string, startLine int) ([]*ImportStmt, error) {
 	return imports, nil
 }
 
+func isNumericType(typeName string) bool {
+	numericTypes := map[string]bool{
+		"u16": true, "u32": true, "u64": true,
+		"i16": true, "i32": true, "i64": true,
+		"f32": true, "f64": true,
+		"int": true, "float": true, "double": true,
+		"bool": true, "char": true, "string": true,
+	}
+	return numericTypes[typeName]
+}
+
 func parseTryCatchStatement(lines []string, lineNum, currentIndent int) (*Statement, int, error) {
 	line := strings.TrimSpace(lines[lineNum])
 	if line != "try:" {

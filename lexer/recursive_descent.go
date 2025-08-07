@@ -282,6 +282,21 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 		}}, lineNum + 1, nil
 	}
 	switch parts[0] {
+	case "u16", "u32", "u64", "i16", "i32", "i64", "f32", "f64":
+		if len(parts) < 4 || parts[2] != "=" {
+			return nil, lineNum + 1, fmt.Errorf("numeric type declaration format error at line %d (expected: %s name = value)", lineNum+1, parts[0])
+		}
+		varType := parts[0]
+		varName := parts[1]
+		value := strings.Join(parts[3:], " ")
+
+		return &Statement{VarDecl: &VarDeclStmt{
+			Type:  varType,
+			Name:  varName,
+			Value: value,
+			IsRef: false,
+		}}, lineNum + 1, nil
+
 	case "parallel":
 		if len(parts) < 5 || parts[1] != "for" || parts[3] != "=" || !strings.Contains(line, "to") || !strings.HasSuffix(line, ":") {
 			return nil, lineNum + 1, fmt.Errorf("parallel for statement format error at line %d (expected: parallel for var = start to end:)", lineNum+1)

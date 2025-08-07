@@ -32,6 +32,14 @@ var (
 		"bool":   "bool",
 		"char":   "char",
 		"string": "char*",
+		"u16":    "unsigned short",
+		"u32":    "unsigned int",
+		"u64":    "unsigned long",
+		"i16":    "short",
+		"i32":    "int",
+		"i64":    "long",
+		"f32":    "float",
+		"f64":    "double",
 	}
 )
 
@@ -302,7 +310,7 @@ func collectClassInfoWithModule(classDecl *lexer.ClassDeclStmt, moduleName strin
 				}
 				fieldInfo := FieldInfo{
 					Name:  param.Name,
-					Type:  fieldType,
+					Type:  mapTypeToCType(fieldType),
 					IsRef: param.IsRef,
 				}
 				classInfo.Fields = append(classInfo.Fields, fieldInfo)
@@ -421,7 +429,7 @@ func inferTypeFromValue(value string) string {
 		return "object"
 	}
 	if strings.Contains(value, ".") && !strings.HasPrefix(value, "new ") {
-		return "float"
+		return "f32"
 	}
 	if value == "true" || value == "false" {
 		return "bool"
@@ -429,8 +437,9 @@ func inferTypeFromValue(value string) string {
 	if strings.HasPrefix(value, "this.") {
 		return "ref object"
 	}
-	return "int"
+	return "i32"
 }
+
 func generateStructDefinition(b *strings.Builder, classInfo *ClassInfo, structName string) {
 	fmt.Fprintf(b, "#define MAX_STRING_LENGTH 256\n")
 	fmt.Fprintf(b, "#define MAX_MAP_SIZE 100\n")
@@ -2605,11 +2614,11 @@ func generateFunctionPrototype(funcDecl *lexer.TopLevelFuncDeclStmt) string {
 
 func mapTypeToCType(mapType string) string {
 	switch mapType {
-	case "int":
+	case "int", "i32", "i32*":
 		return "int"
-	case "float":
+	case "float", "f32":
 		return "float"
-	case "double":
+	case "double", "f64":
 		return "double"
 	case "char":
 		return "char"
@@ -2617,6 +2626,16 @@ func mapTypeToCType(mapType string) string {
 		return "char"
 	case "bool":
 		return "bool"
+	case "u16":
+		return "unsigned short"
+	case "u32":
+		return "unsigned int"
+	case "u64":
+		return "unsigned long"
+	case "i16":
+		return "short"
+	case "i64":
+		return "long"
 	default:
 		if strings.HasPrefix(mapType, "list[") && strings.HasSuffix(mapType, "]") {
 			innerType := strings.TrimPrefix(strings.TrimSuffix(mapType, "]"), "list[")

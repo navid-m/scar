@@ -1,9 +1,9 @@
-import "math"
-import "std/io"
+# import "math"
+# import "std/io"
 
-int area = math.PI * 5 * 5
-var calc = new math.Calculator()
-int result = calc.add(10, 20)
+# int area = math.PI * 5 * 5
+# var calc = new math.Calculator()
+# int result = calc.add(10, 20)
 
-print "Area: %d" | area
-print "Result: %d" | result 
+# print "Area: %d" | area
+# print "Result: %d" | result 
