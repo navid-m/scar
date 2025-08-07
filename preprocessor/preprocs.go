@@ -44,7 +44,8 @@ func InsertMacros(output string) string {
 		outp = insertSprintf(outp)
 	}
 	if strings.Contains(output, "i32") || strings.Contains(output, "u32") || strings.Contains(output, "i64") ||
-		strings.Contains(output, "u64") || strings.Contains(output, "i16") || strings.Contains(output, "u16") || strings.Contains(output, "u8") || strings.Contains(output, "i8") {
+		strings.Contains(output, "u64") || strings.Contains(output, "i16") || strings.Contains(output, "u16") ||
+		strings.Contains(output, "u8") || strings.Contains(output, "i8") {
 		outp = "#include <stdint.h>\ntypedef int32_t i32;\ntypedef uint32_t u32;\ntypedef int64_t i64;\n" +
 			"typedef uint64_t u64;\ntypedef int16_t i16;\ntypedef uint16_t u16;\ntypedef uint8_t u8;\ntypedef int8_t i8;\n" + outp
 	}
