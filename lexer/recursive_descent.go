@@ -8,6 +8,7 @@ package lexer
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -1171,6 +1172,22 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 			}
 		}
 	}
+
+	if strings.Contains(line, "(") && strings.HasSuffix(line, ")") && !strings.HasSuffix(line, ":") {
+		firstWord := strings.Fields(line)[0]
+		isKeyword := false
+		keywords := []string{"if", "for", "while", "fn", "class",
+			"var", "return", "import", "pub", "ref", "u16", "u32", "u64",
+			"i16", "i32", "i64", "f32", "f64", "print", "sleep", "break",
+			"continue", "foreach", "parallel"}
+		if slices.Contains(keywords, firstWord) {
+			isKeyword = true
+		}
+		if !isKeyword {
+			return &Statement{Run: &RunStmt{FunctionCall: line}}, lineNum + 1, nil
+		}
+	}
+
 	return nil, lineNum + 1, fmt.Errorf("unknown statement type '%s' at line %d", parts[0], lineNum+1)
 }
 
