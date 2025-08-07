@@ -16,7 +16,7 @@ list.add_element(20)
 list.add_element(30)
 
 var t = new test::UnitTest()
-int size = list.get_size()
+i32 size = list.get_size()
 
 # Collections Tests
 t.assert_equals(3, size, "List size should be 3")
