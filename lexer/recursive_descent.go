@@ -1173,7 +1173,8 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 		}
 	}
 
-	if strings.Contains(line, "(") && strings.HasSuffix(line, ")") && !strings.HasSuffix(line, ":") {
+	if strings.Contains(line, "(") && strings.HasSuffix(line, ")") && !strings.HasSuffix(line, ":") &&
+		!strings.Contains(line, "*") {
 		firstWord := strings.Fields(line)[0]
 		isKeyword := false
 		keywords := []string{"if", "for", "while", "fn", "class",

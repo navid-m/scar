@@ -212,3 +212,26 @@ pub fn round(float value, int decimalPlaces) -> float:
 ## e.g. run math::print_float(3.14159265359, 2)
 pub fn print_float(float value, int decimalPlaces) -> void:
     put "%.*f" | decimalPlaces, math::round(value, decimalPlaces)
+
+pub fn mod(float a, float b) -> float:
+    if b == 0.0:
+        return 0.0 
+    float result = a - b * math::floor(a / b)
+    return result
+
+pub fn floor(float x) -> float:
+    int i = (int)x
+    if float(i) > x:
+        return float(i - 1)
+    return float(i)
+
+pub fn ceil(float x) -> float:
+    int i = (int)x
+    if float(i) < x:
+        return float(i + 1)
+    return float(i)
+
+pub fn log_base(float x, float base) -> float:
+    if x <= 0.0 || base <= 0.0 || base == 1.0:
+        return -1.0
+    return math::ln(x) / math::ln(base)
