@@ -32,6 +32,7 @@ t.assert_float_equals(0.0, math::ln(1.0), 0.0000001, "ln(1.0) should be approxim
 t.assert_equals(0, strings::compare("Hello, World!", "Hello, World!"), "String comparison should be equal")
 t.assert_equals(5, strings::length("Hello"), "String length should be 5")
 
+# OS Tests
 os::exec("echo ASSERT PASSED: OS call worked")
 print "ASSERT PASSED: Currently directory correctly detected as: %s" | os::cwd()
 
