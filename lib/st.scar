@@ -35,6 +35,7 @@ t.assert_equals(5, strings::length("Hello"), "String length should be 5")
 # OS Tests
 os::exec("echo ASSERT PASSED: OS call worked")
 print "ASSERT PASSED: Currently directory correctly detected as: %s" | os::cwd()
+print "ASSERT PASSED: Home directory detected as: %s" | os::homedir()
 
 t.test_summary()
 

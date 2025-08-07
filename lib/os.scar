@@ -20,3 +20,18 @@ pub fn chdir(string path) -> int:
     $raw (
         return chdir(path);
     )
+
+pub fn homedir() -> char*:
+    $raw (
+        char *home = getenv("HOME");
+        if (home == NULL) {
+            home = getenv("USERPROFILE");
+        }
+        return home ? strdup(home) : NULL;
+    )
+
+pub fn get_env(string name) -> char*:
+    $raw (
+        char *value = getenv(name);
+        return value ? strdup(value) : NULL;
+    )
