@@ -10,28 +10,28 @@ pub class ArrayList:
             this->data = malloc(this->capacity * sizeof(int));
         )
     
-    fn add_element(int value) -> void:
+    fn add_element(i32 value) -> void:
         if this.size >= this.capacity:
             this.resize()
         $raw (
-            ((int*)this->data)[this->size] = value;
+            ((i32*)this->data)[this->size] = value;
         )
         this.size = this.size + 1
     
-    fn get_element(int index) -> int:
+    fn get_element(i32 index) -> i32:
         if index < 0 || index >= this.size:
             return -1
         $raw (
-            return ((int*)this->data)[index];
+            return ((i32*)this->data)[index];
         )
     
-    fn set_element(int index, int value) -> void:
+    fn set_element(i32 index, i32 value) -> void:
         if index >= 0 && index < this.size:
             $raw (
-                ((int*)this->data)[index] = value;
+                ((i32*)this->data)[index] = value;
             )
     
-    fn get_size() -> int:
+    fn get_size() -> i32:
         return this.size
     
     fn resize() -> void:
