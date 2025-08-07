@@ -19,7 +19,7 @@ pub fn is_directory(string path) -> bool:
         if (stat(path, &st) == 0) {
             return S_ISDIR(st.st_mode);
         }
-        return 0; // stat failed
+        return 0;
     )
 
 pub fn is_file(string path) -> bool:
