@@ -41,3 +41,17 @@ pub fn num(int x, int y) -> int:
         x = y
         y = temp
     return x + (g_seed % (y - x + 1))
+
+## Random boolean value
+## Returns true or false with equal probability
+pub fn boolean() -> bool:
+    return random::num(0, 1)
+
+## Random float between 0.0 and 1.0
+pub fn floatb() -> float:
+    return float(random::num(0, 32767)) / 32767.0
+
+## Random float between x and y
+pub fn float_range(float x, float y) -> float:
+    float t = random::floatb()
+    return x + t * (y - x)
