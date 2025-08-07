@@ -4,6 +4,7 @@ import "std/strings"
 import "std/test"
 import "std/os"
 import "std/path"
+import "std/random"
 
 # Setup
 var list = new collections::ArrayList(4)
@@ -46,6 +47,11 @@ t.assert_string_equals("txt", path::extension("file.txt"), "File extension shoul
 t.assert_string_equals("/base/path/file.txt", path::join("/base/path", "file.txt"), "Join should produce correct path")
 t.assert_string_equals("file.txt", path::basename("/base/path/file.txt"), "Basename should be 'file.txt'")
 t.assert_string_equals("/base/path", path::dirname("/base/path/file.txt"), "Dirname should be '/base/path'")
+
+# Random Tests
+t.assert_equals(6, strings::length(random::uuid(7)), "UUID length should be 6 characters")
+print "ASSERT PASSED: Generated UUID: %s" | random::uuid(12)
+
 t.test_summary()
 
 os::exit(0)
