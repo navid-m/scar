@@ -118,8 +118,6 @@ func RenderC(program *lexer.Program, baseDir string) string {
 			collectClassInfoWithModule(classDecl, module.Name)
 		}
 	}
-
-	b.WriteString("// Enums\n")
 	for _, enumInfo := range globalEnums {
 		b.WriteString(fmt.Sprintf("typedef enum {\n"))
 		for i, value := range enumInfo.Values {
