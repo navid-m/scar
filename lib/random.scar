@@ -16,7 +16,6 @@ pub fn uuid(int length) -> char*:
         return buffer;
     )
 
-
 pub fn num(int x, int y) -> int:
     int g_seed = 0
     if g_seed == 0:
