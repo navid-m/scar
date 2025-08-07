@@ -1,0 +1,15 @@
+pub fn warn(string message) -> void:
+    $raw (
+        fprintf(stderr, "[WARNING] %s\n", message);
+    )
+
+pub fn error(string message) -> void:
+    $raw (
+        fprintf(stderr, "[ERROR] %s\n", message);
+    )
+
+pub fn info(string message) -> void:
+    put "[INFO] " + message + "\n";
+
+pub fn debug(string message) -> void:
+    put "[DEBUG] " + message + "\n";
