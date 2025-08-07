@@ -32,12 +32,12 @@ var (
 		"bool":   "bool",
 		"char":   "char",
 		"string": "char*",
-		"u16":    "unsigned short",
-		"u32":    "unsigned int",
-		"u64":    "unsigned long",
-		"i16":    "short",
-		"i32":    "int",
-		"i64":    "long",
+		"u16":    "uint16_t",
+		"u32":    "uint32_t",
+		"u64":    "uint64_t",
+		"i16":    "int16_t",
+		"i32":    "int32_t",
+		"i64":    "int64_t",
 		"f32":    "float",
 		"f64":    "double",
 	}
@@ -102,6 +102,7 @@ func RenderC(program *lexer.Program, baseDir string) string {
 #include <omp.h>
 #include <stdlib.h>
 #include <stdbool.h>
+#include <stdint.h>
 
 int _exception = 0;
 

@@ -21,6 +21,7 @@ while 1:
 #include <omp.h>
 #include <stdlib.h>
 #include <stdbool.h>
+#include <stdint.h>
 
 int _exception = 0;
 
@@ -66,6 +67,7 @@ print "done..."`
 #include <omp.h>
 #include <stdlib.h>
 #include <stdbool.h>
+#include <stdint.h>
 
 int _exception = 0;
 
@@ -112,6 +114,7 @@ print "All done"`
 #include <omp.h>
 #include <stdlib.h>
 #include <stdbool.h>
+#include <stdint.h>
 
 int _exception = 0;
 
