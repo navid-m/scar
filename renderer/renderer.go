@@ -119,7 +119,7 @@ func RenderC(program *lexer.Program, baseDir string) string {
 		}
 	}
 	for _, enumInfo := range globalEnums {
-		b.WriteString(fmt.Sprintf("typedef enum {\n"))
+		b.WriteString("typedef enum {\n")
 		for i, value := range enumInfo.Values {
 			b.WriteString(fmt.Sprintf("    %s_%s", enumInfo.Name, value))
 			if i < len(enumInfo.Values)-1 {
