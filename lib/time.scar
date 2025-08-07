@@ -1,0 +1,36 @@
+pub class Date:
+    init:
+        int this.year = 1970
+        int this.month = 0 
+        int this.day = 0 
+        int this.hour = 0  
+        int this.minute = 0  
+        int this.second = 0 
+        int this.millisecond = 0
+
+pub fn timestamp() -> int:
+    int result = 0
+    $raw (
+        result = (int)time(NULL);
+    )
+    return result
+
+pub fn now() -> time::Date:
+    ref time::Date d = new time::Date()
+    int ts = time::timestamp()
+    $raw (
+        #include <time.h>
+        time_t timestamp = (time_t)ts;
+        struct tm* tm_info = localtime(&timestamp);
+        d.year = tm_info->tm_year + 1900;
+        d.month = tm_info->tm_mon + 1;
+        d.day = tm_info->tm_mday;
+        d.hour = tm_info->tm_hour;
+        d.minute = tm_info->tm_min;
+        d.second = tm_info->tm_sec;
+    )
+    return d
+
+## Format date as string (YYYY-MM-DD HH:MM:SS)
+# pub fn format_date(Date date) -> char*:
+#     return fmt!("%04d-%02d-%02d %02d:%02d:%02d", date.year, date.month, date.day, date.hour, date.minute, date.second)

@@ -6,6 +6,7 @@ import "std/os"
 import "std/path"
 import "std/random"
 import "std/log"
+import "std/time"
 
 # Setup
 var list = new collections::ArrayList(4)
@@ -56,6 +57,7 @@ log::success(fmt!("ASSERT PASSED: Generated UUID: %s", random::uuid(12)))
 log::success(fmt!("ASSERT PASSED: Random number between 1 and 10: %d", random::num(1, 10)))
 run log::success(fmt!("ASSERT PASSED: Random float between 0.0 and 111.0: %f", random::float_range(0.0, 111.0)))
 run log::success(fmt!("ASSERT PASSED: Random float between 0 and 1: %f", random::floatb(5.0, 10.0)))
+run log::success(fmt!("ASSERT PASSED: Current timestamp: %d", time::timestamp()))
 
 t.test_summary()
 

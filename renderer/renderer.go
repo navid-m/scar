@@ -41,7 +41,8 @@ func RenderC(program *lexer.Program, baseDir string) string {
 	for _, importStmt := range program.Imports {
 		_, err := lexer.LoadModule(importStmt.Module, baseDir)
 		if err != nil {
-			fmt.Printf("Warning: Failed to load module '%s': %v\n", importStmt.Module, err)
+			fmt.Printf("\033[31mFailed to load module '%s': %v\033[0m\n", importStmt.Module, err)
+			os.Exit(1)
 		}
 	}
 
