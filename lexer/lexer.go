@@ -493,7 +493,6 @@ func isValidType(s string) bool {
 	if slices.Contains(vdt, s) {
 		return true
 	}
-
 	if numericTypes[s] {
 		return true
 	}
