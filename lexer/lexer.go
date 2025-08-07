@@ -486,9 +486,17 @@ func isValidType(s string) bool {
 	if slices.Contains(vdt, s) {
 		return true
 	}
+	numericTypes := map[string]bool{
+		"i8": true, "i16": true, "i32": true, "i64": true,
+		"u8": true, "u16": true, "u32": true, "u64": true,
+		"f32": true, "f64": true,
+	}
+	if numericTypes[s] {
+		return true
+	}
 	if strings.HasPrefix(s, "list[") && strings.HasSuffix(s, "]") {
 		innerType := strings.TrimPrefix(strings.TrimSuffix(s, "]"), "list[")
-		return slices.Contains(vdt, innerType)
+		return isValidType(innerType)
 	}
 	return false
 }

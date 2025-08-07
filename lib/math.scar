@@ -1,15 +1,15 @@
-pub float PI = 3.14159265359
-pub float E = 2.71828182846
-pub int MAX_INT = 2147483647
-pub int MIN_INT = -2147483648
-pub float TAU = 6.28318530718
-pub float PHI = 1.61803398875 
+pub f32 PI = 3.14159265359
+pub f32 E = 2.71828182846
+pub i32 MAX_INT = 2147483647
+pub i32 MIN_INT = -2147483648
+pub f32 TAU = 6.28318530718
+pub f32 PHI = 1.61803398875 
 
-pub fn to_int(string value) -> int:
-    int i = 0
-    int result = 0
-    int sign = 1
-    int len = len(value)
+pub fn to_int(string value) -> i32:
+    i32 i = 0
+    i32 result = 0
+    i32 sign = 1
+    i32 len = len(value)
 
     while i < len && (value[i] == ' ' || value[i] == '\t' || value[i] == '\n'):
         i = i + 1
@@ -24,13 +24,13 @@ pub fn to_int(string value) -> int:
 
     return result * sign
 
-pub fn to_float(string value) -> float:
-    int i = 0
-    float result = 0.0
-    int sign = 1
-    float fraction = 0.0
-    float divisor = 10.0
-    int len = len(value)
+pub fn to_float(string value) -> f32:
+    i32 i = 0
+    f32 result = 0.0
+    i32 sign = 1
+    f32 fraction = 0.0
+    f32 divisor = 10.0
+    i32 len = len(value)
 
     while i < len  && (value[i] == ' ' || value[i] == '\t' || value[i] == '\n'):
         i = i + 1
@@ -53,59 +53,59 @@ pub fn to_float(string value) -> float:
 
     return float(sign) * (result + fraction)
 
-pub fn min(int a, int b) -> int:
+pub fn min(i32 a, i32 b) -> i32:
     if a < b:
         return a
     return b
 
-pub fn max(int a, int b) -> int:
+pub fn max(i32 a, i32 b) -> i32:
     if a > b:
         return a
     return b
 
-pub fn absolute(float value) -> float:
+pub fn absolute(f32 value) -> f32:
     if value < 0.0:
         return -value
     return value
 
-pub fn pow(float base, int exp) -> float:
-    float result = 1.0
-    int i = 0
+pub fn pow(f32 base, i32 exp) -> f32:
+    f32 result = 1.0
+    i32 i = 0
     if exp < 0:
         return 1.0 / math::pow(base, -exp)
     for i = 0 to exp - 1:
         result = result * base
     return result
 
-pub fn factorial(int n) -> int:
+pub fn factorial(i32 n) -> i32:
     if n < 0:
         return -1
-    int result = 1
+    i32 result = 1
     for i = 2 to n:
         result = result * i
     return result
 
-pub fn clamp(float value, float min_value, float max_value) -> float:
+pub fn clamp(f32 value, f32 min_value, f32 max_value) -> f32:
     if value < min_value:
         return min_value
     elif value > max_value:
         return max_value
     return value
 
-pub fn normalize(float x) -> float:
+pub fn normalize(f32 x) -> f32:
     while x > math::PI:
         x = x - 2.0 * math::PI
     while x < -math::PI:
         x = x + 2.0 * math::PI
     return x
 
-pub fn sin(float x) -> float:
+pub fn sin(f32 x) -> f32:
     x = math::normalize(x)
-    float term = x
-    float result = x
-    float x_squared = x * x
-    int i = 1
-    int sign = -1
+    f32 term = x
+    f32 result = x
+    f32 x_squared = x * x
+    i32 i = 1
+    i32 sign = -1
     while i < 10:
         term = term * x_squared / float((2 * i) * (2 * i + 1))
         result = result + float(sign) * term
@@ -113,13 +113,13 @@ pub fn sin(float x) -> float:
         i = i + 1
     return result
 
-pub fn cos(float x) -> float:
+pub fn cos(f32 x) -> f32:
     x = math::normalize(x)
-    float term = 1.0
-    float result = 1.0
-    float x_squared = x * x
-    int i = 1
-    int sign = -1
+    f32 term = 1.0
+    f32 result = 1.0
+    f32 x_squared = x * x
+    i32 i = 1
+    i32 sign = -1
     while i < 10:
         term = term * x_squared / float((2 * i - 1) * (2 * i))
         result = result + float(sign) * term
@@ -128,16 +128,16 @@ pub fn cos(float x) -> float:
     return result
 
 ## Will return 0.0 if cos(x) is too close to 0.0
-pub fn tan(float x) -> float:
-    float cos_x = math::cos(x)
+pub fn tan(f32 x) -> f32:
+    f32 cos_x = math::cos(x)
     if math::absolute(cos_x) < 0.00001:
         return 0.0
     return math::sin(x) / cos_x
 
-pub fn exp(float x) -> float:
-    float sum = 1.0
-    float term = 1.0
-    int i = 1
+pub fn exp(f32 x) -> f32:
+    f32 sum = 1.0
+    f32 term = 1.0
+    i32 i = 1
     while i < 20:
         term = term * x / float(i)
         sum = sum + term
@@ -145,14 +145,14 @@ pub fn exp(float x) -> float:
     return sum
 
 ## Will return -1.0 if x <= 0.0
-pub fn ln(float x) -> float:
+pub fn ln(f32 x) -> f32:
     if x <= 0.0:
         return -1.0
-    float y = (x - 1) / (x + 1)
-    float y2 = y * y
-    float sum = 0.0
-    float term = y
-    int i = 1
+    f32 y = (x - 1) / (x + 1)
+    f32 y2 = y * y
+    f32 sum = 0.0
+    f32 term = y
+    i32 i = 1
     while i < 20:
         sum = sum + term / float(2 * i - 1)
         term = term * y2
@@ -160,14 +160,14 @@ pub fn ln(float x) -> float:
     return 2.0 * sum
 
 ## Will return 0.0 if x < -1.0 || x > 1.0
-pub fn asin(float x) -> float:
+pub fn asin(f32 x) -> f32:
     if x < -1.0 || x > 1.0:
         return 0.0
-    float result = 0.0
-    float term = x
-    float x2 = x * x
-    int i = 0
-    int sign = 1
+    f32 result = 0.0
+    f32 term = x
+    f32 x2 = x * x
+    i32 i = 0
+    i32 sign = 1
     while i < 10:
         result = result + float(sign) * term / (2 * i + 1)
         term = term * x2 * float((2 * i + 1)*(2 * i + 1)) / float((2 * i + 2)*(2 * i + 3))
