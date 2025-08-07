@@ -1,0 +1,8 @@
+pub enum Color:
+    Red
+    Green
+    Blue
+
+print "Red = %d"   | Color::Red
+print "Green = %d" | Color::Green
+print "Blue = %d"  | Color::Blue
