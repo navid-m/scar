@@ -12,7 +12,6 @@ pub fn cwd() -> char*:
     $raw (
         char *buffer = getcwd(NULL, 0);
         char *result = buffer;
-        free(buffer);
         return result;
     )
 
