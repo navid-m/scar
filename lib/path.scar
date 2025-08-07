@@ -9,3 +9,17 @@ pub fn extension(string path) -> char*:
         }
         return strdup("");
     )
+
+pub fn join(string base, string relative) -> char*:
+    $raw (
+        char *result = malloc(strlen(base) + strlen(relative) + 2);
+        if (result == NULL) {
+            return NULL; // Memory allocation failed
+        }
+        strcpy(result, base);
+        if (base[strlen(base) - 1] != '/') {
+            strcat(result, "/");
+        }
+        strcat(result, relative);
+        return result;
+    )
