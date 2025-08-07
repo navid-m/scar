@@ -480,17 +480,20 @@ func GenerateUniqueSymbol(originalName string, moduleName string) string {
 	return fmt.Sprintf("%s_%s", moduleName, originalName)
 }
 
-var vdt = []string{"int", "float", "double", "char", "string", "bool", "map"}
+var (
+	vdt          = []string{"int", "float", "double", "char", "string", "bool", "map"}
+	numericTypes = map[string]bool{
+		"i8": true, "i16": true, "i32": true, "i64": true,
+		"u8": true, "u16": true, "u32": true, "u64": true,
+		"f32": true, "f64": true,
+	}
+)
 
 func isValidType(s string) bool {
 	if slices.Contains(vdt, s) {
 		return true
 	}
-	numericTypes := map[string]bool{
-		"i8": true, "i16": true, "i32": true, "i64": true,
-		"u8": true, "u16": true, "u32": true, "u64": true,
-		"f32": true, "f64": true,
-	}
+
 	if numericTypes[s] {
 		return true
 	}
