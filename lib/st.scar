@@ -44,7 +44,8 @@ t.assert_equals(true, path::is_absolute_path("/absolute/path"), "Path should be 
 t.assert_equals(false, path::is_absolute_path("relative/path"), "Path should not be absolute")
 t.assert_string_equals("txt", path::extension("file.txt"), "File extension should be 'txt'")
 t.assert_string_equals("/base/path/file.txt", path::join("/base/path", "file.txt"), "Join should produce correct path")
-
+t.assert_string_equals("file.txt", path::basename("/base/path/file.txt"), "Basename should be 'file.txt'")
+t.assert_string_equals("/base/path", path::dirname("/base/path/file.txt"), "Dirname should be '/base/path'")
 t.test_summary()
 
 os::exit(0)

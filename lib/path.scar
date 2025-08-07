@@ -23,3 +23,25 @@ pub fn join(string base, string relative) -> char*:
         strcat(result, relative);
         return result;
     )
+
+pub fn basename(string path) -> char*:
+    $raw (
+        const char *base = strrchr(path, '/');
+        if (base) {
+            return strdup(base + 1);
+        }
+        return strdup(path);
+    )
+
+pub fn dirname(string path) -> char*:
+    $raw (
+        char *result = strdup(path);
+        char *last_slash = strrchr(result, '/');
+        if (last_slash) {
+            *last_slash = '\0';
+        } else {
+            free(result);
+            return strdup(".");
+        }
+        return result;
+    )
