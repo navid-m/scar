@@ -17,8 +17,15 @@ import (
 	"scar/lexer"
 )
 
+// EnumInfo stores information about an enum type
+type EnumInfo struct {
+	Name   string
+	Values []string
+}
+
 var (
 	globalClasses    = make(map[string]*ClassInfo)
+	globalEnums      = make(map[string]*EnumInfo)
 	globalObjects    = make(map[string]*ObjectInfo)
 	globalFunctions  = make(map[string]*lexer.TopLevelFuncDeclStmt)
 	globalArrays     = make(map[string]string)
@@ -88,12 +95,40 @@ func RenderC(program *lexer.Program, baseDir string) string {
 			}
 			globalFunctions[stmt.PubTopLevelFuncDecl.Name] = topLevelFunc
 		}
+		// Handle enum declarations
+		if stmt.EnumDecl != nil {
+			enumInfo := &EnumInfo{
+				Name:   stmt.EnumDecl.Name,
+				Values: stmt.EnumDecl.Values,
+			}
+			globalEnums[stmt.EnumDecl.Name] = enumInfo
+		}
+		// Handle public enum declarations
+		if stmt.PubEnumDecl != nil {
+			enumInfo := &EnumInfo{
+				Name:   stmt.PubEnumDecl.Name,
+				Values: stmt.PubEnumDecl.Values,
+			}
+			globalEnums[stmt.PubEnumDecl.Name] = enumInfo
+		}
 	}
 
 	for _, module := range lexer.LoadedModules {
 		for _, classDecl := range module.PublicClasses {
 			collectClassInfoWithModule(classDecl, module.Name)
 		}
+	}
+
+	b.WriteString("// Enums\n")
+	for _, enumInfo := range globalEnums {
+		b.WriteString(fmt.Sprintf("typedef enum {\n"))
+		for i, value := range enumInfo.Values {
+			b.WriteString(fmt.Sprintf("    %s_%s", enumInfo.Name, value))
+			if i < len(enumInfo.Values)-1 {
+				b.WriteString(",\n")
+			}
+		}
+		b.WriteString(fmt.Sprintf("\n} %s;\n\n", enumInfo.Name))
 	}
 
 	b.WriteString(`#include <stdio.h>
@@ -496,6 +531,7 @@ func generateStructDefinition(b *strings.Builder, classInfo *ClassInfo, structNa
 	}
 	fmt.Fprintf(b, "} %s;\n", structName)
 }
+
 func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclStmt, moduleName string, program *lexer.Program) {
 	className := classDecl.Name
 	if moduleName != "" {
@@ -734,6 +770,7 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 		b.WriteString("}\n\n")
 	}
 }
+
 func generateInstanceMapAccessHelper(b *strings.Builder, className, fieldName, keyType, valueType string) {
 	cKeyType := mapTypeToCType(keyType)
 	if keyType == "string" {
@@ -1879,7 +1916,7 @@ func convertNewToConstructor(expr string) string {
 
 	src := strings.TrimSpace(expr[3:])
 	if src == "" {
-		return expr
+		return fmt.Sprintf("%s_new()", strings.TrimSpace(src))
 	}
 	parenPos := strings.Index(src, "(")
 	if parenPos == -1 {
@@ -2613,7 +2650,15 @@ func generateFunctionPrototype(funcDecl *lexer.TopLevelFuncDeclStmt) string {
 	return fmt.Sprintf("%s %s(%s)", returnType, funcDecl.Name, strings.Join(paramList, ", "))
 }
 
+func isEnumType(typeName string) bool {
+	_, exists := globalEnums[typeName]
+	return exists
+}
+
 func mapTypeToCType(mapType string) string {
+	if isEnumType(mapType) {
+		return mapType
+	}
 	switch mapType {
 	case "int", "i32", "i32*":
 		return "int"

@@ -43,6 +43,7 @@ type Statement struct {
 	VarAssign           *VarAssignStmt
 	ListDecl            *ListDeclStmt
 	ClassDecl           *ClassDeclStmt
+	EnumDecl            *EnumDeclStmt
 	MethodCall          *MethodCallStmt
 	ObjectDecl          *ObjectDeclStmt
 	Return              *ReturnStmt
@@ -51,6 +52,7 @@ type Statement struct {
 	VarDeclInferred     *VarDeclInferredStmt
 	PubVarDecl          *PubVarDeclStmt
 	PubClassDecl        *PubClassDeclStmt
+	PubEnumDecl         *PubEnumDeclStmt
 	TopLevelFuncDecl    *TopLevelFuncDeclStmt
 	FunctionCall        *FunctionCallStmt
 	TryCatch            *TryCatchStmt
@@ -125,6 +127,17 @@ type PubVarDeclStmt struct {
 	Type  string
 	Name  string
 	Value string
+}
+
+type EnumDeclStmt struct {
+	IsPublic bool
+	Name     string
+	Values   []string
+}
+
+type PubEnumDeclStmt struct {
+	Name   string
+	Values []string
 }
 
 type PubClassDeclStmt struct {

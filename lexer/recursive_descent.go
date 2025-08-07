@@ -86,8 +86,74 @@ func splitRespectingQuotes(input string) []string {
 	return result
 }
 
+func parseEnumDeclaration(lines []string, startLine, indentLevel int) (*Statement, int, error) {
+	line := strings.TrimSpace(lines[startLine])
+	isPublic := strings.HasPrefix(line, "pub ")
+	if isPublic {
+		line = strings.TrimSpace(strings.TrimPrefix(line, "pub"))
+	}
+	parts := strings.Fields(line)
+	if len(parts) < 2 || parts[0] != "enum" {
+		return nil, startLine, fmt.Errorf("invalid enum declaration: %s", line)
+	}
+	enumName := strings.TrimSuffix(parts[1], ":")
+	if enumName == "" {
+		return nil, startLine, fmt.Errorf("missing enum name in declaration: %s", line)
+	}
+	values := []string{}
+	nextLine := startLine + 1
+	if strings.Contains(line, "{") && strings.Contains(line, "}") {
+		valuesStr := line[strings.Index(line, "{")+1 : strings.Index(line, "}")]
+		for _, val := range strings.Split(valuesStr, ",") {
+			val = strings.TrimSpace(val)
+			if val != "" {
+				values = append(values, val)
+			}
+		}
+	} else if nextLine < len(lines) {
+		for nextLine < len(lines) {
+			if strings.TrimSpace(lines[nextLine]) == "" {
+				nextLine++
+				continue
+			}
+			currentIndent := getIndentation(lines[nextLine])
+			if currentIndent <= indentLevel {
+				break
+			}
+			line := strings.TrimSpace(lines[nextLine])
+			if line == "" || strings.HasPrefix(line, "#") {
+				nextLine++
+				continue
+			}
+			line = strings.TrimSuffix(line, ",")
+			values = append(values, line)
+			nextLine++
+		}
+	}
+	if isPublic {
+		return &Statement{
+			PubEnumDecl: &PubEnumDeclStmt{
+				Name:   enumName,
+				Values: values,
+			},
+		}, nextLine, nil
+	} else {
+		return &Statement{
+			EnumDecl: &EnumDeclStmt{
+				IsPublic: false,
+				Name:     enumName,
+				Values:   values,
+			},
+		}, nextLine, nil
+	}
+}
+
 func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int, error) {
 	line := strings.TrimSpace(lines[lineNum])
+
+	if strings.HasPrefix(line, "pub enum ") || strings.HasPrefix(line, "enum ") {
+		return parseEnumDeclaration(lines, lineNum, currentIndent)
+	}
 
 	if strings.HasPrefix(line, "catlist!(") && strings.HasSuffix(line, ")") {
 		argsStr := strings.TrimSpace(line[9 : len(line)-1]) // Remove "catlist!(" and ")"
