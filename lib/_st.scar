@@ -31,8 +31,7 @@ t.assert_float_equals(0.0, math::cos(math::PI / 2), 0.0001, "cos(PI/2) should be
 t.assert_float_equals(1.0, math::tan(math::PI / 4), 0.0001, "tan(PI/4) should be approximately 1.0")
 t.assert_float_equals(2.718282, math::exp(1.0), 0.0000001, "exp(1.0) should be approximately e")
 t.assert_float_equals(0.0, math::ln(1.0), 0.0000001, "ln(1.0) should be approximately 0.0")
-i32 x = math::to_int("123")
-t.assert_equals(123, x, "to_int should return 123")
+t.assert_equals(123, math::to_int("123"), "to_int should return 123")
 
 # String Tests
 t.assert_equals(0, strings::compare("Hello, World!", "Hello, World!"), "String comparison should be equal")
