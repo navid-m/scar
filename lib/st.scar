@@ -5,6 +5,7 @@ import "std/test"
 import "std/os"
 import "std/path"
 import "std/random"
+import "std/log"
 
 # Setup
 var list = new collections::ArrayList(4)
@@ -36,9 +37,9 @@ t.assert_equals(5, strings::length("Hello"), "String length should be 5")
 
 # OS Tests
 os::exec("echo ASSERT PASSED: OS call worked")
-print "ASSERT PASSED: Currently directory correctly detected as: %s" | os::cwd()
-print "ASSERT PASSED: Home directory detected as: %s" | os::homedir()
-print "ASSERT PASSED: Temporary directory detected as: %s" | os::tempdir()
+log::success(fmt!("ASSERT PASSED: Currently directory correctly detected as: %s", os::cwd()))
+log::success(fmt!("ASSERT PASSED: Home directory detected as: %s", os::homedir()))
+log::success(fmt!("ASSERT PASSED: Temporary directory detected as: %s", os::tempdir()))
 
 # Path Tests
 t.assert_equals(true, path::is_absolute_path("/absolute/path"), "Path should be absolute")
@@ -50,7 +51,7 @@ t.assert_string_equals("/base/path", path::dirname("/base/path/file.txt"), "Dirn
 
 # Random Tests
 t.assert_equals(6, strings::length(random::uuid(7)), "UUID length should be 6 characters")
-print "ASSERT PASSED: Generated UUID: %s" | random::uuid(12)
+log::success(fmt!("ASSERT PASSED: Generated UUID: %s", random::uuid(12)))
 
 t.test_summary()
 

@@ -10,41 +10,41 @@ pub class UnitTest:
         this.tests_run = this.tests_run + 1
         if !condition:
             this.tests_failed = this.tests_failed + 1
-            print "ASSERT FAILED: %s" | message
+            print "\033[0;31mASSERT FAILED: %s\033[0m\n" | message
         else:
-            print "ASSERT PASSED: %s" | message
+            print "\033[0;32mASSERT PASSED: %s\033[0m\n" | message
 
     fn assert_equals(int expected, int actual, string message) -> void:
         this.tests_run = this.tests_run + 1
         if expected != actual:
             this.tests_failed = this.tests_failed + 1
-            print "ASSERT FAILED: %s (Expected %d, got %d)" | message, expected, actual
+            print "\033[0;31mASSERT FAILED: %s (Expected %d, got %d)\033[0m" | message, expected, actual
         else:
-            print "ASSERT PASSED: %s" | message
+            print "\033[0;32mASSERT PASSED: %s\033[0m" | message
 
     fn assert_string_equals(string expected, string actual, string message) -> void:
         this.tests_run = this.tests_run + 1
         if strings::compare(expected, actual) != 0:
             this.tests_failed = this.tests_failed + 1
-            print "ASSERT FAILED: %s (Expected '%s', got '%s')" | message, expected, actual
+            print "\033[0;31mASSERT FAILED: %s (Expected '%s', got '%s')\033[0m" | message, expected, actual
         else:
-            print "ASSERT PASSED: %s" | message
+            print "\033[0;32mASSERT PASSED: %s\033[0m" | message
 
     fn assert_int_equals(int expected, int actual, string message) -> void:
         this.tests_run = this.tests_run + 1
         if expected != actual:
             this.tests_failed = this.tests_failed + 1
-            print "ASSERT FAILED: %s (Expected '%s', got '%s')" | message, expected, actual
+            print "\033[0;31mASSERT FAILED: %s (Expected '%s', got '%s')\033[0m" | message, expected, actual
         else:
-            print "ASSERT PASSED: %s (Expected '%s', got '%s')" | message, expected, actual
+            print "\033[0;32mASSERT PASSED: %s (Expected '%s', got '%s')\033[0m" | message, expected, actual
     
     fn assert_float_equals(float expected, float actual, float tolerance, string message) -> void:
         this.tests_run = this.tests_run + 1
         if math::absolute(expected - actual) > tolerance:
             this.tests_failed = this.tests_failed + 1
-            print "ASSERT FAILED: %s (Expected %.6f, got %.6f)" | message, expected, actual
+            print "\033[0;31mASSERT FAILED: %s (Expected %.6f, got %.6f)\033[0m" | message, expected, actual
         else:
-            print "ASSERT PASSED: %s" | message
+            print "\033[0;32mASSERT PASSED: %s\033[0m" | message
 
     fn assert_true(bool condition, string message) -> void:
         this.assert(condition, message)

@@ -9,7 +9,10 @@ pub fn error(string message) -> void:
     )
 
 pub fn info(string message) -> void:
-    put "[INFO] " + message + "\n";
+    put "[INFO] %s \n " | message
 
 pub fn debug(string message) -> void:
-    put "[DEBUG] " + message + "\n";
+    put "[DEBUG] %s \n" | message
+
+pub fn success(string message) -> void:
+    print "\033[0;32m%s\033[0m" | message
