@@ -16,3 +16,6 @@ pub fn debug(string message) -> void:
 
 pub fn success(string message) -> void:
     print "\033[0;32m%s\033[0m" | message
+
+pub fn failure(string message) -> void:
+    print "\033[0;31m%s\033[0m" | message
