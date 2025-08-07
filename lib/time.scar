@@ -16,21 +16,30 @@ pub fn timestamp() -> int:
     return result
 
 pub fn now() -> time::Date:
-    ref time::Date d = new time::Date()
-    int ts = time::timestamp()
     $raw (
         #include <time.h>
-        time_t timestamp = (time_t)ts;
+        time_Date* d = time_Date_new();
+        time_t timestamp = time(NULL);
         struct tm* tm_info = localtime(&timestamp);
-        d.year = tm_info->tm_year + 1900;
-        d.month = tm_info->tm_mon + 1;
-        d.day = tm_info->tm_mday;
-        d.hour = tm_info->tm_hour;
-        d.minute = tm_info->tm_min;
-        d.second = tm_info->tm_sec;
+        d->year = tm_info->tm_year + 1900;
+        d->month = tm_info->tm_mon + 1;
+        d->day = tm_info->tm_mday;
+        d->hour = tm_info->tm_hour;
+        d->minute = tm_info->tm_min;
+        d->second = tm_info->tm_sec;
+        time_Date result = *d;
+        free(d);
+        return result;
     )
-    return d
 
 ## Format date as string (YYYY-MM-DD HH:MM:SS)
-# pub fn format_date(Date date) -> char*:
-#     return fmt!("%04d-%02d-%02d %02d:%02d:%02d", date.year, date.month, date.day, date.hour, date.minute, date.second)
+pub fn format_date(time::Date date) -> char*:
+    $raw (
+        #include <stdio.h>
+        char* buffer = NULL;
+        buffer = malloc(32);
+        sprintf(buffer, "%04d-%02d-%02d %02d:%02d:%02d", 
+            date.year, date.month, date.day, 
+            date.hour, date.minute, date.second);
+    )
+    return buffer
