@@ -1,0 +1,2 @@
+pub fn is_absolute_path(string path) -> bool:
+    return path[0] == '/' or (path[0] && path[1] == ':');

@@ -47,6 +47,3 @@ pub fn tempdir() -> char*:
         }
         return temp ? strdup(temp) : NULL;
     )
-
-pub fn is_absolute_path(string path) -> bool:
-    return path[0] == '/' or (path[0] && path[1] == ':');

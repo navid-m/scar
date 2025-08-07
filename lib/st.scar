@@ -3,6 +3,7 @@ import "std/math"
 import "std/strings"
 import "std/test"
 import "std/os"
+import "std/path"
 
 # Setup
 var list = new collections::ArrayList(4)
@@ -38,8 +39,9 @@ print "ASSERT PASSED: Currently directory correctly detected as: %s" | os::cwd()
 print "ASSERT PASSED: Home directory detected as: %s" | os::homedir()
 print "ASSERT PASSED: Temporary directory detected as: %s" | os::tempdir()
 
-t.assert_equals(true, os::is_absolute_path("/absolute/path"), "Path should be absolute")
-t.assert_equals(false, os::is_absolute_path("relative/path"), "Path should not be absolute")
+# Path Tests
+t.assert_equals(true, path::is_absolute_path("/absolute/path"), "Path should be absolute")
+t.assert_equals(false, path::is_absolute_path("relative/path"), "Path should not be absolute")
 
 t.test_summary()
 
