@@ -1,4 +1,5 @@
 import "std/math"
+import "std/strings"
 
 pub class UnitTest:
     init:
@@ -22,6 +23,14 @@ pub class UnitTest:
             print "ASSERT PASSED: %s" | message
 
     fn assert_string_equals(string expected, string actual, string message) -> void:
+        this.tests_run = this.tests_run + 1
+        if strings::compare(expected, actual) != 0:
+            this.tests_failed = this.tests_failed + 1
+            print "ASSERT FAILED: %s (Expected '%s', got '%s')" | message, expected, actual
+        else:
+            print "ASSERT PASSED: %s" | message
+
+    fn assert_int_equals(int expected, int actual, string message) -> void:
         this.tests_run = this.tests_run + 1
         if expected != actual:
             this.tests_failed = this.tests_failed + 1

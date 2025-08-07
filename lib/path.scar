@@ -1,2 +1,11 @@
 pub fn is_absolute_path(string path) -> bool:
     return path[0] == '/' or (path[0] && path[1] == ':');
+
+pub fn extension(string path) -> char*:
+    $raw (
+        const char *dot = strrchr(path, '.');
+        if (dot && dot != path) {
+            return strdup(dot + 1);
+        }
+        return strdup("");
+    )
