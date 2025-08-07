@@ -7,3 +7,16 @@ pub fn exit(int code):
     $raw (
         exit(code);
     )
+
+pub fn cwd() -> char*:
+    $raw (
+        char *buffer = getcwd(NULL, 0);
+        char *result = buffer;
+        free(buffer);
+        return result;
+    )
+
+pub fn chdir(string path) -> int:
+    $raw (
+        return chdir(path);
+    )
