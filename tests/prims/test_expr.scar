@@ -1,0 +1,5 @@
+import "std/collections"
+
+collections::StringArrayList strList = new collections::StringArrayList(5)
+strList.add_element("hello")
+i32 max = strList.get_size() - 1
