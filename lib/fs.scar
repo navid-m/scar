@@ -1,3 +1,5 @@
+import "std/strings"
+
 pub fn exists(string path) -> bool:
     $raw (
         return access(path, F_OK) == 0;
@@ -12,3 +14,24 @@ pub fn create_directory(string path) -> bool:
     $raw (
         return mkdir(path) == 0;
     )
+
+pub fn read_lines(string filename) -> list[string]:
+    string data = read(filename)
+    list[string] lines = []
+    $raw (
+        char* current_line = "";
+    )
+    for i = 0 to strings::length(data):
+        if data[i] == '\n':
+            list[string] line = [current_line]
+            catlist!(lines, line)
+            $raw (
+                current_line = "";
+            )
+        else:
+            current_line = current_line + data[i]
+    if strings::length(current_line) > 0:
+        list[string] line = [current_line]
+        catlist!(lines, line)
+    
+    return lines
