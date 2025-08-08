@@ -1,0 +1,6 @@
+fn get_simple_list() -> list[int]:
+    list[int] result = [10, 20, 30]
+    return result
+
+list[int] my_list = get_simple_list()
+print "Got: %d" | my_list[0]

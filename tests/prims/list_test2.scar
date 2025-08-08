@@ -1,0 +1,8 @@
+fn get_numbers() -> list[int]:
+    list[int] nums = [1, 2, 3, 4, 5]
+    return nums
+
+list[int] some_list = get_numbers()
+
+print "First number: %d" | some_list[0]
+print "Second number: %d" | some_list[1]
