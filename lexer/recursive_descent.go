@@ -148,13 +148,6 @@ func parseEnumDeclaration(lines []string, startLine, indentLevel int) (*Statemen
 	}
 }
 
-func normalizeTypeName(typeName string) string {
-	if typeName == "cstring" {
-		return "char*"
-	}
-	return typeName
-}
-
 func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int, error) {
 	line := strings.TrimSpace(lines[lineNum])
 
@@ -317,7 +310,7 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 			return nil, lineNum + 1, fmt.Errorf("invalid list type declaration at line %d", lineNum+1)
 		}
 
-		listType := normalizeTypeName(parts[0][typeStart+1 : typeEnd])
+		listType := parts[0][typeStart+1 : typeEnd]
 		listName := parts[1]
 		value := strings.Join(parts[3:], " ")
 

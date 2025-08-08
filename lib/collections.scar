@@ -83,6 +83,7 @@ pub class StringArrayList:
         $raw (
             this->data = realloc(this->data, this->capacity * sizeof(char*));
         )
+
 # Example usage:
 
 # var list = new ArrayList(4)
