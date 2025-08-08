@@ -9,7 +9,7 @@ pub class GameOfLife:
         put!(this.grid, k, true)
 
     fn key(int x, int y) -> string:
-        return "%d,%d" | x, y
+        return fmt!("%d,%d", x, y)
 
     fn get(int x, int y) -> bool:
         string k = this.key(x, y)
