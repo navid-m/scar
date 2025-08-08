@@ -23,9 +23,7 @@ pub fn read_lines(string filename) -> list[string]:
         if data[i] == '\n':
             list[string] line = list_of!(current_line)
             catlist!(lines, line)
-            $raw (
-                current_line = "";
-            )
+            current_line = "";
         else:
             current_line = current_line + data[i]
     if strings::length(current_line) > 0:

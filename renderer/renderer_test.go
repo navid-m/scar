@@ -1311,6 +1311,178 @@ print "Counter: {}, Active: {}, Temp: {}, Status: {}", counter, is_active, tempe
 	}
 }
 
+func TestListOfInlineAndStandalone(t *testing.T) {
+	program := &lexer.Program{
+		Statements: []*lexer.Statement{
+			{
+				ListOfDecl: &lexer.ListOfDeclStmt{
+					Type:  "string",
+					Name:  "single_line",
+					Value: "current_line",
+				},
+			},
+			{
+				CatList: &lexer.CatListStmt{
+					Target: "lines",
+					Lists:  []string{"lines", "single_line"},
+				},
+			},
+			{
+				CatList: &lexer.CatListStmt{
+					Target: "lines2",
+					Lists:  []string{"lines", "list_of!(current_line)"},
+				},
+			},
+			{
+				CatList: &lexer.CatListStmt{
+					Target: "",
+					Lists:  []string{"lines", "list_of!(another_line)"},
+				},
+			},
+			{
+				ListOfDecl: &lexer.ListOfDeclStmt{
+					Type:  "int",
+					Name:  "single_num",
+					Value: "42",
+				},
+			},
+			{
+				CatList: &lexer.CatListStmt{
+					Target: "numbers",
+					Lists:  []string{"existing_numbers", "list_of!(99)"},
+				},
+			},
+		},
+	}
+
+	globalArrays = map[string]string{
+		"lines":            "string",
+		"existing_numbers": "int",
+	}
+
+	result := RenderC(program, "")
+
+	expectedStandaloneString := []string{
+		"char single_line[1000][256];",
+		"int single_line_len = 1;",
+		"strcpy(single_line[0], current_line);",
+	}
+
+	for _, expected := range expectedStandaloneString {
+		if !strings.Contains(result, expected) {
+			t.Errorf("Expected standalone string list_of code '%s' not found in:\n%s", expected, result)
+		}
+	}
+
+	expectedStandaloneInt := []string{
+		"int single_num[1000];",
+		"int single_num_len = 1;",
+		"single_num[0] = 42;",
+	}
+
+	for _, expected := range expectedStandaloneInt {
+		if !strings.Contains(result, expected) {
+			t.Errorf("Expected standalone int list_of code '%s' not found in:\n%s", expected, result)
+		}
+	}
+	expectedInlineWithTarget := []string{
+		"char lines2[1000][256]; // Concatenated list",
+		"int lines2_len = 0;",
+		"// Add single element from list_of!(current_line)",
+		"if (lines2_len < 1000) {",
+		"strcpy(lines2[lines2_len], current_line);",
+		"lines2_len++;",
+	}
+	for _, expected := range expectedInlineWithTarget {
+		if !strings.Contains(result, expected) {
+			t.Errorf("Expected inline list_of with target code '%s' not found in:\n%s", expected, result)
+		}
+	}
+	expectedInlineWithoutTarget := []string{
+		"// Add single element from list_of!(another_line)",
+		"if (lines_len < 1000) {",
+		"strcpy(lines[lines_len], another_line);",
+		"lines_len++;",
+	}
+
+	for _, expected := range expectedInlineWithoutTarget {
+		if !strings.Contains(result, expected) {
+			t.Errorf("Expected inline list_of without target code '%s' not found in:\n%s", expected, result)
+		}
+	}
+	expectedInlineNumeric := []string{
+		"int numbers[1000]; // Concatenated list",
+		"// Add single element from list_of!(99)",
+		"if (numbers_len < 1000) {",
+		"numbers[numbers_len] = 99;",
+		"numbers_len++;",
+	}
+
+	for _, expected := range expectedInlineNumeric {
+		if !strings.Contains(result, expected) {
+			t.Errorf("Expected inline numeric list_of code '%s' not found in:\n%s", expected, result)
+		}
+	}
+	malformedPatterns := []string{
+		"list*of",
+		"list_of!(current_line)_len",
+		"list_of!(current_line)[",
+	}
+
+	for _, pattern := range malformedPatterns {
+		if strings.Contains(result, pattern) {
+			t.Errorf("Found malformed list_of pattern '%s' in generated code:\n%s", pattern, result)
+		}
+	}
+	globalArrays = make(map[string]string)
+}
+
+func TestListOfWithVariableResolution(t *testing.T) {
+	program := &lexer.Program{
+		Statements: []*lexer.Statement{
+			{
+				CatList: &lexer.CatListStmt{
+					Target: "result",
+					Lists:  []string{"existing", "list_of!(this.current_line)"},
+				},
+			},
+			{
+				CatList: &lexer.CatListStmt{
+					Target: "messages",
+					Lists:  []string{"old_messages", "list_of!(\"hello world\")"},
+				},
+			},
+		},
+	}
+
+	globalArrays = map[string]string{
+		"existing":     "string",
+		"old_messages": "string",
+	}
+	currentModule = "test_module"
+	result := RenderC(program, "")
+	expectedThisRef := []string{
+		"// Add single element from list_of!(this->current_line)",
+		"strcpy(result[result_len], this->current_line);",
+	}
+	for _, expected := range expectedThisRef {
+		if !strings.Contains(result, expected) {
+			t.Errorf("Expected this. reference handling '%s' not found in:\n%s", expected, result)
+		}
+	}
+	expectedQuotedString := []string{
+		"// Add single element from list_of!(\"hello world\")",
+		"strcpy(messages[messages_len], \"hello world\");",
+	}
+	for _, expected := range expectedQuotedString {
+		if !strings.Contains(result, expected) {
+			t.Errorf("Expected quoted string handling '%s' not found in:\n%s", expected, result)
+		}
+	}
+	globalArrays = make(map[string]string)
+	currentModule = ""
+}
+
 func TestRecursiveMethodCall(t *testing.T) {
 	program := &lexer.Program{
 		Statements: []*lexer.Statement{
