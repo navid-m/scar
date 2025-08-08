@@ -17,12 +17,6 @@ import (
 	"scar/lexer"
 )
 
-// EnumInfo stores information about an enum type
-type EnumInfo struct {
-	Name   string
-	Values []string
-}
-
 var (
 	globalClasses    = make(map[string]*ClassInfo)
 	globalEnums      = make(map[string]*EnumInfo)
@@ -2870,7 +2864,7 @@ func mapTypeToCType(mapType string) string {
 	case "char":
 		return "char"
 	case "string":
-		return "char"
+		return "char*"
 	case "bool":
 		return "bool"
 	case "u16":

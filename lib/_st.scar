@@ -58,7 +58,7 @@ t.assert_equals(6, strings::length(random::uuid(7)), "UUID length should be 6 ch
 log::success(fmt!("ASSERT PASSED: Generated UUID: %s", random::uuid(12)))
 log::success(fmt!("ASSERT PASSED: Random number between 1 and 10: %d", random::num(1, 10)))
 log::success(fmt!("ASSERT PASSED: Random float between 0.0 and 111.0: %f", random::float_range(0.0, 111.0)))
-log::success(fmt!("ASSERT PASSED: Random float between 0 and 1: %f", random::floatb(5.0, 10.0)))
+log::success(fmt!("ASSERT PASSED: Random float between 0 and 1: %f", random::floatb()))
 log::success(fmt!("ASSERT PASSED: Current timestamp: %d", time::timestamp()))
 log::success(fmt!("ASSERT PASSED: Current time: %s", time::format_date(time::now())))
 
@@ -67,6 +67,13 @@ collections::StringArrayList strList = new collections::StringArrayList(5)
 strList.add_element("hello")
 strList.add_element("world")
 strList.add_element("scar")
+
+i32 max = strList.get_size()
+max = max - 1
+
+for i = 0 to max:
+    string x = strList.get_element(i)
+    log::success(fmt!("ASSERT PASSED: Got list item: %s", x))
 
 write("Hello World", "output.txt", overwrite!)
 string data = read("output.txt")

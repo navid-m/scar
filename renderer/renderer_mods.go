@@ -12,6 +12,11 @@ type MethodInfo struct {
 	ReturnType string
 }
 
+type EnumInfo struct {
+	Name   string
+	Values []string
+}
+
 type FieldInfo struct {
 	Name  string
 	Type  string
