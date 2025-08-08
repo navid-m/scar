@@ -318,6 +318,18 @@ int _exception = 0;
 	return b.String()
 }
 
+func resolveLenFunctionCalls(expression string) string {
+	lenRegex := regexp.MustCompile(`len\(([a-zA-Z_][a-zA-Z0-9_]*)\)`)
+	result := lenRegex.ReplaceAllStringFunc(expression, func(match string) string {
+		arrayName := lenRegex.FindStringSubmatch(match)[1]
+		if _, exists := globalArrays[arrayName]; exists {
+			return arrayName + "_len"
+		}
+		return match
+	})
+	return result
+}
+
 func collectClassInfo(classDecl *lexer.ClassDeclStmt) {
 	collectClassInfoWithModule(classDecl, "")
 }
@@ -917,6 +929,7 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 					} else {
 						resolvedVar := lexer.ResolveSymbol(v, currentModule)
 						resolvedVar = convertThisReferencesGranular(resolvedVar)
+						resolvedVar = resolveLenFunctionCalls(resolvedVar)
 						args[i] = resolvedVar
 					}
 				}
@@ -1172,6 +1185,7 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 					} else {
 						resolvedVar := lexer.ResolveSymbol(v, currentModule)
 						resolvedVar = convertThisReferencesGranular(resolvedVar)
+						resolvedVar = resolveLenFunctionCalls(resolvedVar)
 						args[i] = resolvedVar
 					}
 				}
@@ -1344,6 +1358,7 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			)
 			end = convertThisReferencesGranular(end)
 			end = lexer.ResolveSymbol(end, currentModule)
+			end = resolveLenFunctionCalls(end)
 
 			// Clean up variable name - remove type prefix if present
 			if after, ok := strings.CutPrefix(varName, "int "); ok {
