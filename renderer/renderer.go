@@ -1531,31 +1531,32 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			} else {
 				if stmt.VarDecl.Type == "string" {
 					fmt.Fprintf(b, "%schar %s[256];\n", indent, varName)
-					if value != "" {
-						if isFunctionCall(value) {
-							funcName, args := parseFunctionCall(value)
-							resolvedFuncName := lexer.ResolveSymbol(funcName, currentModule)
+					// Always initialize string variables; handle empty string case
+					if value == "" || value == "\"\"" {
+						fmt.Fprintf(b, "%sstrcpy(%s, \"\");\n", indent, varName)
+					} else if isFunctionCall(value) {
+						funcName, args := parseFunctionCall(value)
+						resolvedFuncName := lexer.ResolveSymbol(funcName, currentModule)
 
-							if functionReturnsString(resolvedFuncName) {
-								if len(args) == 0 {
-									fmt.Fprintf(b, "%s%s(%s);\n", indent, resolvedFuncName, varName)
-								} else {
-									resolvedArgs := make([]string, len(args))
-									for i, arg := range args {
-										resolvedArgs[i] = lexer.ResolveSymbol(arg, currentModule)
-									}
-									fmt.Fprintf(b, "%s%s(%s, %s);\n", indent, resolvedFuncName, varName, strings.Join(resolvedArgs, ", "))
-								}
+						if functionReturnsString(resolvedFuncName) {
+							if len(args) == 0 {
+								fmt.Fprintf(b, "%s%s(%s);\n", indent, resolvedFuncName, varName)
 							} else {
-								resolvedCall := resolveFunctionCall(value)
-								fmt.Fprintf(b, "%sstrcpy(%s, %s);\n", indent, varName, resolvedCall)
+								resolvedArgs := make([]string, len(args))
+								for i, arg := range args {
+									resolvedArgs[i] = lexer.ResolveSymbol(arg, currentModule)
+								}
+								fmt.Fprintf(b, "%s%s(%s, %s);\n", indent, resolvedFuncName, varName, strings.Join(resolvedArgs, ", "))
 							}
 						} else {
-							if !strings.HasPrefix(value, "\"") && !strings.HasSuffix(value, "\"") {
-								value = fmt.Sprintf("\"%s\"", value)
-							}
-							fmt.Fprintf(b, "%sstrcpy(%s, %s);\n", indent, varName, value)
+							resolvedCall := resolveFunctionCall(value)
+							fmt.Fprintf(b, "%sstrcpy(%s, %s);\n", indent, varName, resolvedCall)
 						}
+					} else {
+						if !strings.HasPrefix(value, "\"") && !strings.HasSuffix(value, "\"") {
+							value = fmt.Sprintf("\"%s\"", value)
+						}
+						fmt.Fprintf(b, "%sstrcpy(%s, %s);\n", indent, varName, value)
 					}
 				} else {
 					if isFunctionCall(value) {
@@ -1576,7 +1577,48 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				varName = re.ReplaceAllString(varName, "$1->$2")
 			}
 
-			if strings.Contains(varName, "[") && strings.Contains(varName, "]") {
+			isMapToMapAssignment := false
+			var targetFieldName, sourceMapName string
+			if strings.HasPrefix(varName, "this->") {
+				targetFieldName = varName[6:] // Remove "this->"
+				sourceMapName = value
+				for _, s := range program.Statements {
+					if (s.ClassDecl != nil || s.PubClassDecl != nil) && s.ClassDecl != nil && s.ClassDecl.Constructor != nil {
+						for _, field := range s.ClassDecl.Constructor.Fields {
+							if field.MapDecl != nil && strings.HasPrefix(field.MapDecl.Name, "this.") {
+								declFieldName := strings.TrimPrefix(field.MapDecl.Name, "this.")
+								if declFieldName == targetFieldName {
+									isMapToMapAssignment = true
+									break
+								}
+							}
+						}
+					}
+					if (s.PubClassDecl != nil) && s.PubClassDecl.Constructor != nil {
+						for _, field := range s.PubClassDecl.Constructor.Fields {
+							if field.MapDecl != nil && strings.HasPrefix(field.MapDecl.Name, "this.") {
+								declFieldName := strings.TrimPrefix(field.MapDecl.Name, "this.")
+								if declFieldName == targetFieldName {
+									isMapToMapAssignment = true
+									break
+								}
+							}
+						}
+					}
+					if isMapToMapAssignment {
+						break
+					}
+				}
+			}
+
+			if isMapToMapAssignment {
+				fmt.Fprintf(b, "%s// Copy map from %s to this->%s\n", indent, sourceMapName, targetFieldName)
+				fmt.Fprintf(b, "%sthis->%s_size = %s_size;\n", indent, targetFieldName, sourceMapName)
+				fmt.Fprintf(b, "%sfor (int i = 0; i < %s_size; i++) {\n", indent, sourceMapName)
+				fmt.Fprintf(b, "%s    strcpy(this->%s_keys[i], %s_keys[i]);\n", indent, targetFieldName, sourceMapName)
+				fmt.Fprintf(b, "%s    this->%s_values[i] = %s_values[i];\n", indent, targetFieldName, sourceMapName)
+				fmt.Fprintf(b, "%s}\n", indent)
+			} else if strings.Contains(varName, "[") && strings.Contains(varName, "]") {
 				arrayName := varName[:strings.Index(varName, "[")]
 				if arrayType, exists := globalArrays[arrayName]; exists && arrayType == "string" {
 					if isFunctionCall(value) {
@@ -1609,8 +1651,6 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 						value = resolveFunctionCall(value)
 						fmt.Fprintf(b, "%sstrcpy(%s, %s);\n", indent, varName, value)
 					} else {
-						// Only quote the value if it's a literal string (starts and ends with quotes)
-						// and not a variable/parameter name or expression
 						if strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"") {
 							fmt.Fprintf(b, "%sstrcpy(%s, %s);\n", indent, varName, value)
 						} else if isNumericOrBoolean(value) || isValidIdentifier(value) {
@@ -2051,6 +2091,25 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 					}
 				}
 			}
+
+			// Fallback: If we couldn't find the map type in top-level declarations,
+			// try to infer it from common patterns for local maps
+			if keyType == "" && valueType == "" {
+				keyType = "string"
+				valueType = "bool"
+				if value == "true" || value == "false" {
+					valueType = "bool"
+				} else if strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"") {
+					valueType = "string"
+				} else if strings.Contains(value, ".") {
+					valueType = "float"
+				} else {
+					if _, err := strconv.Atoi(value); err == nil {
+						valueType = "int"
+					}
+				}
+			}
+
 			fmt.Fprintf(b, "%s{\n", indent)
 			fmt.Fprintf(b, "%s    int found = 0;\n", indent)
 			fmt.Fprintf(b, "%s    for (int i = 0; i < %s_size; i++) {\n", indent, mapName)
@@ -2086,35 +2145,27 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 
 			fmt.Fprintf(b, "%s    if (!found && %s_size < 100) {\n", indent, mapName)
 
-			// Handle key assignment based on type
 			if keyType == "string" {
 				if strings.HasPrefix(key, "\"") && strings.HasSuffix(key, "\"") {
-					// String literal key - copy directly
 					keyStr := key[1 : len(key)-1]                     // Remove quotes
 					keyStr = strings.ReplaceAll(keyStr, "\"", "\\\"") // Escape quotes in the string
 					fmt.Fprintf(b, "%s        strcpy(%s_keys[%s_size], \"%s\");\n", indent, mapName, mapName, keyStr)
 				} else {
-					// Variable key - resolve symbol first
 					resolvedKey := lexer.ResolveSymbol(key, currentModule)
 					fmt.Fprintf(b, "%s        strcpy(%s_keys[%s_size], %s);\n", indent, mapName, mapName, resolvedKey)
 				}
 			} else {
-				// Non-string key - direct assignment
-				fmt.Fprintf(b, "%s        %s_keys[%s_size] = %s;\n", indent, mapName, mapName, key)
+				resolvedKey := lexer.ResolveSymbol(key, currentModule)
+				fmt.Fprintf(b, "%s        %s_keys[%s_size] = %s;\n", indent, mapName, mapName, resolvedKey)
 			}
-
-			// Handle value assignment based on type
 			if valueType == "string" {
 				if strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"") {
-					// String literal value - copy directly
 					fmt.Fprintf(b, "%s        strcpy(%s_values[%s_size], %s);\n", indent, mapName, mapName, value)
 				} else {
-					// Variable value - resolve symbol first
 					resolvedValue := lexer.ResolveSymbol(value, currentModule)
 					fmt.Fprintf(b, "%s        strcpy(%s_values[%s_size], %s);\n", indent, mapName, mapName, resolvedValue)
 				}
 			} else {
-				// Non-string value - direct assignment
 				resolvedValue := lexer.ResolveSymbol(value, currentModule)
 				fmt.Fprintf(b, "%s        %s_values[%s_size] = %s;\n", indent, mapName, mapName, resolvedValue)
 			}
