@@ -251,16 +251,17 @@ func TestRenderCWithMap(t *testing.T) {
 			},
 		}
 
-		cCode := RenderC(program, "")
-		expectedCode := []string{
-			`char emptyMap_keys[10][256];`,
-			`int emptyMap_values[10];`,
-			`int emptyMap_size = 0;`,
-		}
-
-		unexpectedCode := []string{
-			`strcpy(emptyMap_keys[`,
-		}
+		var (
+			cCode        = RenderC(program, "")
+			expectedCode = []string{
+				`char emptyMap_keys[10][256];`,
+				`int emptyMap_values[10];`,
+				`int emptyMap_size = 0;`,
+			}
+			unexpectedCode = []string{
+				`strcpy(emptyMap_keys[`,
+			}
+		)
 
 		for _, code := range expectedCode {
 			if !strings.Contains(cCode, code) {
