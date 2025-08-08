@@ -392,8 +392,10 @@ func ParseWithIndentation(input string) (*Program, error) {
 
 // Converts type casting functions like float(expr) to C-style casts (float)(expr)
 func handleTypeCasting(symbolName string) string {
-	typeCasts := []string{"float", "double", "char"}
-	result := symbolName
+	var (
+		typeCasts = []string{"float", "double", "char"}
+		result    = symbolName
+	)
 	for _, typecast := range typeCasts {
 		var (
 			pattern         = typecast + "("
