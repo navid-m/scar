@@ -1609,9 +1609,10 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				fpVarName = fmt.Sprintf("fp_write_%d", len(stmt.VarDeclWrite.FilePath))
 				fileMode  string
 			)
-			if mode == "append!" {
+			switch mode {
+			case "append!":
 				fileMode = "\"a\""
-			} else {
+			case "overwrite!":
 				fileMode = "\"w\""
 			}
 

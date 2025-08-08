@@ -18,9 +18,7 @@ pub fn create_directory(string path) -> bool:
 pub fn read_lines(string filename) -> list[string]:
     string data = read(filename)
     list[string] lines = []
-    $raw (
-        char* current_line = "";
-    )
+    char* current_line = ""
     for i = 0 to strings::length(data):
         if data[i] == '\n':
             list[string] line = [current_line]

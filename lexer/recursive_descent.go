@@ -1246,15 +1246,18 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 		keywords := []string{"if", "for", "while", "fn", "class",
 			"var", "return", "import", "pub", "ref", "u16", "u32", "u64",
 			"i16", "i32", "i64", "f32", "f64", "print", "sleep", "break",
-			"continue", "foreach", "parallel"}
+			"continue", "foreach", "parallel", "char*"}
 		if slices.Contains(keywords, firstWord) {
 			isKeyword = true
 		}
 		if !isKeyword {
 			return &Statement{Run: &RunStmt{FunctionCall: line}}, lineNum + 1, nil
 		}
-	}
 
+	}
+	if parts[0] == "char*" {
+		return &Statement{VarDecl: &VarDeclStmt{Type: "char*", Name: parts[1], Value: parts[3]}}, lineNum + 1, nil
+	}
 	return nil, lineNum + 1, fmt.Errorf("unknown statement type '%s' at line %d", parts[0], lineNum+1)
 }
 
