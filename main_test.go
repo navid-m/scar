@@ -25,6 +25,24 @@ while 1:
 
 int _exception = 0;
 
+// Helper functions for map key existence checking
+bool __check_string_key_exists(char keys[][256], int size, char* key) {
+	for (int i = 0; i < size; i++) {
+		if (strcmp(keys[i], key) == 0) {
+			return true;
+		}
+	}
+	return false;
+}
+
+bool __check_key_exists(int* keys, int size, int key) {
+	for (int i = 0; i < size; i++) {
+		if (keys[i] == key) {
+			return true;
+		}
+	}
+	return false;
+}
 
 int main() {
     printf("This will print forever: \n");
@@ -71,6 +89,24 @@ print "done..."`
 
 int _exception = 0;
 
+// Helper functions for map key existence checking
+bool __check_string_key_exists(char keys[][256], int size, char* key) {
+	for (int i = 0; i < size; i++) {
+		if (strcmp(keys[i], key) == 0) {
+			return true;
+		}
+	}
+	return false;
+}
+
+bool __check_key_exists(int* keys, int size, int key) {
+	for (int i = 0; i < size; i++) {
+		if (keys[i] == key) {
+			return true;
+		}
+	}
+	return false;
+}
 
 int main() {
     printf("start...\n");
@@ -118,6 +154,24 @@ print "All done"`
 
 int _exception = 0;
 
+// Helper functions for map key existence checking
+bool __check_string_key_exists(char keys[][256], int size, char* key) {
+	for (int i = 0; i < size; i++) {
+		if (strcmp(keys[i], key) == 0) {
+			return true;
+		}
+	}
+	return false;
+}
+
+bool __check_key_exists(int* keys, int size, int key) {
+	for (int i = 0; i < size; i++) {
+		if (keys[i] == key) {
+			return true;
+		}
+	}
+	return false;
+}
 
 int main() {
     printf("Starting nested test\n");

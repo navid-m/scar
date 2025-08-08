@@ -133,6 +133,25 @@ func RenderC(program *lexer.Program, baseDir string) string {
 
 int _exception = 0;
 
+// Helper functions for map key existence checking
+bool __check_string_key_exists(char keys[][256], int size, char* key) {
+    for (int i = 0; i < size; i++) {
+        if (strcmp(keys[i], key) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool __check_key_exists(int* keys, int size, int key) {
+    for (int i = 0; i < size; i++) {
+        if (keys[i] == key) {
+            return true;
+        }
+    }
+    return false;
+}
+
 `)
 	for className := range globalClasses {
 		fmt.Fprintf(&b, "struct %s;\n", className)
@@ -1239,14 +1258,20 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 					break
 				}
 
+				// Process get! and has! expressions first (before this. conversion)
+				value = processGetExpressions(value, program)
+				value = processHasExpressions(value, program)
+
 				if isMethodCall(value) {
 					value = convertMethodCallToC(value)
 				} else if strings.HasPrefix(value, "this.") {
 					value = "this->" + value[5:]
 				} else {
 					value = lexer.ResolveSymbol(value, currentModule)
-					value = convertThisReferencesGranular(value)
 				}
+
+				// Convert this references after macro processing
+				value = convertThisReferencesGranular(value)
 
 				if strings.Contains(value, " | ") {
 					parts := strings.Split(value, " | ")
@@ -1377,12 +1402,18 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			fmt.Fprintf(b, "%s}\n", indent)
 		case stmt.If != nil:
 			condition := stmt.If.Condition
+			// Process get! and has! expressions first (before this. conversion)
+			condition = processGetExpressions(condition, program)
+			condition = processHasExpressions(condition, program)
+
 			if isMethodCall(condition) {
 				condition = convertMethodCallToC(condition)
 			} else {
 				condition = lexer.ResolveSymbol(condition, currentModule)
-				condition = convertThisReferencesGranular(condition)
 			}
+
+			// Convert this references after macro processing
+			condition = convertThisReferencesGranular(condition)
 			condition = resolveImportedSymbols(condition, program.Imports)
 			fmt.Fprintf(b, "%sif (%s) {\n", indent, condition)
 			renderStatements(b, stmt.If.Body, indent+"    ", className, program, currentFunctionReturnType)
@@ -1390,12 +1421,18 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 
 			for _, elif := range stmt.If.ElseIfs {
 				elifCondition := elif.Condition
+				// Process get! and has! expressions first (before this. conversion)
+				elifCondition = processGetExpressions(elifCondition, program)
+				elifCondition = processHasExpressions(elifCondition, program)
+
 				if isMethodCall(elifCondition) {
 					elifCondition = convertMethodCallToC(elifCondition)
 				} else {
 					elifCondition = lexer.ResolveSymbol(elifCondition, currentModule)
-					elifCondition = convertThisReferencesGranular(elifCondition)
 				}
+
+				// Convert this references after macro processing
+				elifCondition = convertThisReferencesGranular(elifCondition)
 				elifCondition = resolveImportedSymbols(elifCondition, program.Imports)
 				fmt.Fprintf(b, "%selse if (%s) {\n", indent, elifCondition)
 				renderStatements(b, elif.Body, indent+"    ", className, program, currentFunctionReturnType)
@@ -1453,6 +1490,7 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			}
 
 			value = processGetExpressions(value, program)
+			value = processHasExpressions(value, program)
 			value = fixFloatCastGranular(value)
 			value = resolveImportedSymbols(value, program.Imports)
 
@@ -1988,6 +2026,31 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 					valueType = s.MapDecl.ValueType
 					break
 				}
+				// Also check inside class declarations (both public and regular)
+				if s.ClassDecl != nil && s.ClassDecl.Constructor != nil {
+					for _, field := range s.ClassDecl.Constructor.Fields {
+						if field.MapDecl != nil && field.MapDecl.Name == stmt.PutMap.MapName {
+							keyType = field.MapDecl.KeyType
+							valueType = field.MapDecl.ValueType
+							break
+						}
+					}
+					if keyType != "" {
+						break
+					}
+				}
+				if s.PubClassDecl != nil && s.PubClassDecl.Constructor != nil {
+					for _, field := range s.PubClassDecl.Constructor.Fields {
+						if field.MapDecl != nil && field.MapDecl.Name == stmt.PutMap.MapName {
+							keyType = field.MapDecl.KeyType
+							valueType = field.MapDecl.ValueType
+							break
+						}
+					}
+					if keyType != "" {
+						break
+					}
+				}
 			}
 			fmt.Fprintf(b, "%s{\n", indent)
 			fmt.Fprintf(b, "%s    int found = 0;\n", indent)
@@ -2195,7 +2258,7 @@ func convertThisReferencesGranular(expr string) string {
 	return expr
 }
 
-// Processes all get! expressions in a string and replaces them with the appropriate C code
+// Processes all get! expressions in a string and replaces them with the C code
 func processGetExpressions(expr string, program *lexer.Program) string {
 	re := regexp.MustCompile(`get!\s*\(([^)]+)\)`)
 	matches := re.FindAllStringSubmatchIndex(expr, -1)
@@ -2241,6 +2304,63 @@ func processGetExpressions(expr string, program *lexer.Program) string {
 				mapName = args[0]
 				key     = args[1]
 				cCode   = renderMapAccess(mapName, key, program)
+				before  = result[:match[0]+offset]
+				after   = result[match[1]+offset:]
+			)
+			result = before + cCode + after
+			offset += len(cCode) - len(fullMatch)
+		}
+	}
+
+	return result
+}
+
+// Processes all has! expressions in a string and replaces them with the C code
+func processHasExpressions(expr string, program *lexer.Program) string {
+	re := regexp.MustCompile(`has!\s*\(([^)]+)\)`)
+	matches := re.FindAllStringSubmatchIndex(expr, -1)
+	if len(matches) == 0 {
+		return expr
+	}
+
+	result := expr
+	offset := 0
+
+	for _, match := range matches {
+		fullMatch := expr[match[0]:match[1]]
+		argsStr := expr[match[2]:match[3]]
+		args := []string{}
+		start := 0
+		parenCount := 0
+
+		for i, c := range argsStr {
+			switch c {
+			case '(':
+				parenCount++
+			case ')':
+				parenCount--
+			case ',':
+				if parenCount == 0 {
+					arg := strings.TrimSpace(argsStr[start:i])
+					if arg != "" {
+						args = append(args, arg)
+					}
+					start = i + 1
+				}
+			}
+		}
+
+		if start < len(argsStr) {
+			arg := strings.TrimSpace(argsStr[start:])
+			if arg != "" {
+				args = append(args, arg)
+			}
+		}
+		if len(args) == 2 {
+			var (
+				mapName = args[0]
+				key     = args[1]
+				cCode   = renderMapHas(mapName, key, program)
 				before  = result[:match[0]+offset]
 				after   = result[match[1]+offset:]
 			)
@@ -2544,37 +2664,82 @@ func renderMapAccess(mapName, key string, program *lexer.Program) string {
 
 	helperName := fmt.Sprintf("__get_%s_value", resolvedMapName)
 
-	// Generate the key expression
 	var keyExpr string
 	if keyType == "string" || keyType == "char*" {
-		// String key - handle string literals and variables
 		if strings.HasPrefix(key, "\"") && strings.HasSuffix(key, "\"") {
-			// String literal key
 			keyStr := key[1 : len(key)-1]                     // Remove quotes
 			keyStr = strings.ReplaceAll(keyStr, "\"", "\\\"") // Escape quotes
 			keyExpr = fmt.Sprintf(`"%s"`, keyStr)
 		} else {
-			// Variable key - resolve symbol
 			keyExpr = lexer.ResolveSymbol(key, currentModule)
-			// If it's not a string literal and not a variable (could be a character literal)
 			if keyExpr == key && len(key) == 3 && key[0] == '\'' && key[2] == '\'' {
 				keyExpr = fmt.Sprintf("'%c'", key[1])
 			}
 		}
 	} else {
-		// Non-string key - resolve symbol if it's an identifier
 		if !unicode.IsDigit(rune(key[0])) && !(key[0] == '-' && len(key) > 1 && unicode.IsDigit(rune(key[1]))) {
 			key = lexer.ResolveSymbol(key, currentModule)
 		}
 		keyExpr = key
-
-		// Handle character literals for char keys
 		if keyType == "char" && len(keyExpr) == 3 && keyExpr[0] == '\'' && keyExpr[2] == '\'' {
 			keyExpr = fmt.Sprintf("'%c'", keyExpr[1])
 		}
 	}
 
 	return fmt.Sprintf("%s(%s)", helperName, keyExpr)
+}
+
+func renderMapHas(mapName, key string, program *lexer.Program) string {
+	if after, ok := strings.CutPrefix(mapName, "this."); ok {
+		fieldName := after
+		var keyType string
+		for _, s := range program.Statements {
+			if s.ClassDecl != nil && s.ClassDecl.Constructor != nil {
+				for _, stmt := range s.ClassDecl.Constructor.Fields {
+					if stmt.MapDecl != nil && strings.HasPrefix(stmt.MapDecl.Name, "this.") {
+						declFieldName := strings.TrimPrefix(stmt.MapDecl.Name, "this.")
+						if declFieldName == fieldName {
+							keyType = stmt.MapDecl.KeyType
+							break
+						}
+					}
+				}
+			}
+			if s.PubClassDecl != nil && s.PubClassDecl.Constructor != nil {
+				for _, stmt := range s.PubClassDecl.Constructor.Fields {
+					if stmt.MapDecl != nil && strings.HasPrefix(stmt.MapDecl.Name, "this.") {
+						declFieldName := strings.TrimPrefix(stmt.MapDecl.Name, "this.")
+						if declFieldName == fieldName {
+							keyType = stmt.MapDecl.KeyType
+							break
+						}
+					}
+				}
+			}
+		}
+
+		var keyExpr string
+		if keyType == "string" {
+			if strings.HasPrefix(key, "\"") && strings.HasSuffix(key, "\"") {
+				keyStr := key[1 : len(key)-1]
+				keyStr = strings.ReplaceAll(keyStr, "\"", "\\\"")
+				keyExpr = fmt.Sprintf(`"%s"`, keyStr)
+			} else {
+				resolvedKey := lexer.ResolveSymbol(key, "")
+				keyExpr = resolvedKey
+			}
+			return fmt.Sprintf("(__check_string_key_exists(this->%s_keys, this->%s_size, %s))", fieldName, fieldName, keyExpr)
+		} else {
+			if !unicode.IsDigit(rune(key[0])) && !(key[0] == '-' && len(key) > 1 && unicode.IsDigit(rune(key[1]))) {
+				key = lexer.ResolveSymbol(key, "")
+			}
+			keyExpr = key
+			return fmt.Sprintf("(__check_key_exists(this->%s_keys, this->%s_size, %s))", fieldName, fieldName, keyExpr)
+		}
+	}
+
+	resolvedMapName := lexer.ResolveSymbol(mapName, "")
+	return fmt.Sprintf("(__has_%s_key(%s))", resolvedMapName, lexer.ResolveSymbol(key, ""))
 }
 
 func convertSingleMethodCall(expr string) string {
