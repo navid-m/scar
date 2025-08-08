@@ -215,7 +215,7 @@ int _exception = 0;
 			if !strings.HasPrefix(value, "\"") {
 				value = fmt.Sprintf("\"%s\"", value)
 			}
-			fmt.Fprintf(&b, "%s %s[256];\n", cType, varName)
+			fmt.Fprintf(&b, "char %s[256];\n", varName)
 			fmt.Fprintf(&b, "void init_%s() { strcpy(%s, %s); }\n", varName, varName, value)
 		} else {
 			fmt.Fprintf(&b, "%s %s = %s;\n", cType, varName, value)
@@ -232,7 +232,7 @@ int _exception = 0;
 			cType := mapTypeToCType(varDecl.Type)
 			uniqueName := lexer.GenerateUniqueSymbol(varName, module.Name)
 			if varDecl.Type == "string" {
-				fmt.Fprintf(&b, "extern %s %s[256];\n", cType, uniqueName)
+				fmt.Fprintf(&b, "extern char %s[256];\n", uniqueName)
 			} else {
 				fmt.Fprintf(&b, "extern %s %s;\n", cType, uniqueName)
 			}
@@ -250,7 +250,7 @@ int _exception = 0;
 				if !strings.HasPrefix(value, "\"") {
 					value = fmt.Sprintf("\"%s\"", value)
 				}
-				fmt.Fprintf(&b, "%s %s[256];\n", cType, uniqueName)
+				fmt.Fprintf(&b, "char %s[256];\n", uniqueName)
 				fmt.Fprintf(&b, "void init_%s() { strcpy(%s, %s); }\n", uniqueName, uniqueName, value)
 			} else {
 				fmt.Fprintf(&b, "%s %s = %s;\n", cType, uniqueName, value)
@@ -1930,13 +1930,13 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			}
 
 			if keyType == "string" {
-				fmt.Fprintf(b, "%s %s_keys[%d][256];\n", cKeyType, mapName, initialSize)
+				fmt.Fprintf(b, "%schar %s_keys[%d][256];\n", indent, mapName, initialSize)
 			} else {
 				fmt.Fprintf(b, "%s %s_keys[%d];\n", cKeyType, mapName, initialSize)
 			}
 
 			if valueType == "string" {
-				fmt.Fprintf(b, "%s %s_values[%d][256];\n", cValueType, mapName, initialSize)
+				fmt.Fprintf(b, "%schar %s_values[%d][256];\n", indent, mapName, initialSize)
 			} else {
 				fmt.Fprintf(b, "%s %s_values[%d];\n", cValueType, mapName, initialSize)
 			}
