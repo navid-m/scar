@@ -30,45 +30,46 @@ type Program struct {
 }
 
 type Statement struct {
-	Import              *ImportStmt
-	Print               *PrintStmt
-	Sleep               *SleepStmt
-	While               *WhileStmt
-	For                 *ForStmt
-	Put                 *PutStmt
-	If                  *IfStmt
-	Break               *BreakStmt
-	Continue            *ContinueStmt
-	VarDecl             *VarDeclStmt
-	VarAssign           *VarAssignStmt
-	ListDecl            *ListDeclStmt
-	ClassDecl           *ClassDeclStmt
-	EnumDecl            *EnumDeclStmt
-	MethodCall          *MethodCallStmt
-	ObjectDecl          *ObjectDeclStmt
-	Return              *ReturnStmt
-	VarDeclMethodCall   *VarDeclMethodCallStmt
-	VarAssignMethodCall *VarAssignMethodCallStmt
-	VarDeclInferred     *VarDeclInferredStmt
-	PubVarDecl          *PubVarDeclStmt
-	PubClassDecl        *PubClassDeclStmt
-	PubEnumDecl         *PubEnumDeclStmt
-	TopLevelFuncDecl    *TopLevelFuncDeclStmt
-	FunctionCall        *FunctionCallStmt
-	TryCatch            *TryCatchStmt
-	Throw               *ThrowStmt
-	VarDeclRead         *VarDeclReadStmt
-	VarDeclWrite        *VarDeclWriteStmt
-	RawCode             *RawCodeStmt
-	MapDecl             *MapDeclStmt
-	ParallelFor         *ParallelForStmt
-	PubTopLevelFuncDecl *PubTopLevelFuncDeclStmt
-	PutMap              *PutMapStmt
-	GetMap              *GetMapStmt
-	Foreach             *ForeachStmt
-	CatString           *CatStringStmt
-	CatList             *CatListStmt
-	Run                 *RunStmt
+	Import               *ImportStmt
+	Print                *PrintStmt
+	Sleep                *SleepStmt
+	While                *WhileStmt
+	For                  *ForStmt
+	Put                  *PutStmt
+	If                   *IfStmt
+	Break                *BreakStmt
+	Continue             *ContinueStmt
+	VarDecl              *VarDeclStmt
+	VarAssign            *VarAssignStmt
+	ListDecl             *ListDeclStmt
+	ClassDecl            *ClassDeclStmt
+	EnumDecl             *EnumDeclStmt
+	MethodCall           *MethodCallStmt
+	ObjectDecl           *ObjectDeclStmt
+	Return               *ReturnStmt
+	VarDeclMethodCall    *VarDeclMethodCallStmt
+	VarAssignMethodCall  *VarAssignMethodCallStmt
+	VarDeclInferred      *VarDeclInferredStmt
+	PubVarDecl           *PubVarDeclStmt
+	PubClassDecl         *PubClassDeclStmt
+	PubEnumDecl          *PubEnumDeclStmt
+	TopLevelFuncDecl     *TopLevelFuncDeclStmt
+	FunctionCall         *FunctionCallStmt
+	TryCatch             *TryCatchStmt
+	Throw                *ThrowStmt
+	VarDeclRead          *VarDeclReadStmt
+	VarDeclWrite         *VarDeclWriteStmt
+	RawCode              *RawCodeStmt
+	MapDecl              *MapDeclStmt
+	ParallelFor          *ParallelForStmt
+	PubTopLevelFuncDecl  *PubTopLevelFuncDeclStmt
+	PutMap               *PutMapStmt
+	GetMap               *GetMapStmt
+	Foreach              *ForeachStmt
+	CatString            *CatStringStmt
+	CatList              *CatListStmt
+	Run                  *RunStmt
+	ListDeclFunctionCall *ListDeclFunctionCallStmt
 }
 
 type CatListStmt struct {
@@ -159,6 +160,12 @@ type VarAssignMethodCallStmt struct {
 	Object string
 	Method string
 	Args   []string
+}
+
+type ListDeclFunctionCallStmt struct {
+	Type         string
+	Name         string
+	FunctionCall string
 }
 
 type MapDeclStmt struct {
@@ -494,7 +501,7 @@ func GenerateUniqueSymbol(originalName string, moduleName string) string {
 }
 
 var (
-	vdt          = []string{"int", "float", "double", "char", "string", "bool", "map"}
+	vdt          = []string{"int", "float", "double", "char", "string", "bool", "map", "cstring"}
 	numericTypes = map[string]bool{
 		"i8": true, "i16": true, "i32": true, "i64": true,
 		"u8": true, "u16": true, "u32": true, "u64": true,

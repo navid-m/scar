@@ -43,6 +43,9 @@ func InsertMacros(output string) string {
 		outp = strings.ReplaceAll(outp, "fmt!", "fmt")
 		outp = insertSprintf(outp)
 	}
+	if strings.Contains(output, "cstring") {
+		outp = insertCstring(outp)
+	}
 	if strings.Contains(output, "i32") || strings.Contains(output, "u32") || strings.Contains(output, "i64") ||
 		strings.Contains(output, "u64") || strings.Contains(output, "i16") || strings.Contains(output, "u16") ||
 		strings.Contains(output, "u8") || strings.Contains(output, "i8") || strings.Contains(output, "f64") ||
@@ -52,6 +55,10 @@ func InsertMacros(output string) string {
 			"typedef double f64;\ntypedef float f32;\n" + outp
 	}
 	return outp
+}
+
+func insertCstring(output string) string {
+	return "typedef char* cstring;\n" + output
 }
 
 func insertSprintf(output string) string {

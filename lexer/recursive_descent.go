@@ -148,6 +148,13 @@ func parseEnumDeclaration(lines []string, startLine, indentLevel int) (*Statemen
 	}
 }
 
+func normalizeTypeName(typeName string) string {
+	if typeName == "cstring" {
+		return "char*"
+	}
+	return typeName
+}
+
 func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int, error) {
 	line := strings.TrimSpace(lines[lineNum])
 
@@ -298,6 +305,60 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 		}}, lineNum + 1, nil
 	}
 	parts := strings.Fields(strings.TrimSuffix(line, ":"))
+
+	if strings.HasPrefix(parts[0], "list[") && strings.Contains(parts[0], "]") {
+		if len(parts) < 4 || parts[2] != "=" {
+			return nil, lineNum + 1, fmt.Errorf("list declaration format error at line %d (expected: list[type] name = [elements] or list[type] name = function_call())", lineNum+1)
+		}
+
+		typeStart := strings.Index(parts[0], "[")
+		typeEnd := strings.Index(parts[0], "]")
+		if typeStart == -1 || typeEnd == -1 || typeEnd <= typeStart {
+			return nil, lineNum + 1, fmt.Errorf("invalid list type declaration at line %d", lineNum+1)
+		}
+
+		listType := normalizeTypeName(parts[0][typeStart+1 : typeEnd])
+		listName := parts[1]
+		value := strings.Join(parts[3:], " ")
+
+		if strings.Contains(value, "(") && strings.Contains(value, ")") && !strings.HasPrefix(value, "[") {
+			return &Statement{ListDeclFunctionCall: &ListDeclFunctionCallStmt{
+				Type:         listType,
+				Name:         listName,
+				FunctionCall: value,
+			}}, lineNum + 1, nil
+		}
+		elementsStart := strings.Index(line, "[")
+		secondBracketPos := strings.Index(line[elementsStart+1:], "[")
+		if secondBracketPos != -1 {
+			elementsStart = elementsStart + 1 + secondBracketPos
+		} else {
+			return nil, lineNum + 1, fmt.Errorf("list declaration missing elements at line %d", lineNum+1)
+		}
+
+		elementsEnd := strings.LastIndex(line, "]")
+		if elementsEnd == -1 || elementsEnd <= elementsStart {
+			return nil, lineNum + 1, fmt.Errorf("list declaration missing closing bracket at line %d", lineNum+1)
+		}
+
+		elementsStr := strings.TrimSpace(line[elementsStart+1 : elementsEnd])
+		var elements []string
+
+		if elementsStr != "" {
+			elementsList := strings.Split(elementsStr, ",")
+			for _, elem := range elementsList {
+				elem = strings.TrimSpace(elem)
+				if elem != "" {
+					if strings.HasPrefix(elem, "\"") && strings.HasSuffix(elem, "\"") {
+						elem = elem[1 : len(elem)-1]
+					}
+					elements = append(elements, elem)
+				}
+			}
+		}
+
+		return &Statement{ListDecl: &ListDeclStmt{Type: listType, Name: listName, Elements: elements}}, lineNum + 1, nil
+	}
 
 	if len(parts) == 0 {
 		return nil, lineNum + 1, fmt.Errorf("empty statement at line %d", lineNum+1)
