@@ -133,7 +133,6 @@ func RenderC(program *lexer.Program, baseDir string) string {
 
 int _exception = 0;
 
-// Helper functions for map key existence checking
 bool __check_string_key_exists(char keys[][256], int size, char* key) {
     for (int i = 0; i < size; i++) {
         if (strcmp(keys[i], key) == 0) {
