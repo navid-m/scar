@@ -581,7 +581,10 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 						fmt.Fprintf(b, "    this->%s[0] = '\\0';\n", field.Name)
 					}
 				case "bool":
-					fmt.Fprintf(b, "    this->%s = 0;\n", field.Name)
+					// Skip initialization for array fields like grid_values
+					if !strings.HasSuffix(field.Name, "_values") {
+						fmt.Fprintf(b, "    this->%s = 0;\n", field.Name)
+					}
 				}
 			}
 		}
