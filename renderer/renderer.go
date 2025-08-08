@@ -306,7 +306,7 @@ int _exception = 0;
 		}
 	}
 
-	renderStatements(&b, mainStatements, "    ", "", program)
+	renderStatements(&b, mainStatements, "    ", "", program, "")
 	b.WriteString("    return 0;\n")
 	b.WriteString("}\n")
 
@@ -716,7 +716,7 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 					fmt.Fprintf(b, "    printf(\"%s\\n\");\n", stmt.Print.Print)
 				}
 			default:
-				renderStatements(b, []*lexer.Statement{stmt}, "    ", className, program)
+				renderStatements(b, []*lexer.Statement{stmt}, "    ", className, program, "")
 			}
 		}
 	}
@@ -764,7 +764,7 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 		}
 
 		b.WriteString(") {\n")
-		renderStatements(b, method.Body, "    ", className, program)
+		renderStatements(b, method.Body, "    ", className, program, method.ReturnType)
 		b.WriteString("}\n\n")
 	}
 }
@@ -897,7 +897,7 @@ func parseFunctionCall(funcCall string) (string, []string) {
 	return funcName, args
 }
 
-func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent string, className string, program *lexer.Program) {
+func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent string, className string, program *lexer.Program, currentFunctionReturnType string) {
 	if className != "" {
 		fmt.Printf("Debug: renderStatements - className: '%s'\n", className)
 		currentClassName = className
@@ -932,18 +932,35 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			functionCall := stmt.ListDeclFunctionCall.FunctionCall
 			resolvedCall := strings.ReplaceAll(functionCall, "::", "_")
 
+			// Extract function name and existing arguments
+			openParen := strings.Index(resolvedCall, "(")
+			closeParen := strings.LastIndex(resolvedCall, ")")
+			if openParen == -1 || closeParen == -1 {
+				// Invalid function call format
+				fmt.Fprintf(b, "%s// Error: Invalid function call format: %s\n", indent, resolvedCall)
+				continue
+			}
+
+			funcName := resolvedCall[:openParen]
+			existingArgs := strings.TrimSpace(resolvedCall[openParen+1 : closeParen])
+
+			// Build new function call with target array and size parameters
+			var newCall string
+			if existingArgs == "" {
+				newCall = fmt.Sprintf("%s(%s, 1000)", funcName, listName)
+			} else {
+				newCall = fmt.Sprintf("%s(%s, 1000, %s)", funcName, listName, existingArgs)
+			}
+
 			if listType == "string" {
 				fmt.Fprintf(b, "%schar %s[1000][256];\n", indent, listName)
 				fmt.Fprintf(b, "%sint %s_len;\n", indent, listName)
-
-				fmt.Fprintf(b, "%s%s_len = %s;\n", indent, listName,
-					strings.Replace(resolvedCall, "(", fmt.Sprintf("(%s, 1000, ", listName), 1))
+				fmt.Fprintf(b, "%s%s_len = %s;\n", indent, listName, newCall)
 			} else {
 				cType := mapTypeToCType(listType)
 				fmt.Fprintf(b, "%s%s %s[1000];\n", indent, cType, listName)
 				fmt.Fprintf(b, "%sint %s_len;\n", indent, listName)
-				fmt.Fprintf(b, "%s%s_len = %s;\n", indent, listName,
-					strings.Replace(resolvedCall, "(", fmt.Sprintf("(%s, 1000, ", listName), 1))
+				fmt.Fprintf(b, "%s%s_len = %s;\n", indent, listName, newCall)
 			}
 
 			globalArrays[listName] = listType
@@ -1188,6 +1205,29 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				fmt.Fprintf(b, "%sreturn;\n", indent)
 			} else {
 				value := stmt.Return.Value
+
+				// Handle list return types
+				if strings.HasPrefix(currentFunctionReturnType, "list[") && strings.HasSuffix(currentFunctionReturnType, "]") {
+					// For list returns, we need to copy the returned array to the output array
+					// and return the length
+					innerType := strings.TrimPrefix(strings.TrimSuffix(currentFunctionReturnType, "]"), "list[")
+
+					if innerType == "string" {
+						// For string arrays, copy each string
+						fmt.Fprintf(b, "%sfor (int _i = 0; _i < %s_len && _i < _max_size; _i++) {\n", indent, value)
+						fmt.Fprintf(b, "%s    strcpy(_output_array[_i], %s[_i]);\n", indent, value)
+						fmt.Fprintf(b, "%s}\n", indent)
+						fmt.Fprintf(b, "%sreturn %s_len;\n", indent, value)
+					} else {
+						// For other types, copy the array
+						fmt.Fprintf(b, "%sfor (int _i = 0; _i < %s_len && _i < _max_size; _i++) {\n", indent, value)
+						fmt.Fprintf(b, "%s    _output_array[_i] = %s[_i];\n", indent, value)
+						fmt.Fprintf(b, "%s}\n", indent)
+						fmt.Fprintf(b, "%sreturn %s_len;\n", indent, value)
+					}
+					break
+				}
+
 				if isMethodCall(value) {
 					value = convertMethodCallToC(value)
 				} else if strings.HasPrefix(value, "this.") {
@@ -1226,10 +1266,10 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			fmt.Fprintf(b, "%s{\n", indent)
 			fmt.Fprintf(b, "%s    int _prev_exception = _exception;\n", indent)
 			fmt.Fprintf(b, "%s    _exception = 0;\n", indent)
-			renderStatements(b, stmt.TryCatch.TryBody, indent+"    ", className, program)
+			renderStatements(b, stmt.TryCatch.TryBody, indent+"    ", className, program, currentFunctionReturnType)
 			fmt.Fprintf(b, "%s    if (_exception != 0) {\n", indent)
 			fmt.Fprintf(b, "%scatch_label:\n", indent)
-			renderStatements(b, stmt.TryCatch.CatchBody, indent+"    ", className, program)
+			renderStatements(b, stmt.TryCatch.CatchBody, indent+"    ", className, program, currentFunctionReturnType)
 			fmt.Fprintf(b, "%s    }\n", indent)
 			fmt.Fprintf(b, "%s    _exception = _prev_exception;\n", indent)
 			fmt.Fprintf(b, "%s}\n", indent)
@@ -1237,7 +1277,7 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			condition := lexer.ResolveSymbol(stmt.While.Condition, currentModule)
 			condition = convertThisReferencesGranular(condition)
 			fmt.Fprintf(b, "%swhile (%s) {\n", indent, condition)
-			renderStatements(b, stmt.While.Body, indent+"    ", className, program)
+			renderStatements(b, stmt.While.Body, indent+"    ", className, program, currentFunctionReturnType)
 			fmt.Fprintf(b, "%s}\n", indent)
 		case stmt.CatString != nil:
 			target := lexer.ResolveSymbol(stmt.CatString.Target, currentModule)
@@ -1293,7 +1333,7 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			}
 
 			// Render the body
-			renderStatements(b, stmt.Foreach.Body, indent+"    ", className, program)
+			renderStatements(b, stmt.Foreach.Body, indent+"    ", className, program, currentFunctionReturnType)
 
 			fmt.Fprintf(b, "%s}\n", indent)
 		case stmt.For != nil:
@@ -1321,7 +1361,7 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 
 			fmt.Fprintf(b, "%sfor (int %s = %s; %s <= %s; %s++) {\n",
 				indent, varName, start, varName, endCond, varName)
-			renderStatements(b, stmt.For.Body, indent+"    ", className, program)
+			renderStatements(b, stmt.For.Body, indent+"    ", className, program, currentFunctionReturnType)
 			fmt.Fprintf(b, "%s}\n", indent)
 		case stmt.If != nil:
 			condition := stmt.If.Condition
@@ -1333,7 +1373,7 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			}
 			condition = resolveImportedSymbols(condition, program.Imports)
 			fmt.Fprintf(b, "%sif (%s) {\n", indent, condition)
-			renderStatements(b, stmt.If.Body, indent+"    ", className, program)
+			renderStatements(b, stmt.If.Body, indent+"    ", className, program, currentFunctionReturnType)
 			fmt.Fprintf(b, "%s}\n", indent)
 
 			for _, elif := range stmt.If.ElseIfs {
@@ -1346,13 +1386,13 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				}
 				elifCondition = resolveImportedSymbols(elifCondition, program.Imports)
 				fmt.Fprintf(b, "%selse if (%s) {\n", indent, elifCondition)
-				renderStatements(b, elif.Body, indent+"    ", className, program)
+				renderStatements(b, elif.Body, indent+"    ", className, program, currentFunctionReturnType)
 				fmt.Fprintf(b, "%s}\n", indent)
 			}
 
 			if stmt.If.Else != nil {
 				fmt.Fprintf(b, "%selse {\n", indent)
-				renderStatements(b, stmt.If.Else.Body, indent+"    ", className, program)
+				renderStatements(b, stmt.If.Else.Body, indent+"    ", className, program, currentFunctionReturnType)
 				fmt.Fprintf(b, "%s}\n", indent)
 			}
 		case stmt.VarDecl != nil:
@@ -2015,7 +2055,7 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			end = convertThisReferencesGranular(end)
 			fmt.Fprintf(b, "%s#pragma omp parallel for\n", indent)
 			fmt.Fprintf(b, "%sfor (int %s = %s; %s <= %s; %s++) {\n", indent, varName, start, varName, end, varName)
-			renderStatements(b, stmt.ParallelFor.Body, indent+"    ", className, program)
+			renderStatements(b, stmt.ParallelFor.Body, indent+"    ", className, program, currentFunctionReturnType)
 			fmt.Fprintf(b, "%s}\n", indent)
 		}
 	}
@@ -2589,19 +2629,36 @@ func convertSingleMethodCall(expr string) string {
 }
 
 func generateTopLevelFunctionImplementation(b *strings.Builder, funcDecl *lexer.TopLevelFuncDeclStmt, program *lexer.Program) {
-	returnType := "void"
-	if funcDecl.ReturnType != "" && funcDecl.ReturnType != "void" {
+	returnType := "int" // Default to int for list functions (return array length)
+
+	// Handle list return types
+	if strings.HasPrefix(funcDecl.ReturnType, "list[") && strings.HasSuffix(funcDecl.ReturnType, "]") {
+		returnType = "int" // Return the length of the array
+	} else if funcDecl.ReturnType != "" && funcDecl.ReturnType != "void" {
 		if funcDecl.ReturnType == "string" {
 			returnType = "void"
 		} else {
 			returnType = mapTypeToCType(funcDecl.ReturnType)
 		}
+	} else {
+		returnType = "void"
 	}
 
 	fmt.Fprintf(b, "%s %s(", returnType, funcDecl.Name)
 
 	paramList := make([]string, 0)
-	if funcDecl.ReturnType == "string" {
+
+	// Handle list return types - add output array parameters
+	if strings.HasPrefix(funcDecl.ReturnType, "list[") && strings.HasSuffix(funcDecl.ReturnType, "]") {
+		innerType := strings.TrimPrefix(strings.TrimSuffix(funcDecl.ReturnType, "]"), "list[")
+		if innerType == "string" {
+			paramList = append(paramList, "char _output_array[][256]")
+		} else {
+			cType := mapTypeToCType(innerType)
+			paramList = append(paramList, fmt.Sprintf("%s _output_array[]", cType))
+		}
+		paramList = append(paramList, "int _max_size")
+	} else if funcDecl.ReturnType == "string" {
 		paramList = append(paramList, "char* _output_buffer")
 	}
 
@@ -2669,11 +2726,11 @@ func generateTopLevelFunctionImplementation(b *strings.Builder, funcDecl *lexer.
 					fmt.Fprintf(b, "    return;\n")
 				}
 			} else {
-				renderStatements(b, []*lexer.Statement{stmt}, "    ", "", program)
+				renderStatements(b, []*lexer.Statement{stmt}, "    ", "", program, funcDecl.ReturnType)
 			}
 		}
 	} else {
-		renderStatements(b, funcDecl.Body, "    ", "", program)
+		renderStatements(b, funcDecl.Body, "    ", "", program, funcDecl.ReturnType)
 	}
 
 	b.WriteString("}\n\n")
@@ -2728,18 +2785,30 @@ func generateMethodPrototype(className, methodName, returnType string, parameter
 }
 
 func generateFunctionPrototype(funcDecl *lexer.TopLevelFuncDeclStmt) string {
-	returnType := "void"
-	if funcDecl.ReturnType != "" && funcDecl.ReturnType != "void" {
+	returnType := "int" // Default to int (will return array length for list types)
+
+	var paramList []string
+
+	// Handle functions that return lists
+	if strings.HasPrefix(funcDecl.ReturnType, "list[") && strings.HasSuffix(funcDecl.ReturnType, "]") {
+		innerType := strings.TrimPrefix(strings.TrimSuffix(funcDecl.ReturnType, "]"), "list[")
+		if innerType == "string" {
+			paramList = append(paramList, "char _output_array[][256]")
+		} else {
+			cType := mapTypeToCType(innerType)
+			paramList = append(paramList, fmt.Sprintf("%s _output_array[]", cType))
+		}
+		paramList = append(paramList, "int _max_size")
+		returnType = "int" // Return the length of the array
+	} else if funcDecl.ReturnType != "" && funcDecl.ReturnType != "void" {
 		if funcDecl.ReturnType == "string" {
 			returnType = "void"
+			paramList = append(paramList, "char* _output_buffer")
 		} else {
 			returnType = mapTypeToCType(funcDecl.ReturnType)
 		}
-	}
-
-	var paramList []string
-	if funcDecl.ReturnType == "string" {
-		paramList = append(paramList, "char* _output_buffer")
+	} else {
+		returnType = "void"
 	}
 
 	for _, param := range funcDecl.Parameters {
