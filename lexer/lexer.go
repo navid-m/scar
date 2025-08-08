@@ -70,6 +70,14 @@ type Statement struct {
 	CatList              *CatListStmt
 	Run                  *RunStmt
 	ListDeclFunctionCall *ListDeclFunctionCallStmt
+	ListOf               *ListOfStmt
+	ListOfDecl           *ListOfDeclStmt
+}
+
+type ListOfDeclStmt struct {
+	Type  string
+	Name  string
+	Value string
 }
 
 type CatListStmt struct {
@@ -173,6 +181,11 @@ type MapDeclStmt struct {
 	ValueType string
 	Name      string
 	Pairs     []MapPair
+}
+
+type ListOfStmt struct {
+	Type  string
+	Value string
 }
 
 type MapPair struct {

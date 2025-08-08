@@ -902,6 +902,7 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 		fmt.Printf("Debug: renderStatements - className: '%s'\n", className)
 		currentClassName = className
 	}
+
 	for _, stmt := range stmts {
 		switch {
 		case stmt.Put != nil:
@@ -1014,6 +1015,51 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 					}
 				}
 			}
+		case stmt.ListOf != nil:
+			value := stmt.ListOf.Value
+			if strings.HasPrefix(value, "this.") {
+				value = "this->" + value[5:]
+			} else {
+				value = lexer.ResolveSymbol(value, currentModule)
+				value = convertThisReferencesGranular(value)
+			}
+			tempVar := fmt.Sprintf("_temp_list_%d", len(b.String())%1000)
+			fmt.Fprintf(b, "%schar %s[1][256];\n", indent, tempVar)
+			fmt.Fprintf(b, "%sint %s_len = 1;\n", indent, tempVar)
+			if strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"") {
+				fmt.Fprintf(b, "%sstrcpy(%s[0], %s);\n", indent, tempVar, value)
+			} else {
+				fmt.Fprintf(b, "%sstrcpy(%s[0], %s);\n", indent, tempVar, value)
+			}
+
+		case stmt.ListOfDecl != nil:
+			listType := stmt.ListOfDecl.Type
+			listName := stmt.ListOfDecl.Name
+			value := stmt.ListOfDecl.Value
+
+			if strings.HasPrefix(value, "this.") {
+				value = "this->" + value[5:]
+			} else {
+				value = lexer.ResolveSymbol(value, currentModule)
+				value = convertThisReferencesGranular(value)
+			}
+
+			if listType == "string" {
+				fmt.Fprintf(b, "%schar %s[1000][256];\n", indent, listName)
+				fmt.Fprintf(b, "%sint %s_len = 1;\n", indent, listName)
+				if strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"") {
+					fmt.Fprintf(b, "%sstrcpy(%s[0], %s);\n", indent, listName, value)
+				} else {
+					fmt.Fprintf(b, "%sstrcpy(%s[0], %s);\n", indent, listName, value)
+				}
+			} else {
+				cType := mapTypeToCType(listType)
+				fmt.Fprintf(b, "%s%s %s[1000];\n", indent, cType, listName)
+				fmt.Fprintf(b, "%sint %s_len = 1;\n", indent, listName)
+				fmt.Fprintf(b, "%s%s[0] = %s;\n", indent, listName, value)
+			}
+
+			globalArrays[listName] = listType
 		case stmt.Print != nil:
 			if stmt.Print.Format != "" && len(stmt.Print.Variables) > 0 {
 				var (

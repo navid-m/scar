@@ -21,7 +21,7 @@ pub fn read_lines(string filename) -> list[string]:
     char* current_line = ""
     for i = 0 to strings::length(data):
         if data[i] == '\n':
-            list[string] line = [current_line]
+            list[string] line = list_of!(current_line)
             catlist!(lines, line)
             $raw (
                 current_line = "";
@@ -29,7 +29,7 @@ pub fn read_lines(string filename) -> list[string]:
         else:
             current_line = current_line + data[i]
     if strings::length(current_line) > 0:
-        list[string] line = [current_line]
+        list[string] line = list_of!(current_line)
         catlist!(lines, line)
     
     return lines

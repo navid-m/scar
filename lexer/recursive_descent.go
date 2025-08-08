@@ -196,6 +196,50 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 		}
 	}
 
+	if strings.HasPrefix(line, "list_of!(") && strings.HasSuffix(line, ")") {
+		argsStr := strings.TrimSpace(line[9 : len(line)-1]) // Remove "list_of!(" and ")"
+		if argsStr == "" {
+			return nil, lineNum + 1, fmt.Errorf("list_of! statement requires exactly 1 argument at line %d", lineNum+1)
+		}
+		return &Statement{ListOf: &ListOfStmt{
+			Value: argsStr,
+		}}, lineNum + 1, nil
+	}
+
+	if strings.Contains(line, "=") && strings.Contains(line, "list_of!(") {
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) == 2 {
+			leftSide := strings.TrimSpace(parts[0])
+			rightSide := strings.TrimSpace(parts[1])
+
+			if strings.HasPrefix(rightSide, "list_of!(") && strings.HasSuffix(rightSide, ")") {
+				argsStr := strings.TrimSpace(rightSide[9 : len(rightSide)-1])
+
+				var targetVar string
+				var listType string
+
+				if strings.HasPrefix(leftSide, "list[") {
+					typeEnd := strings.Index(leftSide, "]")
+					if typeEnd != -1 {
+						listType = leftSide[5:typeEnd]
+						parts := strings.Fields(leftSide)
+						if len(parts) >= 2 {
+							targetVar = parts[1]
+						}
+					}
+				}
+
+				if targetVar != "" && listType != "" {
+					return &Statement{ListOfDecl: &ListOfDeclStmt{
+						Type:  listType,
+						Name:  targetVar,
+						Value: argsStr,
+					}}, lineNum + 1, nil
+				}
+			}
+		}
+	}
+
 	if strings.HasPrefix(line, "map[") && strings.Contains(line, "]") && strings.Contains(line, "=") {
 		typeEnd := strings.Index(line, "]")
 		if typeEnd == -1 {
