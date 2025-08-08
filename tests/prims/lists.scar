@@ -33,3 +33,6 @@ print "Concatenated list i1: %d" | empty_list[1]
 print "Concatenated list i2: %d" | empty_list[2]
 print "Concatenated list i3: %d" | empty_list[3]
 print "Concatenated list i4: %d" | empty_list[4]
+
+for i = 0 to len(numbers):
+    print "Number: %d" | numbers[i]
