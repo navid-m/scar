@@ -1,0 +1,5 @@
+import "std/fs"
+
+list[string] lines = fs::read_lines("output.txt")
+for i = 0 to len(lines):
+    print "Line %d: %s" | i, lines[i]

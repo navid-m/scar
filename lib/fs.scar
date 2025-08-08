@@ -16,15 +16,32 @@ pub fn create_directory(string path) -> bool:
     )
 
 pub fn read_lines(string filename) -> list[string]:
-    string data = read(filename)
-    list[string] lines = []
-    char* current_line = ""
-    for i = 0 to strings::length(data):
-        if data[i] == '\n':
-            catlist!(lines, list_of!(current_line))
-            current_line = "";
-        else:
-            current_line = current_line + data[i]
-    if strings::length(current_line) > 0:
-        catlist!(lines, list_of!(current_line))
-    return lines
+    $raw (
+        char** lines_temp = malloc(1000 * sizeof(char*));
+        int lines_count = 0;
+        FILE* file = fopen(filename, "r");
+        if (file == NULL) {
+            for (int _i = 0; _i < lines_count && _i < _max_size; _i++) {
+                strcpy(_output_array[_i], "");
+            }
+            free(lines_temp);
+            return 0;
+        }
+        char line_buffer[1024];
+        while (fgets(line_buffer, sizeof(line_buffer), file) && lines_count < 1000) {
+            size_t len = strlen(line_buffer);
+            if (len > 0 && line_buffer[len-1] == '\n') {
+                line_buffer[len-1] = '\0';
+            }    
+            lines_temp[lines_count] = malloc(strlen(line_buffer) + 1);
+            strcpy(lines_temp[lines_count], line_buffer);
+            lines_count++;
+        }
+        fclose(file);
+        for (int _i = 0; _i < lines_count && _i < _max_size; _i++) {
+            strcpy(_output_array[_i], lines_temp[_i]);
+            free(lines_temp[_i]);
+        }
+        free(lines_temp);
+        return lines_count;
+    )
