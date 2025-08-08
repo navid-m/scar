@@ -1998,13 +1998,16 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				}
 			}
 		case stmt.MapDecl != nil:
-			mapName := lexer.ResolveSymbol(stmt.MapDecl.Name, currentModule)
-			keyType := stmt.MapDecl.KeyType
-			valueType := stmt.MapDecl.ValueType
-			cKeyType := mapTypeToCType(keyType)
-			cValueType := mapTypeToCType(valueType)
-			mapSize := len(stmt.MapDecl.Pairs)
-			initialSize := mapSize
+			var (
+				mapName     = lexer.ResolveSymbol(stmt.MapDecl.Name, currentModule)
+				keyType     = stmt.MapDecl.KeyType
+				valueType   = stmt.MapDecl.ValueType
+				cKeyType    = mapTypeToCType(keyType)
+				cValueType  = mapTypeToCType(valueType)
+				mapSize     = len(stmt.MapDecl.Pairs)
+				initialSize = mapSize
+			)
+
 			if initialSize == 0 {
 				initialSize = 10
 			}
