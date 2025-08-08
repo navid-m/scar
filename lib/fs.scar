@@ -10,23 +10,5 @@ pub fn remove(string path) -> bool:
 
 pub fn create_directory(string path) -> bool:
     $raw (
-        return mkdir(path, 0755) == 0;
-    )
-
-pub fn is_directory(string path) -> bool:
-    $raw (
-        struct stat st;
-        if (stat(path, &st) == 0) {
-            return S_ISDIR(st.st_mode);
-        }
-        return 0;
-    )
-
-pub fn is_file(string path) -> bool:
-    $raw (
-        struct stat st;
-        if (stat(path, &st) == 0) {
-            return S_ISREG(st.st_mode);
-        }
-        return 0;
+        return mkdir(path) == 0;
     )
