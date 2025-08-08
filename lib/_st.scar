@@ -72,9 +72,7 @@ write("Hello World", "output.txt", overwrite!)
 string data = read("output.txt")
 t.assert_string_equals("Hello World", data, "Read data should be 'Hello World'")
 list[string] otherdata = fs::read_lines("output.txt")
-for i = 0 to len(otherdata):
-    print "Line %d: %s" | i, otherdata[i]
-
+t.assert_string_equals("Hello World", otherdata[0], "First line should be 'Hello World'")
 fs::remove("output.txt")
 t.test_summary()
 
