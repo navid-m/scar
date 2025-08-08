@@ -29,7 +29,6 @@ pub fn read_lines(string filename) -> list[string]:
         else:
             current_line = current_line + data[i]
     if strings::length(current_line) > 0:
-        list[string] line = list_of!(current_line)
-        catlist!(lines, line)
+        catlist!(lines, list_of!(current_line))
     
     return lines
