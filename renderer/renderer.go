@@ -2335,6 +2335,7 @@ func findMatchingParen(s string, openPos int) int {
 
 // Converts method calls in the format 'this.method(args)' to 'ClassName_method(this, args)'
 func convertMethodCallToC(expr string) string {
+	// Handle comparison operators
 	comparisonOps := []string{"==", "!=", ">", "<", ">=", "<="}
 	var op, left, right string
 	var hasComparison bool
@@ -2356,6 +2357,41 @@ func convertMethodCallToC(expr string) string {
 			return fmt.Sprintf("%s %s %s", convertedLeft, op, right)
 		}
 	}
+	arithmeticOps := []string{"+", "-", "*", "/", "%"}
+	var hasArithmetic bool
+	for _, arithOp := range arithmeticOps {
+		opIndex := -1
+		parenCount := 0
+		for i, char := range expr {
+			if char == '(' {
+				parenCount++
+			} else if char == ')' {
+				parenCount--
+			} else if parenCount == 0 && strings.HasPrefix(expr[i:], arithOp) {
+				opIndex = i
+				break
+			}
+		}
+
+		if opIndex > 0 {
+			left = strings.TrimSpace(expr[:opIndex])
+			right = strings.TrimSpace(expr[opIndex+len(arithOp):])
+			op = arithOp
+			hasArithmetic = true
+			fmt.Printf("Debug: Found arithmetic operator '%s' at index %d, left='%s', right='%s'\n", arithOp, opIndex, left, right)
+			break
+		}
+	}
+
+	if hasArithmetic && isMethodCall(left) {
+		convertedLeft := convertSingleMethodCall(left)
+		if convertedLeft != "" {
+			fmt.Printf("Debug: Converted arithmetic expression: '%s %s %s'\n", convertedLeft, op, right)
+			return fmt.Sprintf("%s %s %s", convertedLeft, op, right)
+		}
+	}
+
+	fmt.Printf("Debug: convertMethodCallToC called with: '%s', falling back to convertSingleMethodCall\n", expr)
 	return convertSingleMethodCall(expr)
 }
 
