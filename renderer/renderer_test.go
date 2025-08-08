@@ -1947,3 +1947,237 @@ print "%d" | calc.add(2, 3)`
 		t.Logf("Full generated C code:\n%s", result)
 	}
 }
+
+func TestRenderCWithListFunctionAssignment(t *testing.T) {
+	t.Run("simple int list function assignment", func(t *testing.T) {
+		program := &lexer.Program{
+			Statements: []*lexer.Statement{
+				{
+					TopLevelFuncDecl: &lexer.TopLevelFuncDeclStmt{
+						Name:       "get_numbers",
+						Parameters: []*lexer.MethodParameter{},
+						ReturnType: "list[int]",
+						Body: []*lexer.Statement{
+							{
+								ListDecl: &lexer.ListDeclStmt{
+									Name:     "result",
+									Type:     "int",
+									Elements: []string{"1", "2", "3"},
+								},
+							},
+							{
+								Return: &lexer.ReturnStmt{
+									Value: "result",
+								},
+							},
+						},
+					},
+				},
+				{
+					ListDeclFunctionCall: &lexer.ListDeclFunctionCallStmt{
+						Type:         "int",
+						Name:         "my_list",
+						FunctionCall: "get_numbers()",
+					},
+				},
+				{
+					Print: &lexer.PrintStmt{
+						Format:    "First: %d",
+						Variables: []string{"my_list[0]"},
+					},
+				},
+			},
+		}
+
+		cCode := RenderC(program, "")
+		expectedPrototype := "int get_numbers(int _output_array[], int _max_size);"
+		if !strings.Contains(cCode, expectedPrototype) {
+			t.Errorf("Expected function prototype '%s' not found in generated code", expectedPrototype)
+		}
+		expectedSignature := "int get_numbers(int _output_array[], int _max_size) {"
+		if !strings.Contains(cCode, expectedSignature) {
+			t.Errorf("Expected function signature '%s' not found in generated code", expectedSignature)
+		}
+		expectedCopy := "for (int _i = 0; _i < result_len && _i < _max_size; _i++) {"
+		if !strings.Contains(cCode, expectedCopy) {
+			t.Errorf("Expected array copy loop '%s' not found in generated code", expectedCopy)
+		}
+		expectedReturnLength := "return result_len;"
+		if !strings.Contains(cCode, expectedReturnLength) {
+			t.Errorf("Expected return length statement '%s' not found in generated code", expectedReturnLength)
+		}
+		expectedListDecl := "int my_list[1000];"
+		if !strings.Contains(cCode, expectedListDecl) {
+			t.Errorf("Expected list declaration '%s' not found in generated code", expectedListDecl)
+		}
+		expectedLengthVar := "int my_list_len;"
+		if !strings.Contains(cCode, expectedLengthVar) {
+			t.Errorf("Expected length variable '%s' not found in generated code", expectedLengthVar)
+		}
+		expectedFunctionCall := "my_list_len = get_numbers(my_list, 1000);"
+		if !strings.Contains(cCode, expectedFunctionCall) {
+			t.Errorf("Expected function call '%s' not found in generated code", expectedFunctionCall)
+		}
+		if t.Failed() {
+			t.Logf("Full generated C code:\n%s", cCode)
+		}
+	})
+
+	t.Run("string list function assignment", func(t *testing.T) {
+		program := &lexer.Program{
+			Statements: []*lexer.Statement{
+				{
+					TopLevelFuncDecl: &lexer.TopLevelFuncDeclStmt{
+						Name:       "get_names",
+						Parameters: []*lexer.MethodParameter{},
+						ReturnType: "list[string]",
+						Body: []*lexer.Statement{
+							{
+								ListDecl: &lexer.ListDeclStmt{
+									Name:     "result",
+									Type:     "string",
+									Elements: []string{"\"Alice\"", "\"Bob\"", "\"Charlie\""},
+								},
+							},
+							{
+								Return: &lexer.ReturnStmt{
+									Value: "result",
+								},
+							},
+						},
+					},
+				},
+				{
+					ListDeclFunctionCall: &lexer.ListDeclFunctionCallStmt{
+						Type:         "string",
+						Name:         "my_names",
+						FunctionCall: "get_names()",
+					},
+				},
+			},
+		}
+
+		cCode := RenderC(program, "")
+
+		expectedPrototype := "int get_names(char _output_array[][256], int _max_size);"
+		if !strings.Contains(cCode, expectedPrototype) {
+			t.Errorf("Expected string function prototype '%s' not found in generated code", expectedPrototype)
+		}
+		expectedStringCopy := "strcpy(_output_array[_i], result[_i]);"
+		if !strings.Contains(cCode, expectedStringCopy) {
+			t.Errorf("Expected string copy statement '%s' not found in generated code", expectedStringCopy)
+		}
+		expectedStringListDecl := "char my_names[1000][256];"
+		if !strings.Contains(cCode, expectedStringListDecl) {
+			t.Errorf("Expected string list declaration '%s' not found in generated code", expectedStringListDecl)
+		}
+		if t.Failed() {
+			t.Logf("Full generated C code:\n%s", cCode)
+		}
+	})
+
+	t.Run("function with parameters returning list", func(t *testing.T) {
+		program := &lexer.Program{
+			Statements: []*lexer.Statement{
+				{
+					TopLevelFuncDecl: &lexer.TopLevelFuncDeclStmt{
+						Name: "create_range",
+						Parameters: []*lexer.MethodParameter{
+							{Type: "int", Name: "start"},
+							{Type: "int", Name: "end"},
+						},
+						ReturnType: "list[int]",
+						Body: []*lexer.Statement{
+							{
+								ListDecl: &lexer.ListDeclStmt{
+									Name:     "result",
+									Type:     "int",
+									Elements: []string{},
+								},
+							},
+							{
+								Return: &lexer.ReturnStmt{
+									Value: "result",
+								},
+							},
+						},
+					},
+				},
+				{
+					ListDeclFunctionCall: &lexer.ListDeclFunctionCallStmt{
+						Type:         "int",
+						Name:         "range_list",
+						FunctionCall: "create_range(1, 5)",
+					},
+				},
+			},
+		}
+
+		cCode := RenderC(program, "")
+
+		expectedPrototype := "int create_range(int _output_array[], int _max_size, int start, int end);"
+
+		if !strings.Contains(cCode, expectedPrototype) {
+			t.Errorf("Expected function prototype with params '%s' not found in generated code", expectedPrototype)
+		}
+
+		expectedFunctionCall := "range_list_len = create_range(range_list, 1000, 1, 5);"
+
+		if !strings.Contains(cCode, expectedFunctionCall) {
+			t.Errorf("Expected function call with params '%s' not found in generated code", expectedFunctionCall)
+		}
+
+		if t.Failed() {
+			t.Logf("Full generated C code:\n%s", cCode)
+		}
+	})
+
+	t.Run("regression test - regular function calls still work", func(t *testing.T) {
+		program := &lexer.Program{
+			Statements: []*lexer.Statement{
+				{
+					TopLevelFuncDecl: &lexer.TopLevelFuncDeclStmt{
+						Name:       "get_number",
+						Parameters: []*lexer.MethodParameter{},
+						ReturnType: "int",
+						Body: []*lexer.Statement{
+							{
+								Return: &lexer.ReturnStmt{
+									Value: "42",
+								},
+							},
+						},
+					},
+				},
+				{
+					VarDecl: &lexer.VarDeclStmt{
+						Type:  "int",
+						Name:  "num",
+						Value: "get_number()",
+					},
+				},
+			},
+		}
+
+		cCode := RenderC(program, "")
+
+		expectedPrototype := "int get_number();"
+		if !strings.Contains(cCode, expectedPrototype) {
+			t.Errorf("Expected regular function prototype '%s' not found in generated code", expectedPrototype)
+		}
+
+		expectedVarDecl := "int num = get_number();"
+		if !strings.Contains(cCode, expectedVarDecl) {
+			t.Errorf("Expected regular variable declaration '%s' not found in generated code", expectedVarDecl)
+		}
+
+		incorrectPrototype := "int get_number(int _output_array[], int _max_size);"
+		if strings.Contains(cCode, incorrectPrototype) {
+			t.Errorf("Found incorrect list function prototype '%s' - this indicates a regression", incorrectPrototype)
+		}
+
+		if t.Failed() {
+			t.Logf("Full generated C code:\n%s", cCode)
+		}
+	})
+}
