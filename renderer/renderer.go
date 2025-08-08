@@ -926,7 +926,27 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			} else if stmt.Put.Put != "" {
 				fmt.Fprintf(b, "%sprintf(\"%s\");\n", indent, stmt.Put.Put)
 			}
+		case stmt.ListDeclFunctionCall != nil:
+			listType := stmt.ListDeclFunctionCall.Type
+			listName := stmt.ListDeclFunctionCall.Name
+			functionCall := stmt.ListDeclFunctionCall.FunctionCall
+			resolvedCall := strings.ReplaceAll(functionCall, "::", "_")
 
+			if listType == "string" {
+				fmt.Fprintf(b, "%schar %s[1000][256];\n", indent, listName)
+				fmt.Fprintf(b, "%sint %s_len;\n", indent, listName)
+
+				fmt.Fprintf(b, "%s%s_len = %s;\n", indent, listName,
+					strings.Replace(resolvedCall, "(", fmt.Sprintf("(%s, 1000, ", listName), 1))
+			} else {
+				cType := mapTypeToCType(listType)
+				fmt.Fprintf(b, "%s%s %s[1000];\n", indent, cType, listName)
+				fmt.Fprintf(b, "%sint %s_len;\n", indent, listName)
+				fmt.Fprintf(b, "%s%s_len = %s;\n", indent, listName,
+					strings.Replace(resolvedCall, "(", fmt.Sprintf("(%s, 1000, ", listName), 1))
+			}
+
+			globalArrays[listName] = listType
 		case stmt.CatList != nil:
 			if stmt.CatList.Target != "" {
 				targetVar := lexer.ResolveSymbol(stmt.CatList.Target, currentModule)

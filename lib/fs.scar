@@ -15,14 +15,13 @@ pub fn create_directory(string path) -> bool:
         return mkdir(path) == 0;
     )
 
-pub fn read_lines(string filename) -> list[string]:
+pub fn read_lines(string dat, int amount, string filename) -> list[string]:
     string data = read(filename)
     list[string] lines = []
     char* current_line = ""
     for i = 0 to strings::length(data):
         if data[i] == '\n':
-            list[string] line = list_of!(current_line)
-            catlist!(lines, line)
+            catlist!(lines, list_of!(current_line))
             current_line = "";
         else:
             current_line = current_line + data[i]
