@@ -70,6 +70,11 @@ func processFunctionDependencies(body []*Statement) map[string]bool {
 				processStmt(s)
 			}
 
+		case stmt.ParallelBlock != nil:
+			for _, s := range stmt.ParallelBlock.Body {
+				processStmt(s)
+			}
+
 		case stmt.TryCatch != nil:
 			for _, s := range stmt.TryCatch.TryBody {
 				processStmt(s)

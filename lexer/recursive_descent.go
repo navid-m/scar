@@ -475,52 +475,77 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 		}}, lineNum + 1, nil
 
 	case "parallel":
-		if len(parts) < 5 || parts[1] != "for" || parts[3] != "=" || !strings.Contains(line, "to") || !strings.HasSuffix(line, ":") {
-			return nil, lineNum + 1, fmt.Errorf("parallel for statement format error at line %d (expected: parallel for var = start to end:)", lineNum+1)
-		}
+		if len(parts) >= 5 && parts[1] == "for" && parts[3] == "=" && strings.Contains(line, "to") && strings.HasSuffix(line, ":") {
+			equalsIndex := strings.Index(line, "=")
+			toIndex := strings.Index(line, "to")
+			colonIndex := strings.LastIndex(line, ":")
+			if equalsIndex == -1 || toIndex == -1 || colonIndex == -1 ||
+				!(equalsIndex > strings.Index(line, "for") && equalsIndex < toIndex && toIndex < colonIndex) {
+				return nil, lineNum + 1, fmt.Errorf("parallel for statement format error at line %d", lineNum+1)
+			}
 
-		equalsIndex := strings.Index(line, "=")
-		toIndex := strings.Index(line, "to")
-		colonIndex := strings.LastIndex(line, ":")
-		if equalsIndex == -1 || toIndex == -1 || colonIndex == -1 ||
-			!(equalsIndex > strings.Index(line, "for") && equalsIndex < toIndex && toIndex < colonIndex) {
-			return nil, lineNum + 1, fmt.Errorf("parallel for statement format error at line %d", lineNum+1)
-		}
+			var (
+				varName = strings.TrimSpace(line[strings.Index(line, "for")+len("for") : equalsIndex])
+				start   = strings.TrimSpace(line[equalsIndex+1 : toIndex])
+				end     = strings.TrimSpace(line[toIndex+len("to") : colonIndex])
+			)
 
-		var (
-			varName = strings.TrimSpace(line[strings.Index(line, "for")+len("for") : equalsIndex])
-			start   = strings.TrimSpace(line[equalsIndex+1 : toIndex])
-			end     = strings.TrimSpace(line[toIndex+len("to") : colonIndex])
-		)
+			if varName == "" || start == "" || end == "" {
+				return nil, lineNum + 1, fmt.Errorf("parallel for statement missing variable, start, or end expression at line %d", lineNum+1)
+			}
 
-		if varName == "" || start == "" || end == "" {
-			return nil, lineNum + 1, fmt.Errorf("parallel for statement missing variable, start, or end expression at line %d", lineNum+1)
-		}
-
-		expectedBodyIndent := currentIndent + 4
-		if currentIndent == 0 {
-			bodyStartLine := lineNum + 1
-			for bodyStartLine < len(lines) {
-				bodyLine := lines[bodyStartLine]
-				if strings.TrimSpace(bodyLine) != "" && !strings.HasPrefix(strings.TrimSpace(bodyLine), "#") {
-					expectedBodyIndent = getIndentation(bodyLine)
-					break
+			expectedBodyIndent := currentIndent + 4
+			if currentIndent == 0 {
+				bodyStartLine := lineNum + 1
+				for bodyStartLine < len(lines) {
+					bodyLine := lines[bodyStartLine]
+					if strings.TrimSpace(bodyLine) != "" && !strings.HasPrefix(strings.TrimSpace(bodyLine), "#") {
+						expectedBodyIndent = getIndentation(bodyLine)
+						break
+					}
+					bodyStartLine++
 				}
-				bodyStartLine++
+				if expectedBodyIndent <= currentIndent {
+					expectedBodyIndent = currentIndent + 4
+				}
 			}
-			if expectedBodyIndent <= currentIndent {
-				expectedBodyIndent = currentIndent + 4
+
+			body, err := parseStatements(lines, lineNum+1, expectedBodyIndent)
+			if err != nil {
+				return nil, lineNum + 1, err
 			}
+
+			nextLine := findEndOfBlock(lines, lineNum+1, expectedBodyIndent)
+
+			return &Statement{ParallelFor: &ParallelForStmt{Var: varName, Start: start, End: end, Body: body}}, nextLine, nil
+		} else if strings.HasSuffix(line, ":") {
+			expectedBodyIndent := currentIndent + 4
+			if currentIndent == 0 {
+				bodyStartLine := lineNum + 1
+				for bodyStartLine < len(lines) {
+					bodyLine := lines[bodyStartLine]
+					if strings.TrimSpace(bodyLine) != "" && !strings.HasPrefix(strings.TrimSpace(bodyLine), "#") {
+						expectedBodyIndent = getIndentation(bodyLine)
+						break
+					}
+					bodyStartLine++
+				}
+				if expectedBodyIndent <= currentIndent {
+					expectedBodyIndent = currentIndent + 4
+				}
+			}
+
+			body, err := parseStatements(lines, lineNum+1, expectedBodyIndent)
+			if err != nil {
+				return nil, lineNum + 1, err
+			}
+
+			nextLine := findEndOfBlock(lines, lineNum+1, expectedBodyIndent)
+
+			return &Statement{ParallelBlock: &ParallelBlockStmt{Body: body}}, nextLine, nil
+		} else {
+			return nil, lineNum + 1, fmt.Errorf("parallel statement format error at line %d (expected: 'parallel:' for block or 'parallel for var = start to end:' for loop)", lineNum+1)
 		}
-
-		body, err := parseStatements(lines, lineNum+1, expectedBodyIndent)
-		if err != nil {
-			return nil, lineNum + 1, err
-		}
-
-		nextLine := findEndOfBlock(lines, lineNum+1, expectedBodyIndent)
-
-		return &Statement{ParallelFor: &ParallelForStmt{Var: varName, Start: start, End: end, Body: body}}, nextLine, nil
 
 	case "import":
 		if len(parts) < 2 {

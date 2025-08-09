@@ -2432,6 +2432,16 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			fmt.Fprintf(b, "%sfor (int %s = %s; %s <= %s; %s++) {\n", indent, varName, start, varName, end, varName)
 			renderStatements(b, stmt.ParallelFor.Body, indent+"    ", className, program, currentFunctionReturnType)
 			fmt.Fprintf(b, "%s}\n", indent)
+		case stmt.ParallelBlock != nil:
+			fmt.Fprintf(b, "%s#pragma omp parallel sections\n", indent)
+			fmt.Fprintf(b, "%s{\n", indent)
+			for _, blockStmt := range stmt.ParallelBlock.Body {
+				fmt.Fprintf(b, "%s    #pragma omp section\n", indent)
+				fmt.Fprintf(b, "%s    {\n", indent)
+				renderStatements(b, []*lexer.Statement{blockStmt}, indent+"        ", className, program, currentFunctionReturnType)
+				fmt.Fprintf(b, "%s    }\n", indent)
+			}
+			fmt.Fprintf(b, "%s}\n", indent)
 		}
 	}
 }

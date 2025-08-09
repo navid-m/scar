@@ -63,6 +63,7 @@ type Statement struct {
 	RawCode              *RawCodeStmt
 	MapDecl              *MapDeclStmt
 	ParallelFor          *ParallelForStmt
+	ParallelBlock        *ParallelBlockStmt
 	PubTopLevelFuncDecl  *PubTopLevelFuncDeclStmt
 	PutMap               *PutMapStmt
 	GetMap               *GetMapStmt
@@ -131,6 +132,10 @@ type ParallelForStmt struct {
 	Start string
 	End   string
 	Body  []*Statement
+}
+
+type ParallelBlockStmt struct {
+	Body []*Statement
 }
 
 type PubVarDeclStmt struct {
