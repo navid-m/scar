@@ -11,6 +11,7 @@ import "std/fs"
 import "std/hash"
 import "std/sort"
 import "std/io"
+import "std/json"
 
 # Setup
 var list = new collections::ArrayList(4)
@@ -104,5 +105,13 @@ t.assert_string_equals("Hello", strings::trim_space("   Hello   "), "Trimmed str
 t.assert_string_equals("sdf", strings::trim_prefix("asdf", "a"), "Trimmed prefix should be 'sdf'")
 
 t.test_summary()
+
+string user = json::create_object("name", "Alice", "age", "25")
+json::dump(user, "user.json")
+string loaded = json::load("user.json")
+string name = json::get_value(loaded, "name")
+string age = json::get_value(loaded, "age")
+string config = json::create_object("theme", "dark", "debug", "true")
+json::dump(config, "settings.json")
 
 os::exit(0)

@@ -1,0 +1,235 @@
+## JSON serialization and deserialization functions
+## Simple JSON handling for Scar language
+
+pub fn serialize(string data) -> string:
+    $raw (
+        #include <stdio.h>
+        #include <string.h>
+        #include <ctype.h>
+        
+        char *ptr = _output_buffer;
+        *ptr++ = '"';
+        
+        for (int i = 0; i < strlen(data); i++) {
+            char c = data[i];
+            switch (c) {
+                case '"':
+                    *ptr++ = '\\';
+                    *ptr++ = '"';
+                    break;
+                case '\\':
+                    *ptr++ = '\\';
+                    *ptr++ = '\\';
+                    break;
+                case '\b':
+                    *ptr++ = '\\';
+                    *ptr++ = 'b';
+                    break;
+                case '\f':
+                    *ptr++ = '\\';
+                    *ptr++ = 'f';
+                    break;
+                case '\n':
+                    *ptr++ = '\\';
+                    *ptr++ = 'n';
+                    break;
+                case '\r':
+                    *ptr++ = '\\';
+                    *ptr++ = 'r';
+                    break;
+                case '\t':
+                    *ptr++ = '\\';
+                    *ptr++ = 't';
+                    break;
+                default:
+                    if (c < 32) {
+                        sprintf(ptr, "\\u%04x", (unsigned char)c);
+                        ptr += 6;
+                    } else {
+                        *ptr++ = c;
+                    }
+                    break;
+            }
+        }
+        *ptr++ = '"';
+        *ptr = '\0';
+    )
+
+pub fn deserialize(string json_string) -> string:
+    $raw (
+        #include <stdio.h>
+        #include <string.h>
+        #include <stdlib.h>
+        
+        char *ptr = _output_buffer;
+        int len = strlen(json_string);
+        
+        int start = 0;
+        int end = len;
+        
+        if (len >= 2 && json_string[0] == '"' && json_string[len-1] == '"') {
+            start = 1;
+            end = len - 1;
+        }
+        
+        for (int i = start; i < end; i++) {
+            if (json_string[i] == '\\' && i + 1 < end) {
+                switch (json_string[i + 1]) {
+                    case '"':
+                        *ptr++ = '"';
+                        i++;
+                        break;
+                    case '\\':
+                        *ptr++ = '\\';
+                        i++;
+                        break;
+                    case 'b':
+                        *ptr++ = '\b';
+                        i++;
+                        break;
+                    case 'f':
+                        *ptr++ = '\f';
+                        i++;
+                        break;
+                    case 'n':
+                        *ptr++ = '\n';
+                        i++;
+                        break;
+                    case 'r':
+                        *ptr++ = '\r';
+                        i++;
+                        break;
+                    case 't':
+                        *ptr++ = '\t';
+                        i++;
+                        break;
+                    case 'u':
+                        if (i + 5 < end) {
+                            char hex[5];
+                            strncpy(hex, &json_string[i + 2], 4);
+                            hex[4] = '\0';
+                            unsigned int codepoint = strtol(hex, NULL, 16);
+                            if (codepoint < 128) {
+                                *ptr++ = (char)codepoint;
+                            } else {
+                                // For simplicity, just copy the original sequence
+                                *ptr++ = json_string[i];
+                            }
+                            i += 5;
+                        } else {
+                            *ptr++ = json_string[i];
+                        }
+                        break;
+                    default:
+                        *ptr++ = json_string[i];
+                        break;
+                }
+            } else {
+                *ptr++ = json_string[i];
+            }
+        }
+        *ptr = '\0';
+    )
+
+## Write JSON string to a file
+pub fn dump(string json_data, string filename) -> bool:
+    $raw (
+        #include <stdio.h>
+        FILE* file = fopen(filename, "w");
+        if (file == NULL) {
+            return false;
+        }
+        
+        fprintf(file, "%s", json_data);
+        fclose(file);
+        return true;
+    )
+
+## Load JSON string from a file
+pub fn load(string filename) -> string:
+    $raw (
+        #include <stdio.h>
+        #include <stdlib.h>
+        FILE* file = fopen(filename, "r");
+        
+        if (file == NULL) {
+            strcpy(_output_buffer, "");
+            return;
+        }
+        
+        fseek(file, 0, SEEK_END);
+        long file_size = ftell(file);
+        fseek(file, 0, SEEK_SET);
+        
+        if (file_size >= 4096) {
+            file_size = 4095;
+        }
+        
+        size_t bytes_read = fread(_output_buffer, 1, file_size, file);
+        _output_buffer[bytes_read] = '\0';
+        
+        fclose(file);
+    )
+
+## Create a JSON object string from key-value pairs (basic implementation)
+pub fn create_object(string key1, string value1, string key2, string value2) -> string:
+    $raw (
+        snprintf(_output_buffer, 4096, 
+            "{\"%s\":\"%s\",\"%s\":\"%s\"}", 
+            key1, value1, key2, value2);
+    )
+
+## Create a JSON array string from values (basic implementation) 
+pub fn create_array(string value1, string value2, string value3) -> string:
+    $raw (
+        snprintf(_output_buffer, 4096, 
+            "[\"%s\",\"%s\",\"%s\"]", 
+            value1, value2, value3);
+    )
+
+## Extract value from JSON object by key (simple parser)
+pub fn get_value(string json_obj, string key) -> string:
+    $raw (
+        #include <stdio.h>
+        #include <string.h>
+        _output_buffer[0] = '\0';
+        char search_pattern[256];
+        snprintf(search_pattern, sizeof(search_pattern), "\"%s\":", key);
+        
+        char* key_pos = strstr(json_obj, search_pattern);
+        if (key_pos == NULL) {
+            return;
+        }
+        
+        char* value_start = key_pos + strlen(search_pattern);
+        
+        while (*value_start == ' ' || *value_start == '\t') {
+            value_start++;
+        }
+        if (*value_start == '"') {
+            value_start++; // Skip opening quote
+            char* value_end = strchr(value_start, '"');
+            if (value_end != NULL) {
+                size_t value_len = value_end - value_start;
+                if (value_len < 4096) {
+                    strncpy(_output_buffer, value_start, value_len);
+                    _output_buffer[value_len] = '\0';
+                }
+            }
+        } else {
+            char* value_end = value_start;
+            while (*value_end != ',' && *value_end != '}' && *value_end != '\0') {
+                value_end++;
+            }
+            size_t value_len = value_end - value_start;
+            if (value_len < 4096) {
+                strncpy(_output_buffer, value_start, value_len);
+                _output_buffer[value_len] = '\0';
+                int end_pos = strlen(_output_buffer) - 1;
+                while (end_pos >= 0 && (_output_buffer[end_pos] == ' ' || _output_buffer[end_pos] == '\t')) {
+                    _output_buffer[end_pos] = '\0';
+                    end_pos--;
+                }
+            }
+        }
+    )
