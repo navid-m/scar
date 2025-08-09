@@ -1,0 +1,73 @@
+## Standard library module for sorting algorithms
+## Provides various sorting functions for different data types
+
+import "std/math"
+
+## Merge function for merge sort
+fn merge_int(ref i32 arr, i32 left, i32 mid, i32 right) -> void:
+    i32 n1 = mid - left + 1
+    i32 n2 = right - mid
+    i32 i = 0
+    i32 j = 0
+    i32 k = left
+    
+    $raw (
+        int* left_arr = malloc(n1 * sizeof(int));
+        int* right_arr = malloc(n2 * sizeof(int));
+        
+        for (int i = 0; i < n1; i++) {
+            left_arr[i] = arr[left + i];
+        }
+        for (int j = 0; j < n2; j++) {
+            right_arr[j] = arr[mid + 1 + j];
+        }
+        
+        i = 0;
+        j = 0;
+        k = left;
+        
+        while (i < n1 && j < n2) {
+            if (left_arr[i] <= right_arr[j]) {
+                arr[k] = left_arr[i];
+                i++;
+            } else {
+                arr[k] = right_arr[j];
+                j++;
+            }
+            k++;
+        }
+        
+        while (i < n1) {
+            arr[k] = left_arr[i];
+            i++;
+            k++;
+        }
+        
+        while (j < n2) {
+            arr[k] = right_arr[j];
+            j++;
+            k++;
+        }
+        
+        free(left_arr);
+        free(right_arr);
+    )
+
+## Heapify function for heap sort
+fn heapify_int(ref i32 arr, i32 size, i32 root) -> void:
+    i32 largest = root
+    i32 left = 2 * root + 1
+    i32 right = 2 * root + 2
+    i32 temp = 0
+    
+    if left < size and arr[left] > arr[largest]:
+        largest = left
+        
+    if right < size and arr[right] > arr[largest]:
+        largest = right
+        
+    if largest != root:
+        temp = arr[root]
+        arr[root] = arr[largest]
+        arr[largest] = temp
+        heapify_int(arr, size, largest)

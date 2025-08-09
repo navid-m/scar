@@ -1,0 +1,5 @@
+fn test_func(ref int value) -> void:
+    print "%d\n" | value
+
+int x = 42
+test_func(x)
