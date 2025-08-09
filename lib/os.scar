@@ -46,3 +46,14 @@ pub fn tempdir() -> char*:
         }
         return temp ? strdup(temp) : NULL;
     )
+
+pub fn get_args() -> list[string]:
+    $raw (
+        extern int __global_argc;
+        extern char** __global_argv;
+        
+        for (int _i = 0; _i < __global_argc && _i < _max_size; _i++) {
+            strcpy(_output_array[_i], __global_argv[_i]);
+        }
+        return __global_argc;
+    )

@@ -132,6 +132,8 @@ func RenderC(program *lexer.Program, baseDir string) string {
 #include <stdint.h>
 
 int _exception = 0;
+int __global_argc = 0;
+char** __global_argv = NULL;
 
 bool __check_string_key_exists(char keys[][256], int size, char* key) {
     for (int i = 0; i < size; i++) {
@@ -300,7 +302,9 @@ bool __check_key_exists(int* keys, int size, int key) {
 		generateTopLevelFunctionImplementation(&b, funcDecl, program)
 	}
 
-	b.WriteString("int main() {\n")
+	b.WriteString("int main(int argc, char** argv) {\n")
+	b.WriteString("    __global_argc = argc;\n")
+	b.WriteString("    __global_argv = argv;\n")
 
 	for _, module := range lexer.LoadedModules {
 		for varName, varDecl := range module.PublicVars {

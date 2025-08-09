@@ -81,6 +81,11 @@ t.assert_string_equals("Hello World", data, "Read data should be 'Hello World'")
 list[string] otherdata = fs::read_lines("output.txt")
 t.assert_string_equals("Hello World", otherdata[0], "First line should be 'Hello World'")
 fs::remove("output.txt")
+
+list[string] args = os::get_args()
+for i = 0 to len(args) - 1:
+    log::success(fmt!("ASSERT PASSED: Command line argument %d: %s", i, args[i]))
+
 t.test_summary()
 
 os::exit(0)

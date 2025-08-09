@@ -888,7 +888,7 @@ print "Area: {}", result`
 			t.Errorf("Found invalid pattern '%s' in generated C code", pattern)
 		}
 	}
-	if !strings.Contains(result, "int main() {") {
+	if !strings.Contains(result, "int main(int argc, char** argv) {") {
 		t.Error("Expected main function declaration not found")
 	}
 	if !strings.Contains(result, "return 0;") {
@@ -1866,7 +1866,7 @@ func TestFunctionHoisting(t *testing.T) {
 
 	// Verify the output contains the function prototype before the main function
 	prototypeIndex := strings.Index(cCode, "int calculate(int x);")
-	mainFuncIndex := strings.Index(cCode, "void main()")
+	mainFuncIndex := strings.Index(cCode, "int main(int argc, char** argv) {")
 	calculateFuncIndex := strings.Index(cCode, "int calculate(int x) {")
 
 	// The prototype should appear before both function implementations

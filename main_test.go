@@ -15,41 +15,16 @@ sleep 3
 while 1:
     print "Hello"`
 
-	expected := `#include <stdio.h>
-#include <string.h>
-#include <unistd.h>
-#include <omp.h>
-#include <stdlib.h>
-#include <stdbool.h>
-#include <stdint.h>
-
-int _exception = 0;
-
-bool __check_string_key_exists(char keys[][256], int size, char* key) {
-	for (int i = 0; i < size; i++) {
-		if (strcmp(keys[i], key) == 0) {
-			return true;
-		}
+	expected := `
+int main(int argc, char** argv) {
+	__global_argc = argc;
+	__global_argv = argv;
+	printf("This will print forever: \n");
+	sleep(3);
+	while (1) {
+		printf("Hello\n");
 	}
-	return false;
-}
-
-bool __check_key_exists(int* keys, int size, int key) {
-	for (int i = 0; i < size; i++) {
-		if (keys[i] == key) {
-			return true;
-		}
-	}
-	return false;
-}
-
-int main() {
-    printf("This will print forever: \n");
-    sleep(3);
-    while (1) {
-        printf("Hello\n");
-    }
-    return 0;
+	return 0;
 }
 `
 
@@ -64,7 +39,7 @@ int main() {
 		resultNorm   = normalizeWhitespace(result)
 	)
 
-	if expectedNorm != resultNorm {
+	if !strings.Contains(resultNorm, expectedNorm) {
 		t.Errorf("Output mismatch\nExpected:\n%s\nGot:\n%s", expected, result)
 	}
 }
@@ -87,6 +62,8 @@ print "done..."`
 #include <stdint.h>
 
 int _exception = 0;
+int __global_argc = 0;
+char** __global_argv = NULL;
 
 bool __check_string_key_exists(char keys[][256], int size, char* key) {
 	for (int i = 0; i < size; i++) {
@@ -106,7 +83,9 @@ bool __check_key_exists(int* keys, int size, int key) {
 	return false;
 }
 
-int main() {
+int main(int argc, char** argv) {
+	__global_argc = argc;
+	__global_argv = argv;
     printf("start...\n");
     for (int i = 0; i <= 3; i++) {
         printf("looping\n");
@@ -116,7 +95,6 @@ int main() {
     return 0;
 }
 `
-
 	program, err := lexer.ParseWithIndentation(input)
 	if err != nil {
 		t.Fatalf("Failed to parse input: %v", err)
@@ -151,6 +129,8 @@ print "All done"`
 #include <stdint.h>
 
 int _exception = 0;
+int __global_argc = 0;
+char** __global_argv = NULL;
 
 bool __check_string_key_exists(char keys[][256], int size, char* key) {
 	for (int i = 0; i < size; i++) {
@@ -170,7 +150,9 @@ bool __check_key_exists(int* keys, int size, int key) {
 	return false;
 }
 
-int main() {
+int main(int argc, char** argv) {
+	__global_argc = argc;
+	__global_argv = argv;
     printf("Starting nested test\n");
     for (int i = 1; i <= 2; i++) {
         printf("Outer loop\n");

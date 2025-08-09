@@ -50,7 +50,7 @@ print "The age was %d" | age`
 			t.Errorf("Expected method call '%s' not found in generated C code.\nGenerated code:\n%s", expectedCall, result)
 		}
 	}
-	mainFunctionStart := strings.Index(result, "int main() {")
+	mainFunctionStart := strings.Index(result, "int main(int argc, char** argv) {")
 	if mainFunctionStart == -1 {
 		t.Fatal("main function not found in generated C code")
 	}
