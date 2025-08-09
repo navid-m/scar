@@ -58,7 +58,7 @@ t.assert_equals(6, strings::length(random::uuid(7)), "UUID length should be 6 ch
 log::success(fmt!("ASSERT PASSED: Generated UUID: %s", random::uuid(12)))
 log::success(fmt!("ASSERT PASSED: Random number between 1 and 10: %d", random::num(1, 10)))
 log::success(fmt!("ASSERT PASSED: Random float between 0.0 and 111.0: %f", random::float_range(0.0, 111.0)))
-log::success(fmt!("ASSERT PASSED: Random float between 0 and 1: %f", random::floatb(0.0, 1.0)))
+log::success(fmt!("ASSERT PASSED: Random float between 0 and 1: %f", random::floatb()))
 log::success(fmt!("ASSERT PASSED: Current timestamp: %d", time::timestamp()))
 log::success(fmt!("ASSERT PASSED: Current time: %s", time::format_date(time::now())))
 
