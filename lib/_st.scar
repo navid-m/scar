@@ -10,6 +10,7 @@ import "std/time"
 import "std/fs"
 import "std/hash"
 import "std/sort"
+import "std/io"
 
 # Setup
 var list = new collections::ArrayList(4)
