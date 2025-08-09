@@ -58,6 +58,14 @@ func main() {
 		log.Fatal(err)
 	}
 
+	validationErrors := lexer.ValidateProgram(program)
+	if len(validationErrors) > 0 {
+		for _, err := range validationErrors {
+			fmt.Fprintf(os.Stderr, "\033[31m%v\033[0m\n", err)
+		}
+		log.Fatal("Failed to compile.")
+	}
+
 	cCode := preprocessor.InsertMacros(renderer.RenderC(program, baseDir))
 
 	if *asm {

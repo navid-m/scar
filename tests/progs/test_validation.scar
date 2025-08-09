@@ -1,0 +1,7 @@
+fn add(int a, int b) -> int:
+    return a + b
+
+fn main():
+    # Should trigger a validation error - add expects 2 args, but provided 3
+    int result = add(5, 3, 2)
+    fmt("Result: {}\n", result)
