@@ -14,6 +14,88 @@ import (
 	"strings"
 )
 
+// RemoveComments removes both full-line and inline comments from source code
+// but preserves comments inside $raw blocks (for C preprocessor directives)
+func RemoveComments(source string) string {
+	var result strings.Builder
+	inString := false
+	inRawBlock := false
+	rawParenDepth := 0
+	lineStart := 0
+
+	for i := 0; i < len(source); i++ {
+		if source[i] == '"' && (i == 0 || source[i-1] != '\\') {
+			inString = !inString
+		}
+
+		// Check for $raw block start
+		if !inString && i+6 < len(source) && source[i:i+6] == "$raw (" {
+			inRawBlock = true
+			rawParenDepth = 1
+			// Skip ahead past "$raw ("
+			for j := 0; j < 6; j++ {
+				result.WriteByte(source[i+j])
+			}
+			i += 5 // Will be incremented by 1 in the loop
+			continue
+		}
+
+		// Track parentheses depth inside $raw blocks
+		if inRawBlock && !inString {
+			if source[i] == '(' {
+				rawParenDepth++
+			} else if source[i] == ')' {
+				rawParenDepth--
+				if rawParenDepth == 0 {
+					inRawBlock = false
+				}
+			}
+		}
+
+		if source[i] == '\n' {
+			lineStart = i + 1
+		}
+
+		// Only remove comments if we're not in a raw block
+		if !inString && !inRawBlock && source[i] == '#' {
+			// Check if this is a full-line comment (only whitespace before #)
+			isFullLineComment := true
+			for j := lineStart; j < i; j++ {
+				if source[j] != ' ' && source[j] != '\t' && source[j] != '\r' {
+					isFullLineComment = false
+					break
+				}
+			}
+
+			if isFullLineComment {
+				// Skip the entire line for full-line comments
+				for i < len(source) && source[i] != '\n' {
+					i++
+				}
+				if i < len(source) {
+					result.WriteByte('\n') // Keep the newline
+				}
+				lineStart = i + 1
+				continue
+			} else {
+				// For inline comments, skip from # to end of line
+				for i < len(source) && source[i] != '\n' {
+					i++
+				}
+				// Don't skip the newline character, let it be processed normally
+				if i < len(source) {
+					i-- // Back up one so the newline gets processed in the next iteration
+				}
+				continue
+			}
+		}
+
+		result.WriteByte(source[i])
+	}
+
+	return result.String()
+}
+
 func parseAllImports(lines []string, startLine int) ([]*ImportStmt, error) {
 	var imports []*ImportStmt
 	line := strings.TrimSpace(lines[startLine])
@@ -55,17 +137,6 @@ func parseAllImports(lines []string, startLine int) ([]*ImportStmt, error) {
 	}
 
 	return imports, nil
-}
-
-func isNumericType(typeName string) bool {
-	numericTypes := map[string]bool{
-		"u16": true, "u32": true, "u64": true,
-		"i16": true, "i32": true, "i64": true,
-		"f32": true, "f64": true,
-		"int": true, "float": true, "double": true,
-		"bool": true, "char": true, "string": true,
-	}
-	return numericTypes[typeName]
 }
 
 func parseTryCatchStatement(lines []string, lineNum, currentIndent int) (*Statement, int, error) {
@@ -709,7 +780,10 @@ func LoadModule(moduleName string, baseDir string) (*ModuleInfo, error) {
 		return nil, fmt.Errorf("failed to read module '%s': %v", moduleName, err)
 	}
 
-	program, err := ParseWithIndentation(ReplaceDoubleColonsOutsideStrings(string(data)))
+	// Remove comments from the imported module source
+	sourceWithoutComments := RemoveComments(string(data))
+
+	program, err := ParseWithIndentation(ReplaceDoubleColonsOutsideStrings(sourceWithoutComments))
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse module '%s': %v", moduleName, err)
 	}

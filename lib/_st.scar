@@ -8,6 +8,8 @@ import "std/random"
 import "std/log"
 import "std/time"
 import "std/fs"
+import "std/hash"
+import "std/sort"
 
 # Setup
 var list = new collections::ArrayList(4)
