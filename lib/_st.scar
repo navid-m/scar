@@ -68,7 +68,6 @@ strList.add_element("hello")
 strList.add_element("world")
 strList.add_element("scar")
 
-# -1 is lost in the generated C.
 i32 max = strList.get_size() - 1
 
 for i = 0 to max:

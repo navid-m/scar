@@ -1,4 +1,4 @@
-pub fn exec(string command) -> int:
+pub fn exec(string command) -> i64:
     $raw (
         return system(command);
     )
