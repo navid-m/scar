@@ -99,6 +99,12 @@ func (av *ArgumentValidator) ValidateFunctionCall(funcCall *FunctionCallStmt, li
 			line, funcName, expectedCount, actualCount)
 	}
 
+	for _, arg := range funcCall.Args {
+		if err := av.ValidateStringFunctionCall(arg, line); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -139,12 +145,20 @@ func (av *ArgumentValidator) ValidateStringFunctionCall(expr string, line int) e
 	funcName := strings.TrimSpace(expr[:parenStart])
 	argsStr := strings.TrimSpace(expr[parenStart+1 : parenEnd])
 	args := parseArguments(argsStr)
-
 	tempCall := &FunctionCallStmt{
 		Name: funcName,
 		Args: args,
 	}
-	return av.ValidateFunctionCall(tempCall, line)
+	if err := av.ValidateFunctionCall(tempCall, line); err != nil {
+		return err
+	}
+	for _, arg := range args {
+		if err := av.ValidateStringFunctionCall(arg, line); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 // Parses function arguments while respecting nested parentheses
@@ -241,22 +255,22 @@ func ValidateProgram(program *Program) []error {
 // Validates function calls in a statement and its nested statements
 func validateStatementRecursive(stmt *Statement, validator *ArgumentValidator, line int) []error {
 	var errors []error
+
 	if stmt.FunctionCall != nil {
 		if err := validator.ValidateFunctionCall(stmt.FunctionCall, line); err != nil {
 			errors = append(errors, err)
 		}
-	}
-	if stmt.MethodCall != nil {
+	} else if stmt.MethodCall != nil {
 		if err := validator.ValidateMethodCall(stmt.MethodCall, line); err != nil {
 			errors = append(errors, err)
 		}
-	}
-	if stmt.VarDecl != nil && stmt.VarDecl.Value != "" {
-		if err := validator.ValidateStringFunctionCall(stmt.VarDecl.Value, line); err != nil {
-			errors = append(errors, err)
+	} else if stmt.VarDecl != nil {
+		if stmt.VarDecl.Value != "" {
+			if err := validator.ValidateStringFunctionCall(stmt.VarDecl.Value, line); err != nil {
+				errors = append(errors, err)
+			}
 		}
-	}
-	if stmt.VarAssign != nil {
+	} else if stmt.VarAssign != nil {
 		if err := validator.ValidateStringFunctionCall(stmt.VarAssign.Value, line); err != nil {
 			errors = append(errors, err)
 		}
