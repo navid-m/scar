@@ -52,6 +52,26 @@ pub class UnitTest:
     fn assert_false(bool condition, string message) -> void:
         this.assert(!condition, message)
 
+    fn assert_int_list_equals(ref list[int] expected, ref list[int] actual, string message) -> void:
+        this.tests_run = this.tests_run + 1
+        
+        if len(expected) != len(actual):
+            this.tests_failed = this.tests_failed + 1
+            print "\033[0;31mASSERT FAILED: %s (Expected list length %d, got %d)\033[0m" | message, len(expected), len(actual)
+            return
+        
+        bool lists_equal = true
+        for i = 0 to len(expected) - 1:
+            if expected[i] != actual[i]:
+                lists_equal = false
+                break
+        
+        if !lists_equal:
+            this.tests_failed = this.tests_failed + 1
+            print "\033[0;31mASSERT FAILED: %s (Lists are not equal)\033[0m" | message
+        else:
+            print "\033[0;32mASSERT PASSED: %s\033[0m" | message
+
     fn test_summary() -> void:
         print "\nTests run: %d, Failures: %d" | this.tests_run, this.tests_failed
         if this.tests_failed == 0:

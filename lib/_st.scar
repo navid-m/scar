@@ -90,8 +90,9 @@ for i = 0 to len(args) - 1:
 list[int] nums = [5, 10, 2, 20, 14, 12]
 
 nums = sort::sort_int_list(nums)
-for i = 0 to len(nums) - 1:
-    print "%d" | nums[i]
+
+list[int] expected = [2, 5, 10, 12, 14, 20]
+t.assert_int_list_equals(expected, nums, "Sorted list should be [2, 5, 10, 12, 14, 20]")
 
 t.test_summary()
 
