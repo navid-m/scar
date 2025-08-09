@@ -94,6 +94,12 @@ nums = sort::sort_int_list(nums)
 
 t.assert_int_list_equals(expected, nums, "Sorted list should be [2, 5, 10, 12, 14, 20]")
 
+int x = strings::ord("H")
+t.assert_equals(72, x, "ord('H') should return 72")
+
+# char c = strings::chr(72)
+# t.assert_equals("H", c, "chr(72) should return 'H'")
+
 t.test_summary()
 
 os::exit(0)

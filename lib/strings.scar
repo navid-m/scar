@@ -7,3 +7,23 @@ pub fn compare(string a, string b) -> int:
     $raw (
         return strcmp(a, b);
     )
+
+pub fn ord(string str) -> int:
+    $raw (
+        if (str == NULL || str[0] == '\0') {
+            return 0;
+        }
+        return (int)str[0];
+    )
+
+pub fn chr(int ascii_value) -> string:
+    $raw (
+        static char result[2];
+        if (ascii_value < 0 || ascii_value > 255) {
+            result[0] = '\0';
+        } else {
+            result[0] = (char)ascii_value;
+            result[1] = '\0';
+        }
+        return result;
+    )
