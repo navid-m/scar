@@ -1674,23 +1674,47 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			listType := mapTypeToCType(stmt.ListDecl.Type)
 			listName := lexer.ResolveSymbol(stmt.ListDecl.Name, currentModule)
 			globalArrays[stmt.ListDecl.Name] = stmt.ListDecl.Type
-			if stmt.ListDecl.Type == "string" {
-				fmt.Fprintf(b, "%s%s %s[%d][256];\n", indent, "char", listName, len(stmt.ListDecl.Elements))
-			} else {
-				fmt.Fprintf(b, "%s%s %s[%d];\n", indent, listType, listName, len(stmt.ListDecl.Elements))
-			}
-			for i, elem := range stmt.ListDecl.Elements {
-				elem = lexer.ResolveSymbol(elem, currentModule)
+
+			// Check if this is a list assignment from another variable
+			if len(stmt.ListDecl.Elements) == 1 && !strings.Contains(stmt.ListDecl.Elements[0], ",") &&
+				!strings.HasPrefix(stmt.ListDecl.Elements[0], "\"") && !strings.HasSuffix(stmt.ListDecl.Elements[0], "\"") &&
+				!isNumericOrBoolean(stmt.ListDecl.Elements[0]) {
+				// This is likely a variable assignment (e.g., list[int] sorted_list = input_list)
+				sourceVar := lexer.ResolveSymbol(stmt.ListDecl.Elements[0], currentModule)
+
 				if stmt.ListDecl.Type == "string" {
-					if !strings.HasPrefix(elem, "\"") && !strings.HasSuffix(elem, "\"") {
-						elem = fmt.Sprintf("\"%s\"", elem)
-					}
-					fmt.Fprintf(b, "%sstrcpy(%s[%d], %s);\n", indent, listName, i, elem)
+					fmt.Fprintf(b, "%s%s %s[1000][256];\n", indent, "char", listName)
+					fmt.Fprintf(b, "%sint %s_len = %s_len;\n", indent, listName, sourceVar)
+					fmt.Fprintf(b, "%sfor (int i = 0; i < %s_len; i++) {\n", indent, sourceVar)
+					fmt.Fprintf(b, "%s    strcpy(%s[i], %s[i]);\n", indent, listName, sourceVar)
+					fmt.Fprintf(b, "%s}\n", indent)
 				} else {
-					fmt.Fprintf(b, "%s%s[%d] = %s;\n", indent, listName, i, elem)
+					fmt.Fprintf(b, "%s%s %s[1000];\n", indent, listType, listName)
+					fmt.Fprintf(b, "%sint %s_len = %s_len;\n", indent, listName, sourceVar)
+					fmt.Fprintf(b, "%sfor (int i = 0; i < %s_len; i++) {\n", indent, sourceVar)
+					fmt.Fprintf(b, "%s    %s[i] = %s[i];\n", indent, listName, sourceVar)
+					fmt.Fprintf(b, "%s}\n", indent)
 				}
+			} else {
+				// Traditional list declaration with elements
+				if stmt.ListDecl.Type == "string" {
+					fmt.Fprintf(b, "%s%s %s[%d][256];\n", indent, "char", listName, len(stmt.ListDecl.Elements))
+				} else {
+					fmt.Fprintf(b, "%s%s %s[%d];\n", indent, listType, listName, len(stmt.ListDecl.Elements))
+				}
+				for i, elem := range stmt.ListDecl.Elements {
+					elem = lexer.ResolveSymbol(elem, currentModule)
+					if stmt.ListDecl.Type == "string" {
+						if !strings.HasPrefix(elem, "\"") && !strings.HasSuffix(elem, "\"") {
+							elem = fmt.Sprintf("\"%s\"", elem)
+						}
+						fmt.Fprintf(b, "%sstrcpy(%s[%d], %s);\n", indent, listName, i, elem)
+					} else {
+						fmt.Fprintf(b, "%s%s[%d] = %s;\n", indent, listName, i, elem)
+					}
+				}
+				fmt.Fprintf(b, "%sint %s_len = %d;\n", indent, listName, len(stmt.ListDecl.Elements))
 			}
-			fmt.Fprintf(b, "%sint %s_len = %d;\n", indent, listName, len(stmt.ListDecl.Elements))
 		case stmt.ObjectDecl != nil:
 			varName := lexer.ResolveSymbol(stmt.ObjectDecl.Name, currentModule)
 			typeName := stmt.ObjectDecl.Type
@@ -3030,6 +3054,9 @@ func generateTopLevelFunctionImplementation(b *strings.Builder, funcDecl *lexer.
 			if param.Type == "string" {
 				paramType = "char*"
 			}
+			if param.IsRef {
+				paramType = paramType + "*"
+			}
 			paramList = append(paramList, fmt.Sprintf("%s %s", paramType, paramName))
 		}
 	}
@@ -3177,6 +3204,9 @@ func generateFunctionPrototype(funcDecl *lexer.TopLevelFuncDeclStmt) string {
 		} else {
 			if param.Type == "string" {
 				paramType = "char*"
+			}
+			if param.IsRef {
+				paramType = paramType + "*"
 			}
 			paramList = append(paramList, fmt.Sprintf("%s %s", paramType, paramName))
 		}

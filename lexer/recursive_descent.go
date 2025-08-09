@@ -365,6 +365,17 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 				FunctionCall: value,
 			}}, lineNum + 1, nil
 		}
+
+		// Handle list assignment from another variable (e.g., list[int] sorted_list = input_list)
+		if !strings.HasPrefix(value, "[") && !strings.Contains(value, "(") && !strings.Contains(value, ")") {
+			// This is a simple variable assignment, create a list declaration with reference to the source variable
+			return &Statement{ListDecl: &ListDeclStmt{
+				Type:     listType,
+				Name:     listName,
+				Elements: []string{value}, // Store the source variable name as the only element
+			}}, lineNum + 1, nil
+		}
+
 		elementsStart := strings.Index(line, "[")
 		secondBracketPos := strings.Index(line[elementsStart+1:], "[")
 		if secondBracketPos != -1 {
