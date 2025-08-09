@@ -917,6 +917,26 @@ func functionReturnsString(funcName string) bool {
 	return false
 }
 
+func functionReturnsList(funcName string) (bool, string) {
+	var returnType string
+	if funcDecl, exists := globalFunctions[funcName]; exists {
+		returnType = funcDecl.ReturnType
+	} else {
+		for _, module := range lexer.LoadedModules {
+			if funcDecl, exists := module.PublicFuncs[funcName]; exists {
+				returnType = funcDecl.ReturnType
+				break
+			}
+		}
+	}
+
+	if strings.HasPrefix(returnType, "list[") && strings.HasSuffix(returnType, "]") {
+		innerType := strings.TrimPrefix(strings.TrimSuffix(returnType, "]"), "list[")
+		return true, innerType
+	}
+	return false, ""
+}
+
 func parseFunctionCall(funcCall string) (string, []string) {
 	parenIndex := strings.Index(funcCall, "(")
 	if parenIndex == -1 {
@@ -1673,6 +1693,34 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 					}
 				} else {
 					if isFunctionCall(value) {
+						if _, isListVar := globalArrays[varName]; isListVar {
+							funcName, args := parseFunctionCall(value)
+							resolvedFuncName := lexer.ResolveSymbol(funcName, currentModule)
+							if returnsListType, _ := functionReturnsList(resolvedFuncName); returnsListType {
+								resolvedArgs := make([]string, len(args))
+								for i, arg := range args {
+									resolvedArgs[i] = lexer.ResolveSymbol(arg, currentModule)
+								}
+
+								// For functions that return lists, we need to pass:
+								//
+								// 1. Output array (same as varName)
+								// 2. Max size (1000)
+								// 3. All resolved args with their lengths if they are lists
+								var callArgs []string
+								callArgs = append(callArgs, varName)
+								callArgs = append(callArgs, "1000")
+								for _, arg := range resolvedArgs {
+									callArgs = append(callArgs, arg)
+									if _, isListArg := globalArrays[arg]; isListArg {
+										callArgs = append(callArgs, arg+"_len")
+									}
+								}
+
+								fmt.Fprintf(b, "%s%s_len = %s(%s);\n", indent, varName, resolvedFuncName, strings.Join(callArgs, ", "))
+								break
+							}
+						}
 						value = resolveFunctionCall(value)
 					}
 					fmt.Fprintf(b, "%s%s = %s;\n", indent, varName, value)
@@ -1682,23 +1730,16 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			listName := lexer.ResolveSymbol(stmt.IndexAssign.ListName, currentModule)
 			index := stmt.IndexAssign.Index
 			value := stmt.IndexAssign.Value
-
-			// Resolve symbols in index and value
 			index = lexer.ResolveSymbol(index, currentModule)
 			value = lexer.ResolveSymbol(value, currentModule)
-
-			// Apply any necessary transformations
 			value = fixFloatCastGranular(value)
 			value = convertThisReferencesGranular(value)
-
-			// Generate C code for index assignment
 			fmt.Fprintf(b, "%s%s[%s] = %s;\n", indent, listName, index, value)
+
 		case stmt.ListDecl != nil:
 			listType := mapTypeToCType(stmt.ListDecl.Type)
 			listName := lexer.ResolveSymbol(stmt.ListDecl.Name, currentModule)
 			globalArrays[stmt.ListDecl.Name] = stmt.ListDecl.Type
-
-			// Check if this is a list assignment from another variable
 			if len(stmt.ListDecl.Elements) == 1 && !strings.Contains(stmt.ListDecl.Elements[0], ",") &&
 				!strings.HasPrefix(stmt.ListDecl.Elements[0], "\"") && !strings.HasSuffix(stmt.ListDecl.Elements[0], "\"") &&
 				!isNumericOrBoolean(stmt.ListDecl.Elements[0]) {
