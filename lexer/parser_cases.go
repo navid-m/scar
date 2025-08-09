@@ -292,17 +292,23 @@ func parsePubClassStatement(lines []string, lineNum, currentIndent int) (*Statem
 						for paramStr := range paramList {
 							paramStr = strings.TrimSpace(paramStr)
 							paramParts := strings.Fields(paramStr)
-							if len(paramParts) == 2 {
-								param := &MethodParameter{
-									Type: paramParts[0],
-									Name: paramParts[1],
-								}
+
+							param := &MethodParameter{}
+
+							if len(paramParts) >= 3 && paramParts[0] == "ref" {
+								param.IsRef = true
+								param.Type = paramParts[1]
+								param.Name = paramParts[2]
+								parameters = append(parameters, param)
+							} else if len(paramParts) == 2 {
+								param.Type = paramParts[0]
+								param.Name = paramParts[1]
+								param.IsRef = false
 								parameters = append(parameters, param)
 							} else if len(paramParts) == 1 {
-								param := &MethodParameter{
-									Type: "int",
-									Name: paramParts[0],
-								}
+								param.Type = "int"
+								param.Name = paramParts[0]
+								param.IsRef = false
 								parameters = append(parameters, param)
 							}
 						}
@@ -416,7 +422,6 @@ func parseClassStatement(lines []string, lineNum, currentIndent int) (*Statement
 
 							param := &MethodParameter{}
 
-							// Handle ref parameters
 							if len(paramParts) >= 3 && paramParts[0] == "ref" {
 								param.IsRef = true
 								param.Type = paramParts[1]
@@ -517,10 +522,21 @@ func parseTopLevelFunctionStatement(lines []string, lineNum, currentIndent int) 
 				return nil, lineNum + 1, fmt.Errorf("invalid parameter format at line %d", lineNum+1)
 			}
 
-			paramType := paramParts[0]
-			paramName := paramParts[1]
+			var paramType, paramName string
+			var isRef bool = false
 			isList := false
 			listType := ""
+
+			if len(paramParts) >= 3 && paramParts[0] == "ref" {
+				isRef = true
+				paramType = paramParts[1]
+				paramName = paramParts[2]
+			} else if len(paramParts) == 2 {
+				paramType = paramParts[0]
+				paramName = paramParts[1]
+			} else {
+				return nil, lineNum + 1, fmt.Errorf("invalid parameter format at line %d", lineNum+1)
+			}
 
 			if strings.HasPrefix(paramType, "list[") && strings.HasSuffix(paramType, "]") {
 				isList = true
@@ -537,6 +553,7 @@ func parseTopLevelFunctionStatement(lines []string, lineNum, currentIndent int) 
 				IsList:   isList,
 				ListType: listType,
 				Name:     paramName,
+				IsRef:    isRef,
 			})
 		}
 	}
@@ -611,17 +628,23 @@ func parseMethodStatement(lines []string, lineNum, currentIndent int) (*MethodDe
 		for paramStr := range paramList {
 			paramStr = strings.TrimSpace(paramStr)
 			paramParts := strings.Fields(paramStr)
-			if len(paramParts) == 2 {
-				param := &MethodParameter{
-					Type: paramParts[0],
-					Name: paramParts[1],
-				}
+
+			param := &MethodParameter{}
+
+			if len(paramParts) >= 3 && paramParts[0] == "ref" {
+				param.IsRef = true
+				param.Type = paramParts[1]
+				param.Name = paramParts[2]
+				parameters = append(parameters, param)
+			} else if len(paramParts) == 2 {
+				param.Type = paramParts[0]
+				param.Name = paramParts[1]
+				param.IsRef = false
 				parameters = append(parameters, param)
 			} else if len(paramParts) == 1 {
-				param := &MethodParameter{
-					Type: "int",
-					Name: paramParts[0],
-				}
+				param.Type = "int"
+				param.Name = paramParts[0]
+				param.IsRef = false
 				parameters = append(parameters, param)
 			}
 		}
@@ -887,17 +910,23 @@ func parsePubFunctionStatement(lines []string, lineNum, currentIndent int) (*Sta
 		for paramStr := range paramList {
 			paramStr = strings.TrimSpace(paramStr)
 			paramParts := strings.Fields(paramStr)
-			if len(paramParts) == 2 {
-				param := &MethodParameter{
-					Type: paramParts[0],
-					Name: paramParts[1],
-				}
+
+			param := &MethodParameter{}
+
+			if len(paramParts) >= 3 && paramParts[0] == "ref" {
+				param.IsRef = true
+				param.Type = paramParts[1]
+				param.Name = paramParts[2]
+				parameters = append(parameters, param)
+			} else if len(paramParts) == 2 {
+				param.Type = paramParts[0]
+				param.Name = paramParts[1]
+				param.IsRef = false
 				parameters = append(parameters, param)
 			} else if len(paramParts) == 1 {
-				param := &MethodParameter{
-					Type: "int",
-					Name: paramParts[0],
-				}
+				param.Type = "int"
+				param.Name = paramParts[0]
+				param.IsRef = false
 				parameters = append(parameters, param)
 			}
 		}
