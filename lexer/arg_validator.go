@@ -26,7 +26,12 @@ func NewArgumentValidator() *ArgumentValidator {
 }
 
 // Registers a function signature for validation
-func (av *ArgumentValidator) RegisterFunction(name string, params []*MethodParameter, returnType string, module string) {
+func (av *ArgumentValidator) RegisterFunction(
+	name string,
+	params []*MethodParameter,
+	returnType string,
+	module string,
+) {
 	signature := &FunctionSignature{
 		Name:       name,
 		Parameters: params,
