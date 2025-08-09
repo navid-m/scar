@@ -1394,7 +1394,7 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				} else {
 					fmt.Fprintf(b, "%s    %s %s = %s_keys[__i];\n", indent, varType, varName, resolvedMapName)
 				}
-			} else { // values
+			} else {
 				if stmt.Foreach.VarType == "string" {
 					fmt.Fprintf(b, "%s    %s* %s = %s_values[__i];\n", indent, varType, varName, resolvedMapName)
 				} else {
