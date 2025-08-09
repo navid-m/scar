@@ -41,6 +41,7 @@ type Statement struct {
 	Continue             *ContinueStmt
 	VarDecl              *VarDeclStmt
 	VarAssign            *VarAssignStmt
+	IndexAssign          *IndexAssignStmt
 	ListDecl             *ListDeclStmt
 	ClassDecl            *ClassDeclStmt
 	EnumDecl             *EnumDeclStmt
@@ -268,6 +269,12 @@ type VarDeclStmt struct {
 type VarAssignStmt struct {
 	Name  string
 	Value string
+}
+
+type IndexAssignStmt struct {
+	ListName string
+	Index    string
+	Value    string
 }
 
 type ListDeclStmt struct {

@@ -1670,6 +1670,21 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 					fmt.Fprintf(b, "%s%s = %s;\n", indent, varName, value)
 				}
 			}
+		case stmt.IndexAssign != nil:
+			listName := lexer.ResolveSymbol(stmt.IndexAssign.ListName, currentModule)
+			index := stmt.IndexAssign.Index
+			value := stmt.IndexAssign.Value
+
+			// Resolve symbols in index and value
+			index = lexer.ResolveSymbol(index, currentModule)
+			value = lexer.ResolveSymbol(value, currentModule)
+
+			// Apply any necessary transformations
+			value = fixFloatCastGranular(value)
+			value = convertThisReferencesGranular(value)
+
+			// Generate C code for index assignment
+			fmt.Fprintf(b, "%s%s[%s] = %s;\n", indent, listName, index, value)
 		case stmt.ListDecl != nil:
 			listType := mapTypeToCType(stmt.ListDecl.Type)
 			listName := lexer.ResolveSymbol(stmt.ListDecl.Name, currentModule)

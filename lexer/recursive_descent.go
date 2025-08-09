@@ -341,6 +341,7 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 			Pairs:     pairs,
 		}}, lineNum + 1, nil
 	}
+
 	parts := strings.Fields(strings.TrimSuffix(line, ":"))
 
 	if strings.HasPrefix(parts[0], "list[") && strings.Contains(parts[0], "]") {
@@ -1081,6 +1082,10 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 			}
 
 			value := strings.TrimSpace(line[eqIndex+1:])
+
+			if strings.HasSuffix(value, ";") {
+				value = strings.TrimSpace(value[:len(value)-1])
+			}
 			if strings.Contains(value, ".") && strings.Contains(value, "(") && strings.Contains(value, ")") && !strings.HasPrefix(value, "new ") {
 				dotIndex := strings.Index(value, ".")
 				parenIndex := strings.Index(value, "(")
@@ -1111,14 +1116,52 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 					}}, lineNum + 1, nil
 				}
 			}
-
 			if strings.Contains(varName, "[") && strings.Contains(varName, "]") {
-				value = handleIndexAssignment(line, varName, value)
+				bracketStart := strings.Index(varName, "[")
+				bracketEnd := strings.LastIndex(varName, "]")
+
+				if bracketStart == -1 || bracketEnd == -1 || bracketEnd <= bracketStart {
+					return nil, lineNum + 1, fmt.Errorf("invalid index assignment format at line %d", lineNum+1)
+				}
+
+				listName := strings.TrimSpace(varName[:bracketStart])
+				index := strings.TrimSpace(varName[bracketStart+1 : bracketEnd])
+
+				return &Statement{IndexAssign: &IndexAssignStmt{
+					ListName: listName,
+					Index:    index,
+					Value:    value,
+				}}, lineNum + 1, nil
 			} else if strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"") {
 				value = value[1 : len(value)-1]
 			}
 
 			return &Statement{VarAssign: &VarAssignStmt{Name: varName, Value: value}}, lineNum + 1, nil
+		}
+		if strings.Contains(line, "=") && (strings.Contains(line, "[") && strings.Contains(line, "]")) {
+			eqIndex := strings.Index(line, "=")
+			if eqIndex > 0 && eqIndex < len(line)-1 {
+				varName := strings.TrimSpace(line[:eqIndex])
+				value := strings.TrimSpace(line[eqIndex+1:])
+				if strings.HasSuffix(value, ";") {
+					value = strings.TrimSpace(value[:len(value)-1])
+				}
+				if strings.Contains(varName, "[") && strings.Contains(varName, "]") {
+					bracketStart := strings.Index(varName, "[")
+					bracketEnd := strings.LastIndex(varName, "]")
+
+					if bracketStart != -1 && bracketEnd != -1 && bracketEnd > bracketStart {
+						listName := strings.TrimSpace(varName[:bracketStart])
+						index := strings.TrimSpace(varName[bracketStart+1 : bracketEnd])
+
+						return &Statement{IndexAssign: &IndexAssignStmt{
+							ListName: listName,
+							Index:    index,
+							Value:    value,
+						}}, lineNum + 1, nil
+					}
+				}
+			}
 		}
 
 		if strings.HasPrefix(parts[0], "this.") && len(parts) >= 3 && parts[1] == "=" {
