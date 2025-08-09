@@ -84,14 +84,119 @@ pub class StringArrayList:
             this->data = realloc(this->data, this->capacity * sizeof(char*));
         )
 
-# Example usage:
+pub class FloatArrayList:
+    init(i32 initial_capacity):
+        this.size = 0
+        this.capacity = initial_capacity
+        ref f32 this.data = nil
+        $raw (
+            this->data = malloc(this->capacity * sizeof(float));
+        )
+    
+    fn add_element(f32 value) -> void:
+        if this.size >= this.capacity:
+            this.resize()
+        $raw (
+            ((f32*)this->data)[this->size] = value;
+        )
+        this.size = this.size + 1
+    
+    fn get_element(i32 index) -> f32:
+        if index < 0 || index >= this.size:
+            return 0.0
+        $raw (
+            return ((f32*)this->data)[index];
+        )
+    
+    fn set_element(i32 index, f32 value) -> void:
+        if index >= 0 && index < this.size:
+            $raw (
+                ((f32*)this->data)[index] = value;
+            )
+    
+    fn get_size() -> i32:
+        return this.size
+    
+    fn resize() -> void:
+        this.capacity = this.capacity * 2
+        $raw (
+            this->data = realloc(this->data, this->capacity * sizeof(float));
+        )
 
-# var list = new ArrayList(4)
+pub class CharArrayList:
+    init(i32 initial_capacity):
+        this.size = 0
+        this.capacity = initial_capacity
+        ref char this.data = nil
+        $raw (
+            this->data = malloc(this->capacity * sizeof(char));
+        )
+    
+    fn add_element(char value) -> void:
+        if this.size >= this.capacity:
+            this.resize()
+        $raw (
+            ((char*)this->data)[this->size] = value;
+        )
+        this.size = this.size + 1
+    
+    fn get_element(i32 index) -> char:
+        if index < 0 || index >= this.size:
+            return '\0'
+        $raw (
+            return ((char*)this->data)[index];
+        )
+    
+    fn set_element(i32 index, char value) -> void:
+        if index >= 0 && index < this.size:
+            $raw (
+                ((char*)this->data)[index] = value;
+            )
+    
+    fn get_size() -> i32:
+        return this.size
+    
+    fn resize() -> void:
+        this.capacity = this.capacity * 2
+        $raw (
+            this->data = realloc(this->data, this->capacity * sizeof(char));
+        )
 
-# list.add_element(10)
-# list.add_element(20)
-# list.add_element(30)
-
-# for i = 0 to list.get_size() - 1:
-#     int val = list.get_element(i)
-#     print "Element %d = %d" | i, val
+pub class BooleanArrayList:
+    init(i32 initial_capacity):
+        this.size = 0
+        this.capacity = initial_capacity
+        ref bool this.data = nil
+        $raw (
+            this->data = malloc(this->capacity * sizeof(bool));
+        )
+    
+    fn add_element(bool value) -> void:
+        if this.size >= this.capacity:
+            this.resize()
+        $raw (
+            ((bool*)this->data)[this->size] = value;
+        )
+        this.size = this.size + 1
+    
+    fn get_element(i32 index) -> bool:
+        if index < 0 || index >= this.size:
+            return false
+        $raw (
+            return ((bool*)this->data)[index];
+        )
+    
+    fn set_element(i32 index, bool value) -> void:
+        if index >= 0 && index < this.size:
+            $raw (
+                ((bool*)this->data)[index] = value;
+            )
+    
+    fn get_size() -> i32:
+        return this.size
+    
+    fn resize() -> void:
+        this.capacity = this.capacity * 2
+        $raw (
+            this->data = realloc(this->data, this->capacity * sizeof(bool));
+        )
