@@ -10,11 +10,6 @@ pub fn remove(string path) -> bool:
         return unlink(path) == 0;
     )
 
-pub fn create_directory(string path) -> bool:
-    $raw (
-        return mkdir(path) == 0;
-    )
-
 pub fn read_lines(string filename) -> list[string]:
     $raw (
         char** lines_temp = malloc(1000 * sizeof(char*));

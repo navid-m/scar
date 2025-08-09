@@ -12,7 +12,7 @@ pub fn fnv1a(string data) -> i32:
     return hash
 
 ## FNV-1a hash with 64-bit output (returns as string to avoid overflow)
-pub fn fnv1a_64(string data) -> string:
+pub fn fnv1a_64(ref string data) -> void:
     $raw (
         static char result[32];
         uint64_t hash = 14695981039346656037ULL;  // FNV-1a 64-bit offset basis
@@ -24,7 +24,6 @@ pub fn fnv1a_64(string data) -> string:
         }
         
         sprintf(result, "%llu", (unsigned long long)hash);
-        return result;
     )
 
 pub fn djb2(string data) -> i32:
