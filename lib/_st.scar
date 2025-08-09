@@ -88,10 +88,10 @@ for i = 0 to len(args) - 1:
     log::success(fmt!("ASSERT PASSED: Command line argument %d: %s", i, args[i]))
 
 list[int] nums = [5, 10, 2, 20, 14, 12]
+list[int] expected = [2, 5, 10, 12, 14, 20]
 
 nums = sort::sort_int_list(nums)
 
-list[int] expected = [2, 5, 10, 12, 14, 20]
 t.assert_int_list_equals(expected, nums, "Sorted list should be [2, 5, 10, 12, 14, 20]")
 
 t.test_summary()
