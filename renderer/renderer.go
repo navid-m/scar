@@ -26,6 +26,7 @@ var (
 	globalVars       = make(map[string]*lexer.PubVarDeclStmt)
 	currentModule    = ""
 	currentClassName = ""
+	currentFunction  *lexer.TopLevelFuncDeclStmt
 	primitiveTypes   = map[string]string{
 		"int":    "int",
 		"float":  "float",
@@ -341,6 +342,14 @@ func resolveLenFunctionCalls(expression string) string {
 		if _, exists := globalArrays[arrayName]; exists {
 			return arrayName + "_len"
 		}
+		if currentFunction != nil {
+			for _, param := range currentFunction.Parameters {
+				if param.Name == arrayName && (param.IsList || strings.HasPrefix(param.Type, "list[")) {
+					return arrayName + "_len"
+				}
+			}
+		}
+
 		return match
 	})
 	return result
@@ -1496,8 +1505,7 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			value = processHasExpressions(value, program)
 			value = fixFloatCastGranular(value)
 			value = resolveImportedSymbols(value, program.Imports)
-
-			fmt.Printf("Debug: VarDecl var %s, value %s, type %s\n", varName, value, stmt.VarDecl.Type)
+			value = resolveLenFunctionCalls(value)
 
 			if strings.HasPrefix(varName, "this.") {
 				fieldName := varName[5:]
@@ -3020,11 +3028,14 @@ func convertSingleMethodCall(expr string) string {
 }
 
 func generateTopLevelFunctionImplementation(b *strings.Builder, funcDecl *lexer.TopLevelFuncDeclStmt, program *lexer.Program) {
-	returnType := "int" // Default to int for list functions (return array length)
+	currentFunction = funcDecl
+	defer func() { currentFunction = nil }()
 
-	// Handle list return types
+	// This means return array length.
+	returnType := "int"
+
 	if strings.HasPrefix(funcDecl.ReturnType, "list[") && strings.HasSuffix(funcDecl.ReturnType, "]") {
-		returnType = "int" // Return the length of the array
+		returnType = "int"
 	} else if funcDecl.ReturnType != "" && funcDecl.ReturnType != "void" {
 		if funcDecl.ReturnType == "string" {
 			returnType = "void"
@@ -3039,7 +3050,6 @@ func generateTopLevelFunctionImplementation(b *strings.Builder, funcDecl *lexer.
 
 	paramList := make([]string, 0)
 
-	// Handle list return types - add output array parameters
 	if strings.HasPrefix(funcDecl.ReturnType, "list[") && strings.HasSuffix(funcDecl.ReturnType, "]") {
 		innerType := strings.TrimPrefix(strings.TrimSuffix(funcDecl.ReturnType, "]"), "list[")
 		if innerType == "string" {
@@ -3058,7 +3068,7 @@ func generateTopLevelFunctionImplementation(b *strings.Builder, funcDecl *lexer.
 			paramType = mapTypeToCType(param.Type)
 			paramName = param.Name
 		)
-		if param.IsList {
+		if param.IsList || strings.HasPrefix(param.Type, "list[") {
 			if param.Type == "string" {
 				paramList = append(paramList, fmt.Sprintf("char %s[][256]", paramName))
 			} else {
@@ -3209,7 +3219,7 @@ func generateFunctionPrototype(funcDecl *lexer.TopLevelFuncDeclStmt) string {
 		paramType := mapTypeToCType(param.Type)
 		paramName := param.Name
 
-		if param.IsList {
+		if param.IsList || strings.HasPrefix(param.Type, "list[") {
 			if param.Type == "string" {
 				paramList = append(paramList, fmt.Sprintf("char %s[][256]", paramName))
 			} else {
