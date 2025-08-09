@@ -1696,8 +1696,10 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				} else {
 					if isFunctionCall(value) {
 						if _, isListVar := globalArrays[varName]; isListVar {
-							funcName, args := parseFunctionCall(value)
-							resolvedFuncName := lexer.ResolveSymbol(funcName, currentModule)
+							var (
+								funcName, args   = parseFunctionCall(value)
+								resolvedFuncName = lexer.ResolveSymbol(funcName, currentModule)
+							)
 							if returnsListType, _ := functionReturnsList(resolvedFuncName); returnsListType {
 								resolvedArgs := make([]string, len(args))
 								for i, arg := range args {
