@@ -41,13 +41,37 @@ func (av *ArgumentValidator) RegisterFunction(name string, params []*MethodParam
 }
 
 func (av *ArgumentValidator) ValidateFunctionCall(funcCall *FunctionCallStmt, line int) error {
-	signature, exists := av.functions[funcCall.Name]
+	funcName := funcCall.Name
+	signature, exists := av.functions[funcName]
 	if !exists {
 		for name, sig := range av.functions {
-			if strings.HasSuffix(name, "_"+funcCall.Name) || strings.HasSuffix(name, "::"+funcCall.Name) {
+			if name == funcName {
 				signature = sig
 				exists = true
 				break
+			}
+			if strings.Contains(name, "::") {
+				parts := strings.Split(name, "::")
+				if len(parts) == 2 && parts[1] == funcName {
+					signature = sig
+					exists = true
+					break
+				}
+			}
+			if strings.Contains(funcName, "::") {
+				callParts := strings.Split(funcName, "::")
+				if len(callParts) == 2 {
+					if name == callParts[1] {
+						signature = sig
+						exists = true
+						break
+					}
+					if name == callParts[0]+"_"+callParts[1] {
+						signature = sig
+						exists = true
+						break
+					}
+				}
 			}
 		}
 	}
@@ -55,6 +79,7 @@ func (av *ArgumentValidator) ValidateFunctionCall(funcCall *FunctionCallStmt, li
 	if !exists {
 		return nil
 	}
+
 	expectedCount := 0
 	for range signature.Parameters {
 		expectedCount++
@@ -64,7 +89,7 @@ func (av *ArgumentValidator) ValidateFunctionCall(funcCall *FunctionCallStmt, li
 
 	if actualCount != expectedCount {
 		return fmt.Errorf("line %d: function '%s' expects %d arguments, but %d were provided",
-			line, funcCall.Name, expectedCount, actualCount)
+			line, funcName, expectedCount, actualCount)
 	}
 
 	return nil
@@ -75,18 +100,39 @@ func (av *ArgumentValidator) ValidateMethodCall(methodCall *MethodCallStmt, line
 	return nil
 }
 
+func findMatchingParen(expr string, openPos int) int {
+	if openPos >= len(expr) || expr[openPos] != '(' {
+		return -1
+	}
+
+	parenCount := 1
+	for i := openPos + 1; i < len(expr); i++ {
+		switch expr[i] {
+		case '(':
+			parenCount++
+		case ')':
+			parenCount--
+			if parenCount == 0 {
+				return i
+			}
+		}
+	}
+	return -1
+}
+
 func (av *ArgumentValidator) ValidateStringFunctionCall(expr string, line int) error {
 	if !strings.Contains(expr, "(") || !strings.Contains(expr, ")") {
 		return nil
 	}
 	parenStart := strings.Index(expr, "(")
-	parenEnd := strings.LastIndex(expr, ")")
+	parenEnd := findMatchingParen(expr, parenStart)
 	if parenStart == -1 || parenEnd == -1 || parenEnd < parenStart {
 		return nil
 	}
 	funcName := strings.TrimSpace(expr[:parenStart])
 	argsStr := strings.TrimSpace(expr[parenStart+1 : parenEnd])
 	args := parseArguments(argsStr)
+
 	tempCall := &FunctionCallStmt{
 		Name: funcName,
 		Args: args,
@@ -135,6 +181,21 @@ func parseArguments(argsStr string) []string {
 func ValidateProgram(program *Program) []error {
 	validator := NewArgumentValidator()
 	var errors []error
+
+	for _, stmt := range program.Statements {
+		if stmt.Import != nil {
+			_, err := LoadModule(stmt.Import.Module, "")
+			if err != nil {
+				continue
+			}
+		}
+	}
+	for _, imp := range program.Imports {
+		_, err := LoadModule(imp.Module, "")
+		if err != nil {
+			continue
+		}
+	}
 
 	for _, stmt := range program.Statements {
 		if stmt.TopLevelFuncDecl != nil {

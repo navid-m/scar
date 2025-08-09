@@ -1127,10 +1127,7 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 				if parenEnd > parenStart+1 {
 					argsStr := strings.TrimSpace(line[parenStart+1 : parenEnd])
 					if argsStr != "" {
-						argsList := strings.SplitSeq(argsStr, ",")
-						for arg := range argsList {
-							args = append(args, strings.TrimSpace(arg))
-						}
+						args = parseArgumentsRespectingNesting(argsStr)
 					}
 				}
 
@@ -1407,4 +1404,40 @@ func splitMapPairs(input string) []string {
 		pairs = append(pairs, pair)
 	}
 	return pairs
+}
+
+func parseArgumentsRespectingNesting(argsStr string) []string {
+	if strings.TrimSpace(argsStr) == "" {
+		return []string{}
+	}
+
+	var args []string
+	var current strings.Builder
+	parenDepth := 0
+
+	for _, char := range argsStr {
+		switch char {
+		case '(':
+			parenDepth++
+			current.WriteRune(char)
+		case ')':
+			parenDepth--
+			current.WriteRune(char)
+		case ',':
+			if parenDepth == 0 {
+				args = append(args, strings.TrimSpace(current.String()))
+				current.Reset()
+			} else {
+				current.WriteRune(char)
+			}
+		default:
+			current.WriteRune(char)
+		}
+	}
+
+	if current.Len() > 0 {
+		args = append(args, strings.TrimSpace(current.String()))
+	}
+
+	return args
 }
