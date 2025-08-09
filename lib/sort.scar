@@ -52,22 +52,3 @@ fn merge_int(ref i32 arr, i32 left, i32 mid, i32 right) -> void:
         free(left_arr);
         free(right_arr);
     )
-
-## Heapify function for heap sort
-fn heapify_int(ref i32 arr, i32 size, i32 root) -> void:
-    i32 largest = root
-    i32 left = 2 * root + 1
-    i32 right = 2 * root + 2
-    i32 temp = 0
-    
-    if left < size and arr[left] > arr[largest]:
-        largest = left
-        
-    if right < size and arr[right] > arr[largest]:
-        largest = right
-        
-    if largest != root:
-        temp = arr[root]
-        arr[root] = arr[largest]
-        arr[largest] = temp
-        heapify_int(arr, size, largest)
