@@ -16,6 +16,9 @@ pub fn ord(string str) -> int:
         return (int)str[0];
     )
 
+pub fn ord_char(char c) -> int:
+    return (int)c;
+
 pub fn chr(int ascii_value) -> char*:
     $raw (
         char result[2];

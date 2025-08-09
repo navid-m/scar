@@ -1,8 +1,13 @@
-string test_string = "hello"
+# import "std/strings"
 
-print "Iterating through string: %s" | test_string
+# string test_string = "hello"
 
-foreach (char z in test_string):
-    print "Character: %c" | z
+# print "Iterating through string: %s" | test_string
 
-print "Done iterating"
+# foreach (char z in test_string):
+#     print "Character: %c" | z
+#     int char_code = strings::ord_char(z)
+#     print "Character code: %d" | char_code
+
+
+# print "Done iterating"

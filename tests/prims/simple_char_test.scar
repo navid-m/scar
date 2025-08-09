@@ -1,0 +1,5 @@
+# import "std/strings"
+
+# char test_char = 'A'
+# print "Character: %c" | test_char
+# print "Character code: %d" | strings::ord_char(test_char)
