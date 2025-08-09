@@ -46,8 +46,10 @@ func (av *ArgumentValidator) RegisterFunction(
 }
 
 func (av *ArgumentValidator) ValidateFunctionCall(funcCall *FunctionCallStmt, line int) error {
-	funcName := funcCall.Name
-	signature, exists := av.functions[funcName]
+	var (
+		funcName          = funcCall.Name
+		signature, exists = av.functions[funcName]
+	)
 	if !exists {
 		for name, sig := range av.functions {
 			if name == funcName {
