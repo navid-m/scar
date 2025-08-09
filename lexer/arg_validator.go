@@ -220,6 +220,9 @@ func ValidateProgram(program *Program) []error {
 
 	for _, stmt := range program.Statements {
 		if stmt.TopLevelFuncDecl != nil {
+			if stmt.TopLevelFuncDecl.Name == "main" {
+				errors = append(errors, fmt.Errorf("function name 'main' is reserved and cannot be used. use top-level statements."))
+			}
 			validator.RegisterFunction(
 				stmt.TopLevelFuncDecl.Name,
 				stmt.TopLevelFuncDecl.Parameters,
@@ -228,6 +231,9 @@ func ValidateProgram(program *Program) []error {
 			)
 		}
 		if stmt.PubTopLevelFuncDecl != nil {
+			if stmt.PubTopLevelFuncDecl.Name == "main" {
+				errors = append(errors, fmt.Errorf("function name 'main' is reserved and cannot be used. use top-level statements."))
+			}
 			validator.RegisterFunction(
 				stmt.PubTopLevelFuncDecl.Name,
 				stmt.PubTopLevelFuncDecl.Parameters,
