@@ -102,7 +102,7 @@ string c = strings::chr(72)
 t.assert_string_equals("H", c, "chr(72) should return 'H'")
 
 t.assert_string_equals("Hello", strings::trim_space("   Hello   "), "Trimmed string should be 'Hello'")
-t.assert_string_equals("Hello", strings::trim_prefix("HelloWorld", "World"), "Trimmed prefix should be 'Hello'")
+t.assert_string_equals("sdf", strings::trim_prefix("asdf", "a"), "Trimmed prefix should be 'sdf'")
 
 t.test_summary()
 
