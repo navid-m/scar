@@ -1,0 +1,9 @@
+import "std/io"
+
+parallel:
+    print "Task 1 running"
+    print "Task 2 running"
+    for i = 0 to 5:
+        print "Loop iteration: %d" | i
+
+print "After parallel block"
