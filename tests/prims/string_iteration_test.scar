@@ -1,0 +1,8 @@
+string test_string = "hello"
+
+print "Iterating through string: %s" | test_string
+
+foreach (char z in test_string):
+    print "Character: %c" | z
+
+print "Done iterating"

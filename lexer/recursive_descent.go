@@ -811,8 +811,18 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 
 		varType := varParts[0]
 		varName := varParts[1]
-		if !strings.HasSuffix(collection, ".keys") && !strings.HasSuffix(collection, ".values") {
-			return nil, lineNum + 1, fmt.Errorf("foreach statement collection must be 'mapname.keys' or 'mapname.values' at line %d", lineNum+1)
+
+		// Check if it's a valid collection type: map.keys, map.values, or string variable
+		isMapCollection := strings.HasSuffix(collection, ".keys") || strings.HasSuffix(collection, ".values")
+		isStringCollection := !isMapCollection // For now, assume any other identifier is a string variable
+
+		if !isMapCollection && !isStringCollection {
+			return nil, lineNum + 1, fmt.Errorf("foreach statement collection must be 'mapname.keys', 'mapname.values', or a string variable at line %d", lineNum+1)
+		}
+
+		// For string iteration, ensure the variable type is char
+		if isStringCollection && varType != "char" {
+			return nil, lineNum + 1, fmt.Errorf("foreach statement over string must use 'char' variable type at line %d", lineNum+1)
 		}
 		expectedBodyIndent := currentIndent + 4
 		if currentIndent == 0 {

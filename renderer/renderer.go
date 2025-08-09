@@ -1379,11 +1379,13 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				mapName = collection[:len(collection)-7]
 				accessType = "values"
 			} else {
-				// This should have been caught in fucking parsing, but just in case
-				fmt.Fprintf(b, "%s// Error: invalid foreach collection format\n", indent)
+				resolvedStringName := lexer.ResolveSymbol(collection, currentModule)
+				fmt.Fprintf(b, "%sfor (int __i = 0; __i < strlen(%s); __i++) {\n", indent, resolvedStringName)
+				fmt.Fprintf(b, "%s    %s %s = %s[__i];\n", indent, varType, varName, resolvedStringName)
+				renderStatements(b, stmt.Foreach.Body, indent+"    ", className, program, currentFunctionReturnType)
+				fmt.Fprintf(b, "%s}\n", indent)
 				break
 			}
-
 			resolvedMapName := lexer.ResolveSymbol(mapName, currentModule)
 			fmt.Fprintf(b, "%sfor (int __i = 0; __i < %s_size; __i++) {\n", indent, resolvedMapName)
 			if accessType == "keys" {
@@ -1399,8 +1401,6 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 					fmt.Fprintf(b, "%s    %s %s = %s_values[__i];\n", indent, varType, varName, resolvedMapName)
 				}
 			}
-
-			// Render the body
 			renderStatements(b, stmt.Foreach.Body, indent+"    ", className, program, currentFunctionReturnType)
 
 			fmt.Fprintf(b, "%s}\n", indent)
