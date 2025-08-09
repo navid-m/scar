@@ -62,8 +62,7 @@ func insertCstring(output string) string {
 }
 
 func insertSprintf(output string) string {
-	return "#define fmt(...) ({ char* __buf = NULL; int __n = snprintf(NULL, 0, __VA_ARGS__); if (__n >= 0) { __buf = malloc(__n + 1);" +
-		"if (__buf) snprintf(__buf, __n + 1, __VA_ARGS__); } __buf; })\n" + output
+	return "#define fmt(...) ({ static char __fmt_buf[256]; snprintf(__fmt_buf, 256, __VA_ARGS__); __fmt_buf; })\n" + output
 }
 
 func insertCat(output string) string {

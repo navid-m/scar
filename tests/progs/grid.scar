@@ -35,13 +35,12 @@ pub class GameOfLife:
             for y = 0 to this.height - 1:
                 bool alive = this.get(x, y)
                 int neighbors = this.count_neighbors(x, y)
-                string k = this.key(x, y)
                 if alive and (neighbors == 2 or neighbors == 3):
+                    string k = this.key(x, y)
                     put!(new_grid, k, true)
                 elif !alive and neighbors == 3:
+                    string k = this.key(x, y)
                     put!(new_grid, k, true)
-                else:
-                    put!(new_grid, k, false)
         this.grid = new_grid
 
     fn print_grid() -> void:

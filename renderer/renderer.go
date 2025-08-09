@@ -2025,7 +2025,12 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			}
 
 			fmt.Fprintf(b, "%sint %s_size = %d;\n", indent, mapName, mapSize)
-			generateMapAccessHelper(b, mapName, keyType, valueType)
+
+			if indent != "" {
+				generateLocalMapAccessHelper(b, mapName, keyType, valueType, indent)
+			} else {
+				generateMapAccessHelper(b, mapName, keyType, valueType)
+			}
 
 			if len(stmt.MapDecl.Pairs) > 0 {
 				for i, pair := range stmt.MapDecl.Pairs {
@@ -2653,10 +2658,87 @@ func generateMapAccessHelper(b *strings.Builder, mapName, keyType, valueType str
 	fmt.Fprintf(b, "}\n\n")
 }
 
+func generateLocalMapAccessHelper(b *strings.Builder, mapName, keyType, valueType string, indent string) {
+	var cKeyType string
+	switch keyType {
+	case "string":
+		cKeyType = "char*"
+	case "char":
+		cKeyType = "char"
+	default:
+		cKeyType = mapTypeToCType(keyType)
+	}
+	var cValueType string
+	switch valueType {
+	case "string":
+		cValueType = "char*"
+	case "char":
+		cValueType = "char"
+	default:
+		cValueType = mapTypeToCType(valueType)
+	}
+	helperName := fmt.Sprintf("__get_%s_value", mapName)
+	fmt.Fprintf(b, "%s%s %s(%s key) {\n", indent, cValueType, helperName, cKeyType)
+	fmt.Fprintf(b, "%s    for (int i = 0; i < %s_size; i++) {\n", indent, mapName)
+	if keyType == "string" {
+		fmt.Fprintf(b, "%s        if (strcmp(%s_keys[i], key) == 0) {\n", indent, mapName)
+	} else {
+		fmt.Fprintf(b, "%s        if (%s_keys[i] == key) {\n", indent, mapName)
+	}
+	fmt.Fprintf(b, "%s            return %s_values[i];\n", indent, mapName)
+	fmt.Fprintf(b, "%s        }\n", indent)
+	fmt.Fprintf(b, "%s    }\n", indent)
+	switch valueType {
+	case "string":
+		fmt.Fprintf(b, "%s    return \"\";\n", indent)
+	case "char":
+		fmt.Fprintf(b, "%s    return '\\0';\n", indent)
+	default:
+		fmt.Fprintf(b, "%s    return 0;\n", indent)
+	}
+	fmt.Fprintf(b, "%s}\n\n", indent)
+	if keyType == "string" {
+		fmt.Fprintf(b, "%schar* __get_%s_key_at(int index) {\n", indent, mapName)
+		fmt.Fprintf(b, "%s    if (index >= 0 && index < %s_size) {\n", indent, mapName)
+		fmt.Fprintf(b, "%s        return %s_keys[index];\n", indent, mapName)
+		fmt.Fprintf(b, "%s    }\n", indent)
+		fmt.Fprintf(b, "%s    return \"\";\n", indent)
+		fmt.Fprintf(b, "%s}\n\n", indent)
+	} else {
+		cKeyType := mapTypeToCType(keyType)
+		fmt.Fprintf(b, "%s%s __get_%s_key_at(int index) {\n", indent, cKeyType, mapName)
+		fmt.Fprintf(b, "%s    if (index >= 0 && index < %s_size) {\n", indent, mapName)
+		fmt.Fprintf(b, "%s        return %s_keys[index];\n", indent, mapName)
+		fmt.Fprintf(b, "%s    }\n", indent)
+		if keyType == "char" {
+			fmt.Fprintf(b, "%s    return '\\0';\n", indent)
+		} else {
+			fmt.Fprintf(b, "%s    return 0;\n", indent)
+		}
+		fmt.Fprintf(b, "%s}\n\n", indent)
+	}
+
+	fmt.Fprintf(b, "%sint __get_%s_size() {\n", indent, mapName)
+	fmt.Fprintf(b, "%s    return %s_size;\n", indent, mapName)
+	fmt.Fprintf(b, "%s}\n\n", indent)
+	fmt.Fprintf(b, "%sint __has_%s_key(%s key) {\n", indent, mapName, cKeyType)
+	fmt.Fprintf(b, "%s    for (int i = 0; i < %s_size; i++) {\n", indent, mapName)
+	if keyType == "string" {
+		fmt.Fprintf(b, "%s        if (strcmp(%s_keys[i], key) == 0) {\n", indent, mapName)
+	} else {
+		fmt.Fprintf(b, "%s        if (%s_keys[i] == key) {\n", indent, mapName)
+	}
+	fmt.Fprintf(b, "%s            return 1;\n", indent)
+	fmt.Fprintf(b, "%s        }\n", indent)
+	fmt.Fprintf(b, "%s    }\n", indent)
+	fmt.Fprintf(b, "%s    return 0;\n", indent)
+	fmt.Fprintf(b, "%s}\n\n", indent)
+}
+
 // Generates a C expression for accessing a map value by key
 func renderMapAccess(mapName, key string, program *lexer.Program) string {
-	if strings.HasPrefix(mapName, "this.") {
-		fieldName := strings.TrimPrefix(mapName, "this.")
+	if after, ok := strings.CutPrefix(mapName, "this."); ok {
+		fieldName := after
 		var keyType string
 		for _, s := range program.Statements {
 			if s.ClassDecl != nil && s.ClassDecl.Constructor != nil {
