@@ -486,7 +486,91 @@ func resolveFunctionCall(value string) string {
 	funcName := strings.TrimSpace(value[:parenIndex])
 	argsWithParens := value[parenIndex:]
 	resolvedFuncName := lexer.ResolveSymbol(funcName, currentModule)
+	if functionReturnsString(resolvedFuncName) {
+		tempBufferName := fmt.Sprintf("temp_str_buffer_%d", len(value)*31%1000) // Simple hash for uniqueness
+
+		args := argsWithParens[1 : len(argsWithParens)-1] // Remove parentheses
+		if strings.TrimSpace(args) == "" {
+			return fmt.Sprintf("({ char %s[256]; %s(%s); %s; })", tempBufferName, resolvedFuncName, tempBufferName, tempBufferName)
+		} else {
+			return fmt.Sprintf("({ char %s[256]; %s(%s, %s); %s; })", tempBufferName, resolvedFuncName, tempBufferName, args, tempBufferName)
+		}
+	}
+
 	return resolvedFuncName + argsWithParens
+}
+
+func processMethodArguments(args string) string {
+	if strings.TrimSpace(args) == "" {
+		return args
+	}
+	var processedArgs []string
+	var currentArg strings.Builder
+	parenDepth := 0
+	inQuotes := false
+
+	for i, char := range args {
+		switch char {
+		case '"':
+			if i == 0 || args[i-1] != '\\' {
+				inQuotes = !inQuotes
+			}
+			currentArg.WriteRune(char)
+		case '(':
+			if !inQuotes {
+				parenDepth++
+			}
+			currentArg.WriteRune(char)
+		case ')':
+			if !inQuotes {
+				parenDepth--
+			}
+			currentArg.WriteRune(char)
+		case ',':
+			if parenDepth == 0 && !inQuotes {
+				arg := strings.TrimSpace(currentArg.String())
+				processedArgs = append(processedArgs, processStringFunctionArg(arg))
+				currentArg.Reset()
+			} else {
+				currentArg.WriteRune(char)
+			}
+		default:
+			currentArg.WriteRune(char)
+		}
+	}
+	if currentArg.Len() > 0 {
+		arg := strings.TrimSpace(currentArg.String())
+		processedArgs = append(processedArgs, processStringFunctionArg(arg))
+	}
+
+	return strings.Join(processedArgs, ", ")
+}
+
+func processStringFunctionArg(arg string) string {
+	fmt.Printf("Debug: processStringFunctionArg called with: '%s'\n", arg)
+	if isFunctionCall(arg) {
+		parenIndex := strings.Index(arg, "(")
+		if parenIndex == -1 {
+			return arg
+		}
+		funcName := strings.TrimSpace(arg[:parenIndex])
+		resolvedFuncName := lexer.ResolveSymbol(funcName, currentModule)
+
+		fmt.Printf("Debug: Function call detected - funcName: '%s', resolvedFuncName: '%s'\n", funcName, resolvedFuncName)
+
+		if functionReturnsString(resolvedFuncName) {
+			fmt.Printf("Debug: Function returns string, transforming...\n")
+			argsStr := arg[parenIndex+1 : len(arg)-1]
+			tempBufferName := fmt.Sprintf("temp_str_buffer_%d", len(arg)*31%1000)
+			if strings.TrimSpace(argsStr) == "" {
+				return fmt.Sprintf("({ char %s[256]; %s(%s); %s; })", tempBufferName, resolvedFuncName, tempBufferName, tempBufferName)
+			} else {
+				return fmt.Sprintf("({ char %s[256]; %s(%s, %s); %s; })", tempBufferName, resolvedFuncName, tempBufferName, argsStr, tempBufferName)
+			}
+		}
+	}
+
+	return arg
 }
 
 func inferTypeFromValue(value string) string {
@@ -2004,9 +2088,40 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 		case stmt.MethodCall != nil:
 			objectName := stmt.MethodCall.Object
 			methodName := stmt.MethodCall.Method
-			args := make([]string, len(stmt.MethodCall.Args))
-			for i, arg := range stmt.MethodCall.Args {
-				args[i] = lexer.ResolveSymbol(arg, currentModule)
+			rawArgs := stmt.MethodCall.Args
+			reconstructedArgs := make([]string, 0, len(rawArgs))
+			i := 0
+
+			for i < len(rawArgs) {
+				arg := rawArgs[i]
+
+				if strings.Contains(arg, "(") && !strings.Contains(arg, ")") {
+					parenPos := strings.Index(arg, "(")
+					if parenPos > 0 {
+						beforeParen := arg[:parenPos]
+						if strings.Contains(beforeParen, "::") || isValidIdentifier(beforeParen) {
+							reconstructed := arg
+							j := i + 1
+							for j < len(rawArgs) && !strings.Contains(reconstructed, ")") {
+								reconstructed += ", " + rawArgs[j]
+								j++
+							}
+
+							reconstructedArgs = append(reconstructedArgs, reconstructed)
+							i = j
+							continue
+						}
+					}
+				}
+
+				reconstructedArgs = append(reconstructedArgs, arg)
+				i++
+			}
+
+			args := make([]string, len(reconstructedArgs))
+			for i, arg := range reconstructedArgs {
+				resolvedArg := lexer.ResolveSymbol(arg, currentModule)
+				args[i] = processStringFunctionArg(resolvedArg)
 			}
 			argsStr := strings.Join(args, ", ")
 
@@ -3100,7 +3215,9 @@ func convertSingleMethodCall(expr string) string {
 	if args == "" {
 		return fmt.Sprintf("%s_%s(%s)", resolvedClassName, methodName, resolvedObjectName)
 	}
-	return fmt.Sprintf("%s_%s(%s, %s)", resolvedClassName, methodName, resolvedObjectName, args)
+
+	processedArgs := processMethodArguments(args)
+	return fmt.Sprintf("%s_%s(%s, %s)", resolvedClassName, methodName, resolvedObjectName, processedArgs)
 }
 
 func generateTopLevelFunctionImplementation(b *strings.Builder, funcDecl *lexer.TopLevelFuncDeclStmt, program *lexer.Program) {

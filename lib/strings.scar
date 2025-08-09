@@ -30,3 +30,56 @@ pub fn chr(int ascii_value) -> char*:
         }
         return strdup(result);
     )
+
+pub fn trim_space(string str) -> string:
+    $raw (
+        if (str == NULL) {
+            strcpy(_output_buffer, "");
+            return;
+        }
+        char *start = str;
+        char *end = str + strlen(str) - 1;
+        while (*start && (*start == ' ' || *start == '\t' || *start == '\n' || *start == '\r')) {
+            start++;
+        }
+        while (end > start && (*end == ' ' || *end == '\t' || *end == '\n' || *end == '\r')) {
+            end--;
+        }
+        size_t len = end - start + 1;
+        strncpy(_output_buffer, start, len);
+        _output_buffer[len] = '\0';
+    )
+
+pub fn trim_prefix(string str, string prefix) -> string:
+    $raw (
+        if (str == NULL || prefix == NULL) {
+            strcpy(_output_buffer, str ? str : "");
+            return;
+        }
+        size_t prefix_len = strlen(prefix);
+        size_t str_len = strlen(str);
+        if (str_len >= prefix_len && strncmp(str, prefix, prefix_len) == 0) {
+            strcpy(_output_buffer, str + prefix_len);
+        } else {
+            strcpy(_output_buffer, str);
+        }
+    )
+
+pub fn trim_suffix(string str, string suffix) -> string:
+    $raw (
+        if (str == NULL || suffix == NULL) {
+            return str ? str : "";
+        }
+        
+        size_t suffix_len = strlen(suffix);
+        size_t str_len = strlen(str);
+        if (str_len >= suffix_len && strcmp(str + str_len - suffix_len, suffix) == 0) {
+            size_t result_len = str_len - suffix_len;
+            char buffer[256];
+            strncpy(buffer, str, result_len);
+            buffer[result_len] = '\0';
+            return buffer;
+        } else {
+            return str;
+        }
+    )
