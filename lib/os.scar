@@ -3,7 +3,7 @@ pub fn exec(string command) -> i64:
         return system(command);
     )
 
-pub fn exit(int code):
+pub fn exit(i64 code):
     $raw (
         exit(code);
     )
