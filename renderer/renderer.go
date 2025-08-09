@@ -1598,8 +1598,10 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				}
 			}
 		case stmt.VarAssign != nil:
-			varName := lexer.ResolveSymbol(stmt.VarAssign.Name, currentModule)
-			value := stmt.VarAssign.Value
+			var (
+				varName = lexer.ResolveSymbol(stmt.VarAssign.Name, currentModule)
+				value   = stmt.VarAssign.Value
+			)
 			value = fixFloatCastGranular(value)
 			value = convertThisReferencesGranular(value)
 			if strings.HasPrefix(varName, "this.") {
