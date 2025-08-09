@@ -1912,15 +1912,46 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				varType = inferTypeFromValue(stmt.VarDeclInferred.Value)
 				cType   = mapTypeToCType(varType)
 			)
+			if isFunctionCall(value) {
+				funcName, _ := parseFunctionCall(value)
+				resolvedFuncName := lexer.ResolveSymbol(funcName, currentModule)
+				if functionReturnsString(resolvedFuncName) {
+					varType = "string"
+					cType = "char"
+				}
+			}
+
 			if varType == "string" {
 				fmt.Fprintf(b, "%s%s %s[256];\n", indent, cType, varName)
 				if value != "" {
-					if !strings.HasPrefix(value, "\"") && !strings.HasSuffix(value, "\"") {
-						value = fmt.Sprintf("\"%s\"", value)
+					if isFunctionCall(value) {
+						funcName, args := parseFunctionCall(value)
+						resolvedFuncName := lexer.ResolveSymbol(funcName, currentModule)
+						if functionReturnsString(resolvedFuncName) {
+							if len(args) == 0 {
+								fmt.Fprintf(b, "%s%s(%s);\n", indent, resolvedFuncName, varName)
+							} else {
+								resolvedArgs := make([]string, len(args))
+								for i, arg := range args {
+									resolvedArgs[i] = lexer.ResolveSymbol(arg, currentModule)
+								}
+								fmt.Fprintf(b, "%s%s(%s, %s);\n", indent, resolvedFuncName, varName, strings.Join(resolvedArgs, ", "))
+							}
+						} else {
+							resolvedCall := resolveFunctionCall(value)
+							fmt.Fprintf(b, "%sstrcpy(%s, %s);\n", indent, varName, resolvedCall)
+						}
+					} else {
+						if !strings.HasPrefix(value, "\"") && !strings.HasSuffix(value, "\"") {
+							value = fmt.Sprintf("\"%s\"", value)
+						}
+						fmt.Fprintf(b, "%sstrcpy(%s, %s);\n", indent, varName, value)
 					}
-					fmt.Fprintf(b, "%sstrcpy(%s, %s);\n", indent, varName, value)
 				}
 			} else {
+				if isFunctionCall(value) {
+					value = resolveFunctionCall(value)
+				}
 				fmt.Fprintf(b, "%s%s %s = %s;\n", indent, cType, varName, value)
 			}
 		case stmt.VarDeclRead != nil:
