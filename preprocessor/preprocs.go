@@ -30,6 +30,7 @@ func InsertMacros(output string) string {
 	if strings.Contains(output, "cat") {
 		outp = insertCat(outp)
 	}
+	outp = fixCustomClassReturnTypes(outp)
 	if strings.Contains(output, "this.") {
 		outp = replaceOutsideStringLiterals(outp, "this.", "this->")
 	}
@@ -135,4 +136,35 @@ func replaceOutsideStringLiterals(code, target, replacement string) string {
 		}
 	}
 	return result.String()
+}
+
+func fixCustomClassReturnTypes(output string) string {
+	lines := strings.Split(output, "\n")
+	customClasses := make(map[string]bool)
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.Contains(trimmed, "_new(") {
+			re := regexp.MustCompile(`^(\w+)\*\s+(\w+)_new\(`)
+			if matches := re.FindStringSubmatch(trimmed); len(matches) > 2 {
+				className := matches[1]
+				if className == matches[2] {
+					customClasses[className] = true
+				}
+			}
+		}
+	}
+	for i, line := range lines {
+		re := regexp.MustCompile(`^(\s*)(\w+)\s+(\w+)\s*=\s*(\w+\([^)]*\));(.*)$`)
+		if matches := re.FindStringSubmatch(line); len(matches) > 5 {
+			indent := matches[1]
+			className := matches[2]
+			varName := matches[3]
+			functionCall := matches[4]
+			rest := matches[5]
+			if customClasses[className] {
+				lines[i] = indent + className + "* " + varName + " = " + functionCall + ";" + rest
+			}
+		}
+	}
+	return strings.Join(lines, "\n")
 }

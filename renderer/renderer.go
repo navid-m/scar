@@ -1052,7 +1052,6 @@ func parseFunctionCall(funcCall string) (string, []string) {
 
 func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent string, className string, program *lexer.Program, currentFunctionReturnType string) {
 	if className != "" {
-		fmt.Printf("Debug: renderStatements - className: '%s'\n", className)
 		currentClassName = className
 	}
 
@@ -1748,7 +1747,8 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 					if isFunctionCall(value) {
 						value = resolveFunctionCall(value)
 					}
-					fmt.Fprintf(b, "%s%s %s = %s;\n", indent, varType, varName, value)
+					cType := mapTypeToCType(varType)
+					fmt.Fprintf(b, "%s%s %s = %s;\n", indent, cType, varName, value)
 				}
 			}
 		case stmt.VarAssign != nil:
@@ -2030,9 +2030,11 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				os.Exit(1)
 			}
 			if argsStr == "" {
-				fmt.Fprintf(b, "%s%s %s = %s_%s(%s);\n", indent, varType, varName, resolvedClassName, methodName, objectName)
+				cType := mapTypeToCType(varType)
+				fmt.Fprintf(b, "%s%s %s = %s_%s(%s);\n", indent, cType, varName, resolvedClassName, methodName, objectName)
 			} else {
-				fmt.Fprintf(b, "%s%s %s = %s_%s(%s, %s);\n", indent, varType, varName, resolvedClassName, methodName, objectName, argsStr)
+				cType := mapTypeToCType(varType)
+				fmt.Fprintf(b, "%s%s %s = %s_%s(%s, %s);\n", indent, cType, varName, resolvedClassName, methodName, objectName, argsStr)
 			}
 		case stmt.VarAssignMethodCall != nil:
 			varName := lexer.ResolveSymbol(stmt.VarAssignMethodCall.Name, currentModule)
@@ -3554,9 +3556,17 @@ func isEnumType(typeName string) bool {
 	return exists
 }
 
+func isCustomClassType(typeName string) bool {
+	_, exists := globalClasses[typeName]
+	return exists
+}
+
 func mapTypeToCType(mapType string) string {
 	if isEnumType(mapType) {
 		return mapType
+	}
+	if isCustomClassType(mapType) {
+		return mapType + "*"
 	}
 	switch mapType {
 	case "int", "i32", "i32*":
