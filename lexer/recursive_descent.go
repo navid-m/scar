@@ -271,7 +271,7 @@ func parseEnumDeclaration(lines []string, startLine, indentLevel int) (*Statemen
 	nextLine := startLine + 1
 	if strings.Contains(line, "{") && strings.Contains(line, "}") {
 		valuesStr := line[strings.Index(line, "{")+1 : strings.Index(line, "}")]
-		for _, val := range strings.Split(valuesStr, ",") {
+		for val := range strings.SplitSeq(valuesStr, ",") {
 			val = strings.TrimSpace(val)
 			if val != "" {
 				values = append(values, val)
