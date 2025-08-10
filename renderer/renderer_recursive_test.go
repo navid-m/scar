@@ -84,13 +84,14 @@ func TestRecursiveClassMethods(t *testing.T) {
 		},
 	}
 
-	cCode := RenderC(program, "", false)
+	var (
+		cCode       = RenderC(program, "", false)
+		protoA      = "void RecursiveTest_methodA(RecursiveTest* this, int n);"
+		protoB      = "void RecursiveTest_methodB(RecursiveTest* this, int n);"
+		protoAIndex = strings.Index(cCode, protoA)
+		protoBIndex = strings.Index(cCode, protoB)
+	)
 
-	protoA := "void RecursiveTest_methodA(RecursiveTest* this, int n);"
-	protoB := "void RecursiveTest_methodB(RecursiveTest* this, int n);"
-
-	protoAIndex := strings.Index(cCode, protoA)
-	protoBIndex := strings.Index(cCode, protoB)
 	if protoAIndex == -1 {
 		t.Error("Method A prototype not found in generated code")
 	}
