@@ -558,6 +558,12 @@ func processMethodArguments(args string) string {
 
 func convertPropertyAccess(expr string) string {
 	fmt.Printf("Debug: convertPropertyAccess called with: '%s'\n", expr)
+
+	if isNumericLiteral(expr) {
+		fmt.Printf("Debug: convertPropertyAccess - expression is a numeric literal, skipping conversion\n")
+		return expr
+	}
+
 	if strings.Contains(expr, ".") && !strings.Contains(expr, "(") {
 		fmt.Printf("Debug: convertPropertyAccess - passed dot and paren checks\n")
 		dotIndex := strings.Index(expr, ".")
@@ -566,6 +572,22 @@ func convertPropertyAccess(expr string) string {
 			fmt.Printf("Debug: convertPropertyAccess - passed dotIndex > 0 check\n")
 			objectName := expr[:dotIndex]
 			fmt.Printf("Debug: convertPropertyAccess - objectName: '%s'\n", objectName)
+
+			if isNumericLiteral(objectName) {
+				fmt.Printf("Debug: convertPropertyAccess - objectName is numeric, checking if full number literal\n")
+				numberEnd := dotIndex + 1
+				for numberEnd < len(expr) && unicode.IsDigit(rune(expr[numberEnd])) {
+					numberEnd++
+				}
+				if numberEnd < len(expr) && (expr[numberEnd] == ' ' || expr[numberEnd] == '*' || expr[numberEnd] == '/' || expr[numberEnd] == '+' || expr[numberEnd] == '-') {
+					potentialNumber := expr[:numberEnd]
+					if isNumericLiteral(potentialNumber) {
+						fmt.Printf("Debug: convertPropertyAccess - detected floating point number '%s' in expression, skipping conversion\n", potentialNumber)
+						return expr
+					}
+				}
+			}
+
 			if !strings.Contains(objectName, " ") && !strings.Contains(objectName, "\"") {
 				fmt.Printf("Debug: convertPropertyAccess - passed objectName checks\n")
 				originalExpr := expr
