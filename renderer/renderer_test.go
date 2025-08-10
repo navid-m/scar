@@ -2571,3 +2571,55 @@ func TestRenderCWithDifferentOldSchoolForLoop(t *testing.T) {
 		t.Errorf("Expected C code to contain '%s', but got '%s'", normalizedExpected, normalizedCCode)
 	}
 }
+
+func TestAllocateMemberVariable(t *testing.T) {
+	input := `class Buffer:
+    init:
+        int this.capacity = 10
+        int this.size = 0
+        ref int this.data = nil
+        allocate int this.data = this.capacity
+
+    fn set_capacity(int new_capacity):
+        if this.data != nil:
+            free this.data
+        this.capacity = new_capacity
+        this.size = 0
+        allocate int this.data = this.capacity
+
+Buffer buf = new Buffer()
+buf.set_capacity(20)
+`
+
+	program, err := lexer.ParseWithIndentation(input)
+	if err != nil {
+		t.Fatalf("Failed to parse input: %v", err)
+	}
+
+	result := RenderC(program, ".", false)
+
+	expectedInit := "this->data = (int*)malloc("
+	if !strings.Contains(result, expectedInit) {
+		t.Errorf("Expected C code to contain correct allocate syntax '%s', but it didn't. Generated code:\n%s", expectedInit, result)
+	}
+
+	expectedFree := "free(this"
+	if !strings.Contains(result, expectedFree) {
+		t.Errorf("Expected C code to contain free call '%s', but it didn't. Generated code:\n%s", expectedFree, result)
+	}
+
+	expectedCondition := "this->data != NULL"
+	if !strings.Contains(result, expectedCondition) {
+		t.Errorf("Expected C code to contain property access conversion '%s', but it didn't. Generated code:\n%s", expectedCondition, result)
+	}
+
+	invalidSyntax := "int* this->data ="
+	if strings.Contains(result, invalidSyntax) {
+		t.Errorf("Generated code contains invalid syntax '%s'. This indicates the allocate bug has regressed. Generated code:\n%s", invalidSyntax, result)
+	}
+
+	expectedAssignment := "this->data = (int*)malloc"
+	if !strings.Contains(result, expectedAssignment) {
+		t.Errorf("Expected C code to contain allocation assignment '%s', but it didn't. Generated code:\n%s", expectedAssignment, result)
+	}
+}
