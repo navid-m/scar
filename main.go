@@ -24,10 +24,11 @@ import (
 
 func main() {
 	flag.Usage = meta.ShowUsage
-	asm := flag.Bool("asm", false, "show assembly output")
-	c := flag.Bool("c", false, "show IL")
-	gc := flag.Bool("gc", false, "use Boehm's garbage collector for allocate/free")
-
+	var (
+		asm = flag.Bool("asm", false, "show assembly output")
+		c   = flag.Bool("c", false, "show c output")
+		gc  = flag.Bool("gc", false, "use bdwgc garbage collector")
+	)
 	flag.Parse()
 
 	if len(flag.Args()) < 1 {
@@ -104,7 +105,13 @@ func main() {
 	)
 
 	if *gc {
-		compileArgs = append(compileArgs, "-lgc")
+		if gcFlags := findBundledBoehm(); gcFlags != nil {
+			compileArgs = append(compileArgs, gcFlags...)
+		} else if gcFlags := tryPkgConfig("bdw-gc"); gcFlags != nil {
+			compileArgs = append(compileArgs, gcFlags...)
+		} else {
+			compileArgs = append(compileArgs, "-lgc")
+		}
 	}
 
 	switch runtime.GOOS {
@@ -119,7 +126,13 @@ func main() {
 			"-o", outputBinary,
 		}
 		if *gc {
-			compileArgs = append(compileArgs, "-lgc")
+			if gcFlags := findBundledBoehm(); gcFlags != nil {
+				compileArgs = append(compileArgs, gcFlags...)
+			} else if gcFlags := tryPkgConfig("bdw-gc"); gcFlags != nil {
+				compileArgs = append(compileArgs, gcFlags...)
+			} else {
+				compileArgs = append(compileArgs, "-lgc")
+			}
 		}
 	case "linux":
 		compileArgs = []string{
@@ -128,7 +141,13 @@ func main() {
 			"-o", outputBinary,
 		}
 		if *gc {
-			compileArgs = append(compileArgs, "-lgc")
+			if gcFlags := findBundledBoehm(); gcFlags != nil {
+				compileArgs = append(compileArgs, gcFlags...)
+			} else if gcFlags := tryPkgConfig("bdw-gc"); gcFlags != nil {
+				compileArgs = append(compileArgs, gcFlags...)
+			} else {
+				compileArgs = append(compileArgs, "-lgc")
+			}
 		}
 	case "windows":
 		cmpPath = "gcc"
@@ -140,7 +159,13 @@ func main() {
 			"-o", outputBinary,
 		}
 		if *gc {
-			compileArgs = append(compileArgs, "-lgc")
+			if gcFlags := findBundledBoehm(); gcFlags != nil {
+				compileArgs = append(compileArgs, gcFlags...)
+			} else if gcFlags := findMinGWBoehm(); gcFlags != nil {
+				compileArgs = append(compileArgs, gcFlags...)
+			} else {
+				compileArgs = append(compileArgs, "-lgc")
+			}
 		}
 	}
 
