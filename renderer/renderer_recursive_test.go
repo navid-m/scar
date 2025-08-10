@@ -99,8 +99,11 @@ func TestRecursiveClassMethods(t *testing.T) {
 	if protoBIndex == -1 {
 		t.Error("Method B prototype not found in generated code")
 	}
-	implAIndex := strings.Index(cCode, "void RecursiveTest_methodA(RecursiveTest* this, int n) {")
-	implBIndex := strings.Index(cCode, "void RecursiveTest_methodB(RecursiveTest* this, int n) {")
+
+	var (
+		implAIndex = strings.Index(cCode, "void RecursiveTest_methodA(RecursiveTest* this, int n) {")
+		implBIndex = strings.Index(cCode, "void RecursiveTest_methodB(RecursiveTest* this, int n) {")
+	)
 
 	if implAIndex != -1 && protoAIndex >= implAIndex {
 		t.Error("Method A prototype should appear before its implementation")
