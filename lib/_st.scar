@@ -114,4 +114,7 @@ string age = json::get_value(loaded, "age")
 string config = json::create_object("theme", "dark", "debug", "true")
 json::dump(config, "settings.json")
 
+fs::remove("user.json")
+fs::remove("settings.json")
+
 os::exit(0)
