@@ -1,0 +1,196 @@
+pub class Node:
+    init(int value):
+        int this.value = value
+        ref Node this.next = nil
+
+pub class LinkedList:
+    init:
+        ref Node this.head = nil
+        int this.size = 0
+
+    fn append(int value) -> void:
+        ref Node new_node = new Node(value)
+        
+        if this.head == nil:
+            this.head = new_node
+        else:
+            ref Node current = this.head
+            while current.next != nil:
+                current = current.next
+            current.next = new_node
+        
+        this.size = this.size + 1
+        print "Appended %d to list (size: %d)" | value, this.size
+
+    fn prepend(int value) -> void:
+        ref Node new_node = new Node(value)
+        new_node.next = this.head
+        this.head = new_node
+        this.size = this.size + 1
+        print "Prepended %d to list (size: %d)" | value, this.size
+
+    fn insert_at(int index, int value) -> bool:
+        if index < 0 || index > this.size:
+            print "Index %d out of bounds (size: %d)" | index, this.size
+            return false
+        
+        if index == 0:
+            this.prepend(value)
+            return true
+        
+        ref Node new_node = new Node(value)
+        ref Node current = this.head
+        for i = 0 to index - 2:
+            current = current.next
+        
+        new_node.next = current.next
+        current.next = new_node
+        this.size = this.size + 1
+        print "Inserted %d at index %d (size: %d)" | value, index, this.size
+        return true
+
+    fn remove_at(int index) -> bool:
+        if index < 0 || index >= this.size:
+            print "Index %d out of bounds (size: %d)" | index, this.size
+            return false
+        
+        if index == 0:
+            if this.head != nil:
+                this.head = this.head.next
+                this.size = this.size - 1
+                print "Removed head (size: %d)" | this.size
+                return true
+        
+        ref Node current = this.head
+        for i = 0 to index - 2:
+            current = current.next
+        
+        if current.next != nil:
+            current.next = current.next.next
+            this.size = this.size - 1
+            print "Removed element at index %d (size: %d)" | index, this.size
+            return true
+        
+        return false
+
+    fn find(int value) -> int:
+        ref Node current = this.head
+        int index = 0
+        
+        while current != nil:
+            if current.value == value:
+                return index
+            current = current.next
+            index = index + 1
+        
+        return -1
+
+    fn get(int index) -> int:
+        if index < 0 || index >= this.size:
+            print "Index %d out of bounds (size: %d)" | index, this.size
+            return -1
+        
+        ref Node current = this.head
+        for i = 0 to index - 1:
+            current = current.next
+        
+        return current.value
+
+    fn is_empty() -> bool:
+        return this.head == nil
+
+    fn get_size() -> int:
+        return this.size
+
+    fn clear() -> void:
+        this.head = nil
+        this.size = 0
+        print "List cleared"
+
+    fn print_list() -> void:
+        if this.is_empty():
+            print "List is empty"
+            return
+        
+        print "LinkedList (size: %d):" | this.size
+        ref Node current = this.head
+        int index = 0
+        
+        while current != nil:
+            print "  [%d]: %d" | index, current.value
+            current = current.next
+            index = index + 1
+
+    fn reverse() -> void:
+        if this.head == nil || this.head.next == nil:
+            return
+        
+        ref Node prev = nil
+        ref Node current = this.head
+        ref Node next = nil
+        
+        while current != nil:
+            next = current.next
+            current.next = prev
+            prev = current
+            current = next
+        
+        this.head = prev
+        print "List reversed"
+
+    fn contains(int value) -> bool:
+        ref Node current = this.head
+        while current != nil:
+            if current.value == value:
+                return true
+            current = current.next
+        return false
+
+    fn remove_value(int value) -> bool:
+        if this.head == nil:
+            return false
+        if this.head.value == value:
+            this.head = this.head.next
+            this.size = this.size - 1
+            print "Removed value %d from head (size: %d)" | value, this.size
+            return true
+        
+        ref Node current = this.head
+        while current.next != nil:
+            if current.next.value == value:
+                current.next = current.next.next
+                this.size = this.size - 1
+                print "Removed value %d from list (size: %d)" | value, this.size
+                return true
+            current = current.next
+        
+        return false
+print "=== LinkedList Demo ==="
+
+var list = new LinkedList()
+list.append(10)
+list.append(20)
+list.append(30)
+list.print_list()
+
+list.prepend(5)
+list.print_list()
+
+list.insert_at(2, 15)
+list.print_list()
+int pos = list.find(20)
+print "Value 20 found at index: %d" | pos
+int val = list.get(1)
+print "Value at index 1: %d" | val
+bool has_25 = list.contains(25)
+bool has_20 = list.contains(20)
+print "Contains 25: %s" | (has_25 ? "true" : "false")
+print "Contains 20: %s" | (has_20 ? "true" : "false")
+list.remove_value(15)
+list.print_list()
+list.remove_at(0)
+list.print_list()
+list.reverse()
+list.print_list()
+
+print "Final size: %d" | list.get_size()
