@@ -1487,8 +1487,6 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 					Index:    index,
 					Value:    value,
 				}}, lineNum + 1, nil
-			} else if strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"") {
-				value = value[1 : len(value)-1]
 			}
 
 			return &Statement{VarAssign: &VarAssignStmt{Name: varName, Value: value}}, lineNum + 1, nil
@@ -1703,10 +1701,6 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 					filePath := value[start+5 : end]
 					return &Statement{VarDeclRead: &VarDeclReadStmt{Type: varType, Name: varName, FilePath: filePath}}, lineNum + 1, nil
 				}
-			}
-
-			if strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"") {
-				value = value[1 : len(value)-1]
 			}
 
 			return &Statement{VarDecl: &VarDeclStmt{Type: varType, Name: varName, Value: value}}, lineNum + 1, nil

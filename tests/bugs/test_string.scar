@@ -1,0 +1,2 @@
+string x = "initial"
+x = "hello"

@@ -1,0 +1,11 @@
+i32 x = 10
+x = 20
+
+f32 y = 3.14
+y = 2.7
+
+bool z = true
+z = false
+
+i32 a = 5
+i32 b = a

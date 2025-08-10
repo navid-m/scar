@@ -1783,6 +1783,27 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			)
 			value = fixFloatCastGranular(value)
 			value = convertThisReferencesGranular(value)
+
+			var varType string
+			if localType, exists := localVars[varName]; exists {
+				varType = localType
+			} else {
+				for _, classInfo := range globalClasses {
+					for _, field := range classInfo.Fields {
+						if field.Name == varName || ("this->"+field.Name) == varName {
+							varType = field.Type
+							break
+						}
+					}
+				}
+			}
+			if varType != "" {
+				if err := checkTypeCompatibility(varName, varType, value); err != nil {
+					fmt.Fprintf(os.Stderr, "Compilation error: %s\n", err.Error())
+					os.Exit(1)
+				}
+			}
+
 			if strings.HasPrefix(varName, "this.") {
 				varName = "this->" + varName[5:]
 			} else if strings.Contains(varName, ".") {
@@ -3518,6 +3539,78 @@ func isValidIdentifier(s string) bool {
 		}
 	}
 	return true
+}
+
+// Type checking functions
+func isStringLiteral(value string) bool {
+	return strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"")
+}
+
+func inferValueType(value string) string {
+	if isStringLiteral(value) {
+		return "string"
+	}
+	if value == "true" || value == "false" {
+		return "bool"
+	}
+	if _, err := strconv.Atoi(value); err == nil {
+		return "i32"
+	}
+	if _, err := strconv.ParseFloat(value, 64); err == nil {
+		return "f32"
+	}
+	if localType, exists := localVars[value]; exists {
+		return localType
+	}
+	if globalVar, exists := globalVars[value]; exists {
+		return globalVar.Type
+	}
+	return "unknown"
+}
+
+func areTypesCompatible(targetType, valueType string) bool {
+	if targetType == valueType {
+		return true
+	}
+	if (targetType == "i32" || targetType == "int") && (valueType == "i32" || valueType == "int") {
+		return true
+	}
+	if (targetType == "f32" || targetType == "float") && (valueType == "f32" || valueType == "float") {
+		return true
+	}
+	if (targetType == "f64" || targetType == "double") && (valueType == "f64" || valueType == "double") {
+		return true
+	}
+	if (targetType == "f32" || targetType == "float" || targetType == "f64" || targetType == "double") &&
+		(valueType == "i32" || valueType == "int") {
+		return true
+	}
+	return false
+}
+
+func checkTypeCompatibility(varName, varType, value string) error {
+	valueType := inferValueType(value)
+
+	if valueType == "unknown" {
+		if isFunctionCall(value) {
+			return nil // Allow function calls
+		}
+		if isValidIdentifier(value) {
+			if _, exists := localVars[value]; exists {
+				return nil
+			}
+			if _, exists := globalVars[value]; exists {
+				return nil
+			}
+		}
+		return fmt.Errorf("Type error: Unknown identifier or type for value '%s' when assigning to variable '%s' of type '%s'", value, varName, varType)
+	}
+
+	if !areTypesCompatible(varType, valueType) {
+		return fmt.Errorf("Type error: Cannot assign value of type '%s' to variable '%s' of type '%s'", valueType, varName, varType)
+	}
+
+	return nil
 }
 
 // Generates a C function prototype for a class method

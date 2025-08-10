@@ -218,10 +218,6 @@ func parsePubStatement(lines []string, lineNum, currentIndent int) (*Statement, 
 			varName := parts[2]
 			value := strings.Join(parts[4:], " ")
 
-			if strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"") {
-				value = value[1 : len(value)-1]
-			}
-
 			return &Statement{PubVarDecl: &PubVarDeclStmt{Type: varType, Name: varName, Value: value}}, lineNum + 1, nil
 		}
 		return nil, lineNum + 1, fmt.Errorf("invalid pub declaration at line %d", lineNum+1)

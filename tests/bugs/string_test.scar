@@ -1,0 +1,2 @@
+string s = "hello"
+s = "world"
