@@ -77,8 +77,8 @@ func findMinGWBoehm() []string {
 	var searchPaths []string
 	cmd := exec.Command("where", "gcc")
 	if output, err := cmd.Output(); err == nil {
-		gccPaths := strings.Split(strings.TrimSpace(string(output)), "\n")
-		for _, gccPath := range gccPaths {
+		gccPaths := strings.SplitSeq(strings.TrimSpace(string(output)), "\n")
+		for gccPath := range gccPaths {
 			gccPath = strings.TrimSpace(gccPath)
 			if gccPath != "" {
 				gccDir := filepath.Dir(gccPath)
@@ -90,8 +90,8 @@ func findMinGWBoehm() []string {
 	for _, gccVariant := range []string{"mingw32-gcc", "x86_64-w64-mingw32-gcc", "i686-w64-mingw32-gcc"} {
 		cmd := exec.Command("where", gccVariant)
 		if output, err := cmd.Output(); err == nil {
-			gccPaths := strings.Split(strings.TrimSpace(string(output)), "\n")
-			for _, gccPath := range gccPaths {
+			gccPaths := strings.SplitSeq(strings.TrimSpace(string(output)), "\n")
+			for gccPath := range gccPaths {
 				gccPath = strings.TrimSpace(gccPath)
 				if gccPath != "" {
 					gccDir := filepath.Dir(gccPath)
