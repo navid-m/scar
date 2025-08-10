@@ -12,9 +12,7 @@ pub class RefTest:
         return this.name
 
 print "Testing ref types and string init\n"
-
 RefTest test = new RefTest()
 test.set_name("hello")
 print "Name: %s\n" | test.get_name()
-
 print "Test completed\n"
