@@ -17,7 +17,7 @@ func TestRenderC(t *testing.T) {
 		},
 	}
 
-	cCode := RenderC(program, "")
+	cCode := RenderC(program, "", false)
 	expected := `printf("Hello, World!\n");`
 
 	if !strings.Contains(cCode, expected) {
@@ -46,7 +46,7 @@ func TestRenderCWithForLoop(t *testing.T) {
 		},
 	}
 
-	cCode := RenderC(program, "")
+	cCode := RenderC(program, "", false)
 	expected := `for (int i = 0; i <= 9; i++) {
     printf("i is %d\n", i);
     }`
@@ -91,7 +91,7 @@ func TestRenderCWithWhileLoop(t *testing.T) {
 		},
 	}
 
-	cCode := RenderC(program, "")
+	cCode := RenderC(program, "", false)
 	expected := `int x = 5;
     while (x > 0) {
     printf("x is %d\n", x);
@@ -127,7 +127,7 @@ func TestRenderCWithStringVariable(t *testing.T) {
 		},
 	}
 
-	cCode := RenderC(program, "")
+	cCode := RenderC(program, "", false)
 	expectedVarDecl := `char msg[256]`
 	expectedStrcpy := `strcpy(msg, "Hello, String!");`
 	expectedPrintf := `printf("%s\n", msg);`
@@ -162,7 +162,7 @@ func TestRenderCWithList(t *testing.T) {
 		},
 	}
 
-	cCode := RenderC(program, "")
+	cCode := RenderC(program, "", false)
 	expectedListDecl := `int myList[3];`
 	expectedListInit1 := `myList[0] = 1;`
 	expectedListInit2 := `myList[1] = 2;`
@@ -205,7 +205,7 @@ func TestRenderCWithMap(t *testing.T) {
 		}
 
 		var (
-			cCode              = RenderC(program, "")
+			cCode              = RenderC(program, "", false)
 			expectedKeyDecl    = `char myMap_keys[2][256]`
 			expectedValueDecl  = `int myMap_values[2]`
 			expectedSize       = `int myMap_size = 2`
@@ -252,7 +252,7 @@ func TestRenderCWithMap(t *testing.T) {
 		}
 
 		var (
-			cCode        = RenderC(program, "")
+			cCode        = RenderC(program, "", false)
 			expectedCode = []string{
 				`char emptyMap_keys[10][256];`,
 				`int emptyMap_values[10];`,
@@ -309,7 +309,7 @@ func TestRenderCWithObjectConstructor(t *testing.T) {
 		},
 	}
 
-	cCode := RenderC(program, "")
+	cCode := RenderC(program, "", false)
 	if !strings.Contains(cCode, "TestClass* this = malloc(sizeof(TestClass));") {
 		t.Error("Expected constructor to declare 'this' pointer")
 	}
@@ -344,7 +344,7 @@ func TestRenderCWithStringList(t *testing.T) {
 		},
 	}
 
-	cCode := RenderC(program, "")
+	cCode := RenderC(program, "", false)
 	expectedListDecl := `char names[3][256]`
 	if !strings.Contains(cCode, expectedListDecl) {
 		t.Errorf("Expected C code to contain '%s', but it didn't", expectedListDecl)
@@ -386,7 +386,7 @@ Cat fluffy = new Cat()
 		t.Fatalf("Failed to parse input: %v", err)
 	}
 
-	result := RenderC(program, ".")
+	result := RenderC(program, ".", false)
 	expectedConstructor := "Cat* Cat_new() {"
 	if !strings.Contains(result, expectedConstructor) {
 		t.Errorf("Expected constructor signature not found. Expected: %s", expectedConstructor)
@@ -411,7 +411,7 @@ func TestTopLevelStringLiteralQuotes(t *testing.T) {
 		t.Fatalf("Failed to parse input: %v", err)
 	}
 	var (
-		result       = RenderC(program, ".")
+		result       = RenderC(program, ".", false)
 		expectedDecl = `char code[256];`
 		expectedInit = `strcpy(code, "++++++++[>++++[>++>+++>+++>+<<<<-]>+>+>->>+[<]<-]>>.>---.+++++++..+++.>>.<-.<.+++.------.--------.>>+.>++.");`
 	)
@@ -508,7 +508,7 @@ func TestRenderCWithImports(t *testing.T) {
 		},
 	}
 
-	cCode := RenderC(program, "")
+	cCode := RenderC(program, "", false)
 
 	expectedAreaCalc := "area = math_PI * 5 * 5;"
 	if !strings.Contains(cCode, expectedAreaCalc) {
@@ -583,7 +583,7 @@ class TaskScheduler:
 		t.Fatalf("Failed to parse input: %v", err)
 	}
 
-	result := RenderC(program, ".")
+	result := RenderC(program, ".", false)
 
 	expectedPatterns := []string{
 		"this->name",
@@ -632,7 +632,7 @@ tony.sing()`
 	if err != nil {
 		t.Fatalf("Failed to parse input: %v", err)
 	}
-	result := RenderC(program, ".")
+	result := RenderC(program, ".", false)
 	expectedIfCondition := "if (this->is_annoying == 1)"
 	if !strings.Contains(result, expectedIfCondition) {
 		t.Errorf("Expected if condition with pointer syntax '%s' not found in generated code", expectedIfCondition)
@@ -814,7 +814,7 @@ func TestMatrixExample(t *testing.T) {
 		},
 	}
 
-	cCode := RenderC(program, "")
+	cCode := RenderC(program, "", false)
 
 	if !strings.Contains(cCode, "this->rows") || !strings.Contains(cCode, "this->cols") {
 		t.Error("Expected 'this->' pointer access in generated C code")
@@ -847,7 +847,7 @@ print "Area: {}", result`
 		t.Fatalf("Failed to parse input: %v", err)
 	}
 
-	result := RenderC(program, ".")
+	result := RenderC(program, ".", false)
 	expectedDeclarations := []string{
 		"float PI = 3.14159265359;",
 		"float E = 2.71828182846;",
@@ -941,7 +941,7 @@ func TestMethodCallOnThis(t *testing.T) {
 		},
 	}
 
-	cCode := RenderC(program, "")
+	cCode := RenderC(program, "", false)
 	tests := []string{
 		"TestClass_internal_method",
 		"result = TestClass_internal_method",
@@ -1209,7 +1209,7 @@ func TestThisMethodCall(t *testing.T) {
 	}
 	currentClassName = "GameOfLife"
 	defer func() { currentClassName = "" }()
-	code := RenderC(program, "./testdata")
+	code := RenderC(program, "./testdata", false)
 	expected := "GameOfLife_get_cell(this, 1, 2)"
 	if !strings.Contains(code, expected) {
 		t.Errorf("Expected method call to be converted to '%s', but got:\n%s", expected, code)
@@ -1251,7 +1251,7 @@ func TestMethodCallWithComplexExpression(t *testing.T) {
 		},
 	}
 
-	cCode := RenderC(program, "")
+	cCode := RenderC(program, "", false)
 	expected := "GameOfLife_get_cell(this, 1, 2) == 1"
 	if !strings.Contains(cCode, expected) {
 		t.Errorf("Expected method call to be converted to '%s', got: %s", expected, cCode)
@@ -1281,7 +1281,7 @@ print "Counter: {}, Active: {}, Temp: {}, Status: {}", counter, is_active, tempe
 		t.Fatalf("Failed to parse input: %v", err)
 	}
 
-	result := RenderC(program, ".")
+	result := RenderC(program, ".", false)
 
 	expectedDeclarations := []string{
 		"int counter = 0;",
@@ -1361,7 +1361,7 @@ func TestListOfInlineAndStandalone(t *testing.T) {
 		"existing_numbers": "int",
 	}
 
-	result := RenderC(program, "")
+	result := RenderC(program, "", false)
 
 	expectedStandaloneString := []string{
 		"char single_line[1000][256];",
@@ -1461,7 +1461,7 @@ func TestListOfWithVariableResolution(t *testing.T) {
 		"old_messages": "string",
 	}
 	currentModule = "test_module"
-	result := RenderC(program, "")
+	result := RenderC(program, "", false)
 	expectedThisRef := []string{
 		"// Add single element from list_of!(this->current_line)",
 		"strcpy(result[result_len], this->current_line);",
@@ -1523,7 +1523,7 @@ func TestRecursiveMethodCall(t *testing.T) {
 		},
 	}
 
-	cCode := RenderC(program, "")
+	cCode := RenderC(program, "", false)
 	expected := "FactorialCalculator_factorial_recursive(this, n - 1)"
 
 	if !strings.Contains(cCode, expected) {
@@ -1554,7 +1554,7 @@ func TestPutStatement(t *testing.T) {
 		},
 	}
 
-	code := RenderC(program, "./testdata")
+	code := RenderC(program, "./testdata", false)
 
 	expected1 := `printf("Hello world");`
 	if !strings.Contains(code, expected1) {
@@ -1626,7 +1626,7 @@ func TestMethodCallInExpression(t *testing.T) {
 		},
 	}
 
-	cCode := RenderC(program, "")
+	cCode := RenderC(program, "", false)
 	expected := "for (int i = 0; i <= (TestClass_get_limit(this, count)); i++)"
 
 	if !strings.Contains(cCode, expected) {
@@ -1768,7 +1768,7 @@ func TestGetInPrintStatement(t *testing.T) {
 		},
 	}
 
-	cCode := RenderC(program, "")
+	cCode := RenderC(program, "", false)
 	if !strings.Contains(cCode, "__get_myMap_value") {
 		t.Error("Expected helper function __get_myMap_value not found in generated code")
 	}
@@ -1805,7 +1805,7 @@ func TestListParameterInFunction(t *testing.T) {
 		},
 	}
 
-	cCode := RenderC(program, "")
+	cCode := RenderC(program, "", false)
 
 	// Check that the function prototype has both array and length parameters
 	expectedPrototype := "void processNumbers(int numbers[], int numbers_len)"
@@ -1862,7 +1862,7 @@ func TestFunctionHoisting(t *testing.T) {
 	}
 
 	// Generate the C code
-	cCode := RenderC(program, "")
+	cCode := RenderC(program, "", false)
 
 	// Verify the output contains the function prototype before the main function
 	prototypeIndex := strings.Index(cCode, "int calculate(int x);")
@@ -1910,7 +1910,7 @@ print "%d" | calc.add(2, 3)`
 		t.Fatalf("Failed to parse input: %v", err)
 	}
 
-	result := RenderC(program, ".")
+	result := RenderC(program, ".", false)
 
 	expectedClassDecl := "typedef struct Calculator Calculator;"
 	if !strings.Contains(result, expectedClassDecl) {
@@ -1990,7 +1990,7 @@ func TestRenderCWithListFunctionAssignment(t *testing.T) {
 			},
 		}
 
-		cCode := RenderC(program, "")
+		cCode := RenderC(program, "", false)
 		expectedPrototype := "int get_numbers(int _output_array[], int _max_size);"
 		if !strings.Contains(cCode, expectedPrototype) {
 			t.Errorf("Expected function prototype '%s' not found in generated code", expectedPrototype)
@@ -2058,7 +2058,7 @@ func TestRenderCWithListFunctionAssignment(t *testing.T) {
 			},
 		}
 
-		cCode := RenderC(program, "")
+		cCode := RenderC(program, "", false)
 
 		expectedPrototype := "int get_names(char _output_array[][256], int _max_size);"
 		if !strings.Contains(cCode, expectedPrototype) {
@@ -2114,7 +2114,7 @@ func TestRenderCWithListFunctionAssignment(t *testing.T) {
 			},
 		}
 
-		cCode := RenderC(program, "")
+		cCode := RenderC(program, "", false)
 
 		expectedPrototype := "int create_range(int _output_array[], int _max_size, int start, int end);"
 
@@ -2160,7 +2160,7 @@ func TestRenderCWithListFunctionAssignment(t *testing.T) {
 			},
 		}
 
-		cCode := RenderC(program, "")
+		cCode := RenderC(program, "", false)
 
 		expectedPrototype := "int get_number();"
 		if !strings.Contains(cCode, expectedPrototype) {
@@ -2197,7 +2197,7 @@ func TestComplexCollectionTypes(t *testing.T) {
 			},
 		}
 
-		cCode := RenderC(program, "")
+		cCode := RenderC(program, "", false)
 
 		expectedDecl := `char matrix[2][100][256];`
 		if !strings.Contains(cCode, expectedDecl) {
@@ -2253,7 +2253,7 @@ func TestComplexCollectionTypes(t *testing.T) {
 			},
 		}
 
-		cCode := RenderC(program, "")
+		cCode := RenderC(program, "", false)
 
 		expectedDecl := `int numbers[2][100];`
 		if !strings.Contains(cCode, expectedDecl) {
@@ -2307,7 +2307,7 @@ func TestComplexCollectionTypes(t *testing.T) {
 			},
 		}
 
-		cCode := RenderC(program, "")
+		cCode := RenderC(program, "", false)
 
 		expectedDecl := `char empty[0][100][256];`
 		if !strings.Contains(cCode, expectedDecl) {
@@ -2338,7 +2338,7 @@ func TestComplexCollectionTypes(t *testing.T) {
 			},
 		}
 
-		cCode := RenderC(program, "")
+		cCode := RenderC(program, "", false)
 		expectedDecl := `int single[1][100];`
 		if !strings.Contains(cCode, expectedDecl) {
 			t.Errorf("Expected C code to contain '%s', but it didn't", expectedDecl)

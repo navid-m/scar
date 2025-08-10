@@ -967,6 +967,22 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 	case "continue":
 		return &Statement{Continue: &ContinueStmt{Continue: "continue"}}, lineNum + 1, nil
 
+	case "allocate":
+		if len(parts) < 5 || parts[3] != "=" {
+			return nil, lineNum + 1, fmt.Errorf("allocate statement format error at line %d (expected: allocate type name = size)", lineNum+1)
+		}
+		varType := parts[1]
+		varName := parts[2]
+		size := strings.Join(parts[4:], " ")
+		return &Statement{Allocate: &AllocateStmt{Type: varType, Name: varName, Size: size}}, lineNum + 1, nil
+
+	case "free":
+		if len(parts) < 2 {
+			return nil, lineNum + 1, fmt.Errorf("free statement requires a variable at line %d", lineNum+1)
+		}
+		variable := parts[1]
+		return &Statement{Free: &FreeStmt{Variable: variable}}, lineNum + 1, nil
+
 	case "run":
 		if len(parts) < 2 {
 			return nil, lineNum + 1, fmt.Errorf("run statement requires a function call at line %d", lineNum+1)
@@ -1629,7 +1645,7 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 		keywords := []string{"if", "for", "while", "fn", "class",
 			"var", "return", "import", "pub", "ref", "u16", "u32", "u64",
 			"i16", "i32", "i64", "f32", "f64", "print", "sleep", "break",
-			"continue", "foreach", "parallel", "char*"}
+			"continue", "foreach", "parallel", "char*", "allocate", "free"}
 		if slices.Contains(keywords, firstWord) {
 			isKeyword = true
 		}

@@ -84,7 +84,7 @@ func TestRecursiveClassMethods(t *testing.T) {
 		},
 	}
 
-	cCode := RenderC(program, "")
+	cCode := RenderC(program, "", false)
 
 	protoA := "void RecursiveTest_methodA(RecursiveTest* this, int n);"
 	protoB := "void RecursiveTest_methodB(RecursiveTest* this, int n);"

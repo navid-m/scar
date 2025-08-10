@@ -14,7 +14,7 @@ import (
 const Version = "v0.0.1"
 
 func ShowUsage() {
-	fmt.Println("Usage: scar [-asm | -c] [program]")
+	fmt.Println("Usage: scar [-asm | -c | -gc] [program]")
 	flag.PrintDefaults()
 	fmt.Printf("\nScar %v - By Navid M (c) 2025", Version)
 }

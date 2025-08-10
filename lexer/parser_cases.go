@@ -42,9 +42,10 @@ func RemoveComments(source string) string {
 
 		// Track parentheses depth inside $raw blocks
 		if inRawBlock && !inString {
-			if source[i] == '(' {
+			switch source[i] {
+			case '(':
 				rawParenDepth++
-			} else if source[i] == ')' {
+			case ')':
 				rawParenDepth--
 				if rawParenDepth == 0 {
 					inRawBlock = false
@@ -682,11 +683,6 @@ func parseMethodStatement(lines []string, lineNum, currentIndent int) (*MethodDe
 		ReturnType: returnType,
 		Body:       body,
 	}, nextLine, nil
-}
-
-// TODO: Replace placeholder for handling index assignment.
-func handleIndexAssignment(_, _, value string) string {
-	return value
 }
 
 func parseElifStatement(lines []string, lineNum, currentIndent int) (*ElifStmt, int, error) {

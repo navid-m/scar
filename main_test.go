@@ -34,7 +34,7 @@ int main(int argc, char** argv) {
 	}
 
 	var (
-		result       = renderer.RenderC(program, ".")
+		result       = renderer.RenderC(program, ".", false)
 		expectedNorm = normalizeWhitespace(expected)
 		resultNorm   = normalizeWhitespace(result)
 	)
@@ -101,7 +101,7 @@ int main(int argc, char** argv) {
 	}
 
 	var (
-		result       = renderer.RenderC(program, ".")
+		result       = renderer.RenderC(program, ".", false)
 		expectedNorm = normalizeWhitespace(expected)
 		resultNorm   = normalizeWhitespace(result)
 	)
@@ -173,7 +173,7 @@ int main(int argc, char** argv) {
 	}
 
 	var (
-		result       = renderer.RenderC(program, ".")
+		result       = renderer.RenderC(program, ".", false)
 		expectedNorm = normalizeWhitespace(expected)
 		resultNorm   = normalizeWhitespace(result)
 	)
@@ -285,7 +285,7 @@ func TestCompileAllTestFiles(t *testing.T) {
 				t.Fatalf("Failed to parse file %s: %v", file, err)
 			}
 
-			output := renderer.RenderC(program, ".")
+			output := renderer.RenderC(program, ".", false)
 			if len(output) == 0 {
 				t.Errorf("Rendered output is empty for file %s", file)
 			}

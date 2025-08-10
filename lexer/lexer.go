@@ -74,12 +74,24 @@ type Statement struct {
 	ListDeclFunctionCall *ListDeclFunctionCallStmt
 	ListOf               *ListOfStmt
 	ListOfDecl           *ListOfDeclStmt
+	Allocate             *AllocateStmt
+	Free                 *FreeStmt
 }
 
 type ListOfDeclStmt struct {
 	Type  string
 	Name  string
 	Value string
+}
+
+type AllocateStmt struct {
+	Type string
+	Name string
+	Size string
+}
+
+type FreeStmt struct {
+	Variable string
 }
 
 type CatListStmt struct {

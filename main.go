@@ -26,6 +26,7 @@ func main() {
 	flag.Usage = meta.ShowUsage
 	asm := flag.Bool("asm", false, "show assembly output")
 	c := flag.Bool("c", false, "show IL")
+	gc := flag.Bool("gc", false, "use Boehm's garbage collector for allocate/free")
 
 	flag.Parse()
 
@@ -66,7 +67,7 @@ func main() {
 		log.Fatal("Failed to compile.")
 	}
 
-	cCode := preprocessor.InsertMacros(renderer.RenderC(program, baseDir))
+	cCode := preprocessor.InsertMacros(renderer.RenderC(program, baseDir, *gc))
 
 	if *asm {
 		cplr := "clang"
@@ -101,6 +102,11 @@ func main() {
 		cmpPath      = "clang"
 		compileArgs  = []string{"-w", "-fopenmp", tmpCPath, "-o", outputBinary}
 	)
+
+	if *gc {
+		compileArgs = append(compileArgs, "-lgc")
+	}
+
 	switch runtime.GOOS {
 	case "darwin":
 		cmpPath = "/opt/homebrew/opt/llvm/bin/clang"
@@ -112,11 +118,17 @@ func main() {
 			"-L/opt/homebrew/opt/libomp/lib",
 			"-o", outputBinary,
 		}
+		if *gc {
+			compileArgs = append(compileArgs, "-lgc")
+		}
 	case "linux":
 		compileArgs = []string{
 			"-fopenmp",
 			tmpCPath,
 			"-o", outputBinary,
+		}
+		if *gc {
+			compileArgs = append(compileArgs, "-lgc")
 		}
 	case "windows":
 		cmpPath = "gcc"
@@ -126,6 +138,9 @@ func main() {
 			"-w",
 			tmpCPath,
 			"-o", outputBinary,
+		}
+		if *gc {
+			compileArgs = append(compileArgs, "-lgc")
 		}
 	}
 

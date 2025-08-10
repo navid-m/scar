@@ -38,7 +38,7 @@ print "The age was %d" | age`
 		t.Fatalf("Failed to parse input: %v", err)
 	}
 
-	result := renderer.RenderC(program, ".")
+	result := renderer.RenderC(program, ".", false)
 	expectedCalls := []string{
 		"Cat_setAge(myCat, 10);",
 		"Cat_setInfo(myCat, 8, \"Whiskers\");",
@@ -86,7 +86,7 @@ obj.doSomething()`
 		t.Fatalf("Failed to parse input: %v", err)
 	}
 
-	result := renderer.RenderC(program, ".")
+	result := renderer.RenderC(program, ".", false)
 	expectedCall := "TestClass_doSomething(obj);"
 	if !strings.Contains(result, expectedCall) {
 		t.Errorf("Expected method call '%s' not found in generated C code.\nGenerated code:\n%s", expectedCall, result)
@@ -111,7 +111,7 @@ print "Final values - x: %d, y: %d, z: %d" | obj.x, obj.y, obj.z`
 		t.Fatalf("Failed to parse input: %v", err)
 	}
 
-	result := renderer.RenderC(program, ".")
+	result := renderer.RenderC(program, ".", false)
 	expectedConstructor := "TestClass* TestClass_new(int x, int y) {"
 	if !strings.Contains(result, expectedConstructor) {
 		t.Errorf("Expected constructor signature not found. Expected: %s", expectedConstructor)
@@ -160,7 +160,7 @@ calc.add(1, 2, 3)`
 	if err != nil {
 		t.Fatalf("Failed to parse input: %v", err)
 	}
-	result := renderer.RenderC(program, ".")
+	result := renderer.RenderC(program, ".", false)
 	expectedCall := "Calculator_add(calc, 1, 2, 3);"
 	if !strings.Contains(result, expectedCall) {
 		t.Errorf("Expected method call '%s' not found in generated C code.\nGenerated code:\n%s", expectedCall, result)

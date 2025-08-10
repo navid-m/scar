@@ -27,6 +27,7 @@ var (
 	currentModule    = ""
 	currentClassName = ""
 	currentFunction  *lexer.TopLevelFuncDeclStmt
+	useGC            = false
 	primitiveTypes   = map[string]string{
 		"int":    "int",
 		"float":  "float",
@@ -45,7 +46,8 @@ var (
 	}
 )
 
-func RenderC(program *lexer.Program, baseDir string) string {
+func RenderC(program *lexer.Program, baseDir string, gcFlag bool) string {
+	useGC = gcFlag
 	var b strings.Builder
 
 	for _, importStmt := range program.Imports {
@@ -131,7 +133,14 @@ func RenderC(program *lexer.Program, baseDir string) string {
 #include <stdlib.h>
 #include <stdbool.h>
 #include <stdint.h>
+`)
 
+	if useGC {
+		b.WriteString(`#include <gc.h>
+`)
+	}
+
+	b.WriteString(`
 int _exception = 0;
 int __global_argc = 0;
 char** __global_argv = NULL;
@@ -2460,6 +2469,28 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				fmt.Fprintf(b, "%s    }\n", indent)
 			}
 			fmt.Fprintf(b, "%s}\n", indent)
+
+		case stmt.Allocate != nil:
+			varType := stmt.Allocate.Type
+			varName := lexer.ResolveSymbol(stmt.Allocate.Name, currentModule)
+			size := lexer.ResolveSymbol(stmt.Allocate.Size, currentModule)
+			cType := mapTypeToCType(varType)
+
+			if useGC {
+				fmt.Fprintf(b, "%s%s* %s = (%s*)GC_malloc(%s * sizeof(%s));\n", indent, cType, varName, cType, size, cType)
+			} else {
+				fmt.Fprintf(b, "%s%s* %s = (%s*)malloc(%s * sizeof(%s));\n", indent, cType, varName, cType, size, cType)
+			}
+
+		case stmt.Free != nil:
+			variable := lexer.ResolveSymbol(stmt.Free.Variable, currentModule)
+
+			if useGC {
+				fmt.Fprintf(b, "%s%s = NULL;\n", indent, variable)
+			} else {
+				fmt.Fprintf(b, "%sfree(%s);\n", indent, variable)
+				fmt.Fprintf(b, "%s%s = NULL;\n", indent, variable)
+			}
 		}
 	}
 }

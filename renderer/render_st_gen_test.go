@@ -42,7 +42,7 @@ if (fgets(buffer, sizeof(buffer), stdin) != NULL) {
 		},
 	}
 
-	result := RenderC(program, "")
+	result := RenderC(program, "", false)
 
 	if !strings.Contains(result, "void readln(char* _output_buffer);") {
 		t.Errorf("Expected function declaration 'void readln(char* _output_buffer);' but got:\n%s", result)
@@ -112,7 +112,7 @@ return buffer;`,
 		},
 	}
 
-	result := RenderC(program, "")
+	result := RenderC(program, "", false)
 
 	expectedDecl := "void formatString(char* _output_buffer, char* prefix, int value);"
 	if !strings.Contains(result, expectedDecl) {
@@ -154,7 +154,7 @@ func TestNonStringFunctionUnchanged(t *testing.T) {
 		},
 	}
 
-	result := RenderC(program, "")
+	result := RenderC(program, "", false)
 	if !strings.Contains(result, "int getNumber();") {
 		t.Error("Expected normal int function declaration")
 	}
@@ -212,7 +212,7 @@ func TestMixedStringAndNonStringFunctions(t *testing.T) {
 		},
 	}
 
-	result := RenderC(program, "")
+	result := RenderC(program, "", false)
 
 	if !strings.Contains(result, "void getString(char* _output_buffer);") {
 		t.Error("String function should have modified signature")
