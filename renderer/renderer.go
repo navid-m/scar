@@ -1393,6 +1393,7 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				// Process get! and has! expressions first (before this. conversion)
 				value = processGetExpressions(value, program)
 				value = processHasExpressions(value, program)
+				value = convertNewToConstructor(value)
 
 				if isMethodCall(value) {
 					value = convertMethodCallToC(value)
