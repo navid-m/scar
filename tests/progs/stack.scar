@@ -1,0 +1,192 @@
+# Stack (LIFO - Last In, First Out) implementation in Scar
+# A linear data structure where elements are added and removed from the top
+
+class Stack:
+    init:
+        int this.capacity = 10
+        int this.size = 0
+        ref int this.data = nil
+        $raw (
+            this->data = malloc(this->capacity * sizeof(int));
+        )
+
+    # Set capacity and initialize data array
+    fn set_capacity(int max_capacity):
+        this.capacity = max_capacity
+        this.size = 0
+        $raw (
+            this->data = malloc(this->capacity * sizeof(int));
+        )
+
+    # Check if stack is empty
+    fn is_empty() -> bool:
+        return this.size == 0
+
+    # Check if stack is full
+    fn is_full() -> bool:
+        return this.size == this.capacity
+
+    # Get current size of stack
+    fn get_size() -> int:
+        return this.size
+
+    # Get maximum capacity of stack
+    fn get_capacity() -> int:
+        return this.capacity
+
+    # Peek at the top element without removing it
+    fn peek() -> int:
+        if this.is_empty():
+            print "Error: Stack is empty, cannot peek"
+            return -1
+        return this.data[this.size - 1]
+
+    # Push an element onto the stack
+    fn push(int value):
+        if this.is_full():
+            print "Error: Stack is full, cannot push %d" | value
+            return
+
+        this.data[this.size] = value
+        this.size = this.size + 1
+        print "Pushed %d onto stack" | value
+
+    # Pop an element from the stack
+    fn pop() -> int:
+        if this.is_empty():
+            print "Error: Stack is empty, cannot pop"
+            return -1
+
+        this.size = this.size - 1
+        int popped_value = this.data[this.size]
+        print "Popped %d from stack" | popped_value
+        return popped_value
+
+    # Clear all elements from the stack
+    fn clear():
+        this.size = 0
+        print "Stack cleared"
+
+    # Print all elements in the stack (top to bottom)
+    fn print_stack():
+        if this.is_empty():
+            print "Stack is empty"
+            return
+
+        print "Stack contents (top to bottom, size: %d):" | this.size
+        for int i = this.size - 1; i >= 0; i--:
+            if i == this.size - 1:
+                print "Top  -> %d" | this.data[i]
+            else:
+                print "       %d" | this.data[i]
+
+    # Print stack in reverse order (bottom to top)
+    fn print_stack_reverse():
+        if this.is_empty():
+            print "Stack is empty"
+            return
+
+        print "Stack contents (bottom to top, size: %d):" | this.size
+        for int i = 0; i < this.size; i++:
+            if i == 0:
+                print "Bottom -> %d" | this.data[i]
+            else:
+                print "          %d" | this.data[i]
+
+    # Search for an element in the stack (returns distance from top, -1 if not found)
+    fn search(int value) -> int:
+        for int i = this.size - 1; i >= 0; i--:
+            if this.data[i] == value:
+                int distance_from_top = this.size - 1 - i
+                print "Found %d at distance %d from top" | value, distance_from_top
+                return distance_from_top
+
+        print "Value %d not found in stack" | value
+        return -1
+
+    # Check if stack contains a specific value
+    fn contains(int value) -> bool:
+        for int i = 0; i < this.size; i++:
+            if this.data[i] == value:
+                return true
+        return false
+
+    # Get element at specific index (0 = bottom, size-1 = top)
+    fn get_at_index(int index) -> int:
+        if index < 0 || index >= this.size:
+            print "Error: Index %d out of bounds (size: %d)" | index, this.size
+            return -1
+        return this.data[index]
+
+    # Resize the stack capacity (preserves existing elements)
+    fn resize(int new_capacity):
+        if new_capacity < this.size:
+            print "Error: New capacity %d is smaller than current size %d" | new_capacity, this.size
+            return
+
+        $raw (
+            int* new_data = malloc(new_capacity * sizeof(int));
+            for (int i = 0; i < this->size; i++) {
+                new_data[i] = this->data[i];
+            }
+            free(this->data);
+            this->data = new_data;
+        )
+        
+        this.capacity = new_capacity
+        print "Resized stack capacity to %d" | new_capacity
+
+    # Copy elements from another stack
+    fn copy_from(ref Stack other):
+        if other.size > this.capacity:
+            this.resize(other.size)
+
+        this.size = other.size
+        for int i = 0; i < this.size; i++:
+            this.data[i] = other.data[i]
+
+        print "Copied %d elements from another stack" | this.size
+
+    # Reverse the order of elements in the stack
+    fn reverse():
+        if this.size <= 1:
+            return
+
+        for int i = 0; i < this.size / 2; i++:
+            int temp = this.data[i]
+            this.data[i] = this.data[this.size - 1 - i]
+            this.data[this.size - 1 - i] = temp
+
+        print "Stack reversed"
+
+    # Get sum of all elements in stack
+    fn sum() -> int:
+        int total = 0
+        for int i = 0; i < this.size; i++:
+            total = total + this.data[i]
+        return total
+
+    # Get minimum element in stack
+    fn min() -> int:
+        if this.is_empty():
+            print "Error: Stack is empty"
+            return -1
+
+        int minimum = this.data[0]
+        for int i = 1; i < this.size; i++:
+            if this.data[i] < minimum:
+                minimum = this.data[i]
+        return minimum
+
+    # Get maximum element in stack
+    fn max() -> int:
+        if this.is_empty():
+            print "Error: Stack is empty"
+            return -1
+
+        int maximum = this.data[0]
+        for int i = 1; i < this.size; i++:
+            if this.data[i] > maximum:
+                maximum = this.data[i]
+        return maximum
+
