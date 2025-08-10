@@ -556,8 +556,25 @@ func processMethodArguments(args string) string {
 	return strings.Join(processedArgs, ", ")
 }
 
+func convertPropertyAccess(expr string) string {
+	if strings.Contains(expr, ".") && !strings.Contains(expr, "(") && !strings.HasPrefix(expr, "this.") {
+		dotIndex := strings.Index(expr, ".")
+		if dotIndex > 0 {
+			objectName := expr[:dotIndex]
+			if objectName != "this" && !strings.Contains(objectName, " ") && !strings.Contains(objectName, "\"") {
+				originalExpr := expr
+				expr = strings.Replace(expr, ".", "->", 1)
+				fmt.Printf("Debug: convertPropertyAccess converted '%s' to '%s'\n", originalExpr, expr)
+			}
+		}
+	}
+	return expr
+}
+
 func processStringFunctionArg(arg string) string {
 	fmt.Printf("Debug: processStringFunctionArg called with: '%s'\n", arg)
+	arg = convertPropertyAccess(arg)
+
 	if isFunctionCall(arg) {
 		parenIndex := strings.Index(arg, "(")
 		if parenIndex == -1 {
@@ -893,10 +910,19 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 
 		for _, param := range method.Parameters {
 			paramType := mapTypeToCType(param.Type)
-			if _, isPrimitive := primitiveTypes[param.Type]; !isPrimitive && param.Type != "string" {
-				paramType = paramType + "*"
-			} else if param.Type == "string" {
-				paramType = "char*"
+			// For ref parameters, don't add extra * since they should be handled as single pointers
+			if param.IsRef {
+				// For ref parameters, ensure they are treated as single pointers
+				if !strings.HasSuffix(paramType, "*") {
+					paramType = paramType + "*"
+				}
+			} else {
+				// For non-ref parameters, apply the normal rules
+				if _, isPrimitive := primitiveTypes[param.Type]; !isPrimitive && param.Type != "string" {
+					paramType = paramType + "*"
+				} else if param.Type == "string" {
+					paramType = "char*"
+				}
 			}
 			fmt.Fprintf(b, ", %s %s", paramType, param.Name)
 		}
@@ -1399,6 +1425,7 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				value = processGetExpressions(value, program)
 				value = processHasExpressions(value, program)
 				value = convertNewToConstructor(value)
+				value = convertPropertyAccess(value)
 
 				if isMethodCall(value) {
 					value = convertMethodCallToC(value)
@@ -1596,6 +1623,7 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			// Process get! and has! expressions first (before this. conversion)
 			condition = processGetExpressions(condition, program)
 			condition = processHasExpressions(condition, program)
+			condition = convertPropertyAccess(condition)
 
 			if isMethodCall(condition) {
 				condition = convertMethodCallToC(condition)
@@ -1615,6 +1643,7 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				// Process get! and has! expressions first (before this. conversion)
 				elifCondition = processGetExpressions(elifCondition, program)
 				elifCondition = processHasExpressions(elifCondition, program)
+				elifCondition = convertPropertyAccess(elifCondition)
 
 				if isMethodCall(elifCondition) {
 					elifCondition = convertMethodCallToC(elifCondition)
@@ -1787,6 +1816,8 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			)
 			value = fixFloatCastGranular(value)
 			value = convertThisReferencesGranular(value)
+			value = convertNewToConstructor(value) // Convert 'new ClassName(args)' to 'ClassName_new(args)'
+			value = convertPropertyAccess(value)   // Convert property access from dot to arrow notation
 
 			var varType string
 			if localType, exists := localVars[varName]; exists {
@@ -3460,9 +3491,8 @@ func generateTopLevelFunctionImplementation(b *strings.Builder, funcDecl *lexer.
 			if param.Type == "string" {
 				paramType = "char*"
 			}
-			if param.IsRef {
-				paramType = paramType + "*"
-			}
+			// Note: param.IsRef handling is now done in mapTypeToCType for ref types
+			// No need to add extra * here since mapTypeToCType already handles "ref Type" -> "Type*"
 			paramList = append(paramList, fmt.Sprintf("%s %s", paramType, paramName))
 		}
 	}
@@ -3746,10 +3776,19 @@ func generateMethodPrototype(className, methodName, returnType string, parameter
 	paramList := []string{fmt.Sprintf("%s* this", className)}
 	for _, param := range parameters {
 		paramType := mapTypeToCType(param.Type)
-		if _, isPrimitive := primitiveTypes[param.Type]; !isPrimitive && param.Type != "string" {
-			paramType = paramType + "*"
-		} else if param.Type == "string" {
-			paramType = "char*"
+		// For ref parameters, don't add extra * since they should be handled as single pointers
+		if param.IsRef {
+			// For ref parameters, ensure they are treated as single pointers
+			if !strings.HasSuffix(paramType, "*") {
+				paramType = paramType + "*"
+			}
+		} else {
+			// For non-ref parameters, apply the normal rules
+			if _, isPrimitive := primitiveTypes[param.Type]; !isPrimitive && param.Type != "string" {
+				paramType = paramType + "*"
+			} else if param.Type == "string" {
+				paramType = "char*"
+			}
 		}
 		paramList = append(paramList, fmt.Sprintf("%s %s", paramType, param.Name))
 	}
@@ -3800,9 +3839,8 @@ func generateFunctionPrototype(funcDecl *lexer.TopLevelFuncDeclStmt) string {
 			if param.Type == "string" {
 				paramType = "char*"
 			}
-			if param.IsRef {
-				paramType = paramType + "*"
-			}
+			// Note: param.IsRef handling is now done in mapTypeToCType for ref types
+			// No need to add extra * here since mapTypeToCType already handles "ref Type" -> "Type*"
 			paramList = append(paramList, fmt.Sprintf("%s %s", paramType, paramName))
 		}
 	}
@@ -3824,11 +3862,30 @@ func isCustomClassType(typeName string) bool {
 }
 
 func mapTypeToCType(mapType string) string {
+	fmt.Printf("Debug: mapTypeToCType called with: '%s'\n", mapType)
+
+	// Handle ref types by stripping "ref " prefix and making it a pointer
+	if strings.HasPrefix(mapType, "ref ") {
+		baseType := strings.TrimPrefix(mapType, "ref ")
+		cType := mapTypeToCType(baseType)
+		// Don't double-add asterisk if already a pointer
+		if strings.HasSuffix(cType, "*") {
+			fmt.Printf("Debug: ref type '%s' -> '%s' (already pointer)\n", mapType, cType)
+			return cType
+		}
+		result := cType + "*"
+		fmt.Printf("Debug: ref type '%s' -> '%s'\n", mapType, result)
+		return result
+	}
+
 	if isEnumType(mapType) {
+		fmt.Printf("Debug: enum type '%s' -> '%s'\n", mapType, mapType)
 		return mapType
 	}
 	if isCustomClassType(mapType) {
-		return mapType + "*"
+		result := mapType + "*"
+		fmt.Printf("Debug: custom class type '%s' -> '%s'\n", mapType, result)
+		return result
 	}
 	switch mapType {
 	case "int", "i32", "i32*":
