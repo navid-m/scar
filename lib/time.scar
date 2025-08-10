@@ -27,9 +27,7 @@ pub fn now() -> time::Date:
         d->hour = tm_info->tm_hour;
         d->minute = tm_info->tm_min;
         d->second = tm_info->tm_sec;
-        time_Date result = *d;
-        free(d);
-        return result;
+        return d;
     )
 
 ## Format date as string (YYYY-MM-DD HH:MM:SS)
@@ -39,7 +37,7 @@ pub fn format_date(time::Date date) -> char*:
         char* buffer = NULL;
         buffer = malloc(32);
         sprintf(buffer, "%04d-%02d-%02d %02d:%02d:%02d", 
-            date.year, date.month, date.day, 
-            date.hour, date.minute, date.second);
+            date->year, date->month, date->day, 
+            date->hour, date->minute, date->second);
     )
     return buffer
