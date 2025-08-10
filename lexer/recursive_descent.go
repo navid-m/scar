@@ -323,8 +323,10 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 	}
 
 	if strings.HasPrefix(line, "catlist!(") && strings.HasSuffix(line, ")") {
-		argsStr := strings.TrimSpace(line[9 : len(line)-1]) // Remove "catlist!(" and ")"
-		args := splitRespectingQuotes(argsStr)
+		var (
+			argsStr = strings.TrimSpace(line[9 : len(line)-1])
+			args    = splitRespectingQuotes(argsStr)
+		)
 		if len(args) < 2 {
 			return nil, lineNum + 1, fmt.Errorf("catlist! statement requires at least 2 arguments at line %d", lineNum+1)
 		}
