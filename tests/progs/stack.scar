@@ -6,17 +6,15 @@ class Stack:
         int this.capacity = 10
         int this.size = 0
         ref int this.data = nil
-        $raw (
-            this->data = malloc(this->capacity * sizeof(int));
-        )
+        allocate int this.data = this.capacity
 
     # Set capacity and initialize data array
     fn set_capacity(int max_capacity):
+        if this.data != nil:
+            free this.data
         this.capacity = max_capacity
         this.size = 0
-        $raw (
-            this->data = malloc(this->capacity * sizeof(int));
-        )
+        allocate int this.data = this.capacity
 
     # Check if stack is empty
     fn is_empty() -> bool:
@@ -124,15 +122,12 @@ class Stack:
             print "Error: New capacity %d is smaller than current size %d" | new_capacity, this.size
             return
 
-        $raw (
-            int* new_data = malloc(new_capacity * sizeof(int));
-            for (int i = 0; i < this->size; i++) {
-                new_data[i] = this->data[i];
-            }
-            free(this->data);
-            this->data = new_data;
-        )
+        allocate int new_data = new_capacity
+        for int i = 0; i < this.size; i++:
+            new_data[i] = this.data[i]
         
+        free this.data
+        this.data = new_data
         this.capacity = new_capacity
         print "Resized stack capacity to %d" | new_capacity
 

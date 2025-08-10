@@ -8,19 +8,17 @@ class Queue:
         int this.front = 0
         int this.rear = 0
         ref int this.data = nil
-        $raw (
-            this->data = malloc(this->capacity * sizeof(int));
-        )
+        allocate int this.data = this.capacity
 
     # Set capacity and initialize data array
     fn set_capacity(int max_capacity):
+        if this.data != nil:
+            free this.data
         this.capacity = max_capacity
         this.size = 0
         this.front = 0
         this.rear = 0
-        $raw (
-            this->data = malloc(this->capacity * sizeof(int));
-        )
+        allocate int this.data = this.capacity
 
     # Check if queue is empty
     fn is_empty() -> bool:
@@ -153,17 +151,14 @@ class Queue:
             print "Error: New capacity %d is smaller than current size %d" | new_capacity, this.size
             return
 
-        $raw (
-            int* new_data = malloc(new_capacity * sizeof(int));
-            int current = this->front;
-            for (int i = 0; i < this->size; i++) {
-                new_data[i] = this->data[current];
-                current = (current + 1) % this->capacity;
-            }
-            free(this->data);
-            this->data = new_data;
-        )
+        allocate int new_data = new_capacity
+        int current = this.front
+        for int i = 0; i < this.size; i++:
+            new_data[i] = this.data[current]
+            current = (current + 1) % this.capacity
         
+        free this.data
+        this.data = new_data
         this.front = 0
         this.rear = this.size
         this.capacity = new_capacity
@@ -174,19 +169,16 @@ class Queue:
         if this.size <= 1:
             return
 
-        $raw (
-            int* temp_array = malloc(this->size * sizeof(int));
-            int current = this->front;
-            for (int i = 0; i < this->size; i++) {
-                temp_array[i] = this->data[current];
-                current = (current + 1) % this->capacity;
-            }
-            
-            for (int i = 0; i < this->size; i++) {
-                this->data[(this->front + i) % this->capacity] = temp_array[this->size - 1 - i];
-            }
-            free(temp_array);
-        )
+        allocate int temp_array = this.size
+        int current = this.front
+        for int i = 0; i < this.size; i++:
+            temp_array[i] = this.data[current]
+            current = (current + 1) % this.capacity
+
+        for int i = 0; i < this.size; i++:
+            this.data[(this.front + i) % this.capacity] = temp_array[this.size - 1 - i]
+
+        free temp_array
 
         print "Queue reversed"
 
@@ -233,15 +225,12 @@ class Queue:
             print "Error: Queue is empty, cannot convert to array"
             return nil
 
-        $raw (
-            int* result = malloc(this->size * sizeof(int));
-            int current = this->front;
-            for (int i = 0; i < this->size; i++) {
-                result[i] = this->data[current];
-                current = (current + 1) % this->capacity;
-            }
-            return result;
-        )
+        allocate int result = this.size
+        int current = this.front
+        for int i = 0; i < this.size; i++:
+            result[i] = this.data[current]
+            current = (current + 1) % this.capacity
+        return result
 
 # Demonstration and testing of the Queue data structure
 

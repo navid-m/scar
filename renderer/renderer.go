@@ -557,16 +557,28 @@ func processMethodArguments(args string) string {
 }
 
 func convertPropertyAccess(expr string) string {
-	if strings.Contains(expr, ".") && !strings.Contains(expr, "(") && !strings.HasPrefix(expr, "this.") {
+	fmt.Printf("Debug: convertPropertyAccess called with: '%s'\n", expr)
+	if strings.Contains(expr, ".") && !strings.Contains(expr, "(") {
+		fmt.Printf("Debug: convertPropertyAccess - passed dot and paren checks\n")
 		dotIndex := strings.Index(expr, ".")
+		fmt.Printf("Debug: convertPropertyAccess - dotIndex: %d\n", dotIndex)
 		if dotIndex > 0 {
+			fmt.Printf("Debug: convertPropertyAccess - passed dotIndex > 0 check\n")
 			objectName := expr[:dotIndex]
-			if objectName != "this" && !strings.Contains(objectName, " ") && !strings.Contains(objectName, "\"") {
+			fmt.Printf("Debug: convertPropertyAccess - objectName: '%s'\n", objectName)
+			if !strings.Contains(objectName, " ") && !strings.Contains(objectName, "\"") {
+				fmt.Printf("Debug: convertPropertyAccess - passed objectName checks\n")
 				originalExpr := expr
 				expr = strings.Replace(expr, ".", "->", 1)
 				fmt.Printf("Debug: convertPropertyAccess converted '%s' to '%s'\n", originalExpr, expr)
+			} else {
+				fmt.Printf("Debug: convertPropertyAccess - failed objectName checks\n")
 			}
+		} else {
+			fmt.Printf("Debug: convertPropertyAccess - failed dotIndex > 0 check\n")
 		}
+	} else {
+		fmt.Printf("Debug: convertPropertyAccess - failed dot or paren checks\n")
 	}
 	return expr
 }
@@ -2638,10 +2650,28 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			size := lexer.ResolveSymbol(stmt.Allocate.Size, currentModule)
 			cType := mapTypeToCType(varType)
 
-			if useGC {
-				fmt.Fprintf(b, "%s%s* %s = (%s*)GC_malloc(%s * sizeof(%s));\n", indent, cType, varName, cType, size, cType)
+			varName = convertPropertyAccess(varName)
+
+			fmt.Printf(
+				"Debug: Allocate - original varName: %s, after convertPropertyAccess: %s\n",
+				lexer.ResolveSymbol(stmt.Allocate.Name, currentModule),
+				varName,
+			)
+
+			if strings.HasPrefix(varName, "this->") {
+				fmt.Printf("Debug: Member variable allocation: %s\n", varName)
+				if useGC {
+					fmt.Fprintf(b, "%s%s = (%s*)GC_malloc(%s * sizeof(%s));\n", indent, varName, cType, size, cType)
+				} else {
+					fmt.Fprintf(b, "%s%s = (%s*)malloc(%s * sizeof(%s));\n", indent, varName, cType, size, cType)
+				}
 			} else {
-				fmt.Fprintf(b, "%s%s* %s = (%s*)malloc(%s * sizeof(%s));\n", indent, cType, varName, cType, size, cType)
+				fmt.Printf("Debug: Local variable allocation: %s\n", varName)
+				if useGC {
+					fmt.Fprintf(b, "%s%s* %s = (%s*)GC_malloc(%s * sizeof(%s));\n", indent, cType, varName, cType, size, cType)
+				} else {
+					fmt.Fprintf(b, "%s%s* %s = (%s*)malloc(%s * sizeof(%s));\n", indent, cType, varName, cType, size, cType)
+				}
 			}
 
 		case stmt.Free != nil:
