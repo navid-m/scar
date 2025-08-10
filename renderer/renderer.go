@@ -3547,6 +3547,12 @@ func isStringLiteral(value string) bool {
 }
 
 func isArithmeticExpression(value string) bool {
+	if len(value) > 1 && (value[0] == '-' || value[0] == '+') {
+		remaining := strings.TrimSpace(value[1:])
+		if !isNumericLiteral(remaining) && remaining != "" {
+			return true
+		}
+	}
 	operators := []string{"+", "-", "*", "/", "%"}
 	for _, op := range operators {
 		if strings.Contains(value, " "+op+" ") {
@@ -3556,7 +3562,25 @@ func isArithmeticExpression(value string) bool {
 	return false
 }
 
+func isNumericLiteral(value string) bool {
+	_, errInt := strconv.Atoi(value)
+	_, errFloat := strconv.ParseFloat(value, 64)
+	return errInt == nil || errFloat == nil
+}
+
 func inferArithmeticExpressionType(value string) string {
+	// Handle unary operators
+	if len(value) > 1 && (value[0] == '-' || value[0] == '+') {
+		operand := strings.TrimSpace(value[1:])
+		if !isNumericLiteral(operand) {
+			operandType := inferValueType(operand)
+			if isNumericType(operandType) {
+				return operandType
+			}
+		}
+	}
+
+	// Handle binary operators
 	operators := []string{" + ", " - ", " * ", " / ", " % "}
 
 	for _, op := range operators {
@@ -3574,7 +3598,7 @@ func inferArithmeticExpressionType(value string) string {
 					if leftType == "f64" || leftType == "double" || rightType == "f64" || rightType == "double" {
 						return "f64"
 					}
-					return "i32" // Default to int for integer arithmetic
+					return "i32"
 				}
 			}
 			break
