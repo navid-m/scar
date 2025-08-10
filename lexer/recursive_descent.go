@@ -267,8 +267,10 @@ func parseEnumDeclaration(lines []string, startLine, indentLevel int) (*Statemen
 	if enumName == "" {
 		return nil, startLine, fmt.Errorf("missing enum name in declaration: %s", line)
 	}
-	values := []string{}
-	nextLine := startLine + 1
+	var (
+		values   = []string{}
+		nextLine = startLine + 1
+	)
 	if strings.Contains(line, "{") && strings.Contains(line, "}") {
 		valuesStr := line[strings.Index(line, "{")+1 : strings.Index(line, "}")]
 		for val := range strings.SplitSeq(valuesStr, ",") {
