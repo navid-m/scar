@@ -1726,6 +1726,7 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 
 			value = processGetExpressions(value, program)
 			value = processHasExpressions(value, program)
+			value = convertPropertyAccess(value)
 			value = fixFloatCastGranular(value)
 			value = resolveImportedSymbols(value, program.Imports)
 			value = resolveLenFunctionCalls(value)
@@ -2105,6 +2106,7 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 
 			for i, arg := range stmt.VarDeclMethodCall.Args {
 				args[i] = lexer.ResolveSymbol(arg, currentModule)
+				args[i] = convertPropertyAccess(args[i])
 			}
 			argsStr := strings.Join(args, ", ")
 			if resolvedClassName == "" {
@@ -2764,6 +2766,24 @@ func convertThisReferencesGranular(expr string) string {
 	expr = strings.ReplaceAll(expr, "(nil)", "(NULL)")
 	if expr == "nil" {
 		expr = "NULL"
+	}
+
+	expr = convertPropertyAccess(expr)
+	if currentClassName != "" {
+		reThisMethodCall := regexp.MustCompile(`this->([a-zA-Z_][a-zA-Z0-9_]*)\((.*?)\)`)
+		expr = reThisMethodCall.ReplaceAllStringFunc(expr, func(match string) string {
+			submatches := reThisMethodCall.FindStringSubmatch(match)
+			if len(submatches) == 3 {
+				methodName := submatches[1]
+				args := submatches[2]
+				if strings.TrimSpace(args) == "" {
+					return fmt.Sprintf("%s_%s(this)", currentClassName, methodName)
+				} else {
+					return fmt.Sprintf("%s_%s(this, %s)", currentClassName, methodName, args)
+				}
+			}
+			return match
+		})
 	}
 
 	if isMethodCall(expr) {

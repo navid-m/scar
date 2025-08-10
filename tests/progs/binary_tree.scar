@@ -1,0 +1,314 @@
+pub class TreeNode:
+    init(int value):
+        int this.value = value
+        ref TreeNode this.left = nil
+        ref TreeNode this.right = nil
+
+pub class BinaryTree:
+    init:
+        ref TreeNode this.root = nil
+        int this.size = 0
+
+    fn insert(int value) -> void:
+        if this.root == nil:
+            this.root = new TreeNode(value)
+            this.size = this.size + 1
+            print "Inserted %d as root" | value
+        else:
+            this.insert_recursive(this.root, value)
+
+    fn insert_recursive(ref TreeNode node, int value) -> void:
+        if value < node.value:
+            if node.left == nil:
+                node.left = new TreeNode(value)
+                this.size = this.size + 1
+                print "Inserted %d to the left of %d" | value, node.value
+            else:
+                this.insert_recursive(node.left, value)
+        elif value > node.value:
+            if node.right == nil:
+                node.right = new TreeNode(value)
+                this.size = this.size + 1
+                print "Inserted %d to the right of %d" | value, node.value
+            else:
+                this.insert_recursive(node.right, value)
+        else:
+            print "Value %d already exists in tree" | value
+
+    fn search(int value) -> bool:
+        return this.search_recursive(this.root, value)
+
+    fn search_recursive(ref TreeNode node, int value) -> bool:
+        if node == nil:
+            return false
+        
+        if value == node.value:
+            return true
+        elif value < node.value:
+            return this.search_recursive(node.left, value)
+        else:
+            return this.search_recursive(node.right, value)
+
+    fn find_min() -> int:
+        if this.root == nil:
+            print "Tree is empty"
+            return -1
+        
+        ref TreeNode current = this.root
+        while current.left != nil:
+            current = current.left
+        
+        return current.value
+
+    fn find_max() -> int:
+        if this.root == nil:
+            print "Tree is empty"
+            return -1
+        
+        ref TreeNode current = this.root
+        while current.right != nil:
+            current = current.right
+        
+        return current.value
+
+    fn get_height() -> int:
+        return this.height_recursive(this.root)
+
+    fn height_recursive(ref TreeNode node) -> int:
+        if node == nil:
+            return 0
+        
+        int left_height = this.height_recursive(node.left)
+        int right_height = this.height_recursive(node.right)
+        
+        if left_height > right_height:
+            return left_height + 1
+        else:
+            return right_height + 1
+
+    fn inorder_traversal() -> void:
+        print "Inorder traversal:"
+        this.inorder_recursive(this.root)
+        print ""
+
+    fn inorder_recursive(ref TreeNode node) -> void:
+        if node != nil:
+            this.inorder_recursive(node.left)
+            print "%d " | node.value
+            this.inorder_recursive(node.right)
+
+    fn preorder_traversal() -> void:
+        print "Preorder traversal:"
+        this.preorder_recursive(this.root)
+        print ""
+
+    fn preorder_recursive(ref TreeNode node) -> void:
+        if node != nil:
+            print "%d " | node.value
+            this.preorder_recursive(node.left)
+            this.preorder_recursive(node.right)
+
+    fn postorder_traversal() -> void:
+        print "Postorder traversal:"
+        this.postorder_recursive(this.root)
+        print ""
+
+    fn postorder_recursive(ref TreeNode node) -> void:
+        if node != nil:
+            this.postorder_recursive(node.left)
+            this.postorder_recursive(node.right)
+            print "%d " | node.value
+
+    fn count_nodes() -> int:
+        return this.count_recursive(this.root)
+
+    fn count_recursive(ref TreeNode node) -> int:
+        if node == nil:
+            return 0
+        
+        return 1 + this.count_recursive(node.left) + this.count_recursive(node.right)
+
+    fn is_empty() -> bool:
+        return this.root == nil
+
+    fn get_size() -> int:
+        return this.size
+
+    fn remove(int value) -> bool:
+        if this.root == nil:
+            print "Tree is empty, cannot remove %d" | value
+            return false
+        
+        ref TreeNode parent = nil
+        ref TreeNode current = this.root
+        bool is_left_child = false
+        
+        # Find the node to remove
+        while current != nil && current.value != value:
+            parent = current
+            if value < current.value:
+                current = current.left
+                is_left_child = true
+            else:
+                current = current.right
+                is_left_child = false
+        
+        if current == nil:
+            print "Value %d not found in tree" | value
+            return false
+        
+        # Case 1: Node has no children (leaf node)
+        if current.left == nil && current.right == nil:
+            if current == this.root:
+                this.root = nil
+            elif is_left_child:
+                parent.left = nil
+            else:
+                parent.right = nil
+        
+        # Case 2: Node has one child
+        elif current.left == nil:
+            if current == this.root:
+                this.root = current.right
+            elif is_left_child:
+                parent.left = current.right
+            else:
+                parent.right = current.right
+        
+        elif current.right == nil:
+            if current == this.root:
+                this.root = current.left
+            elif is_left_child:
+                parent.left = current.left
+            else:
+                parent.right = current.left
+        
+        # Case 3: Node has two children
+        else:
+            # Find inorder successor (smallest in right subtree)
+            ref TreeNode successor = this.find_successor(current)
+            
+            # Replace current's value with successor's value
+            current.value = successor.value
+            
+            # Remove the successor (which has at most one child)
+            this.remove_successor(current.right, successor.value)
+        
+        this.size = this.size - 1
+        print "Removed %d from tree (size: %d)" | value, this.size
+        return true
+
+    fn find_successor(ref TreeNode node) -> ref TreeNode:
+        ref TreeNode current = node.right
+        while current.left != nil:
+            current = current.left
+        return current
+
+    fn remove_successor(ref TreeNode subtree_root, int value) -> void:
+        ref TreeNode parent = nil
+        ref TreeNode current = subtree_root
+        
+        while current != nil && current.value != value:
+            parent = current
+            if value < current.value:
+                current = current.left
+            else:
+                current = current.right
+        
+        if current != nil:
+            if current.right != nil:
+                if parent == nil:
+                    # This shouldn't happen in our case
+                    return
+                elif current == parent.left:
+                    parent.left = current.right
+                else:
+                    parent.right = current.right
+            else:
+                if parent == nil:
+                    # This shouldn't happen in our case
+                    return
+                elif current == parent.left:
+                    parent.left = nil
+                else:
+                    parent.right = nil
+
+    fn clear() -> void:
+        this.root = nil
+        this.size = 0
+        print "Tree cleared"
+
+    fn print_tree() -> void:
+        if this.is_empty():
+            print "Tree is empty"
+            return
+        
+        print "Binary Search Tree (size: %d, height: %d):" | this.size, this.get_height()
+        this.print_tree_recursive(this.root, 0)
+
+    fn print_tree_recursive(ref TreeNode node, int depth) -> void:
+        if node != nil:
+            this.print_tree_recursive(node.right, depth + 1)
+            
+            for i = 0 to depth - 1:
+                print "    "
+            print "%d" | node.value
+            
+            this.print_tree_recursive(node.left, depth + 1)
+
+# Demo usage
+print "=== Binary Search Tree Demo ==="
+
+var tree = new BinaryTree()
+
+# Test insertions
+print "\n--- Inserting values ---"
+tree.insert(50)
+tree.insert(30)
+tree.insert(70)
+tree.insert(20)
+tree.insert(40)
+tree.insert(60)
+tree.insert(80)
+
+# Print tree structure
+tree.print_tree()
+
+# Test search
+print "\n--- Search operations ---"
+bool found_40 = tree.search(40)
+bool found_90 = tree.search(90)
+print "Search for 40: %s" | (found_40 ? "found" : "not found")
+print "Search for 90: %s" | (found_90 ? "found" : "not found")
+
+# Test min/max
+print "\n--- Min/Max values ---"
+int min_val = tree.find_min()
+int max_val = tree.find_max()
+print "Minimum value: %d" | min_val
+print "Maximum value: %d" | max_val
+
+# Test traversals
+print "\n--- Tree traversals ---"
+tree.inorder_traversal()
+tree.preorder_traversal()
+tree.postorder_traversal()
+
+# Test tree properties
+print "\n--- Tree properties ---"
+print "Tree height: %d" | tree.get_height()
+print "Node count: %d" | tree.count_nodes()
+print "Tree size: %d" | tree.get_size()
+
+# Test removal
+print "\n--- Removal operations ---"
+tree.remove(20)  # Remove leaf
+tree.print_tree()
+
+tree.remove(30)  # Remove node with one child
+tree.print_tree()
+
+tree.remove(50)  # Remove root (node with two children)
+tree.print_tree()
+
+print "\nFinal tree size: %d" | tree.get_size()
