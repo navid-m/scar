@@ -336,3 +336,123 @@ while i < 10:
 		})
 	}
 }
+
+func TestComplexTypeValidation(t *testing.T) {
+	t.Run("isValidType with complex types", func(t *testing.T) {
+		testCases := []struct {
+			typeName string
+			expected bool
+		}{
+			{"int", true},
+			{"string", true},
+			{"bool", true},
+			{"float", true},
+			{"list[int]", true},
+			{"list[string]", true},
+			{"list[bool]", true},
+			{"list[list[string]]", true},
+			{"list[list[int]]", true},
+			{"list[list[bool]]", true},
+			{"map[string: int]", true},
+			{"map[int: string]", true},
+			{"map[string: bool]", true},
+			{"map[string: list[int]]", true},
+			{"map[list[string]: int]", true},
+			{"map[list[string]: list[int]]", true},
+			{"map[list[string]: map[int: string]]", true},
+			{"list[map[string: int]]", true},
+			{"invalidtype", false},
+			{"list[]", false},
+			{"map[]", false},
+			{"map[string]", false},
+			{"map[: int]", false},
+			{"map[string:]", false},
+			{"list[invalidtype]", false},
+			{"map[invalidtype: int]", false},
+			{"map[string: invalidtype]", false},
+		}
+
+		for _, tc := range testCases {
+			result := isValidType(tc.typeName)
+			if result != tc.expected {
+				t.Errorf("isValidType(%s) = %v, expected %v", tc.typeName, result, tc.expected)
+			}
+		}
+	})
+
+	t.Run("parseComplexType function", func(t *testing.T) {
+		testCases := []struct {
+			input         string
+			expectedType  string
+			expectedValid bool
+		}{
+			{"string", "string", true},
+			{"int", "int", true},
+			{"list[string]", "list[string]", true},
+			{"list[list[int]]", "list[list[int]]", true},
+			{"map[string: int]", "map[string: int]", true},
+			{"map[list[string]: int]", "map[list[string]: int]", true},
+			{"invalidtype", "invalidtype", false},
+			{"list[invalidtype]", "", false},
+		}
+
+		for _, tc := range testCases {
+			resultType, resultValid := parseComplexType(tc.input)
+			if resultValid != tc.expectedValid {
+				t.Errorf("parseComplexType(%s) valid = %v, expected %v", tc.input, resultValid, tc.expectedValid)
+			}
+			if resultValid && resultType != tc.expectedType {
+				t.Errorf("parseComplexType(%s) type = %s, expected %s", tc.input, resultType, tc.expectedType)
+			}
+		}
+	})
+
+	t.Run("isValidMapType function", func(t *testing.T) {
+		testCases := []struct {
+			mapContent string
+			expected   bool
+		}{
+			{"string: int", true},
+			{"int: string", true},
+			{"list[string]: int", true},
+			{"string: list[int]", true},
+			{"list[string]: list[int]", true},
+			{"map[string: int]: list[string]", true},
+			{"string", false},              // Missing colon
+			{": int", false},               // Missing key type
+			{"string:", false},             // Missing value type
+			{"", false},                    // Empty
+			{"string int", false},          // Missing colon
+			{"invalidtype: int", false},    // Invalid key type
+			{"string: invalidtype", false}, // Invalid value type
+		}
+
+		for _, tc := range testCases {
+			result := isValidMapType(tc.mapContent)
+			if result != tc.expected {
+				t.Errorf("isValidMapType(%s) = %v, expected %v", tc.mapContent, result, tc.expected)
+			}
+		}
+	})
+
+	t.Run("findMapColonPosition function", func(t *testing.T) {
+		testCases := []struct {
+			input    string
+			expected int
+		}{
+			{"string: int", 6},
+			{"list[string]: int", 12},
+			{"string: list[int]", 6},
+			{"map[string: int]: list[string]", 16},
+			{"string", -1}, // No colon
+			{"", -1},       // Empty string
+		}
+
+		for _, tc := range testCases {
+			result := findMapColonPosition(tc.input)
+			if result != tc.expected {
+				t.Errorf("findMapColonPosition(%s) = %d, expected %d", tc.input, result, tc.expected)
+			}
+		}
+	})
+}

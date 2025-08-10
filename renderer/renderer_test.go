@@ -2182,3 +2182,252 @@ func TestRenderCWithListFunctionAssignment(t *testing.T) {
 		}
 	})
 }
+
+func TestComplexCollectionTypes(t *testing.T) {
+	t.Run("list[list[string]] nested string arrays", func(t *testing.T) {
+		program := &lexer.Program{
+			Statements: []*lexer.Statement{
+				{
+					ListDecl: &lexer.ListDeclStmt{
+						Name:     "matrix",
+						Type:     "list[list[string]]",
+						Elements: []string{`["a", "b"]`, `["c", "d"]`},
+					},
+				},
+			},
+		}
+
+		cCode := RenderC(program, "")
+
+		expectedDecl := `char matrix[2][100][256];`
+		if !strings.Contains(cCode, expectedDecl) {
+			t.Errorf("Expected C code to contain '%s', but it didn't", expectedDecl)
+		}
+
+		expectedLengths := `int matrix_lengths[2];`
+		if !strings.Contains(cCode, expectedLengths) {
+			t.Errorf("Expected C code to contain '%s', but it didn't", expectedLengths)
+		}
+		expectedInit1 := `matrix_lengths[0] = 2;`
+		expectedInit2 := `strcpy(matrix[0][0], "a");`
+		expectedInit3 := `strcpy(matrix[0][1], "b");`
+		expectedInit4 := `matrix_lengths[1] = 2;`
+		expectedInit5 := `strcpy(matrix[1][0], "c");`
+		expectedInit6 := `strcpy(matrix[1][1], "d");`
+
+		if !strings.Contains(cCode, expectedInit1) {
+			t.Errorf("Expected C code to contain '%s', but it didn't", expectedInit1)
+		}
+		if !strings.Contains(cCode, expectedInit2) {
+			t.Errorf("Expected C code to contain '%s', but it didn't", expectedInit2)
+		}
+		if !strings.Contains(cCode, expectedInit3) {
+			t.Errorf("Expected C code to contain '%s', but it didn't", expectedInit3)
+		}
+		if !strings.Contains(cCode, expectedInit4) {
+			t.Errorf("Expected C code to contain '%s', but it didn't", expectedInit4)
+		}
+		if !strings.Contains(cCode, expectedInit5) {
+			t.Errorf("Expected C code to contain '%s', but it didn't", expectedInit5)
+		}
+		if !strings.Contains(cCode, expectedInit6) {
+			t.Errorf("Expected C code to contain '%s', but it didn't", expectedInit6)
+		}
+
+		expectedOverallLen := `int matrix_len = 2;`
+		if !strings.Contains(cCode, expectedOverallLen) {
+			t.Errorf("Expected C code to contain '%s', but it didn't", expectedOverallLen)
+		}
+	})
+
+	t.Run("list[list[int]] nested integer arrays", func(t *testing.T) {
+		program := &lexer.Program{
+			Statements: []*lexer.Statement{
+				{
+					ListDecl: &lexer.ListDeclStmt{
+						Name:     "numbers",
+						Type:     "list[list[int]]",
+						Elements: []string{`[1, 2]`, `[3, 4, 5]`},
+					},
+				},
+			},
+		}
+
+		cCode := RenderC(program, "")
+
+		expectedDecl := `int numbers[2][100];`
+		if !strings.Contains(cCode, expectedDecl) {
+			t.Errorf("Expected C code to contain '%s', but it didn't", expectedDecl)
+		}
+		expectedLengths := `int numbers_lengths[2];`
+		if !strings.Contains(cCode, expectedLengths) {
+			t.Errorf("Expected C code to contain '%s', but it didn't", expectedLengths)
+		}
+		expectedInit1 := `numbers_lengths[0] = 2;`
+		expectedInit2 := `numbers[0][0] = 1;`
+		expectedInit3 := `numbers[0][1] = 2;`
+		expectedInit4 := `numbers_lengths[1] = 3;`
+		expectedInit5 := `numbers[1][0] = 3;`
+		expectedInit6 := `numbers[1][1] = 4;`
+		expectedInit7 := `numbers[1][2] = 5;`
+
+		if !strings.Contains(cCode, expectedInit1) {
+			t.Errorf("Expected C code to contain '%s', but it didn't", expectedInit1)
+		}
+		if !strings.Contains(cCode, expectedInit2) {
+			t.Errorf("Expected C code to contain '%s', but it didn't", expectedInit2)
+		}
+		if !strings.Contains(cCode, expectedInit3) {
+			t.Errorf("Expected C code to contain '%s', but it didn't", expectedInit3)
+		}
+		if !strings.Contains(cCode, expectedInit4) {
+			t.Errorf("Expected C code to contain '%s', but it didn't", expectedInit4)
+		}
+		if !strings.Contains(cCode, expectedInit5) {
+			t.Errorf("Expected C code to contain '%s', but it didn't", expectedInit5)
+		}
+		if !strings.Contains(cCode, expectedInit6) {
+			t.Errorf("Expected C code to contain '%s', but it didn't", expectedInit6)
+		}
+		if !strings.Contains(cCode, expectedInit7) {
+			t.Errorf("Expected C code to contain '%s', but it didn't", expectedInit7)
+		}
+	})
+
+	t.Run("empty nested list", func(t *testing.T) {
+		program := &lexer.Program{
+			Statements: []*lexer.Statement{
+				{
+					ListDecl: &lexer.ListDeclStmt{
+						Name:     "empty",
+						Type:     "list[list[string]]",
+						Elements: []string{},
+					},
+				},
+			},
+		}
+
+		cCode := RenderC(program, "")
+
+		expectedDecl := `char empty[0][100][256];`
+		if !strings.Contains(cCode, expectedDecl) {
+			t.Errorf("Expected C code to contain '%s', but it didn't", expectedDecl)
+		}
+
+		expectedLengths := `int empty_lengths[0];`
+		if !strings.Contains(cCode, expectedLengths) {
+			t.Errorf("Expected C code to contain '%s', but it didn't", expectedLengths)
+		}
+
+		expectedOverallLen := `int empty_len = 0;`
+		if !strings.Contains(cCode, expectedOverallLen) {
+			t.Errorf("Expected C code to contain '%s', but it didn't", expectedOverallLen)
+		}
+	})
+
+	t.Run("single nested list", func(t *testing.T) {
+		program := &lexer.Program{
+			Statements: []*lexer.Statement{
+				{
+					ListDecl: &lexer.ListDeclStmt{
+						Name:     "single",
+						Type:     "list[list[int]]",
+						Elements: []string{`[42]`},
+					},
+				},
+			},
+		}
+
+		cCode := RenderC(program, "")
+		expectedDecl := `int single[1][100];`
+		if !strings.Contains(cCode, expectedDecl) {
+			t.Errorf("Expected C code to contain '%s', but it didn't", expectedDecl)
+		}
+		expectedInit1 := `single_lengths[0] = 1;`
+		expectedInit2 := `single[0][0] = 42;`
+
+		if !strings.Contains(cCode, expectedInit1) {
+			t.Errorf("Expected C code to contain '%s', but it didn't", expectedInit1)
+		}
+		if !strings.Contains(cCode, expectedInit2) {
+			t.Errorf("Expected C code to contain '%s', but it didn't", expectedInit2)
+		}
+	})
+}
+
+func TestComplexCollectionTypeValidation(t *testing.T) {
+	t.Run("isComplexCollectionType function", func(t *testing.T) {
+		testCases := []struct {
+			typeName string
+			expected bool
+		}{
+			{"list[string]", false},          // Simple list
+			{"list[int]", false},             // Simple list
+			{"list[list[string]]", true},     // Complex nested list
+			{"list[list[int]]", true},        // Complex nested list
+			{"list[map[string]]", true},      // List with map (should be complex)
+			{"map[string: int]", true},       // Maps are considered complex
+			{"map[string: list[int]]", true}, // Complex map
+			{"string", false},                // Simple type
+			{"int", false},                   // Simple type
+		}
+
+		for _, tc := range testCases {
+			result := isComplexCollectionType(tc.typeName)
+			if result != tc.expected {
+				t.Errorf("isComplexCollectionType(%s) = %v, expected %v", tc.typeName, result, tc.expected)
+			}
+		}
+	})
+}
+
+func TestComplexCollectionHelpers(t *testing.T) {
+	t.Run("extractListInnerType function", func(t *testing.T) {
+		testCases := []struct {
+			input    string
+			expected string
+		}{
+			{"list[string]", "string"},
+			{"list[int]", "int"},
+			{"list[list[string]]", "list[string]"},
+			{"list[list[int]]", "list[int]"},
+			{"list[map[string: int]]", "map[string: int]"},
+			{"invalid", ""},
+			{"list[]", ""},
+		}
+
+		for _, tc := range testCases {
+			result := extractListInnerType(tc.input)
+			if result != tc.expected {
+				t.Errorf("extractListInnerType(%s) = %s, expected %s", tc.input, result, tc.expected)
+			}
+		}
+	})
+
+	t.Run("parseListElements function", func(t *testing.T) {
+		testCases := []struct {
+			input    string
+			expected []string
+		}{
+			{`"a", "b", "c"`, []string{`"a"`, `"b"`, `"c"`}},
+			{`1, 2, 3`, []string{"1", "2", "3"}},
+			{`["a", "b"], ["c", "d"]`, []string{`["a", "b"]`, `["c", "d"]`}},
+			{`[1, 2], [3, 4, 5]`, []string{`[1, 2]`, `[3, 4, 5]`}},
+			{`[[1, 2], [3]], [[4, 5]]`, []string{`[[1, 2], [3]]`, `[[4, 5]]`}},
+			{"", []string{}},
+		}
+
+		for _, tc := range testCases {
+			result := parseListElements(tc.input)
+			if len(result) != len(tc.expected) {
+				t.Errorf("parseListElements(%s) returned %d elements, expected %d", tc.input, len(result), len(tc.expected))
+				continue
+			}
+			for i, elem := range result {
+				if elem != tc.expected[i] {
+					t.Errorf("parseListElements(%s)[%d] = %s, expected %s", tc.input, i, elem, tc.expected[i])
+				}
+			}
+		}
+	})
+}
