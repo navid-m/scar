@@ -2431,3 +2431,143 @@ func TestComplexCollectionHelpers(t *testing.T) {
 		}
 	})
 }
+
+func TestRenderCWithReverseForLoop(t *testing.T) {
+	program := &lexer.Program{
+		Statements: []*lexer.Statement{
+			{
+				ReverseFor: &lexer.ReverseForStmt{
+					Var:   "i",
+					Start: "10",
+					End:   "1",
+					Body: []*lexer.Statement{
+						{
+							Print: &lexer.PrintStmt{
+								Format:    "i is %d",
+								Variables: []string{"i"},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	cCode := RenderC(program, "", false)
+	expected := `for (int i = 10; i >= 1; i--) {
+    printf("i is %d\n", i);
+    }`
+
+	normalizedCCode := strings.Join(strings.Fields(cCode), " ")
+	normalizedExpected := strings.Join(strings.Fields(expected), " ")
+
+	if !strings.Contains(normalizedCCode, normalizedExpected) {
+		t.Errorf("Expected C code to contain '%s', but got '%s'", normalizedExpected, normalizedCCode)
+	}
+}
+
+func TestRenderCWithOldSchoolForLoop(t *testing.T) {
+	program := &lexer.Program{
+		Statements: []*lexer.Statement{
+			{
+				VerboseFor: &lexer.VerboseForStmt{
+					VarType:   "i32",
+					VarName:   "i",
+					Init:      "0",
+					Condition: "i < 24",
+					Increment: "i += 2",
+					Body: []*lexer.Statement{
+						{
+							Print: &lexer.PrintStmt{
+								Format:    "i is %d",
+								Variables: []string{"i"},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	cCode := RenderC(program, "", false)
+	expected := `for (int i = 0; i < 24; i += 2) {
+    printf("i is %d\n", i);
+    }`
+
+	normalizedCCode := strings.Join(strings.Fields(cCode), " ")
+	normalizedExpected := strings.Join(strings.Fields(expected), " ")
+
+	if !strings.Contains(normalizedCCode, normalizedExpected) {
+		t.Errorf("Expected C code to contain '%s', but got '%s'", normalizedExpected, normalizedCCode)
+	}
+}
+
+func TestRenderCWithComplexReverseForLoop(t *testing.T) {
+	program := &lexer.Program{
+		Statements: []*lexer.Statement{
+			{
+				ReverseFor: &lexer.ReverseForStmt{
+					Var:   "j",
+					Start: "50",
+					End:   "10",
+					Body: []*lexer.Statement{
+						{
+							Print: &lexer.PrintStmt{
+								Format:    "countdown: %d",
+								Variables: []string{"j"},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	cCode := RenderC(program, "", false)
+	expected := `for (int j = 50; j >= 10; j--) {
+    printf("countdown: %d\n", j);
+    }`
+
+	normalizedCCode := strings.Join(strings.Fields(cCode), " ")
+	normalizedExpected := strings.Join(strings.Fields(expected), " ")
+
+	if !strings.Contains(normalizedCCode, normalizedExpected) {
+		t.Errorf("Expected C code to contain '%s', but got '%s'", normalizedExpected, normalizedCCode)
+	}
+}
+
+func TestRenderCWithDifferentOldSchoolForLoop(t *testing.T) {
+	program := &lexer.Program{
+		Statements: []*lexer.Statement{
+			{
+				VerboseFor: &lexer.VerboseForStmt{
+					VarType:   "u64",
+					VarName:   "counter",
+					Init:      "100",
+					Condition: "counter > 0",
+					Increment: "counter -= 5",
+					Body: []*lexer.Statement{
+						{
+							Print: &lexer.PrintStmt{
+								Format:    "counter: %d",
+								Variables: []string{"counter"},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	cCode := RenderC(program, "", false)
+	expected := `for (unsigned long counter = 100; counter > 0; counter -= 5) {
+    printf("counter: %d\n", counter);
+    }`
+
+	normalizedCCode := strings.Join(strings.Fields(cCode), " ")
+	normalizedExpected := strings.Join(strings.Fields(expected), " ")
+
+	if !strings.Contains(normalizedCCode, normalizedExpected) {
+		t.Errorf("Expected C code to contain '%s', but got '%s'", normalizedExpected, normalizedCCode)
+	}
+}

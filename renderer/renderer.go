@@ -1515,12 +1515,9 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			end = lexer.ResolveSymbol(end, currentModule)
 			end = resolveLenFunctionCalls(end)
 
-			// Clean up variable name - remove type prefix if present
 			if after, ok := strings.CutPrefix(varName, "int "); ok {
 				varName = after
 			}
-
-			// Clean up any malformed characters that might have been introduced
 			varName = strings.ReplaceAll(varName, "*", "")
 			varName = strings.ReplaceAll(varName, "_", "")
 
@@ -1532,6 +1529,62 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			fmt.Fprintf(b, "%sfor (int %s = %s; %s <= %s; %s++) {\n",
 				indent, varName, start, varName, endCond, varName)
 			renderStatements(b, stmt.For.Body, indent+"    ", className, program, currentFunctionReturnType)
+			fmt.Fprintf(b, "%s}\n", indent)
+		case stmt.ReverseFor != nil:
+			var (
+				varName = stmt.ReverseFor.Var
+				start   = lexer.ResolveSymbol(stmt.ReverseFor.Start, currentModule)
+				end     = stmt.ReverseFor.End
+			)
+			start = convertThisReferencesGranular(start)
+			start = lexer.ResolveSymbol(start, currentModule)
+			start = resolveLenFunctionCalls(start)
+
+			end = convertThisReferencesGranular(end)
+			end = lexer.ResolveSymbol(end, currentModule)
+			end = resolveLenFunctionCalls(end)
+
+			if after, ok := strings.CutPrefix(varName, "int "); ok {
+				varName = after
+			}
+			varName = strings.ReplaceAll(varName, "*", "")
+			varName = strings.ReplaceAll(varName, "_", "")
+
+			startCond := start
+			if strings.ContainsAny(start, "+-*/><=!&|^%(") {
+				startCond = fmt.Sprintf("(%s)", start)
+			}
+
+			endCond := end
+			if strings.ContainsAny(end, "+-*/><=!&|^%(") {
+				endCond = fmt.Sprintf("(%s)", end)
+			}
+
+			fmt.Fprintf(b, "%sfor (int %s = %s; %s >= %s; %s--) {\n",
+				indent, varName, startCond, varName, endCond, varName)
+			renderStatements(b, stmt.ReverseFor.Body, indent+"    ", className, program, currentFunctionReturnType)
+			fmt.Fprintf(b, "%s}\n", indent)
+		case stmt.VerboseFor != nil:
+			var (
+				varType   = mapTypeToCType(stmt.VerboseFor.VarType)
+				varName   = stmt.VerboseFor.VarName
+				init      = lexer.ResolveSymbol(stmt.VerboseFor.Init, currentModule)
+				condition = stmt.VerboseFor.Condition
+				increment = stmt.VerboseFor.Increment
+			)
+
+			init = convertThisReferencesGranular(init)
+			condition = convertThisReferencesGranular(condition)
+			condition = lexer.ResolveSymbol(condition, currentModule)
+			increment = convertThisReferencesGranular(increment)
+			increment = lexer.ResolveSymbol(increment, currentModule)
+
+			varName = strings.ReplaceAll(varName, "*", "")
+			varName = strings.ReplaceAll(varName, "_", "")
+
+			fmt.Fprintf(b, "%sfor (%s %s = %s; %s; %s) {\n",
+				indent, varType, varName, init, condition, increment)
+			renderStatements(b, stmt.VerboseFor.Body, indent+"    ", className, program, currentFunctionReturnType)
 			fmt.Fprintf(b, "%s}\n", indent)
 		case stmt.If != nil:
 			condition := stmt.If.Condition

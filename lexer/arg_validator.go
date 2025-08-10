@@ -1,3 +1,9 @@
+// By Navid M (c)
+// Date: 2025
+// License: GPL3
+//
+// Contains the function signature validation logic for the scar programming language.
+
 package lexer
 
 import (
@@ -108,8 +114,8 @@ func (av *ArgumentValidator) ValidateFunctionCall(funcCall *FunctionCallStmt, li
 	return nil
 }
 
+// TODO: Implement method call validation
 func (av *ArgumentValidator) ValidateMethodCall(methodCall *MethodCallStmt, line int) error {
-	// For now, skip method validation
 	return nil
 }
 
@@ -325,6 +331,20 @@ func validateStatementRecursive(stmt *Statement, validator *ArgumentValidator, l
 
 	if stmt.For != nil {
 		for _, nestedStmt := range stmt.For.Body {
+			nestedErrors := validateStatementRecursive(nestedStmt, validator, line)
+			errors = append(errors, nestedErrors...)
+		}
+	}
+
+	if stmt.ReverseFor != nil {
+		for _, nestedStmt := range stmt.ReverseFor.Body {
+			nestedErrors := validateStatementRecursive(nestedStmt, validator, line)
+			errors = append(errors, nestedErrors...)
+		}
+	}
+
+	if stmt.VerboseFor != nil {
+		for _, nestedStmt := range stmt.VerboseFor.Body {
 			nestedErrors := validateStatementRecursive(nestedStmt, validator, line)
 			errors = append(errors, nestedErrors...)
 		}

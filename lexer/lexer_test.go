@@ -456,3 +456,63 @@ func TestComplexTypeValidation(t *testing.T) {
 		}
 	})
 }
+
+func TestParseReverseForLoop(t *testing.T) {
+	input := `
+reverse for i = 10 to 50:
+    print i
+`
+	program, err := ParseWithIndentation(input)
+	if err != nil {
+		t.Fatalf("ParseWithIndentation failed: %v", err)
+	}
+	if len(program.Statements) != 1 {
+		t.Fatalf("expected 1 statement, got %d", len(program.Statements))
+	}
+	reverseForStmt := program.Statements[0].ReverseFor
+	if reverseForStmt == nil {
+		t.Fatal("expected a ReverseFor statement, got nil")
+	}
+	if reverseForStmt.Var != "i" {
+		t.Errorf("expected var 'i', got '%s'", reverseForStmt.Var)
+	}
+	if reverseForStmt.Start != "10" {
+		t.Errorf("expected start '10', got '%s'", reverseForStmt.Start)
+	}
+	if reverseForStmt.End != "50" {
+		t.Errorf("expected end '50', got '%s'", reverseForStmt.End)
+	}
+}
+
+func TestParseOldSchoolForLoop(t *testing.T) {
+	input := `
+for i32 i = 0; i < 24; i += 2:
+    print i
+`
+	program, err := ParseWithIndentation(input)
+	if err != nil {
+		t.Fatalf("ParseWithIndentation failed: %v", err)
+	}
+	if len(program.Statements) != 1 {
+		t.Fatalf("expected 1 statement, got %d", len(program.Statements))
+	}
+	oldSchoolForStmt := program.Statements[0].VerboseFor
+	if oldSchoolForStmt == nil {
+		t.Fatal("expected an OldSchoolFor statement, got nil")
+	}
+	if oldSchoolForStmt.VarType != "i32" {
+		t.Errorf("expected varType 'i32', got '%s'", oldSchoolForStmt.VarType)
+	}
+	if oldSchoolForStmt.VarName != "i" {
+		t.Errorf("expected varName 'i', got '%s'", oldSchoolForStmt.VarName)
+	}
+	if oldSchoolForStmt.Init != "0" {
+		t.Errorf("expected init '0', got '%s'", oldSchoolForStmt.Init)
+	}
+	if oldSchoolForStmt.Condition != "i < 24" {
+		t.Errorf("expected condition 'i < 24', got '%s'", oldSchoolForStmt.Condition)
+	}
+	if oldSchoolForStmt.Increment != "i += 2" {
+		t.Errorf("expected increment 'i += 2', got '%s'", oldSchoolForStmt.Increment)
+	}
+}

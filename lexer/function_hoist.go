@@ -65,6 +65,16 @@ func processFunctionDependencies(body []*Statement) map[string]bool {
 				processStmt(s)
 			}
 
+		case stmt.ReverseFor != nil:
+			for _, s := range stmt.ReverseFor.Body {
+				processStmt(s)
+			}
+
+		case stmt.VerboseFor != nil:
+			for _, s := range stmt.VerboseFor.Body {
+				processStmt(s)
+			}
+
 		case stmt.ParallelFor != nil:
 			for _, s := range stmt.ParallelFor.Body {
 				processStmt(s)

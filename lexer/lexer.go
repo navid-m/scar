@@ -35,6 +35,8 @@ type Statement struct {
 	Sleep                *SleepStmt
 	While                *WhileStmt
 	For                  *ForStmt
+	ReverseFor           *ReverseForStmt
+	VerboseFor           *VerboseForStmt
 	Put                  *PutStmt
 	If                   *IfStmt
 	Break                *BreakStmt
@@ -250,6 +252,22 @@ type ForStmt struct {
 	Start string
 	End   string
 	Body  []*Statement
+}
+
+type ReverseForStmt struct {
+	Var   string
+	Start string
+	End   string
+	Body  []*Statement
+}
+
+type VerboseForStmt struct {
+	VarType   string
+	VarName   string
+	Init      string
+	Condition string
+	Increment string
+	Body      []*Statement
 }
 
 type IfStmt struct {

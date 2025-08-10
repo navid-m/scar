@@ -1095,6 +1095,64 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 		}}, nextLine, nil
 
 	case "for":
+		semicolonCount := strings.Count(line, ";")
+		if semicolonCount == 2 {
+			colonIndex := strings.LastIndex(line, ":")
+			if colonIndex == -1 {
+				return nil, lineNum + 1, fmt.Errorf("for statement missing colon at line %d", lineNum+1)
+			}
+
+			forContent := strings.TrimSpace(line[3:colonIndex]) // Remove "for" and ":"
+			parts := strings.Split(forContent, ";")
+			if len(parts) != 3 {
+				return nil, lineNum + 1, fmt.Errorf("for statement format error at line %d", lineNum+1)
+			}
+
+			initPart := strings.TrimSpace(parts[0])
+			condition := strings.TrimSpace(parts[1])
+			increment := strings.TrimSpace(parts[2])
+			initParts := strings.Fields(initPart)
+			if len(initParts) < 4 || initParts[2] != "=" {
+				return nil, lineNum + 1, fmt.Errorf("for statement init format error at line %d", lineNum+1)
+			}
+
+			varType := initParts[0]
+			varName := initParts[1]
+			init := strings.Join(initParts[3:], " ")
+
+			expectedBodyIndent := currentIndent + 4
+			if currentIndent == 0 {
+				bodyStartLine := lineNum + 1
+				for bodyStartLine < len(lines) {
+					bodyLine := lines[bodyStartLine]
+					if strings.TrimSpace(bodyLine) != "" && !strings.HasPrefix(strings.TrimSpace(bodyLine), "#") {
+						expectedBodyIndent = getIndentation(bodyLine)
+						break
+					}
+					bodyStartLine++
+				}
+				if expectedBodyIndent <= currentIndent {
+					expectedBodyIndent = currentIndent + 4
+				}
+			}
+
+			body, err := parseStatements(lines, lineNum+1, expectedBodyIndent)
+			if err != nil {
+				return nil, lineNum + 1, err
+			}
+
+			nextLine := findEndOfBlock(lines, lineNum+1, expectedBodyIndent)
+
+			return &Statement{VerboseFor: &VerboseForStmt{
+				VarType:   varType,
+				VarName:   varName,
+				Init:      init,
+				Condition: condition,
+				Increment: increment,
+				Body:      body,
+			}}, nextLine, nil
+		}
+
 		equalsIndex := strings.Index(line, "=")
 		toIndex := strings.Index(line, "to")
 		colonIndex := strings.LastIndex(line, ":")
@@ -1135,6 +1193,53 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 		nextLine := findEndOfBlock(lines, lineNum+1, expectedBodyIndent)
 
 		return &Statement{For: &ForStmt{Var: varName, Start: start, End: end, Body: body}}, nextLine, nil
+
+	case "reverse":
+		if len(parts) < 2 || parts[1] != "for" {
+			return nil, lineNum + 1, fmt.Errorf("reverse statement must be followed by 'for' at line %d", lineNum+1)
+		}
+
+		// Parse reverse for: reverse for i = 10 to 50:
+		equalsIndex := strings.Index(line, "=")
+		toIndex := strings.Index(line, "to")
+		colonIndex := strings.LastIndex(line, ":")
+		if equalsIndex == -1 || toIndex == -1 || colonIndex == -1 ||
+			!(equalsIndex > strings.Index(line, "for") && equalsIndex < toIndex && toIndex < colonIndex) {
+			return nil, lineNum + 1, fmt.Errorf("reverse for statement format error at line %d", lineNum+1)
+		}
+
+		varName := strings.TrimSpace(line[strings.Index(line, "for")+len("for") : equalsIndex])
+		start := strings.TrimSpace(line[equalsIndex+1 : toIndex])
+		end := strings.TrimSpace(line[toIndex+len("to") : colonIndex])
+
+		if varName == "" || start == "" || end == "" {
+			return nil, lineNum + 1, fmt.Errorf("reverse for statement missing variable, start, or end expression at line %d", lineNum+1)
+		}
+
+		expectedBodyIndent := currentIndent + 4
+		if currentIndent == 0 {
+			bodyStartLine := lineNum + 1
+			for bodyStartLine < len(lines) {
+				bodyLine := lines[bodyStartLine]
+				if strings.TrimSpace(bodyLine) != "" && !strings.HasPrefix(strings.TrimSpace(bodyLine), "#") {
+					expectedBodyIndent = getIndentation(bodyLine)
+					break
+				}
+				bodyStartLine++
+			}
+			if expectedBodyIndent <= currentIndent {
+				expectedBodyIndent = currentIndent + 4
+			}
+		}
+
+		body, err := parseStatements(lines, lineNum+1, expectedBodyIndent)
+		if err != nil {
+			return nil, lineNum + 1, err
+		}
+
+		nextLine := findEndOfBlock(lines, lineNum+1, expectedBodyIndent)
+
+		return &Statement{ReverseFor: &ReverseForStmt{Var: varName, Start: start, End: end, Body: body}}, nextLine, nil
 
 	case "if":
 		if len(parts) < 2 || !strings.HasSuffix(line, ":") {
