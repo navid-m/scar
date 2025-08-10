@@ -3742,6 +3742,9 @@ func checkTypeCompatibility(varName, varType, value string) error {
 			if _, exists := globalVars[value]; exists {
 				return nil
 			}
+			if isSimpleIdentifier(value) {
+				return nil
+			}
 		}
 
 		// This handles cases like complex arithmetic, method calls, array access, etc.
@@ -3757,6 +3760,10 @@ func checkTypeCompatibility(varName, varType, value string) error {
 	}
 
 	return nil
+}
+
+func isSimpleIdentifier(s string) bool {
+	return isValidIdentifier(s) && !strings.Contains(s, ".") && !strings.Contains(s, "->")
 }
 
 func containsValidExpressionElements(value string) bool {
