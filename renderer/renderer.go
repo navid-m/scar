@@ -24,6 +24,7 @@ var (
 	globalFunctions  = make(map[string]*lexer.TopLevelFuncDeclStmt)
 	globalArrays     = make(map[string]string)
 	globalVars       = make(map[string]*lexer.PubVarDeclStmt)
+	localVars        = make(map[string]string)
 	currentModule    = ""
 	currentClassName = ""
 	currentFunction  *lexer.TopLevelFuncDeclStmt
@@ -1636,6 +1637,9 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				varName = lexer.ResolveSymbol(stmt.VarDecl.Name, currentModule)
 				value   = stmt.VarDecl.Value
 			)
+
+			localVars[varName] = varType
+
 			var classNames []string
 			for className := range globalClasses {
 				classNames = append(classNames, className)
@@ -1839,22 +1843,28 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				}
 			} else {
 				var varType string
-				for _, classInfo := range globalClasses {
-					for _, field := range classInfo.Fields {
-						if field.Name == varName || ("this->"+field.Name) == varName {
-							varType = field.Type
-							break
+
+				// First check if it's a local variable
+				if localType, exists := localVars[varName]; exists {
+					varType = localType
+				} else {
+					// Fallback to checking class fields
+					for _, classInfo := range globalClasses {
+						for _, field := range classInfo.Fields {
+							if field.Name == varName || ("this->"+field.Name) == varName {
+								varType = field.Type
+								break
+							}
 						}
 					}
 				}
+
 				if varType == "string" {
 					if isFunctionCall(value) {
 						value = resolveFunctionCall(value)
 						fmt.Fprintf(b, "%sstrcpy(%s, %s);\n", indent, varName, value)
 					} else {
 						if strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"") {
-							fmt.Fprintf(b, "%sstrcpy(%s, %s);\n", indent, varName, value)
-						} else if isNumericOrBoolean(value) || isValidIdentifier(value) {
 							fmt.Fprintf(b, "%sstrcpy(%s, %s);\n", indent, varName, value)
 						} else {
 							fmt.Fprintf(b, "%sstrcpy(%s, \"%s\");\n", indent, varName, value)
