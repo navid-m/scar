@@ -52,7 +52,7 @@ if x > 5:
 func TestParseSimpleForLoop(t *testing.T) {
 	input := `
 for i = 0 to 10:
-    print i
+    print "%d" | i
 `
 	program, err := ParseWithIndentation(input)
 	if err != nil {
@@ -264,7 +264,7 @@ func TestContinueStatement(t *testing.T) {
 			input: `for i = 0 to 10:
     if i % 2 == 0:
         continue
-    print i`,
+    print "%d" | i`,
 			hasError: false,
 		},
 		{
@@ -274,7 +274,7 @@ while i < 10:
     i = i + 1
     if i % 2 != 0:
         continue
-    print i`,
+    print "%d" | i`,
 			hasError: false,
 		},
 		{
@@ -283,7 +283,7 @@ while i < 10:
     for j = 0 to 5:
         if i == j:
             continue
-        print i, j`,
+        print "%d, %d" | i, j`,
 			hasError: false,
 		},
 	}
@@ -460,7 +460,7 @@ func TestComplexTypeValidation(t *testing.T) {
 func TestParseReverseForLoop(t *testing.T) {
 	input := `
 reverse for i = 10 to 50:
-    print i
+    print "%d" | i
 `
 	program, err := ParseWithIndentation(input)
 	if err != nil {
@@ -487,7 +487,7 @@ reverse for i = 10 to 50:
 func TestParseOldSchoolForLoop(t *testing.T) {
 	input := `
 for i32 i = 0; i < 24; i += 2:
-    print i
+    print "%d" | i
 `
 	program, err := ParseWithIndentation(input)
 	if err != nil {
