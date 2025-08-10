@@ -3546,25 +3546,82 @@ func isStringLiteral(value string) bool {
 	return strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"")
 }
 
+func isArithmeticExpression(value string) bool {
+	operators := []string{"+", "-", "*", "/", "%"}
+	for _, op := range operators {
+		if strings.Contains(value, " "+op+" ") {
+			return true
+		}
+	}
+	return false
+}
+
+func inferArithmeticExpressionType(value string) string {
+	operators := []string{" + ", " - ", " * ", " / ", " % "}
+
+	for _, op := range operators {
+		if strings.Contains(value, op) {
+			parts := strings.Split(value, op)
+			if len(parts) >= 2 {
+				leftType := inferValueType(strings.TrimSpace(parts[0]))
+				rightType := inferValueType(strings.TrimSpace(parts[1]))
+
+				// If both operands are numbers, return the "higher" type
+				if isNumericType(leftType) && isNumericType(rightType) {
+					if leftType == "f32" || leftType == "float" || rightType == "f32" || rightType == "float" {
+						return "f32"
+					}
+					if leftType == "f64" || leftType == "double" || rightType == "f64" || rightType == "double" {
+						return "f64"
+					}
+					return "i32" // Default to int for integer arithmetic
+				}
+			}
+			break
+		}
+	}
+	return "unknown"
+}
+
+func isNumericType(typeName string) bool {
+	numericTypes := []string{"i32", "int", "f32", "float", "f64", "double", "i16", "i64", "u16", "u32", "u64"}
+	for _, t := range numericTypes {
+		if typeName == t {
+			return true
+		}
+	}
+	return false
+}
+
 func inferValueType(value string) string {
 	if isStringLiteral(value) {
 		return "string"
 	}
+
 	if value == "true" || value == "false" {
 		return "bool"
 	}
+
+	if isArithmeticExpression(value) {
+		return inferArithmeticExpressionType(value)
+	}
+
 	if _, err := strconv.Atoi(value); err == nil {
 		return "i32"
 	}
+
 	if _, err := strconv.ParseFloat(value, 64); err == nil {
 		return "f32"
 	}
+
 	if localType, exists := localVars[value]; exists {
 		return localType
 	}
+
 	if globalVar, exists := globalVars[value]; exists {
 		return globalVar.Type
 	}
+
 	return "unknown"
 }
 
@@ -3593,8 +3650,9 @@ func checkTypeCompatibility(varName, varType, value string) error {
 
 	if valueType == "unknown" {
 		if isFunctionCall(value) {
-			return nil // Allow function calls
+			return nil
 		}
+
 		if isValidIdentifier(value) {
 			if _, exists := localVars[value]; exists {
 				return nil
@@ -3603,6 +3661,12 @@ func checkTypeCompatibility(varName, varType, value string) error {
 				return nil
 			}
 		}
+
+		// This handles cases like complex arithmetic, method calls, array access, etc.
+		if containsValidExpressionElements(value) {
+			return nil
+		}
+
 		return fmt.Errorf("Type error: Unknown identifier or type for value '%s' when assigning to variable '%s' of type '%s'", value, varName, varType)
 	}
 
@@ -3611,6 +3675,34 @@ func checkTypeCompatibility(varName, varType, value string) error {
 	}
 
 	return nil
+}
+
+func containsValidExpressionElements(value string) bool {
+	if isArithmeticExpression(value) {
+		return true
+	}
+	comparisonOps := []string{"==", "!=", "<", ">", "<=", ">="}
+	for _, op := range comparisonOps {
+		if strings.Contains(value, " "+op+" ") {
+			return true
+		}
+	}
+	logicalOps := []string{"&&", "||", "and", "or"}
+	for _, op := range logicalOps {
+		if strings.Contains(value, " "+op+" ") {
+			return true
+		}
+	}
+	if strings.Contains(value, ".") && strings.Contains(value, "(") {
+		return true
+	}
+	if strings.Contains(value, "[") && strings.Contains(value, "]") {
+		return true
+	}
+	if strings.Contains(value, "(") && strings.Contains(value, ")") {
+		return true
+	}
+	return false
 }
 
 // Generates a C function prototype for a class method
