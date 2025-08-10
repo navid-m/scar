@@ -1,0 +1,25 @@
+# Minimal test to isolate return type issue
+
+pub class Simple:
+    init:
+        int this.value = 5
+        
+    fn get_value() -> int:
+        return this.value
+
+## This function causes the issue - returning a custom class
+pub fn create_object() -> Simple:
+    Simple obj = new Simple()
+    return obj
+
+print "Testing return type issue\n"
+
+# Direct instantiation works fine
+Simple direct = new Simple()
+print "Direct value: %d\n" | direct.get_value()
+
+# But using a factory function fails
+Simple factory = create_object()
+print "Factory value: %d\n" | factory.get_value()
+
+print "Test completed\n"

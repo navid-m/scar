@@ -1,0 +1,18 @@
+# Test custom class return types
+
+pub class TestClass:
+    init:
+        int this.value = 42
+        
+    fn get_value() -> int:
+        return this.value
+
+pub fn create_test() -> TestClass:
+    return new TestClass()
+
+# Test both ways
+TestClass direct = new TestClass()
+TestClass factory = create_test()
+
+print "Direct: %d\n" | direct.get_value()
+print "Factory: %d\n" | factory.get_value()

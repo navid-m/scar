@@ -1635,6 +1635,18 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				varName = lexer.ResolveSymbol(stmt.VarDecl.Name, currentModule)
 				value   = stmt.VarDecl.Value
 			)
+			var classNames []string
+			for className := range globalClasses {
+				classNames = append(classNames, className)
+			}
+			if _, isClassType := globalClasses[varType]; isClassType {
+				objectInfo := &ObjectInfo{
+					Name: stmt.VarDecl.Name,
+					Type: varType,
+				}
+				globalObjects[stmt.VarDecl.Name] = objectInfo
+				fmt.Printf("Debug: Tracked object '%s' of type '%s'\n", stmt.VarDecl.Name, varType)
+			}
 
 			if stmt.VarDecl.IsRef {
 				if strings.HasPrefix(varName, "this.") {
@@ -2279,7 +2291,21 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 					}
 				}
 				if resolvedClassName == "" {
-					resolvedClassName = "unknown"
+					for className, classInfo := range globalClasses {
+						for _, method := range classInfo.Methods {
+							if method.Name == methodName {
+								resolvedClassName = className
+								fmt.Printf("Debug: Inferred object '%s' as type '%s' based on method '%s'\n", stmt.MethodCall.Object, className, methodName)
+								break
+							}
+						}
+						if resolvedClassName != "" {
+							break
+						}
+					}
+					if resolvedClassName == "" {
+						resolvedClassName = "unknown"
+					}
 				}
 				if argsStr == "" {
 					fmt.Fprintf(b, "%s%s_%s(%s);\n", indent, resolvedClassName, methodName, objectName)

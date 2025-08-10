@@ -31,6 +31,7 @@ func InsertMacros(output string) string {
 		outp = insertCat(outp)
 	}
 	outp = fixCustomClassReturnTypes(outp)
+	outp = fixMethodCalls(outp)
 	if strings.Contains(output, "this.") {
 		outp = replaceOutsideStringLiterals(outp, "this.", "this->")
 	}
@@ -167,4 +168,57 @@ func fixCustomClassReturnTypes(output string) string {
 		}
 	}
 	return strings.Join(lines, "\n")
+}
+
+func fixMethodCalls(output string) string {
+	lines := strings.Split(output, "\n")
+	objectTypes := make(map[string]string)
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		re := regexp.MustCompile(`(\w+)\*\s+(\w+)\s*=`)
+		if matches := re.FindStringSubmatch(trimmed); len(matches) > 2 {
+			className := matches[1]
+			objectName := matches[2]
+			objectTypes[objectName] = className
+		}
+	}
+
+	for i, line := range lines {
+		if !isInsideStringLiteral(line) {
+			re := regexp.MustCompile(`(\w+)\.(\w+)\(`)
+			matches := re.FindAllStringSubmatch(line, -1)
+
+			for _, match := range matches {
+				if len(match) > 2 {
+					objectName := match[1]
+					methodName := match[2]
+					if className, exists := objectTypes[objectName]; exists {
+						oldPattern := objectName + "." + methodName + "("
+						newPattern := className + "_" + methodName + "(" + objectName
+						if strings.Contains(line, oldPattern+")") {
+							newPattern += ")"
+							line = strings.ReplaceAll(line, oldPattern+")", newPattern)
+						} else {
+							newPattern += ", "
+							line = strings.ReplaceAll(line, oldPattern, newPattern)
+						}
+					}
+				}
+			}
+			lines[i] = line
+		}
+	}
+
+	return strings.Join(lines, "\n")
+}
+
+func isInsideStringLiteral(line string) bool {
+	inString := false
+	for i, char := range line {
+		if char == '"' && (i == 0 || line[i-1] != '\\') {
+			inString = !inString
+		}
+	}
+	return inString
 }
