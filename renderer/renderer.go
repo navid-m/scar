@@ -1072,10 +1072,18 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				fmt.Fprintf(b, "%sprintf(\"%s\");\n", indent, stmt.Put.Put)
 			}
 		case stmt.ListDeclFunctionCall != nil:
-			listType := stmt.ListDeclFunctionCall.Type
+			fullListType := stmt.ListDeclFunctionCall.Type
 			listName := stmt.ListDeclFunctionCall.Name
 			functionCall := stmt.ListDeclFunctionCall.FunctionCall
 			resolvedCall := strings.ReplaceAll(functionCall, "::", "_")
+
+			// Extract the inner type from list[inner_type]
+			var innerType string
+			if strings.HasPrefix(fullListType, "list[") && strings.HasSuffix(fullListType, "]") {
+				innerType = strings.TrimPrefix(strings.TrimSuffix(fullListType, "]"), "list[")
+			} else {
+				innerType = fullListType
+			}
 
 			// Extract function name and existing arguments
 			openParen := strings.Index(resolvedCall, "(")
@@ -1097,18 +1105,18 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				newCall = fmt.Sprintf("%s(%s, 1000, %s)", funcName, listName, existingArgs)
 			}
 
-			if listType == "string" {
+			if innerType == "string" {
 				fmt.Fprintf(b, "%schar %s[1000][256];\n", indent, listName)
 				fmt.Fprintf(b, "%sint %s_len;\n", indent, listName)
 				fmt.Fprintf(b, "%s%s_len = %s;\n", indent, listName, newCall)
 			} else {
-				cType := mapTypeToCType(listType)
+				cType := mapTypeToCType(innerType)
 				fmt.Fprintf(b, "%s%s %s[1000];\n", indent, cType, listName)
 				fmt.Fprintf(b, "%sint %s_len;\n", indent, listName)
 				fmt.Fprintf(b, "%s%s_len = %s;\n", indent, listName, newCall)
 			}
 
-			globalArrays[listName] = listType
+			globalArrays[listName] = innerType
 		case stmt.CatList != nil:
 			if stmt.CatList.Target != "" {
 				targetVar := lexer.ResolveSymbol(stmt.CatList.Target, currentModule)

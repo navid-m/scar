@@ -22,7 +22,7 @@ class Matrix:
                 print "%.2f " | val
             print ""
 
-    fn add_matrix(Matrix other) -> bool:
+    fn add_matrix(ref Matrix other) -> bool:
         if this.rows != other.rows || this.cols != other.cols:
             print "Error: Matrix dimensions don't match for addition"
             return false
