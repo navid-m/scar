@@ -64,8 +64,8 @@ func findBundledBoehm() []string {
 		if _, err := os.Stat(gcLib); err == nil {
 			return []string{
 				"-I", includePath,
-				"-L", libPath,
-				"-lgc",
+				gcLib,
+				"-lpthread",
 			}
 		}
 	}
