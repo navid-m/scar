@@ -687,7 +687,11 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 		fmt.Fprintf(b, "%s* %s_new() {\n", className, className)
 	}
 
-	fmt.Fprintf(b, "    %s* this = malloc(sizeof(%s));\n", className, className)
+	if useGC {
+		fmt.Fprintf(b, "    %s* this = (%s*)GC_malloc(sizeof(%s));\n", className, className, className)
+	} else {
+		fmt.Fprintf(b, "    %s* this = malloc(sizeof(%s));\n", className, className)
+	}
 
 	if classInfo, exists := globalClasses[className]; exists {
 		for _, field := range classInfo.Fields {
@@ -2188,7 +2192,11 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			fmt.Fprintf(b, "%sfseek(%s, 0, SEEK_END);\n", indent+"    ", fpVarName)
 			fmt.Fprintf(b, "%slong size = ftell(%s);\n", indent+"    ", fpVarName)
 			fmt.Fprintf(b, "%sfseek(%s, 0, SEEK_SET);\n", indent+"    ", fpVarName)
-			fmt.Fprintf(b, "%s%s = malloc(size + 1);\n", indent+"    ", varName)
+			if useGC {
+				fmt.Fprintf(b, "%s%s = GC_malloc(size + 1);\n", indent+"    ", varName)
+			} else {
+				fmt.Fprintf(b, "%s%s = malloc(size + 1);\n", indent+"    ", varName)
+			}
 			fmt.Fprintf(b, "%sfread(%s, 1, size, %s);\n", indent+"    ", varName, fpVarName)
 			fmt.Fprintf(b, "%s%s[size] = '\\0';\n", indent+"    ", varName)
 			fmt.Fprintf(b, "%sfclose(%s);\n", indent+"    ", fpVarName)
