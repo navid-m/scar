@@ -1,0 +1,2 @@
+reverse for i = 10 to 1:
+    print "Countdown: %d" | i
