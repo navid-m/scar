@@ -1,0 +1,4 @@
+# Test file for complex collection types
+
+list[list[string]] matrix = [["a", "b"], ["c", "d"]]
+list[list[int]] numbers = [[1, 2], [3, 4, 5]]
