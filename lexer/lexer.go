@@ -524,7 +524,8 @@ func GenerateUniqueSymbol(originalName string, moduleName string) string {
 	if moduleName == "" {
 		return originalName
 	}
-	return fmt.Sprintf("%s_%s", moduleName, originalName)
+	sanitizedModuleName := strings.ReplaceAll(strings.ReplaceAll(moduleName, "/", "_"), "\\", "_")
+	return fmt.Sprintf("%s_%s", sanitizedModuleName, originalName)
 }
 
 var (

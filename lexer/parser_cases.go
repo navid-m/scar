@@ -786,6 +786,14 @@ func LoadModule(moduleName string, baseDir string) (*ModuleInfo, error) {
 			filepath.Join(".", moduleName+".scar"),
 		}
 
+		if strings.Contains(moduleName, "/") || strings.Contains(moduleName, "\\") {
+			normalizedPath := filepath.FromSlash(moduleName)
+			possiblePaths = append([]string{
+				filepath.Join(baseDir, normalizedPath+".scar"),
+				filepath.Join(".", normalizedPath+".scar"),
+			}, possiblePaths...)
+		}
+
 		for _, path := range possiblePaths {
 			if _, err := os.Stat(path); err == nil {
 				modulePath = path
