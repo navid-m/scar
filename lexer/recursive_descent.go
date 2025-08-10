@@ -12,6 +12,173 @@ import (
 	"strings"
 )
 
+func findMapTypeEnd(line string) int {
+	if !strings.HasPrefix(line, "map[") {
+		return -1
+	}
+
+	bracketDepth := 0
+	start := strings.Index(line, "[")
+	if start == -1 {
+		return -1
+	}
+
+	for i := start; i < len(line); i++ {
+		switch line[i] {
+		case '[':
+			bracketDepth++
+		case ']':
+			bracketDepth--
+			if bracketDepth == 0 {
+				return i
+			}
+		}
+	}
+	return -1
+}
+
+func findListTypeEnd(typeDecl string) int {
+	if !strings.HasPrefix(typeDecl, "list[") {
+		return -1
+	}
+
+	bracketDepth := 0
+	start := strings.Index(typeDecl, "[")
+	if start == -1 {
+		return -1
+	}
+
+	for i := start; i < len(typeDecl); i++ {
+		switch typeDecl[i] {
+		case '[':
+			bracketDepth++
+		case ']':
+			bracketDepth--
+			if bracketDepth == 0 {
+				return i
+			}
+		}
+	}
+	return -1
+}
+
+// Finds the colon that separates key:value in a map pair,
+// ignoring colons inside nested brackets, parentheses, or quotes
+func findPairColonPosition(pairStr string) int {
+	bracketDepth := 0
+	parenDepth := 0
+	inQuotes := false
+
+	for i, char := range pairStr {
+		switch char {
+		case '"':
+			if i == 0 || pairStr[i-1] != '\\' {
+				inQuotes = !inQuotes
+			}
+		case '[':
+			if !inQuotes {
+				bracketDepth++
+			}
+		case ']':
+			if !inQuotes {
+				bracketDepth--
+			}
+		case '(':
+			if !inQuotes {
+				parenDepth++
+			}
+		case ')':
+			if !inQuotes {
+				parenDepth--
+			}
+		case ':':
+			if !inQuotes && bracketDepth == 0 && parenDepth == 0 {
+				return i
+			}
+		}
+	}
+	return -1
+}
+
+// Splits list elements by comma while respecting nested brackets and quotes
+func splitListElementsRespectingBrackets(elementsStr string) []string {
+	var elements []string
+	var current strings.Builder
+	bracketDepth := 0
+	inQuotes := false
+
+	for i, char := range elementsStr {
+		switch char {
+		case '"':
+			if i == 0 || elementsStr[i-1] != '\\' {
+				inQuotes = !inQuotes
+			}
+			current.WriteRune(char)
+		case '[':
+			if !inQuotes {
+				bracketDepth++
+			}
+			current.WriteRune(char)
+		case ']':
+			if !inQuotes {
+				bracketDepth--
+			}
+			current.WriteRune(char)
+		case ',':
+			if !inQuotes && bracketDepth == 0 {
+				element := strings.TrimSpace(current.String())
+				if element != "" {
+					elements = append(elements, element)
+				}
+				current.Reset()
+			} else {
+				current.WriteRune(char)
+			}
+		default:
+			current.WriteRune(char)
+		}
+	}
+
+	element := strings.TrimSpace(current.String())
+	if element != "" {
+		elements = append(elements, element)
+	}
+
+	return elements
+}
+
+// Finds the closing bracket that matches the opening bracket at the given position
+func findMatchingClosingBracket(str string, openPos int) int {
+	if openPos >= len(str) || str[openPos] != '[' {
+		return -1
+	}
+
+	bracketDepth := 0
+	inQuotes := false
+
+	for i := openPos; i < len(str); i++ {
+		switch str[i] {
+		case '"':
+			if i == 0 || str[i-1] != '\\' {
+				inQuotes = !inQuotes
+			}
+		case '[':
+			if !inQuotes {
+				bracketDepth++
+			}
+		case ']':
+			if !inQuotes {
+				bracketDepth--
+				if bracketDepth == 0 {
+					return i
+				}
+			}
+		}
+	}
+
+	return -1
+}
+
 func parseStatements(lines []string, startLine, expectedIndent int) ([]*Statement, error) {
 	var statements []*Statement
 	i := startLine
@@ -241,7 +408,8 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 	}
 
 	if strings.HasPrefix(line, "map[") && strings.Contains(line, "]") && strings.Contains(line, "=") {
-		typeEnd := strings.Index(line, "]")
+		// Find the end of the map type declaration, handling nested brackets
+		typeEnd := findMapTypeEnd(line)
 		if typeEnd == -1 {
 			return nil, lineNum + 1, fmt.Errorf("invalid map type declaration at line %d", lineNum+1)
 		}
@@ -252,18 +420,30 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 		var (
 			typeStart = strings.Index(mapType, "[")
 			typeDecl  = strings.TrimSpace(mapType[typeStart+1 : typeEnd])
-			typeParts = strings.SplitN(typeDecl, ":", 2)
 		)
-		if len(typeParts) != 2 {
+
+		// Parse complex map types using the new parsing logic
+		colonPos := findMapColonPosition(typeDecl)
+		if colonPos == -1 {
 			return nil, lineNum + 1, fmt.Errorf("map type must specify key:value types at line %d", lineNum+1)
 		}
+
 		var (
-			keyType   = strings.TrimSpace(typeParts[0])
-			valueType = strings.TrimSpace(typeParts[1])
+			keyType   = strings.TrimSpace(typeDecl[:colonPos])
+			valueType = strings.TrimSpace(typeDecl[colonPos+1:])
 		)
 		if keyType == "" || valueType == "" {
 			return nil, lineNum + 1, fmt.Errorf("map type must specify valid key and value types at line %d", lineNum+1)
 		}
+
+		// Validate the complex types
+		if _, valid := parseComplexType(keyType); !valid {
+			return nil, lineNum + 1, fmt.Errorf("invalid key type '%s' at line %d", keyType, lineNum+1)
+		}
+		if _, valid := parseComplexType(valueType); !valid {
+			return nil, lineNum + 1, fmt.Errorf("invalid value type '%s' at line %d", valueType, lineNum+1)
+		}
+
 		restOfLine := strings.TrimSpace(line[typeEnd+1:])
 		parts := strings.Fields(restOfLine)
 		if len(parts) < 3 || parts[1] != "=" {
@@ -300,7 +480,7 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 				for _, pairStr := range pairsList {
 					pairStr = strings.TrimSpace(pairStr)
 					if pairStr != "" {
-						colonIdx := strings.Index(pairStr, ":")
+						colonIdx := findPairColonPosition(pairStr)
 						if colonIdx == -1 {
 							return nil, lineNum + 1, fmt.Errorf("invalid map pair format at line %d", lineNum+1)
 						}
@@ -349,13 +529,20 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 			return nil, lineNum + 1, fmt.Errorf("list declaration format error at line %d (expected: list[type] name = [elements] or list[type] name = function_call())", lineNum+1)
 		}
 
-		typeStart := strings.Index(parts[0], "[")
-		typeEnd := strings.Index(parts[0], "]")
-		if typeStart == -1 || typeEnd == -1 || typeEnd <= typeStart {
+		// Find the end of the list type, handling nested brackets
+		typeEnd := findListTypeEnd(parts[0])
+		if typeEnd == -1 {
 			return nil, lineNum + 1, fmt.Errorf("invalid list type declaration at line %d", lineNum+1)
 		}
 
-		listType := parts[0][typeStart+1 : typeEnd]
+		// Extract the full list type including "list[...]"
+		listType := parts[0][:typeEnd+1]
+
+		// Validate the complex type
+		if _, valid := parseComplexType(listType); !valid {
+			return nil, lineNum + 1, fmt.Errorf("invalid list type '%s' at line %d", listType, lineNum+1)
+		}
+
 		listName := parts[1]
 		value := strings.Join(parts[3:], " ")
 
@@ -377,16 +564,22 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 			}}, lineNum + 1, nil
 		}
 
-		elementsStart := strings.Index(line, "[")
-		secondBracketPos := strings.Index(line[elementsStart+1:], "[")
-		if secondBracketPos != -1 {
-			elementsStart = elementsStart + 1 + secondBracketPos
-		} else {
-			return nil, lineNum + 1, fmt.Errorf("list declaration missing elements at line %d", lineNum+1)
+		// Find the actual list elements after the "=" sign
+		equalPos := strings.Index(line, "=")
+		if equalPos == -1 {
+			return nil, lineNum + 1, fmt.Errorf("list declaration missing '=' at line %d", lineNum+1)
 		}
 
-		elementsEnd := strings.LastIndex(line, "]")
-		if elementsEnd == -1 || elementsEnd <= elementsStart {
+		// Find the opening bracket of the list elements
+		elementsStart := strings.Index(line[equalPos:], "[")
+		if elementsStart == -1 {
+			return nil, lineNum + 1, fmt.Errorf("list declaration missing elements at line %d", lineNum+1)
+		}
+		elementsStart += equalPos // Adjust to absolute position
+
+		// Find the closing bracket that matches the opening bracket
+		elementsEnd := findMatchingClosingBracket(line, elementsStart)
+		if elementsEnd == -1 {
 			return nil, lineNum + 1, fmt.Errorf("list declaration missing closing bracket at line %d", lineNum+1)
 		}
 
@@ -394,11 +587,13 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 		var elements []string
 
 		if elementsStr != "" {
-			elementsList := strings.Split(elementsStr, ",")
+			// Use bracket-aware parsing for complex nested elements
+			elementsList := splitListElementsRespectingBrackets(elementsStr)
 			for _, elem := range elementsList {
 				elem = strings.TrimSpace(elem)
 				if elem != "" {
-					if strings.HasPrefix(elem, "\"") && strings.HasSuffix(elem, "\"") {
+					// Don't strip quotes from complex elements like ["a", "b"]
+					if strings.HasPrefix(elem, "\"") && strings.HasSuffix(elem, "\"") && !strings.Contains(elem, "[") {
 						elem = elem[1 : len(elem)-1]
 					}
 					elements = append(elements, elem)
@@ -1450,6 +1645,7 @@ func splitMapPairs(input string) []string {
 	var currentPair strings.Builder
 	inQuotes := false
 	parenCount := 0
+	bracketCount := 0
 
 	for _, char := range input {
 		switch char {
@@ -1461,7 +1657,7 @@ func splitMapPairs(input string) []string {
 			}
 			currentPair.WriteRune(char)
 		case ',':
-			if !inQuotes && parenCount == 0 {
+			if !inQuotes && parenCount == 0 && bracketCount == 0 {
 				pair := strings.TrimSpace(currentPair.String())
 				if pair != "" {
 					pairs = append(pairs, pair)
@@ -1471,19 +1667,25 @@ func splitMapPairs(input string) []string {
 			}
 			currentPair.WriteRune(char)
 		case '(':
-			if inQuotes {
-				currentPair.WriteRune(char)
-			} else {
+			if !inQuotes {
 				parenCount++
-				currentPair.WriteRune(char)
 			}
+			currentPair.WriteRune(char)
 		case ')':
-			if inQuotes {
-				currentPair.WriteRune(char)
-			} else {
+			if !inQuotes {
 				parenCount--
-				currentPair.WriteRune(char)
 			}
+			currentPair.WriteRune(char)
+		case '[':
+			if !inQuotes {
+				bracketCount++
+			}
+			currentPair.WriteRune(char)
+		case ']':
+			if !inQuotes {
+				bracketCount--
+			}
+			currentPair.WriteRune(char)
 		default:
 			currentPair.WriteRune(char)
 		}

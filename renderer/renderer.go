@@ -1825,53 +1825,63 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			fmt.Fprintf(b, "%s%s[%s] = %s;\n", indent, listName, index, value)
 
 		case stmt.ListDecl != nil:
-			listType := mapTypeToCType(stmt.ListDecl.Type)
+			listType := stmt.ListDecl.Type
 			listName := lexer.ResolveSymbol(stmt.ListDecl.Name, currentModule)
 			globalArrays[stmt.ListDecl.Name] = stmt.ListDecl.Type
-			if len(stmt.ListDecl.Elements) == 1 && !strings.Contains(stmt.ListDecl.Elements[0], ",") &&
-				!strings.HasPrefix(stmt.ListDecl.Elements[0], "\"") && !strings.HasSuffix(stmt.ListDecl.Elements[0], "\"") &&
-				!isNumericOrBoolean(stmt.ListDecl.Elements[0]) {
-				// This is likely a variable assignment (e.g., list[int] sorted_list = input_list)
-				sourceVar := lexer.ResolveSymbol(stmt.ListDecl.Elements[0], currentModule)
 
-				if stmt.ListDecl.Type == "string" {
-					fmt.Fprintf(b, "%s%s %s[1000][256];\n", indent, "char", listName)
-					fmt.Fprintf(b, "%sint %s_len = %s_len;\n", indent, listName, sourceVar)
-					fmt.Fprintf(b, "%sfor (int i = 0; i < %s_len; i++) {\n", indent, sourceVar)
-					fmt.Fprintf(b, "%s    strcpy(%s[i], %s[i]);\n", indent, listName, sourceVar)
-					fmt.Fprintf(b, "%s}\n", indent)
-				} else {
-					fmt.Fprintf(b, "%s%s %s[1000];\n", indent, listType, listName)
-					fmt.Fprintf(b, "%sint %s_len = %s_len;\n", indent, listName, sourceVar)
-					fmt.Fprintf(b, "%sfor (int i = 0; i < %s_len; i++) {\n", indent, sourceVar)
-					fmt.Fprintf(b, "%s    %s[i] = %s[i];\n", indent, listName, sourceVar)
-					fmt.Fprintf(b, "%s}\n", indent)
-				}
+			// Handle complex nested types
+			if isComplexCollectionType(listType) {
+				renderComplexListDecl(b, stmt.ListDecl, indent, currentModule)
 			} else {
-				// Traditional list declaration with elements
-				if stmt.ListDecl.Type == "string" {
-					fmt.Fprintf(b, "%s%s %s[%d][256];\n", indent, "char", listName, len(stmt.ListDecl.Elements))
-				} else {
-					fmt.Fprintf(b, "%s%s %s[%d];\n", indent, listType, listName, len(stmt.ListDecl.Elements))
-				}
-				for i, elem := range stmt.ListDecl.Elements {
-					elem = lexer.ResolveSymbol(elem, currentModule)
-					if stmt.ListDecl.Type == "string" {
-						if !strings.HasPrefix(elem, "\"") && !strings.HasSuffix(elem, "\"") {
-							elem = fmt.Sprintf("\"%s\"", elem)
-						}
-						fmt.Fprintf(b, "%sstrcpy(%s[%d], %s);\n", indent, listName, i, elem)
+				// Traditional simple list handling
+				cListType := mapTypeToCType(listType)
+				if len(stmt.ListDecl.Elements) == 1 && !strings.Contains(stmt.ListDecl.Elements[0], ",") &&
+					!strings.HasPrefix(stmt.ListDecl.Elements[0], "\"") && !strings.HasSuffix(stmt.ListDecl.Elements[0], "\"") &&
+					!isNumericOrBoolean(stmt.ListDecl.Elements[0]) {
+					// This is likely a variable assignment (e.g., list[int] sorted_list = input_list)
+					sourceVar := lexer.ResolveSymbol(stmt.ListDecl.Elements[0], currentModule)
+
+					if listType == "string" {
+						fmt.Fprintf(b, "%s%s %s[1000][256];\n", indent, "char", listName)
+						fmt.Fprintf(b, "%sint %s_len = %s_len;\n", indent, listName, sourceVar)
+						fmt.Fprintf(b, "%sfor (int i = 0; i < %s_len; i++) {\n", indent, sourceVar)
+						fmt.Fprintf(b, "%s    strcpy(%s[i], %s[i]);\n", indent, listName, sourceVar)
+						fmt.Fprintf(b, "%s}\n", indent)
 					} else {
-						fmt.Fprintf(b, "%s%s[%d] = %s;\n", indent, listName, i, elem)
+						fmt.Fprintf(b, "%s%s %s[1000];\n", indent, cListType, listName)
+						fmt.Fprintf(b, "%sint %s_len = %s_len;\n", indent, listName, sourceVar)
+						fmt.Fprintf(b, "%sfor (int i = 0; i < %s_len; i++) {\n", indent, sourceVar)
+						fmt.Fprintf(b, "%s    %s[i] = %s[i];\n", indent, listName, sourceVar)
+						fmt.Fprintf(b, "%s}\n", indent)
 					}
+				} else {
+					// Traditional list declaration with elements
+					if listType == "string" {
+						fmt.Fprintf(b, "%s%s %s[%d][256];\n", indent, "char", listName, len(stmt.ListDecl.Elements))
+					} else {
+						fmt.Fprintf(b, "%s%s %s[%d];\n", indent, cListType, listName, len(stmt.ListDecl.Elements))
+					}
+					for i, elem := range stmt.ListDecl.Elements {
+						elem = lexer.ResolveSymbol(elem, currentModule)
+						if listType == "string" {
+							if !strings.HasPrefix(elem, "\"") && !strings.HasSuffix(elem, "\"") {
+								elem = fmt.Sprintf("\"%s\"", elem)
+							}
+							fmt.Fprintf(b, "%sstrcpy(%s[%d], %s);\n", indent, listName, i, elem)
+						} else {
+							fmt.Fprintf(b, "%s%s[%d] = %s;\n", indent, listName, i, elem)
+						}
+					}
+					fmt.Fprintf(b, "%sint %s_len = %d;\n", indent, listName, len(stmt.ListDecl.Elements))
 				}
-				fmt.Fprintf(b, "%sint %s_len = %d;\n", indent, listName, len(stmt.ListDecl.Elements))
 			}
 		case stmt.ObjectDecl != nil:
-			varName := lexer.ResolveSymbol(stmt.ObjectDecl.Name, currentModule)
-			typeName := stmt.ObjectDecl.Type
-			args := stmt.ObjectDecl.Args
-			resolvedType := typeName
+			var (
+				varName      = lexer.ResolveSymbol(stmt.ObjectDecl.Name, currentModule)
+				typeName     = stmt.ObjectDecl.Type
+				args         = stmt.ObjectDecl.Args
+				resolvedType = typeName
+			)
 
 			if strings.Contains(typeName, ".") {
 				parts := strings.Split(typeName, ".")
@@ -3392,7 +3402,8 @@ func generateMethodPrototype(className, methodName, returnType string, parameter
 }
 
 func generateFunctionPrototype(funcDecl *lexer.TopLevelFuncDeclStmt) string {
-	returnType := "int" // Default to int (will return array length for list types)
+	returnType := "int"
+	// Default to int (will return array length for list types)
 
 	var paramList []string
 
@@ -3406,7 +3417,7 @@ func generateFunctionPrototype(funcDecl *lexer.TopLevelFuncDeclStmt) string {
 			paramList = append(paramList, fmt.Sprintf("%s _output_array[]", cType))
 		}
 		paramList = append(paramList, "int _max_size")
-		returnType = "int" // Return the length of the array
+		returnType = "int"
 	} else if funcDecl.ReturnType != "" && funcDecl.ReturnType != "void" {
 		if funcDecl.ReturnType == "string" {
 			returnType = "void"
@@ -3480,15 +3491,48 @@ func mapTypeToCType(mapType string) string {
 		return "long"
 	default:
 		if strings.HasPrefix(mapType, "list[") && strings.HasSuffix(mapType, "]") {
-			innerType := strings.TrimPrefix(strings.TrimSuffix(mapType, "]"), "list[")
+			innerType := extractListInnerType(mapType)
+			if innerType == "" {
+				return mapType
+			}
 			cInnerType := mapTypeToCType(innerType)
 			if innerType == "string" {
 				return "char"
 			}
 			return cInnerType
 		}
+		if strings.HasPrefix(mapType, "map[") && strings.HasSuffix(mapType, "]") {
+			// Return void* to indicate complex map type
+			return "void*"
+		}
 		return mapType
 	}
+}
+
+// Extracts the inner type from a list type, handling nested brackets
+func extractListInnerType(listType string) string {
+	if !strings.HasPrefix(listType, "list[") || !strings.HasSuffix(listType, "]") {
+		return ""
+	}
+
+	bracketDepth := 0
+	start := strings.Index(listType, "[")
+	if start == -1 {
+		return ""
+	}
+
+	for i := start; i < len(listType); i++ {
+		switch listType[i] {
+		case '[':
+			bracketDepth++
+		case ']':
+			bracketDepth--
+			if bracketDepth == 0 {
+				return listType[start+1 : i]
+			}
+		}
+	}
+	return ""
 }
 
 func isImportedType(typeName string, imports []*lexer.ImportStmt) (string, bool) {
@@ -3500,4 +3544,113 @@ func isImportedType(typeName string, imports []*lexer.ImportStmt) (string, bool)
 		}
 	}
 	return "", false
+}
+
+// Checks if a type is a complex collection (nested lists or maps)
+func isComplexCollectionType(typeName string) bool {
+	if strings.HasPrefix(typeName, "list[") {
+		innerType := extractListInnerType(typeName)
+		return strings.HasPrefix(innerType, "list[") || strings.HasPrefix(innerType, "map[")
+	}
+	if strings.HasPrefix(typeName, "map[") {
+		return true
+	}
+	return false
+}
+
+// Handles rendering of complex nested collection types
+func renderComplexListDecl(b *strings.Builder, listDecl *lexer.ListDeclStmt, indent, currentModule string) {
+	listType := listDecl.Type
+	listName := lexer.ResolveSymbol(listDecl.Name, currentModule)
+
+	if strings.HasPrefix(listType, "list[list[") {
+		innerType := extractListInnerType(listType)
+		if innerType != "" {
+			innerInnerType := extractListInnerType(innerType)
+			if innerInnerType == "string" {
+				fmt.Fprintf(b, "%schar %s[%d][100][256];\n", indent, listName, len(listDecl.Elements))
+				fmt.Fprintf(b, "%sint %s_lengths[%d]; // Track length of each inner list\n", indent, listName, len(listDecl.Elements))
+				for i, elem := range listDecl.Elements {
+					if strings.HasPrefix(elem, "[") && strings.HasSuffix(elem, "]") {
+						innerElements := parseListElements(elem[1 : len(elem)-1])
+						fmt.Fprintf(b, "%s%s_lengths[%d] = %d;\n", indent, listName, i, len(innerElements))
+						for j, innerElem := range innerElements {
+							innerElem = strings.TrimSpace(innerElem)
+							if strings.HasPrefix(innerElem, "\"") && strings.HasSuffix(innerElem, "\"") {
+								innerElem = innerElem[1 : len(innerElem)-1]
+							}
+							fmt.Fprintf(b, "%sstrcpy(%s[%d][%d], \"%s\");\n", indent, listName, i, j, innerElem)
+						}
+					}
+				}
+				fmt.Fprintf(b, "%sint %s_len = %d;\n", indent, listName, len(listDecl.Elements))
+			} else {
+				cInnerType := mapTypeToCType(innerInnerType)
+				fmt.Fprintf(b, "%s%s %s[%d][100];\n", indent, cInnerType, listName, len(listDecl.Elements))
+				fmt.Fprintf(b, "%sint %s_lengths[%d];\n", indent, listName, len(listDecl.Elements))
+
+				for i, elem := range listDecl.Elements {
+					if strings.HasPrefix(elem, "[") && strings.HasSuffix(elem, "]") {
+						innerElements := parseListElements(elem[1 : len(elem)-1])
+						fmt.Fprintf(b, "%s%s_lengths[%d] = %d;\n", indent, listName, i, len(innerElements))
+						for j, innerElem := range innerElements {
+							innerElem = strings.TrimSpace(innerElem)
+							fmt.Fprintf(b, "%s%s[%d][%d] = %s;\n", indent, listName, i, j, innerElem)
+						}
+					}
+				}
+				fmt.Fprintf(b, "%sint %s_len = %d;\n", indent, listName, len(listDecl.Elements))
+			}
+		}
+	} else {
+		// TODO: Complex types support.
+		fmt.Fprintf(b, "%s// Complex type %s not fully implemented yet\n", indent, listType)
+		fmt.Fprintf(b, "%svoid* %s; // Placeholder\n", indent, listName)
+	}
+}
+
+func parseListElements(elementsStr string) []string {
+	var elements []string
+	var current strings.Builder
+	inQuotes := false
+	bracketDepth := 0
+
+	for i, char := range elementsStr {
+		switch char {
+		case '"':
+			if i == 0 || elementsStr[i-1] != '\\' {
+				inQuotes = !inQuotes
+			}
+			current.WriteRune(char)
+		case '[':
+			if !inQuotes {
+				bracketDepth++
+			}
+			current.WriteRune(char)
+		case ']':
+			if !inQuotes {
+				bracketDepth--
+			}
+			current.WriteRune(char)
+		case ',':
+			if !inQuotes && bracketDepth == 0 {
+				element := strings.TrimSpace(current.String())
+				if element != "" {
+					elements = append(elements, element)
+				}
+				current.Reset()
+			} else {
+				current.WriteRune(char)
+			}
+		default:
+			current.WriteRune(char)
+		}
+	}
+
+	element := strings.TrimSpace(current.String())
+	if element != "" {
+		elements = append(elements, element)
+	}
+
+	return elements
 }

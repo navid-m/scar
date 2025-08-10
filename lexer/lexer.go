@@ -547,7 +547,85 @@ func isValidType(s string) bool {
 		innerType := strings.TrimPrefix(strings.TrimSuffix(s, "]"), "list[")
 		return isValidType(innerType)
 	}
+	if strings.HasPrefix(s, "map[") && strings.HasSuffix(s, "]") {
+		mapTypeContent := strings.TrimPrefix(strings.TrimSuffix(s, "]"), "map[")
+		return isValidMapType(mapTypeContent)
+	}
 	return false
+}
+
+func parseComplexType(typeStr string) (string, bool) {
+	if !strings.Contains(typeStr, "[") {
+		return typeStr, isValidType(typeStr)
+	}
+	if strings.HasPrefix(typeStr, "list[") {
+		if !strings.HasSuffix(typeStr, "]") {
+			return "", false
+		}
+		innerType := extractInnerType(typeStr, "list[", "]")
+		if innerType == "" {
+			return "", false
+		}
+		_, valid := parseComplexType(innerType)
+		return typeStr, valid
+	}
+	if strings.HasPrefix(typeStr, "map[") {
+		if !strings.HasSuffix(typeStr, "]") {
+			return "", false
+		}
+		mapContent := extractInnerType(typeStr, "map[", "]")
+		if mapContent == "" {
+			return "", false
+		}
+		return typeStr, isValidMapType(mapContent)
+	}
+
+	return typeStr, isValidType(typeStr)
+}
+
+func extractInnerType(typeStr, prefix, suffix string) string {
+	if !strings.HasPrefix(typeStr, prefix) || !strings.HasSuffix(typeStr, suffix) {
+		return ""
+	}
+
+	content := typeStr[len(prefix) : len(typeStr)-len(suffix)]
+	return content
+}
+
+func isValidMapType(mapContent string) bool {
+	colonPos := findMapColonPosition(mapContent)
+	if colonPos == -1 {
+		return false
+	}
+
+	keyType := strings.TrimSpace(mapContent[:colonPos])
+	valueType := strings.TrimSpace(mapContent[colonPos+1:])
+
+	if keyType == "" || valueType == "" {
+		return false
+	}
+
+	_, keyValid := parseComplexType(keyType)
+	_, valueValid := parseComplexType(valueType)
+
+	return keyValid && valueValid
+}
+
+func findMapColonPosition(mapContent string) int {
+	bracketDepth := 0
+	for i, char := range mapContent {
+		switch char {
+		case '[':
+			bracketDepth++
+		case ']':
+			bracketDepth--
+		case ':':
+			if bracketDepth == 0 {
+				return i
+			}
+		}
+	}
+	return -1
 }
 
 func IsOperator(s string) bool {
