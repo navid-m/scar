@@ -952,8 +952,10 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 		str := strings.TrimSpace(line[5:])
 		if strings.HasPrefix(str, "\"") && strings.HasSuffix(str, "\"") {
 			str = str[1 : len(str)-1]
+			return &Statement{Print: &PrintStmt{Print: str}}, lineNum + 1, nil
+		} else {
+			return nil, lineNum + 1, fmt.Errorf("print statement requires a quoted string at line %d", lineNum+1)
 		}
-		return &Statement{Print: &PrintStmt{Print: str}}, lineNum + 1, nil
 
 	case "sleep":
 		if len(parts) < 2 {
