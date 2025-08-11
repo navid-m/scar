@@ -71,8 +71,10 @@ func insertCat(output string) string {
 	return `#define cat(x, y) \
     ({ \
         static char __cat_buf[256]; \
-        strcpy(__cat_buf, (x)); \
-        strcat(__cat_buf, (y)); \
+        const char* __x_val = (x); \
+        const char* __y_val = (y); \
+        strcpy(__cat_buf, __x_val); \
+        strcat(__cat_buf, __y_val); \
         __cat_buf; \
     })` + "\n" + strings.ReplaceAll(output, "cat!(", "cat(")
 }

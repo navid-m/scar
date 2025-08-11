@@ -719,6 +719,53 @@ func processStringFunctionArg(arg string) string {
 	return arg
 }
 
+func processCatExpression(expr string) string {
+	if !strings.Contains(expr, "cat!(") {
+		return expr
+	}
+	result := expr
+	processed := make(map[string]bool)
+	for {
+		catIndex := strings.Index(result, "cat!(")
+		if catIndex == -1 {
+			break
+		}
+		openParen := catIndex + 4
+		parenCount := 1
+		i := openParen + 1
+		var comma int = -1
+		for i < len(result) && parenCount > 0 {
+			char := result[i]
+			if char == '(' {
+				parenCount++
+			} else if char == ')' {
+				parenCount--
+			} else if char == ',' && parenCount == 1 && comma == -1 {
+				comma = i
+			}
+			i++
+		}
+		if parenCount != 0 || comma == -1 {
+			break
+		}
+
+		closeParen := i - 1
+		fullMatch := result[catIndex : closeParen+1]
+		if processed[fullMatch] {
+			break
+		}
+		processed[fullMatch] = true
+		arg1 := strings.TrimSpace(result[openParen+1 : comma])
+		arg2 := strings.TrimSpace(result[comma+1 : closeParen])
+		processedArg1 := processStringFunctionArg(arg1)
+		processedArg2 := processStringFunctionArg(arg2)
+		replacement := fmt.Sprintf("__CAT_PROCESSED__(%s, %s)", processedArg1, processedArg2)
+		result = result[:catIndex] + replacement + result[closeParen+1:]
+	}
+	result = strings.ReplaceAll(result, "__CAT_PROCESSED__", "cat!")
+	return result
+}
+
 func inferTypeFromValue(value string) string {
 	if strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"") {
 		return "string"
@@ -2065,6 +2112,8 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				}
 
 				if varType == "string" {
+					value = processCatExpression(value)
+
 					if isFunctionCall(value) {
 						value = resolveFunctionCall(value)
 						fmt.Fprintf(b, "%sstrcpy(%s, %s);\n", indent, varName, value)

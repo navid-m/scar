@@ -1,0 +1,45 @@
+import "std/random"
+import "std/strings"
+import "std/os"
+
+fn rand_digit() -> string:
+    return strings::chr(random::num(0, 9) + '0')
+
+fn matrix_rain(int width, int height, int frames, f64 delay) -> void:
+    allocate i32 heads = width
+    allocate i32 tail_lengths = width
+
+    for x = 0 to (width - 1):
+        heads[x] = random::num(0, height - 1)
+        tail_lengths[x] = random::num(3, height / 2)
+
+    for f = 0 to (frames - 1):
+        string frame = ""
+        for y = 0 to (height - 1):
+            for x = 0 to (width - 1):
+                i32 head_y = heads[x]
+                i32 tail_len = tail_lengths[x]
+
+                i32 dist = (y - head_y + height) % height
+
+                if dist == 0:
+                    frame = cat!(frame, "*")  
+                elif dist > 0 && dist < tail_len:
+                    frame = cat!(frame, rand_digit()) 
+                else:
+                    frame = cat!(frame, " ")
+            frame = cat!(frame, "\n")
+        put "\x1b[H%s" | frame 
+        for x = 0 to (width - 1):
+            heads[x] = (heads[x] + 1) % height
+            if random::num(0, 100) < 5:
+                tail_lengths[x] = random::num(3, height / 2)
+
+        sleep delay
+
+int width = 60
+int height = 25
+int frames = 120
+f64 delay = 0.06
+put "\x1b[2J"
+matrix_rain(width, height, frames, delay)
