@@ -1,0 +1,62 @@
+import "std/random"
+import "std/math"
+
+fn conditional_parallel_reduction(int n) -> int:
+    int sum_even = 0
+    int sum_odd = 0
+    parallel for i = 1 to n reduce(+: sum_even) reduce(+: sum_odd):
+        if random::num(0, 10) < 3:
+            continue
+        if i % 2 == 0:
+            sum_even = sum_even + i
+        else:
+            sum_odd = sum_odd + i
+    return sum_even + sum_odd
+
+fn nested_parallel_loops(int outer, int inner) -> int:
+    int total = 0
+    parallel for i = 0 to (outer - 1) reduce(+: total):
+        parallel for j = 0 to (inner - 1) reduce(+: total):
+            int val = i * j
+            if val % 5 == 0:
+                val = val / 5
+            else:
+                val = val * 2
+            total = total + val
+    return total
+
+fn aliasing_and_mutation_test():
+    allocate int arr = 20
+    for i = 0 to 19:
+        arr[i] = i
+    ref int alias = arr
+    for i = 0 to 19:
+        if i % 2 == 0:
+            alias[i] = alias[i] * 3
+        else:
+            alias[i] = alias[i] + 7
+
+    int sum = 0
+    for i = 0 to 19:
+        sum = sum + arr[i]
+
+    print "Aliasing and mutation total: %d" | sum
+
+fn error_code_style_handling(int n) -> int:
+    for i = 0 to n:
+        if i == 13:
+            return -1  # signal error early (simulate exceptions)
+    return n
+
+int cpr = conditional_parallel_reduction(100)
+print "Conditional parallel reduction total: %d" | cpr
+
+int nested = nested_parallel_loops(10, 10)
+print "Nested parallel loops total: %d" | nested
+
+aliasing_and_mutation_test()
+
+int err = error_code_style_handling(20)
+if err < 0:
+    print "Error detected at iteration 13!"
+
