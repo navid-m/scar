@@ -1,0 +1,11 @@
+class Node:
+    init(int val):
+        this.val = val
+
+fn test_allocate():
+    allocate ref Node nodes = 5
+    allocate int numbers = 10
+    stallocate ref Node stack_nodes = 3
+
+print "Allocate ref parsing test"
+test_allocate()

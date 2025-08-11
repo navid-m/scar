@@ -1066,21 +1066,72 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 		return &Statement{Continue: &ContinueStmt{Continue: "continue"}}, lineNum + 1, nil
 
 	case "allocate":
-		if len(parts) < 5 || parts[3] != "=" {
-			return nil, lineNum + 1, fmt.Errorf("allocate statement format error at line %d (expected: allocate type name = size)", lineNum+1)
+		var varType, varName, size string
+		var equalIndex int
+
+		for i, part := range parts {
+			if part == "=" {
+				equalIndex = i
+				break
+			}
 		}
-		varType := parts[1]
-		varName := parts[2]
-		size := strings.Join(parts[4:], " ")
+
+		if equalIndex == 0 || equalIndex >= len(parts)-1 {
+			return nil, lineNum + 1, fmt.Errorf("allocate statement format error at line %d (expected: allocate [ref] type name = size)", lineNum+1)
+		}
+
+		if len(parts) >= 5 && parts[1] == "ref" {
+			// allocate ref type name = size
+			if equalIndex != 4 {
+				return nil, lineNum + 1, fmt.Errorf("allocate statement format error at line %d (expected: allocate ref type name = size)", lineNum+1)
+			}
+			varType = "ref " + parts[2]
+			varName = parts[3]
+		} else {
+			// allocate type name = size
+			if equalIndex != 3 {
+				return nil, lineNum + 1, fmt.Errorf("allocate statement format error at line %d (expected: allocate type name = size)", lineNum+1)
+			}
+			varType = parts[1]
+			varName = parts[2]
+		}
+
+		size = strings.Join(parts[equalIndex+1:], " ")
 		return &Statement{Allocate: &AllocateStmt{Type: varType, Name: varName, Size: size}}, lineNum + 1, nil
 
 	case "stallocate":
-		if len(parts) < 5 || parts[3] != "=" {
-			return nil, lineNum + 1, fmt.Errorf("stallocate statement format error at line %d (expected: stallocate type name = size)", lineNum+1)
+		var varType, varName, size string
+		var equalIndex int
+
+		for i, part := range parts {
+			if part == "=" {
+				equalIndex = i
+				break
+			}
 		}
-		varType := parts[1]
-		varName := parts[2]
-		size := strings.Join(parts[4:], " ")
+
+		if equalIndex == 0 || equalIndex >= len(parts)-1 {
+			return nil, lineNum + 1, fmt.Errorf("stallocate statement format error at line %d (expected: stallocate [ref] type name = size)", lineNum+1)
+		}
+
+		// Check if we have "ref" modifier
+		if len(parts) >= 5 && parts[1] == "ref" {
+			// stallocate ref type name = size
+			if equalIndex != 4 {
+				return nil, lineNum + 1, fmt.Errorf("stallocate statement format error at line %d (expected: stallocate ref type name = size)", lineNum+1)
+			}
+			varType = "ref " + parts[2]
+			varName = parts[3]
+		} else {
+			// stallocate type name = size
+			if equalIndex != 3 {
+				return nil, lineNum + 1, fmt.Errorf("stallocate statement format error at line %d (expected: stallocate type name = size)", lineNum+1)
+			}
+			varType = parts[1]
+			varName = parts[2]
+		}
+
+		size = strings.Join(parts[equalIndex+1:], " ")
 		return &Statement{StackAllocate: &StackAllocateStmt{Type: varType, Name: varName, Size: size}}, lineNum + 1, nil
 
 	case "free":
