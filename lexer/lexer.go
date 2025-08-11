@@ -48,6 +48,7 @@ type Statement struct {
 	ClassDecl            *ClassDeclStmt
 	EnumDecl             *EnumDeclStmt
 	MethodCall           *MethodCallStmt
+	StaticMethodCall     *StaticMethodCallStmt
 	ObjectDecl           *ObjectDeclStmt
 	Return               *ReturnStmt
 	VarDeclMethodCall    *VarDeclMethodCallStmt
@@ -362,10 +363,17 @@ type MethodDeclStmt struct {
 	Parameters []*MethodParameter
 	ReturnType string
 	Body       []*Statement
+	IsStatic   bool
 }
 
 type MethodCallStmt struct {
 	Object string
+	Method string
+	Args   []string
+}
+
+type StaticMethodCallStmt struct {
+	Class  string
 	Method string
 	Args   []string
 }

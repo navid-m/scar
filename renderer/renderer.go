@@ -941,7 +941,7 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 		if method.ReturnType != "" && method.ReturnType != "void" {
 			returnType = mapTypeToCType(method.ReturnType)
 		}
-		prototype := generateMethodPrototype(className, method.Name, returnType, method.Parameters)
+		prototype := generateMethodPrototype(className, method.Name, returnType, method.Parameters, method.IsStatic)
 		b.WriteString(prototype)
 		b.WriteString(";\n")
 	}
@@ -953,9 +953,13 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 			returnType = mapTypeToCType(method.ReturnType)
 		}
 
-		fmt.Fprintf(b, "%s %s_%s(%s* this", returnType, className, method.Name, className)
+		if method.IsStatic {
+			fmt.Fprintf(b, "%s %s_%s(", returnType, className, method.Name)
+		} else {
+			fmt.Fprintf(b, "%s %s_%s(%s* this", returnType, className, method.Name, className)
+		}
 
-		for _, param := range method.Parameters {
+		for i, param := range method.Parameters {
 			paramType := mapTypeToCType(param.Type)
 			// For ref parameters, don't add extra * since they should be handled as single pointers
 			if param.IsRef {
@@ -971,7 +975,13 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 					paramType = "char*"
 				}
 			}
-			fmt.Fprintf(b, ", %s %s", paramType, param.Name)
+
+			// Add comma for all parameters (instance methods already have 'this' parameter)
+			if method.IsStatic && i == 0 {
+				fmt.Fprintf(b, "%s %s", paramType, param.Name)
+			} else {
+				fmt.Fprintf(b, ", %s %s", paramType, param.Name)
+			}
 		}
 
 		b.WriteString(") {\n")
@@ -2443,6 +2453,25 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 					fmt.Fprintf(b, "%s%s_%s(%s, %s);\n", indent, resolvedClassName, methodName, objectName, argsStr)
 				}
 			}
+		case stmt.StaticMethodCall != nil:
+			className := stmt.StaticMethodCall.Class
+			methodName := stmt.StaticMethodCall.Method
+			rawArgs := stmt.StaticMethodCall.Args
+
+			// Resolve class name if it's an imported type
+			if moduleName, exists := isImportedType(className, program.Imports); exists {
+				className = lexer.GenerateUniqueSymbol(className, moduleName)
+			}
+
+			var args []string
+			for _, arg := range rawArgs {
+				resolvedArg := lexer.ResolveSymbol(arg, currentModule)
+				resolvedArg = convertThisReferencesGranular(resolvedArg)
+				args = append(args, resolvedArg)
+			}
+			argsStr := strings.Join(args, ", ")
+
+			fmt.Fprintf(b, "%s%s_%s(%s);\n", indent, className, methodName, argsStr)
 		case stmt.FunctionCall != nil:
 			funcName := lexer.ResolveSymbol(stmt.FunctionCall.Name, currentModule)
 			args := make([]string, 0)
@@ -3952,12 +3981,19 @@ func containsValidExpressionElements(value string) bool {
 }
 
 // Generates a C function prototype for a class method
-func generateMethodPrototype(className, methodName, returnType string, parameters []*lexer.MethodParameter) string {
+func generateMethodPrototype(className, methodName, returnType string, parameters []*lexer.MethodParameter, isStatic bool) string {
 	cReturnType := "void"
 	if returnType != "" && returnType != "void" {
 		cReturnType = mapTypeToCType(returnType)
 	}
-	paramList := []string{fmt.Sprintf("%s* this", className)}
+
+	var paramList []string
+
+	// Static methods don't have 'this' parameter
+	if !isStatic {
+		paramList = append(paramList, fmt.Sprintf("%s* this", className))
+	}
+
 	for _, param := range parameters {
 		paramType := mapTypeToCType(param.Type)
 		// For ref parameters, don't add extra * since they should be handled as single pointers

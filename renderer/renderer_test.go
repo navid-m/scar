@@ -2623,3 +2623,52 @@ buf.set_capacity(20)
 		t.Errorf("Expected C code to contain allocation assignment '%s', but it didn't. Generated code:\n%s", expectedAssignment, result)
 	}
 }
+
+func TestStaticMethodCall(t *testing.T) {
+	program := &lexer.Program{
+		Statements: []*lexer.Statement{
+			{
+				ClassDecl: &lexer.ClassDeclStmt{
+					Name: "TreeNode",
+					Methods: []*lexer.MethodDeclStmt{
+						{
+							Name: "bottom_up_tree",
+							Parameters: []*lexer.MethodParameter{
+								{Type: "int", Name: "depth"},
+							},
+							ReturnType: "ref TreeNode",
+							IsStatic:   true,
+							Body: []*lexer.Statement{
+								{
+									Return: &lexer.ReturnStmt{Value: "new TreeNode()"},
+								},
+							},
+						},
+					},
+				},
+			},
+			{
+				StaticMethodCall: &lexer.StaticMethodCallStmt{
+					Class:  "TreeNode",
+					Method: "bottom_up_tree",
+					Args:   []string{"5"},
+				},
+			},
+		},
+	}
+
+	result := RenderC(program, "", false)
+
+	expectedDeclaration := "TreeNode* TreeNode_bottom_up_tree(int depth)"
+	if !strings.Contains(result, expectedDeclaration) {
+		t.Errorf("Expected C code to contain static method declaration '%s', but it didn't. Generated code:\n%s", expectedDeclaration, result)
+	}
+	expectedCall := "TreeNode_bottom_up_tree(5);"
+	if !strings.Contains(result, expectedCall) {
+		t.Errorf("Expected C code to contain static method call '%s', but it didn't. Generated code:\n%s", expectedCall, result)
+	}
+	invalidDeclaration := "TreeNode_bottom_up_tree(TreeNode* this"
+	if strings.Contains(result, invalidDeclaration) {
+		t.Errorf("Static method declaration should not contain 'this' parameter '%s'. Generated code:\n%s", invalidDeclaration, result)
+	}
+}

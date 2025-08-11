@@ -330,7 +330,7 @@ func parsePubClassStatement(lines []string, lineNum, currentIndent int) (*Statem
 
 			constructor = &ConstructorStmt{Parameters: parameters, Fields: initBody}
 			nextLine = findEndOfBlock(lines, initStartLine, initBodyIndent)
-		} else if strings.HasPrefix(trimmed, "fn ") {
+		} else if strings.HasPrefix(trimmed, "fn ") || strings.HasPrefix(trimmed, "stat fn ") {
 			method, newNextLine, err := parseMethodStatement(lines, nextLine, expectedBodyIndent)
 			if err != nil {
 				return nil, nextLine + 1, err
@@ -455,7 +455,7 @@ func parseClassStatement(lines []string, lineNum, currentIndent int) (*Statement
 
 			constructor = &ConstructorStmt{Parameters: parameters, Fields: initBody}
 			nextLine = findEndOfBlock(lines, initStartLine, initBodyIndent)
-		} else if strings.HasPrefix(trimmed, "fn ") {
+		} else if strings.HasPrefix(trimmed, "fn ") || strings.HasPrefix(trimmed, "stat fn ") {
 			method, newNextLine, err := parseMethodStatement(lines, nextLine, expectedBodyIndent)
 			if err != nil {
 				return nil, nextLine + 1, err
@@ -602,7 +602,16 @@ func parseTopLevelFunctionStatement(lines []string, lineNum, currentIndent int) 
 func parseMethodStatement(lines []string, lineNum, currentIndent int) (*MethodDeclStmt, int, error) {
 	line := strings.TrimSpace(lines[lineNum])
 
-	if !strings.HasPrefix(line, "fn ") || !strings.HasSuffix(line, ":") {
+	// Check for static method declaration
+	isStatic := false
+	if strings.HasPrefix(line, "stat fn ") {
+		isStatic = true
+		line = "fn " + strings.TrimSpace(line[8:]) // Remove "stat " prefix
+	} else if !strings.HasPrefix(line, "fn ") {
+		return nil, lineNum + 1, fmt.Errorf("invalid method declaration at line %d", lineNum+1)
+	}
+
+	if !strings.HasSuffix(line, ":") {
 		return nil, lineNum + 1, fmt.Errorf("invalid method declaration at line %d", lineNum+1)
 	}
 
@@ -678,6 +687,7 @@ func parseMethodStatement(lines []string, lineNum, currentIndent int) (*MethodDe
 		Parameters: parameters,
 		ReturnType: returnType,
 		Body:       body,
+		IsStatic:   isStatic,
 	}, nextLine, nil
 }
 

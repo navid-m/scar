@@ -1649,6 +1649,40 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 			}
 		}
 
+		// Check for static method call (ClassName::methodName(...))
+		if strings.Contains(line, "::") && strings.Contains(line, "(") && strings.Contains(line, ")") && !strings.Contains(line, "=") {
+			doubleColonIndex := strings.Index(line, "::")
+			parenIndex := strings.Index(line, "(")
+			if doubleColonIndex < parenIndex {
+				className := strings.TrimSpace(line[:doubleColonIndex])
+				methodPart := strings.TrimSpace(line[doubleColonIndex+2:])
+				methodEndIndex := strings.Index(methodPart, "(")
+
+				if methodEndIndex == -1 {
+					return nil, lineNum + 1, fmt.Errorf("invalid static method call syntax at line %d", lineNum+1)
+				}
+
+				var (
+					methodName = strings.TrimSpace(methodPart[:methodEndIndex])
+					argsStart  = strings.Index(line, "(")
+					argsEnd    = strings.LastIndex(line, ")")
+				)
+
+				var args []string
+				if argsEnd > argsStart+1 {
+					argsStr := strings.TrimSpace(line[argsStart+1 : argsEnd])
+					if argsStr != "" {
+						argsList := strings.SplitSeq(argsStr, ",")
+						for arg := range argsList {
+							args = append(args, strings.TrimSpace(arg))
+						}
+					}
+				}
+
+				return &Statement{StaticMethodCall: &StaticMethodCallStmt{Class: className, Method: methodName, Args: args}}, lineNum + 1, nil
+			}
+		}
+
 		if strings.Contains(line, ".") && strings.Contains(line, "(") && strings.Contains(line, ")") && !strings.Contains(line, "=") {
 			dotIndex := strings.Index(line, ".")
 			parenIndex := strings.Index(line, "(")
