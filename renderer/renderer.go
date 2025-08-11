@@ -3202,10 +3202,11 @@ func findMatchingParen(s string, openPos int) int {
 
 func convertMethodCallToC(expr string) string {
 	if strings.Contains(expr, "<<") || strings.Contains(expr, ">>") {
-		methodCallPattern := regexp.MustCompile(`(?:\bthis\.\w+|\b\w+)\.[a-zA-Z_]\w*\([^)]*\)`)
-		result := expr
-		methodCalls := methodCallPattern.FindAllString(expr, -1)
-
+		var (
+			methodCallPattern = regexp.MustCompile(`(?:\bthis\.\w+|\b\w+)\.[a-zA-Z_]\w*\([^)]*\)`)
+			result            = expr
+			methodCalls       = methodCallPattern.FindAllString(expr, -1)
+		)
 		for _, methodCall := range methodCalls {
 			converted := convertSingleMethodCall(methodCall)
 			if converted != "" && converted != methodCall {
