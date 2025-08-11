@@ -1,0 +1,23 @@
+import "std/os"
+import "std/strings"
+
+list[string] files = os::read_dir(".")
+
+pub int failed = 0
+pub int passed = 0
+
+for i = 0 to len(files):
+    string filename = files[i]
+    
+    if strings::ends_with(filename, ".scar"):
+        print "Found .scar file: %s" | filename
+        print "Testing: %s" | filename
+        filename = strings::trim_suffix(filename, ".scar")
+        string command = fmt!("scar %s", filename)
+        i16 result = os::exec(command)
+        if result == 0:
+            print "  ✓ PASSED"
+            passed = passed + 1
+        else:
+            print "  ✗ FAILED"
+            failed = failed + 1

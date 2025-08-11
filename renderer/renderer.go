@@ -1919,6 +1919,8 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 								fmt.Fprintf(b, "%sstrcpy(%s, %s);\n", indent, varName, value)
 							} else if _, isGlobal := globalVars[value]; isGlobal {
 								fmt.Fprintf(b, "%sstrcpy(%s, %s);\n", indent, varName, value)
+							} else if strings.Contains(value, "[") && strings.Contains(value, "]") {
+								fmt.Fprintf(b, "%sstrcpy(%s, %s);\n", indent, varName, value)
 							} else {
 								value = fmt.Sprintf("\"%s\"", value)
 								fmt.Fprintf(b, "%sstrcpy(%s, %s);\n", indent, varName, value)
@@ -1940,6 +1942,7 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				varName = lexer.ResolveSymbol(stmt.VarAssign.Name, currentModule)
 				value   = stmt.VarAssign.Value
 			)
+			value = lexer.ResolveSymbol(value, currentModule)
 			value = fixFloatCastGranular(value)
 			value = convertThisReferencesGranular(value)
 			value = convertNewToConstructor(value) // Convert 'new ClassName(args)' to 'ClassName_new(args)'
@@ -2060,9 +2063,11 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 						fmt.Fprintf(b, "%sstrcpy(%s, %s);\n", indent, varName, value)
 					} else {
 						if strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"") {
+							// Already a string literal with quotes, use as-is
 							fmt.Fprintf(b, "%sstrcpy(%s, %s);\n", indent, varName, value)
 						} else {
-							fmt.Fprintf(b, "%sstrcpy(%s, \"%s\");\n", indent, varName, value)
+							// Variable name or expression, don't add quotes - use as-is
+							fmt.Fprintf(b, "%sstrcpy(%s, %s);\n", indent, varName, value)
 						}
 					}
 				} else {

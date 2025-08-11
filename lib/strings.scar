@@ -83,3 +83,19 @@ pub fn trim_suffix(string str, string suffix) -> string:
             return str;
         }
     )
+
+pub fn ends_with(string str, string suffix) -> bool:
+    $raw (
+        if (str == NULL || suffix == NULL) {
+            return false;
+        }
+        
+        size_t str_len = strlen(str);
+        size_t suffix_len = strlen(suffix);
+        
+        if (suffix_len > str_len) {
+            return false;
+        }
+        
+        return strcmp(str + str_len - suffix_len, suffix) == 0;
+    )
