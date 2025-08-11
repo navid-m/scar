@@ -1884,7 +1884,7 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			}
 			if varType != "" {
 				if err := checkTypeCompatibility(varName, varType, value); err != nil {
-					fmt.Fprintf(os.Stderr, "Compilation error: %s\n", err.Error())
+					fmt.Fprintf(os.Stderr, "\033[31mCompilation error: %s\033[0m\n", err.Error())
 					os.Exit(1)
 				}
 			}
@@ -2691,7 +2691,7 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 					reductionVar := lexer.ResolveSymbol(reduction.Variable, currentModule)
 					reductionGroups[ompOp] = append(reductionGroups[ompOp], reductionVar)
 				}
-				
+
 				// Build separate reduction clauses for each operation
 				var allReductions []string
 				for op, vars := range reductionGroups {
@@ -3909,11 +3909,11 @@ func checkTypeCompatibility(varName, varType, value string) error {
 			return nil
 		}
 
-		return fmt.Errorf("Type error: Unknown identifier or type for value '%s' when assigning to variable '%s' of type '%s'", value, varName, varType)
+		return fmt.Errorf("TypeError: Unknown identifier or type for value '%s' when assigning to variable '%s' of type '%s'", value, varName, varType)
 	}
 
 	if !areTypesCompatible(varType, valueType) {
-		return fmt.Errorf("Type error: Cannot assign value of type '%s' to variable '%s' of type '%s'", valueType, varName, varType)
+		return fmt.Errorf("TypeError: Cannot assign value of type '%s' to variable '%s' of type '%s'", valueType, varName, varType)
 	}
 
 	return nil
