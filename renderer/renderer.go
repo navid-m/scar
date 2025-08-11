@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"unicode"
@@ -587,6 +588,11 @@ func processMethodArguments(args string) string {
 
 func convertPropertyAccess(expr string) string {
 	fmt.Printf("Debug: convertPropertyAccess called with: '%s'\n", expr)
+	// Print stack trace to see what's calling this function
+	if strings.Contains(expr, "- >") {
+		fmt.Printf("Debug: MANGLED ARROW DETECTED! Stack trace:\n")
+		debug.PrintStack()
+	}
 	bitwiseOps := map[string]string{
 		"b_or":     "|",
 		"b_and":    "&",
@@ -2999,7 +3005,10 @@ func convertThisReferencesGranular(expr string) string {
 		expr = convertMethodCallToC(expr)
 	}
 
+	expr = strings.ReplaceAll(expr, "->", "__ARROW__")
 	expr = strings.Join(strings.Fields(expr), " ")
+	expr = strings.ReplaceAll(expr, "__ARROW__", "->")
+
 	reModuleMember := regexp.MustCompile(`\b([a-zA-Z_][a-zA-Z0-9]*)\.([A-Z_][A-Z0-9_]*)\b`)
 	expr = reModuleMember.ReplaceAllString(expr, "${1}_$2")
 	reThisMember := regexp.MustCompile(`(^|\s|\(|\[|,|\+|-|\*|/|%|&|\||\^|!|~|\?|:|=|\{|\}|;|,|\s)this\s*\.\s*([a-zA-Z_][a-zA-Z0-9]*)`)
@@ -3025,8 +3034,9 @@ func convertThisReferencesGranular(expr string) string {
 	})
 
 	expr = strings.ReplaceAll(expr, "->->", "->")
-	expr = strings.ReplaceAll(expr, "-> ", "->")
-	expr = strings.ReplaceAll(expr, " ->", "->")
+	// Don't remove spaces around -> as it can cause parsing issues
+	// expr = strings.ReplaceAll(expr, "-> ", "->")
+	// expr = strings.ReplaceAll(expr, " ->", "->")
 	expr = strings.ReplaceAll(expr, "this ->", "this->")
 
 	// Handle nil conversion
@@ -3265,6 +3275,9 @@ func findMatchingParen(s string, openPos int) int {
 }
 
 func convertMethodCallToC(expr string) string {
+	fmt.Printf("Debug: convertMethodCallToC called with: '%s'\n", expr)
+	expr = strings.ReplaceAll(expr, "->", "__ARROW__")
+
 	bitwiseOps := map[string]string{
 		"b_or":     "|",
 		"b_and":    "&",
@@ -3294,7 +3307,11 @@ func convertMethodCallToC(expr string) string {
 		if len(matches) > 0 {
 			fmt.Printf("DEBUG: Found regex matches for %s in '%s': %v\n", bitwiseOp, result, matches)
 		}
+		beforeRegex := result
 		result = pattern.ReplaceAllString(result, "$1 "+cOp+" ")
+		if result != beforeRegex {
+			fmt.Printf("DEBUG: Regex replacement for %s: '%s' became '%s'\n", bitwiseOp, beforeRegex, result)
+		}
 
 		if result != oldResult {
 			fmt.Printf("DEBUG: Bitwise conversion %s -> %s: '%s' became '%s'\n", bitwiseOp, cOp, oldResult, result)
@@ -3402,7 +3419,10 @@ func convertMethodCallToC(expr string) string {
 		}
 	}
 
-	return convertSingleMethodCall(expr)
+	result = convertSingleMethodCall(expr)
+	result = strings.ReplaceAll(result, "__ARROW__", "->")
+
+	return result
 }
 
 // Generates a function for map access
