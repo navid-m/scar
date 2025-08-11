@@ -204,6 +204,28 @@ pub fn atan(float x) -> float:
         i = i + 1
     return result
 
+## Square root using Newton's method
+## Will return -1.0 if x < 0.0
+pub fn sqrt(f64 x) -> f64:
+    if x < 0.0:
+        return -1.0
+    if x == 0.0:
+        return 0.0
+    
+    f64 guess = x / 2.0
+    f64 epsilon = 0.000001
+
+    for i = 0 to 50:
+        f64 new_guess = (guess + x / guess) / 2.0
+        f64 diff = new_guess - guess
+        if diff < 0.0:
+            diff = -diff
+        if diff < epsilon:
+            return new_guess
+        guess = new_guess
+    
+    return guess
+
 pub fn round(float value, int decimalPlaces) -> float:
     float factor = math::pow(10.0, float(decimalPlaces))
     return (float)((int)(value * factor + 0.5)) / factor

@@ -3807,8 +3807,9 @@ func generateTopLevelFunctionImplementation(b *strings.Builder, funcDecl *lexer.
 			if param.Type == "string" {
 				paramType = "char*"
 			}
-			// Note: param.IsRef handling is now done in mapTypeToCType for ref types
-			// No need to add extra * here since mapTypeToCType already handles "ref Type" -> "Type*"
+			if param.IsRef && !strings.HasSuffix(paramType, "*") {
+				paramType = paramType + "*"
+			}
 			paramList = append(paramList, fmt.Sprintf("%s %s", paramType, paramName))
 		}
 	}
@@ -4169,8 +4170,9 @@ func generateFunctionPrototype(funcDecl *lexer.TopLevelFuncDeclStmt) string {
 			if param.Type == "string" {
 				paramType = "char*"
 			}
-			// Note: param.IsRef handling is now done in mapTypeToCType for ref types
-			// No need to add extra * here since mapTypeToCType already handles "ref Type" -> "Type*"
+			if param.IsRef && !strings.HasSuffix(paramType, "*") {
+				paramType = paramType + "*"
+			}
 			paramList = append(paramList, fmt.Sprintf("%s %s", paramType, paramName))
 		}
 	}
