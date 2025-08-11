@@ -11,6 +11,7 @@ import (
 	"os"
 	"regexp"
 	"runtime/debug"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode"
@@ -4265,12 +4266,7 @@ func inferArithmeticExpressionType(value string) string {
 
 func isNumericType(typeName string) bool {
 	numericTypes := []string{"i32", "int", "f32", "float", "f64", "double", "i16", "i64", "u16", "u32", "u64"}
-	for _, t := range numericTypes {
-		if typeName == t {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(numericTypes, typeName)
 }
 
 func inferValueType(value string) string {
