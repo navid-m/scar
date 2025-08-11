@@ -9,4 +9,3 @@ parallel for i = 1 to n step 1 reduce(max: max_value, sum: total_sum):
     total_sum = total_sum + i
 
 print "Max value: %d, Total sum: %d" | max_value, total_sum
-return 0
