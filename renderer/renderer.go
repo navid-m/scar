@@ -1490,9 +1490,11 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			}
 
 		case stmt.ListOfDecl != nil:
-			listType := stmt.ListOfDecl.Type
-			listName := stmt.ListOfDecl.Name
-			value := stmt.ListOfDecl.Value
+			var (
+				listType = stmt.ListOfDecl.Type
+				listName = stmt.ListOfDecl.Name
+				value    = stmt.ListOfDecl.Value
+			)
 
 			if strings.HasPrefix(value, "this.") {
 				value = "this->" + value[5:]
@@ -1946,7 +1948,6 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			} else {
 				if stmt.VarDecl.Type == "string" {
 					fmt.Fprintf(b, "%schar %s[256];\n", indent, varName)
-					// Always initialize string variables; handle empty string case
 					if value == "" || value == "\"\"" {
 						fmt.Fprintf(b, "%sstrcpy(%s, \"\");\n", indent, varName)
 					} else if isFunctionCall(value) {
@@ -1996,6 +1997,7 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				varName = lexer.ResolveSymbol(stmt.VarAssign.Name, currentModule)
 				value   = stmt.VarAssign.Value
 			)
+
 			value = lexer.ResolveSymbol(value, currentModule)
 			value = fixFloatCastGranular(value)
 			value = convertThisReferencesGranular(value)
