@@ -4,7 +4,7 @@ In-development general purpose systems programming language with abstracted conc
 
 No macros or convoluted compile-time metaprogramming.
 
-Optional GC. Standard library will work with or without GC.
+Optional garbage collection. The standard library will work with or without the GC.
 
 Prioritizes:
 
@@ -12,6 +12,12 @@ Prioritizes:
 -  minimalism
 -  readability
 -  easy parallelism
+
+#### Resources
+
+Complete documentation is available [here](scarlang-docs.pages.dev).
+
+The VSCode extension is available [here](https://marketplace.visualstudio.com/items?itemName=NavidM.scar).
 
 #### Example
 
@@ -21,11 +27,8 @@ pub fn do_thing() -> void:
         print "i = %d" | i
         sleep 0.1
     print "Parallel for loop completed."
-
 do_thing()
 ```
-
-All values are constant by default.
 
 ---
 
