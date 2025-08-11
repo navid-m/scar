@@ -1,0 +1,135 @@
+# torture_test.sc
+import "std/random"
+import "std/math"
+import "std/os"
+import "std/strings"
+
+# Compute-ish function that allocates and runs a nested parallel region.
+fn compute_block(int seed, int length) -> i64:
+    # dynamic allocation inside a compute function
+    allocate i64 buf = length
+    for i = 0 to (length - 1):
+        # mix arithmetic with seed so values vary and may be large
+        buf[i] = (i64)((seed * (i + 1) ^ (seed + i)) % 10000007)
+
+    # nested parallel that reduces into a local variable
+    i32 local_sum = 0
+    i64 local_max = -9223372036854775807
+    parallel for j = 0 to (length - 1) reduce(+: local_sum, max: local_max):
+        # a little nondeterministic sleep to shim timing
+        if random::num(0, 20) == 0:
+            sleep 0.001
+        i64 v = buf[j]
+        if v > local_max:
+            local_max = v
+        local_sum = local_sum + v
+
+    # free not necessary per language examples; return combined metric
+    return local_sum + local_max
+
+# Recursive function that itself allocates and calls compute_block many times.
+fn recursive_work(int depth, int fanout, int base_len) -> f64:
+    # base case: do a moderately heavy compute
+    if depth <= 0:
+        i64 s = compute_block(random::num(1, 99999), base_len)
+        return (f64)s / 1e6
+
+    # allocate per-recursion working area
+    allocate i64 results = fanout
+
+    # run a parallel for across children but also inside each child run a nested parallel
+    parallel for k = 0 to (fanout - 1):
+        # stallocate a small temporary permutation buffer on the stack per thread
+        stallocate i32 tmp = base_len / 2 + 3
+
+        # intentionally call compute_block from within a parallel loop,
+        # and then optionally break out of an inner for (to test control flow)
+        i64 subtotal = compute_block(random::num(1, 65535) + k, base_len + (k % 3))
+
+        # inner loop with an early break that may trigger inside parallel body
+        for p = 0 to (tmp - 1):
+            if (subtotal % (p + 3)) == 0:
+                # modify subtotal before breaking to exercise non-local changes
+                subtotal = subtotal + p * 7
+                break
+
+        results[k] = subtotal
+
+    # now reduce across results with mixed types and floating-point conversion
+    f64 sum_f = 0.0
+    i64 max_i = -9223372036854775807
+    i32 sum_i = 0
+
+    # parallel reduction across an allocated array (exposes reduction codegen)
+    parallel for r = 0 to (fanout - 1) reduce(+: sum_f, max: max_i, +: sum_i):
+        # convert stored i64 into f64 addition and integer reductions
+        i64 v = results[r]
+        sum_f = sum_f + (f64)v
+        sum_i = sum_i + v
+        if v > max_i:
+            max_i = v
+
+    # produce a floating metric combining the reductions
+    f64 out = sum_f / (1.0 + (f64)(sum_i % 100)) + (f64)(max_i % 9973) / 10000.0
+
+    # Recurse once more and combine (this causes deeper allocation/parallel combos)
+    f64 deeper = recursive_work(depth - 1, max(1, fanout - 1), base_len)
+    return out + deeper * 0.5
+
+# Entry: parse args for stress parameters
+list[string] args = os::get_args()
+int depth = 3
+int fanout = 6
+int base_len = 64
+
+print "%d" | len(args)
+if len(args) > 1:
+    print "true 1"
+    depth = math::to_int(args[1])
+if len(args) > 2:
+    print "true 2"
+    fanout = math::to_int(args[2])
+if len(args) > 3:
+    print "true 3"
+    base_len = math::to_int(args[3])
+
+# Print the test parameters up-front
+put "Running torture_test: depth=%d fanout=%d base_len=%d\n" | depth, fanout, base_len
+
+# Top-level nested parallel: run several recursive_work instances in parallel,
+# with reductions that mix f64 and i64 and also use multiple reduction ops on the same variable type.
+pub f64 global_sum_f = 0.0
+pub i64 global_max_i = -9223372036854775807
+pub i32 global_count = 0
+
+parallel for t = 0 to 7 reduce(+: global_sum_f, max: global_max_i, +: global_count):
+    # occasionally spawn another nested parallel inside a parallel to exercise nesting
+    if random::num(0, 3) == 0:
+        # inner nested parallel with its own reductions
+        f64 inner_sum = 0.0
+        i64 inner_max = -9223372036854775807
+        parallel for z = 0 to 2 reduce(+: inner_sum, max: inner_max):
+            f64 val = recursive_work(depth - 1, fanout / 2 + 1, base_len / 2 + 3)
+            inner_sum = inner_sum + val
+            if (i64)(val * 1000.0) > inner_max:
+                inner_max = (i64)(val * 1000.0)
+
+        # combine inner results into outer reductions (mixing types intentionally)
+        global_sum_f = global_sum_f + inner_sum
+        if inner_max > global_max_i:
+            global_max_i = inner_max
+        global_count = global_count + 1
+    else:
+        # do a full recursive workload
+        f64 v = recursive_work(depth, fanout, base_len)
+        global_sum_f = global_sum_f + v
+        if (i64)(v * 100000.0) > global_max_i:
+            global_max_i = (i64)(v * 100000.0)
+        global_count = global_count + 1
+
+# Final reporting (intentionally mixed formatting and conversions)
+put "\nTORTURE TEST COMPLETE\n"
+put "global_count = %d\n" | global_count
+put "global_max_i = %lld\n" | global_max_i
+put "global_sum_f (raw) = %f\n" | global_sum_f
+put "global_sum_f (scaled) = %f\n" | (global_sum_f / (1.0 + (f64)global_count))
