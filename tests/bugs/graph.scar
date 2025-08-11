@@ -23,7 +23,7 @@ pub class Graph:
         int this.edge_count = 0
         
         # Adjacency list - array of pointers to GraphNode
-        ref ref GraphNode this.adj_list = nil
+        ref GraphNode this.adj_list = nil
         allocate ref GraphNode this.adj_list = this.max_vertices
         
         # Vertex labels/values
