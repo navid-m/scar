@@ -139,6 +139,10 @@ func RenderC(program *lexer.Program, baseDir string, gcFlag bool) string {
 #include <stdlib.h>
 #include <stdbool.h>
 #include <stdint.h>
+
+#ifdef _WIN32
+#include <windows.h>
+#endif
 `)
 
 	if useGC {
@@ -336,6 +340,9 @@ bool __check_key_exists(int* keys, int size, int key) {
 	}
 
 	b.WriteString("int main(int argc, char** argv) {\n")
+	b.WriteString("#ifdef _WIN32\n")
+	b.WriteString("    SetConsoleOutputCP(CP_UTF8);\n")
+	b.WriteString("#endif\n")
 	b.WriteString("    __global_argc = argc;\n")
 	b.WriteString("    __global_argv = argv;\n")
 

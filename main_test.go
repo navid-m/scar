@@ -17,6 +17,9 @@ while 1:
 
 	expected := `
 int main(int argc, char** argv) {
+#ifdef _WIN32
+    SetConsoleOutputCP(CP_UTF8);
+#endif
 	__global_argc = argc;
 	__global_argv = argv;
 	printf("This will print forever: \n");
@@ -61,6 +64,10 @@ print "done..."`
 #include <stdbool.h>
 #include <stdint.h>
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 int _exception = 0;
 int __global_argc = 0;
 char** __global_argv = NULL;
@@ -84,6 +91,9 @@ bool __check_key_exists(int* keys, int size, int key) {
 }
 
 int main(int argc, char** argv) {
+#ifdef _WIN32
+    SetConsoleOutputCP(CP_UTF8);
+#endif
 	__global_argc = argc;
 	__global_argv = argv;
     printf("start...\n");
@@ -128,6 +138,10 @@ print "All done"`
 #include <stdbool.h>
 #include <stdint.h>
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 int _exception = 0;
 int __global_argc = 0;
 char** __global_argv = NULL;
@@ -151,6 +165,9 @@ bool __check_key_exists(int* keys, int size, int key) {
 }
 
 int main(int argc, char** argv) {
+#ifdef _WIN32
+    SetConsoleOutputCP(CP_UTF8);
+#endif
 	__global_argc = argc;
 	__global_argv = argv;
     printf("Starting nested test\n");
