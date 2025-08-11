@@ -675,20 +675,19 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 
 	case "parallel":
 		if len(parts) >= 5 && parts[1] == "for" && parts[3] == "=" && strings.Contains(line, "to") && strings.HasSuffix(line, ":") {
-			equalsIndex := strings.Index(line, "=")
-			toIndex := strings.Index(line, "to")
-			colonIndex := strings.LastIndex(line, ":")
-
-			// Check for step clause
-			stepIndex := strings.Index(line, "step")
-			var stepClauseEnd int
+			var (
+				equalsIndex   = strings.Index(line, "=")
+				toIndex       = strings.Index(line, "to")
+				colonIndex    = strings.LastIndex(line, ":")
+				stepIndex     = strings.Index(line, "step")
+				stepClauseEnd int
+			)
 			if stepIndex != -1 && stepIndex > toIndex && stepIndex < colonIndex {
 				stepClauseEnd = stepIndex
 			} else {
 				stepClauseEnd = colonIndex
 			}
 
-			// Check for reduce clause
 			reduceIndex := strings.Index(line, "reduce(")
 			var reduceClauseStart int
 			if reduceIndex != -1 && reduceIndex < colonIndex {
@@ -724,17 +723,14 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 				end = strings.TrimSpace(line[toIndex+len("to") : reduceClauseStart])
 			}
 
-			// Parse reduce clause if present
 			if reduceIndex != -1 {
 				reduceEnd := strings.Index(line[reduceIndex:], ")")
 				if reduceEnd == -1 {
 					return nil, lineNum + 1, fmt.Errorf("parallel for statement missing closing ')' for reduce clause at line %d", lineNum+1)
 				}
 				reduceContent := strings.TrimSpace(line[reduceIndex+len("reduce(") : reduceIndex+reduceEnd])
-
-				// Parse comma-separated reduction clauses: "max: var1, sum: var2"
-				clauses := strings.Split(reduceContent, ",")
-				for _, clause := range clauses {
+				clauses := strings.SplitSeq(reduceContent, ",")
+				for clause := range clauses {
 					clause = strings.TrimSpace(clause)
 					parts := strings.Split(clause, ":")
 					if len(parts) != 2 {
@@ -782,7 +778,6 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 				Body:       body,
 			}}, nextLine, nil
 		} else if len(parts) >= 3 && parts[1] == "while" && strings.HasSuffix(line, ":") {
-			// Parse "parallel while condition:"
 			whileIndex := strings.Index(line, "while")
 			colonIndex := strings.LastIndex(line, ":")
 			if whileIndex == -1 || colonIndex == -1 || whileIndex >= colonIndex {
