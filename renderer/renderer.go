@@ -3967,6 +3967,56 @@ func convertSingleMethodCall(expr string) string {
 		fieldName := objectName[5:] // Remove "this."
 		resolvedClassName = currentClassName
 		resolvedObjectName = fmt.Sprintf("this->%s", fieldName)
+	} else if strings.Contains(objectName, "__ARROW__") {
+		if strings.HasPrefix(objectName, "this__ARROW__") {
+			fieldName := objectName[13:]
+			resolvedObjectName = fmt.Sprintf("this->%s", fieldName)
+			if currentClassName != "" {
+				if classInfo, exists := globalClasses[currentClassName]; exists {
+					for _, field := range classInfo.Fields {
+						if field.Name == fieldName {
+							fieldType := field.Type
+							if after, ok := strings.CutPrefix(fieldType, "ref "); ok {
+								fieldType = after
+							}
+							resolvedClassName = fieldType
+							fmt.Printf("Debug: Found field '%s' of type '%s' in class '%s'\n", fieldName, fieldType, currentClassName)
+							break
+						}
+					}
+				}
+			}
+			if resolvedClassName == "" {
+				fmt.Printf("Debug: Could not resolve field type for '%s' in class '%s'\n", fieldName, currentClassName)
+				return expr
+			}
+		} else {
+			// For other __ARROW__ patterns (like object__ARROW__method), treat as normal object method call
+
+			resolvedObjectName = strings.ReplaceAll(objectName, "__ARROW__", "->")
+			baseObjectName := objectName
+			if arrowIndex := strings.Index(baseObjectName, "__ARROW__"); arrowIndex != -1 {
+				baseObjectName = baseObjectName[:arrowIndex]
+			}
+
+			fmt.Printf("Debug: Looking for object '%s' in globalObjects\n", baseObjectName)
+			for objName, obj := range globalObjects {
+				if objName == baseObjectName {
+					resolvedClassName = obj.Type
+					if strings.Contains(resolvedClassName, ".") {
+						parts := strings.Split(resolvedClassName, ".")
+						resolvedClassName = lexer.GenerateUniqueSymbol(parts[1], parts[0])
+					}
+					fmt.Printf("Debug: Found object '%s' of type '%s' in globalObjects\n", baseObjectName, resolvedClassName)
+					break
+				}
+			}
+
+			if resolvedClassName == "" {
+				fmt.Printf("Debug: Could not resolve object '%s' from globalObjects, checking if it's a method call pattern\n", baseObjectName)
+				return strings.ReplaceAll(expr, "__ARROW__", "->")
+			}
+		}
 	} else {
 		for objName, obj := range globalObjects {
 			if objName == objectName {
@@ -3976,6 +4026,18 @@ func convertSingleMethodCall(expr string) string {
 					resolvedClassName = lexer.GenerateUniqueSymbol(parts[1], parts[0])
 				}
 				break
+			}
+		}
+		if resolvedClassName == "" && currentFunction != nil {
+			for _, param := range currentFunction.Parameters {
+				if param.Name == objectName {
+					paramType := param.Type
+					if param.IsRef && strings.HasPrefix(paramType, "ref ") {
+						paramType = strings.TrimPrefix(paramType, "ref ")
+					}
+					resolvedClassName = paramType
+					break
+				}
 			}
 		}
 
