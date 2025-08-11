@@ -3443,7 +3443,7 @@ func convertMethodCallToC(expr string) string {
 			for _, methodCall := range methodCalls {
 				converted := convertSingleMethodCall(methodCall)
 				if converted != "" && converted != methodCall {
-					result = strings.Replace(result, methodCall, converted, -1)
+					result = strings.ReplaceAll(result, methodCall, converted)
 				}
 			}
 
