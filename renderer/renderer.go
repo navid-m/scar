@@ -641,6 +641,12 @@ func convertPropertyAccess(expr string) string {
 				}
 			}
 
+			// Check if this is an array element access like arr[i] - keep as dot notation
+			if strings.Contains(objectName, "[") && strings.Contains(objectName, "]") {
+				fmt.Printf("Debug: convertPropertyAccess - detected array element access, keeping dot notation\n")
+				return expr
+			}
+
 			if !strings.Contains(objectName, " ") && !strings.Contains(objectName, "\"") {
 				fmt.Printf("Debug: convertPropertyAccess - passed objectName checks\n")
 				originalExpr := expr
@@ -1931,10 +1937,8 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			value = fixFloatCastGranular(value)
 			value = convertThisReferencesGranular(value)
 			value = convertNewToConstructor(value) // Convert 'new ClassName(args)' to 'ClassName_new(args)'
-			fmt.Printf("DEBUG: VarAssign before convertMethodCallToC: '%s'\n", value)
-			value = convertMethodCallToC(value) // Convert method calls like 'obj.method()' to 'Class_method(obj)'
-			fmt.Printf("DEBUG: VarAssign after convertMethodCallToC: '%s'\n", value)
-			value = convertPropertyAccess(value) // Convert property access from dot to arrow notation
+			value = convertMethodCallToC(value)    // Convert method calls like 'obj.method()' to 'Class_method(obj)'
+			value = convertPropertyAccess(value)   // Convert property access from dot to arrow notation
 
 			var varType string
 			if localType, exists := localVars[varName]; exists {
@@ -1959,8 +1963,12 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			if strings.HasPrefix(varName, "this.") {
 				varName = "this->" + varName[5:]
 			} else if strings.Contains(varName, ".") {
-				re := regexp.MustCompile(`([a-zA-Z_][a-zA-Z0-9_]*)\.([a-zA-Z_][a-zA-Z0-9_]*)`)
-				varName = re.ReplaceAllString(varName, "$1->$2")
+				re := regexp.MustCompile(`([a-zA-Z_][a-zA-Z0-9_]*\[[^\]]+\])\.([a-zA-Z_][a-zA-Z0-9_]*)`)
+				if re.MatchString(varName) {
+				} else {
+					re := regexp.MustCompile(`([a-zA-Z_][a-zA-Z0-9_]*)\.([a-zA-Z_][a-zA-Z0-9_]*)`)
+					varName = re.ReplaceAllString(varName, "$1->$2")
+				}
 			}
 
 			isMapToMapAssignment := false

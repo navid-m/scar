@@ -1586,6 +1586,11 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 					return nil, lineNum + 1, fmt.Errorf("invalid index assignment format at line %d", lineNum+1)
 				}
 
+				afterBracket := strings.TrimSpace(varName[bracketEnd+1:])
+				if strings.HasPrefix(afterBracket, ".") {
+					return &Statement{VarAssign: &VarAssignStmt{Name: varName, Value: value}}, lineNum + 1, nil
+				}
+
 				listName := strings.TrimSpace(varName[:bracketStart])
 				index := strings.TrimSpace(varName[bracketStart+1 : bracketEnd])
 

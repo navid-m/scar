@@ -1,4 +1,4 @@
-import "std/os"
+#import "std/os"
 
 class TestClass:
     init(int value):
