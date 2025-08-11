@@ -2672,3 +2672,40 @@ func TestStaticMethodCall(t *testing.T) {
 		t.Errorf("Static method declaration should not contain 'this' parameter '%s'. Generated code:\n%s", invalidDeclaration, result)
 	}
 }
+
+func TestMethodCallInArithmeticExpression(t *testing.T) {
+	input := `class TreeNode:
+    init():
+        ref TreeNode this.left = nil
+        ref TreeNode this.right = nil
+    
+    fn item_check() -> int:
+        if this.left == nil:
+            return 1
+        else:
+            return 1 + this.left.item_check() + this.right.item_check()
+
+ref TreeNode tree = new TreeNode()
+int check = 0
+check = check + tree.item_check()
+`
+
+	program, err := lexer.ParseWithIndentation(input)
+	if err != nil {
+		t.Fatalf("Failed to parse input: %v", err)
+	}
+
+	result := RenderC(program, "", false)
+	expectedAssignment := "check = check + TreeNode_item_check(tree);"
+	if !strings.Contains(result, expectedAssignment) {
+		t.Errorf("Expected C code to contain correct assignment '%s', but it didn't. Generated code:\n%s", expectedAssignment, result)
+	}
+	incorrectAssignment := "unknown_item_check"
+	if strings.Contains(result, incorrectAssignment) {
+		t.Errorf("Found incorrect method call '%s' in generated code - this indicates a regression. Generated code:\n%s", incorrectAssignment, result)
+	}
+	expectedMethodDecl := "int TreeNode_item_check(TreeNode* this)"
+	if !strings.Contains(result, expectedMethodDecl) {
+		t.Errorf("Expected method declaration '%s' not found. Generated code:\n%s", expectedMethodDecl, result)
+	}
+}
