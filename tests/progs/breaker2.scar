@@ -1,4 +1,3 @@
-# torture_test.sc
 import "std/random"
 import "std/math"
 import "std/os"
