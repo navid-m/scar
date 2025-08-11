@@ -1750,9 +1750,11 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 			}
 
 			if lastDotIndex != -1 {
-				objectName := strings.TrimSpace(line[:lastDotIndex])
-				methodPart := strings.TrimSpace(line[lastDotIndex+1:])
-				methodEndIndex := strings.Index(methodPart, "(")
+				var (
+					objectName     = strings.TrimSpace(line[:lastDotIndex])
+					methodPart     = strings.TrimSpace(line[lastDotIndex+1:])
+					methodEndIndex = strings.Index(methodPart, "(")
+				)
 
 				if methodEndIndex == -1 {
 					return nil, lineNum + 1, fmt.Errorf("invalid method call syntax at line %d", lineNum+1)
