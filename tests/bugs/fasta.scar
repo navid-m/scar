@@ -2,8 +2,8 @@ import "std/os"
 import "std/math"
 
 pub int WIDTH = 60
-pub int RANDOM_BUF_SIZE = 60000  # WIDTH * 1000
-pub int OUT_BUF_SIZE = 61000     # (WIDTH + 1) * 1000
+pub int RANDOM_BUF_SIZE = 60000 
+pub int OUT_BUF_SIZE = 61000
 pub int IM = 139968
 pub int IA = 3877
 pub int IC = 29573
@@ -43,7 +43,6 @@ fn initialize_amino_acids() -> void:
     iub[14].p = 0.02
     iub[14].c = 89 # 'Y'
 
-    # Homo sapiens frequency
     homosapiens[0].p = 0.3029549426680
     homosapiens[0].c = 97  # 'a'
     homosapiens[1].p = 0.1979883004921
@@ -73,12 +72,10 @@ fn accumulate_probabilities(ref AminoAcid genelist, int len) -> void:
 fn repeat_fasta(ref u8 s, int s_len, int count) -> void:
     int pos = 0
     allocate u8 s2 = s_len + WIDTH
-    
-    # Copy original string
+
     for i = 0 to (s_len - 1):
         s2[i] = s[i]
-    
-    # Copy again for wraparound
+
     for i = 0 to (WIDTH - 1):
         if i < s_len:
             s2[s_len + i] = s[i]
@@ -86,7 +83,6 @@ fn repeat_fasta(ref u8 s, int s_len, int count) -> void:
     while count > 0:
         int line = min(WIDTH, count)
         
-        # Print line
         for i = 0 to (line - 1):
             print "%c" | s2[pos + i]
         print ""
@@ -118,7 +114,7 @@ fn generate_dna(ref AminoAcid genelist, int genelist_len, ref f64 rb, ref u8 wb,
             i = i + 1
             o = o + 1
         
-        wb[o] = 10  # newline character
+        wb[o] = 10
         o = o + 1
     
     return o
@@ -145,7 +141,6 @@ if len(args) > 1:
 
 initialize_amino_acids()
 
-# ALU sequence
 string alu_str = "GGCCGGGCGCGGTGGCTCACGCCTGTAATCCCAGCACTTTGGGAGGCCGAGGCGGGCGGATCACCTGAGGTCAGGAGTTCGAGACCAGCCTGGCCAACATGGTGAAACCCCGTCTCTACTAAAAATACAAAAATTAGCCGGGCGTGGTGGCGCGCGCCTGTAATCCCAGCTACTCGGGAGGCTGAGGCAGGAGAATCGCTTGAACCCGGGAGGCGGAGGTTGCAGTGAGCCGAGATCGCGCCACTGCACTCCAGCCTGGGCGACAGAGCGAGACTCCGTCTCAAAAA"
 int alu_len = 287
 
