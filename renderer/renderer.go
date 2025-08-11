@@ -1804,6 +1804,7 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			condition = processGetExpressions(condition, program)
 			condition = processHasExpressions(condition, program)
 			condition = convertPropertyAccess(condition)
+			condition = resolveLenFunctionCalls(condition)
 
 			if isMethodCall(condition) {
 				condition = convertMethodCallToC(condition)
@@ -1824,6 +1825,7 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				elifCondition = processGetExpressions(elifCondition, program)
 				elifCondition = processHasExpressions(elifCondition, program)
 				elifCondition = convertPropertyAccess(elifCondition)
+				elifCondition = resolveLenFunctionCalls(elifCondition)
 
 				if isMethodCall(elifCondition) {
 					elifCondition = convertMethodCallToC(elifCondition)
