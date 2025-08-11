@@ -97,10 +97,8 @@ fn dynamic_allocation_stress(int n):
 ref Node tree = generate_random_tree(50)
 int tree_sum = compute_tree_sum(tree)
 print "Tree sum (recursive insertions): %d" | tree_sum
-
 int fib_sum = recursive_reduction_test(15)
 print "Fibonacci sum with parallel reduction: %d" | fib_sum
 
 aliasing_test()
-
 dynamic_allocation_stress(1000)
