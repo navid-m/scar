@@ -1,0 +1,14 @@
+class TreeNode:
+    init:
+        ref TreeNode this.left = nil
+        ref TreeNode this.right = nil
+    
+    fn item_check() -> int:
+        if this.left == nil:
+            return 1
+        else:
+            return 1 + this.left.item_check() + this.right.item_check()
+
+ref TreeNode tree = new TreeNode()
+int check = 0
+check = check + tree.item_check()

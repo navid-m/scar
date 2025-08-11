@@ -1774,7 +1774,8 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 						fmt.Fprintf(b, "%s;\n", value)
 					}
 				}
-				return
+				// Reference variable declaration is complete, continue to next statement
+				continue
 			}
 
 			if isMethodCall(value) {
@@ -1877,7 +1878,10 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			value = fixFloatCastGranular(value)
 			value = convertThisReferencesGranular(value)
 			value = convertNewToConstructor(value) // Convert 'new ClassName(args)' to 'ClassName_new(args)'
-			value = convertPropertyAccess(value)   // Convert property access from dot to arrow notation
+			fmt.Printf("DEBUG: VarAssign before convertMethodCallToC: '%s'\n", value)
+			value = convertMethodCallToC(value) // Convert method calls like 'obj.method()' to 'Class_method(obj)'
+			fmt.Printf("DEBUG: VarAssign after convertMethodCallToC: '%s'\n", value)
+			value = convertPropertyAccess(value) // Convert property access from dot to arrow notation
 
 			var varType string
 			if localType, exists := localVars[varName]; exists {
@@ -2193,6 +2197,30 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				args[i] = lexer.ResolveSymbol(arg, currentModule)
 			}
 			argsStr := strings.Join(args, ", ")
+
+			// Check if this is actually a complex expression that was misparsed
+			// If the objectName contains operators, treat it as a regular assignment
+			if strings.Contains(objectName, "+") || strings.Contains(objectName, "-") ||
+				strings.Contains(objectName, "*") || strings.Contains(objectName, "/") ||
+				strings.Contains(objectName, " ") {
+				// This is a misparsed complex expression, reconstruct the value and treat as VarAssign
+				var reconstructedValue string
+				if argsStr == "" {
+					reconstructedValue = fmt.Sprintf("%s.%s()", objectName, methodName)
+				} else {
+					reconstructedValue = fmt.Sprintf("%s.%s(%s)", objectName, methodName, argsStr)
+				}
+
+				// Apply the same transformations as VarAssign
+				reconstructedValue = fixFloatCastGranular(reconstructedValue)
+				reconstructedValue = convertThisReferencesGranular(reconstructedValue)
+				reconstructedValue = convertNewToConstructor(reconstructedValue)
+				reconstructedValue = convertMethodCallToC(reconstructedValue)
+				reconstructedValue = convertPropertyAccess(reconstructedValue)
+
+				fmt.Fprintf(b, "%s%s = %s;\n", indent, varName, reconstructedValue)
+				continue
+			}
 
 			var resolvedClassName string
 			if stmt.VarAssignMethodCall.Object == "this" {
