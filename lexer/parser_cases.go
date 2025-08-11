@@ -212,6 +212,14 @@ func parsePubStatement(lines []string, lineNum, currentIndent int) (*Statement, 
 		return parsePubClassStatement(lines, lineNum, currentIndent)
 	case "fn":
 		return parsePubFunctionStatement(lines, lineNum, currentIndent)
+	case "allocate":
+		if len(parts) >= 6 && parts[4] == "=" {
+			varType := parts[2]
+			varName := parts[3]
+			size := strings.Join(parts[5:], " ")
+			return &Statement{PubAllocate: &PubAllocateStmt{Type: varType, Name: varName, Size: size}}, lineNum + 1, nil
+		}
+		return nil, lineNum + 1, fmt.Errorf("pub allocate statement format error at line %d (expected: pub allocate type name = size)", lineNum+1)
 	default:
 		if len(parts) >= 5 && parts[3] == "=" && isValidType(parts[1]) {
 			varType := parts[1]

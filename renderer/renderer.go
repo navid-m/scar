@@ -18,18 +18,19 @@ import (
 )
 
 var (
-	globalClasses    = make(map[string]*ClassInfo)
-	globalEnums      = make(map[string]*EnumInfo)
-	globalObjects    = make(map[string]*ObjectInfo)
-	globalFunctions  = make(map[string]*lexer.TopLevelFuncDeclStmt)
-	globalArrays     = make(map[string]string)
-	globalVars       = make(map[string]*lexer.PubVarDeclStmt)
-	localVars        = make(map[string]string)
-	currentModule    = ""
-	currentClassName = ""
-	currentFunction  *lexer.TopLevelFuncDeclStmt
-	useGC            = false
-	primitiveTypes   = map[string]string{
+	globalClasses     = make(map[string]*ClassInfo)
+	globalEnums       = make(map[string]*EnumInfo)
+	globalObjects     = make(map[string]*ObjectInfo)
+	globalFunctions   = make(map[string]*lexer.TopLevelFuncDeclStmt)
+	globalArrays      = make(map[string]string)
+	globalVars        = make(map[string]*lexer.PubVarDeclStmt)
+	globalAllocations = make(map[string]*lexer.PubAllocateStmt)
+	localVars         = make(map[string]string)
+	currentModule     = ""
+	currentClassName  = ""
+	currentFunction   *lexer.TopLevelFuncDeclStmt
+	useGC             = false
+	primitiveTypes    = map[string]string{
 		"int":    "int",
 		"float":  "float",
 		"double": "double",
@@ -65,6 +66,9 @@ func RenderC(program *lexer.Program, baseDir string, gcFlag bool) string {
 		}
 		if stmt.PubVarDecl != nil {
 			globalVars[stmt.PubVarDecl.Name] = stmt.PubVarDecl
+		}
+		if stmt.PubAllocate != nil {
+			globalAllocations[stmt.PubAllocate.Name] = stmt.PubAllocate
 		}
 		if stmt.PubClassDecl != nil {
 			classDecl := &lexer.ClassDeclStmt{
@@ -253,11 +257,28 @@ bool __check_key_exists(int* keys, int size, int key) {
 		}
 	}
 	b.WriteString("\n")
-	for varName, varDecl := range globalVars {
-		if varDecl.Type == "string" {
-			fmt.Fprintf(&b, "    init_%s();\n", varName)
+
+	for varName, allocDecl := range globalAllocations {
+		cType := mapTypeToCType(allocDecl.Type)
+		size := allocDecl.Size
+		if strings.HasSuffix(cType, "*") {
+			fmt.Fprintf(&b, "%s %s;\n", cType, varName)
+			if useGC {
+				fmt.Fprintf(&b, "void init_%s() { %s = (%s)GC_malloc(%s * sizeof(%s)); }\n", varName, varName, cType, size, strings.TrimSuffix(cType, "*"))
+			} else {
+				fmt.Fprintf(&b, "void init_%s() { %s = (%s)malloc(%s * sizeof(%s)); }\n", varName, varName, cType, size, strings.TrimSuffix(cType, "*"))
+			}
+		} else {
+			fmt.Fprintf(&b, "%s* %s;\n", cType, varName)
+			if useGC {
+				fmt.Fprintf(&b, "void init_%s() { %s = (%s*)GC_malloc(%s * sizeof(%s)); }\n", varName, varName, cType, size, cType)
+			} else {
+				fmt.Fprintf(&b, "void init_%s() { %s = (%s*)malloc(%s * sizeof(%s)); }\n", varName, varName, cType, size, cType)
+			}
 		}
 	}
+
+	b.WriteString("\n")
 	for _, module := range lexer.LoadedModules {
 		for varName, varDecl := range module.PublicVars {
 			cType := mapTypeToCType(varDecl.Type)
@@ -325,10 +346,18 @@ bool __check_key_exists(int* keys, int size, int key) {
 			}
 		}
 	}
+	for varName, varDecl := range globalVars {
+		if varDecl.Type == "string" {
+			fmt.Fprintf(&b, "    init_%s();\n", varName)
+		}
+	}
+	for varName := range globalAllocations {
+		fmt.Fprintf(&b, "    init_%s();\n", varName)
+	}
 
 	var mainStatements []*lexer.Statement
 	for _, stmt := range program.Statements {
-		if stmt.ClassDecl == nil && stmt.PubClassDecl == nil && stmt.PubVarDecl == nil && stmt.TopLevelFuncDecl == nil && stmt.PubTopLevelFuncDecl == nil {
+		if stmt.ClassDecl == nil && stmt.PubClassDecl == nil && stmt.PubVarDecl == nil && stmt.PubAllocate == nil && stmt.TopLevelFuncDecl == nil && stmt.PubTopLevelFuncDecl == nil {
 			mainStatements = append(mainStatements, stmt)
 		}
 	}
@@ -338,7 +367,7 @@ bool __check_key_exists(int* keys, int size, int key) {
 	b.WriteString("}\n")
 
 	for _, stmt := range program.Statements {
-		if stmt.PubTopLevelFuncDecl == nil && stmt.ClassDecl == nil && stmt.PubClassDecl == nil && stmt.PubVarDecl == nil && stmt.TopLevelFuncDecl == nil {
+		if stmt.PubTopLevelFuncDecl == nil && stmt.ClassDecl == nil && stmt.PubClassDecl == nil && stmt.PubVarDecl == nil && stmt.PubAllocate == nil && stmt.TopLevelFuncDecl == nil {
 			mainStatements = append(mainStatements, stmt)
 		}
 	}
@@ -2849,6 +2878,9 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				}
 			}
 
+		case stmt.PubAllocate != nil:
+			// Public allocations are handled as global variables, skip in function body
+
 		case stmt.StackAllocate != nil:
 			varType := stmt.StackAllocate.Type
 			varName := lexer.ResolveSymbol(stmt.StackAllocate.Name, currentModule)
@@ -3233,7 +3265,6 @@ func convertMethodCallToC(expr string) string {
 		"b_rshift": ">>",
 	}
 
-	// Convert bitwise operators first (both with and without spaces)
 	result := expr
 	for bitwiseOp, cOp := range bitwiseOps {
 		oldResult := result

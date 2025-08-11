@@ -57,6 +57,7 @@ type Statement struct {
 	PubVarDecl           *PubVarDeclStmt
 	PubClassDecl         *PubClassDeclStmt
 	PubEnumDecl          *PubEnumDeclStmt
+	PubAllocate          *PubAllocateStmt
 	TopLevelFuncDecl     *TopLevelFuncDeclStmt
 	FunctionCall         *FunctionCallStmt
 	TryCatch             *TryCatchStmt
@@ -194,6 +195,12 @@ type PubClassDeclStmt struct {
 	Name        string
 	Constructor *ConstructorStmt
 	Methods     []*MethodDeclStmt
+}
+
+type PubAllocateStmt struct {
+	Type string
+	Name string
+	Size string
 }
 
 type VarDeclMethodCallStmt struct {

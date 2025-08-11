@@ -1,0 +1,9 @@
+import "std/os"
+
+class TestClass:
+    init(int value):
+        int this.value = value
+
+list[TestClass] my_list = []
+
+print "Test completed"
