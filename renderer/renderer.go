@@ -3200,10 +3200,22 @@ func findMatchingParen(s string, openPos int) int {
 	return -1
 }
 
-// Converts method calls in the format 'this.method(args)' to 'ClassName_method(this, args)'
 func convertMethodCallToC(expr string) string {
-	// Handle comparison operators
-	comparisonOps := []string{"==", "!=", ">", "<", ">=", "<="}
+	if strings.Contains(expr, "<<") || strings.Contains(expr, ">>") {
+		methodCallPattern := regexp.MustCompile(`(?:\bthis\.\w+|\b\w+)\.[a-zA-Z_]\w*\([^)]*\)`)
+		result := expr
+		methodCalls := methodCallPattern.FindAllString(expr, -1)
+
+		for _, methodCall := range methodCalls {
+			converted := convertSingleMethodCall(methodCall)
+			if converted != "" && converted != methodCall {
+				result = strings.ReplaceAll(result, methodCall, converted)
+			}
+		}
+		return result
+	}
+
+	comparisonOps := []string{"==", "!=", ">=", "<=", ">", "<"}
 	var op, left, right string
 	var hasComparison bool
 	for _, cmpOp := range comparisonOps {
@@ -3225,14 +3237,10 @@ func convertMethodCallToC(expr string) string {
 		}
 	}
 
-	// Handle arithmetic expressions by recursively processing all method calls
 	arithmeticOps := []string{"+", "-", "*", "/", "%"}
 	for _, arithOp := range arithmeticOps {
 		if strings.Contains(expr, arithOp) {
-			// Check for method calls in the expression and convert them first
 			result := expr
-
-			// Find all method call patterns including this.field.method() calls
 			methodCallPattern := regexp.MustCompile(`(?:\bthis\.\w+|\b\w+)\.[a-zA-Z_]\w*\([^)]*\)`)
 			methodCalls := methodCallPattern.FindAllString(expr, -1)
 
@@ -3249,7 +3257,6 @@ func convertMethodCallToC(expr string) string {
 		}
 	}
 
-	// Fallback to processing arithmetic expressions the old way
 	var hasArithmetic bool
 	for _, arithOp := range arithmeticOps {
 		opIndex := -1
@@ -3287,8 +3294,6 @@ func convertMethodCallToC(expr string) string {
 // Generates a function for map access
 func generateMapAccessHelper(b *strings.Builder, mapName, keyType, valueType string) {
 	helperName := fmt.Sprintf("__get_%s_value", mapName)
-
-	// Handle key type conversion
 	var cKeyType string
 	switch keyType {
 	case "string":
