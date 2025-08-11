@@ -19,16 +19,13 @@ class FannkuchOptimized:
         this.compute_factorials()
 
     fn process_block(int initial_permutation_index, int block_size) -> void:
-        # Local arrays for this block - use stack allocation for performance
         stallocate int local_count = this.n
         stallocate i8 local_temp_permutation = this.n
         stallocate i8 local_current_permutation = this.n
         
-        # Local variables for reduction
         int local_max_flip_count = 0
         int local_checksum = 0
 
-        # Initialize count and current_permutation
         local_count[0] = 0
         for i = 0 to (this.n - 1):
             local_current_permutation[i] = i
@@ -41,11 +38,8 @@ class FannkuchOptimized:
             permutation_index = permutation_index % this.factorial_table[i]
             local_count[i] = d
 
-            # Copy current permutation to temp
             for j = 0 to (this.n - 1):
                 local_temp_permutation[j] = local_current_permutation[j]
-            
-            # Apply rotation
             for j = 0 to i:
                 if (j + d) <= i:
                     local_current_permutation[j] = local_temp_permutation[j + d]
@@ -54,26 +48,20 @@ class FannkuchOptimized:
             
             i = i - 1
 
-        # Process all permutations in this block
         int last_permutation_index = initial_permutation_index + block_size - 1
         int current_permutation_index = initial_permutation_index
 
         while true:
-            # Count flips if first element is not 0
             if local_current_permutation[0] > 0:
-                # Copy to temp (skip first element)
                 for i = 1 to (this.n - 1):
                     local_temp_permutation[i] = local_current_permutation[i]
 
                 int flip_count = 1
                 i8 first_value = local_current_permutation[0]
 
-                # Flip until element at first_value index is 0
                 while local_temp_permutation[first_value] > 0:
                     i8 new_first_value = local_temp_permutation[first_value]
                     local_temp_permutation[first_value] = first_value
-
-                    # Flip middle elements if needed (optimized version)
                     if first_value > 2:
                         int low_index = 1
                         int high_index = first_value - 1
@@ -88,21 +76,17 @@ class FannkuchOptimized:
                     first_value = new_first_value
                     flip_count = flip_count + 1
 
-                # Update checksum
                 if current_permutation_index % 2 == 0:
                     local_checksum = local_checksum + flip_count
                 else:
                     local_checksum = local_checksum - flip_count
 
-                # Update maximum flip count
                 if flip_count > local_max_flip_count:
                     local_max_flip_count = flip_count
 
-            # Break if we've reached the last permutation in block
             if current_permutation_index >= last_permutation_index:
                 break
 
-            # Generate next permutation (optimized)
             i8 first_value = local_current_permutation[1]
             local_current_permutation[1] = local_current_permutation[0]
             local_current_permutation[0] = first_value
@@ -127,7 +111,6 @@ class FannkuchOptimized:
 
             current_permutation_index = current_permutation_index + 1
 
-        # Add local results to class members (with proper synchronization)
         this.checksum = this.checksum + local_checksum
         if local_max_flip_count > this.maximum_flip_count:
             this.maximum_flip_count = local_max_flip_count
@@ -135,7 +118,6 @@ class FannkuchOptimized:
     fn run_fannkuch(int n_value) -> void:
         this.set_n(n_value)
         
-        # Determine block size (like the optimized C version)
         int preferred_blocks = 12
         int total_permutations = this.factorial_table[this.n]
         int block_size = total_permutations / preferred_blocks
@@ -148,7 +130,6 @@ class FannkuchOptimized:
         this.maximum_flip_count = 0
         this.checksum = 0
 
-        # Process all blocks sequentially for now (avoiding race conditions)
         int start_index = 0
         while start_index < total_permutations:
             int current_block_size = block_size
@@ -161,7 +142,6 @@ class FannkuchOptimized:
         print "%d" | this.checksum
         print "Pfannkuchen(%d) = %d\n" | n_value, this.maximum_flip_count
 
-# Main execution
 list[string] args = os::get_args()
 
 if len(args) < 2:
