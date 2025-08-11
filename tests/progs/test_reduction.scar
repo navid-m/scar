@@ -1,0 +1,12 @@
+int max_value = 0
+int total_sum = 0
+int n = 10
+
+# Test the new reduction syntax
+parallel for i = 1 to n step 1 reduce(max: max_value, sum: total_sum):
+    if i > max_value:
+        max_value = i
+    total_sum = total_sum + i
+
+print "Max value: %d, Total sum: %d" | max_value, total_sum
+return 0

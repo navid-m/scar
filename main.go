@@ -25,9 +25,10 @@ import (
 func main() {
 	flag.Usage = meta.ShowUsage
 	var (
-		asm = flag.Bool("asm", false, "show assembly output")
-		c   = flag.Bool("c", false, "show c output")
-		gc  = flag.Bool("gc", false, "use bdwgc garbage collector")
+		asm   = flag.Bool("asm", false, "show assembly output")
+		c     = flag.Bool("c", false, "show c output")
+		gc    = flag.Bool("gc", false, "use bdwgc garbage collector")
+		keepC = flag.Bool("keep-c", false, "keep generated c file")
 	)
 	flag.Parse()
 
@@ -96,7 +97,9 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to write temp file: %v", err)
 	}
-	defer os.Remove(tmpCPath)
+	if !*keepC {
+		defer os.Remove(tmpCPath)
+	}
 
 	var (
 		outputBinary = "./" + cleanedName
@@ -177,6 +180,9 @@ func main() {
 
 	if err == nil {
 		fmt.Printf("Compiled %s\n", outputBinary)
+		if *keepC {
+			fmt.Printf("C file kept as %s\n", tmpCPath)
+		}
 		success = true
 	}
 

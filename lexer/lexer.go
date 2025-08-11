@@ -65,6 +65,7 @@ type Statement struct {
 	RawCode              *RawCodeStmt
 	MapDecl              *MapDeclStmt
 	ParallelFor          *ParallelForStmt
+	ParallelWhile        *ParallelWhileStmt
 	ParallelBlock        *ParallelBlockStmt
 	PubTopLevelFuncDecl  *PubTopLevelFuncDeclStmt
 	PutMap               *PutMapStmt
@@ -77,6 +78,7 @@ type Statement struct {
 	ListOf               *ListOfStmt
 	ListOfDecl           *ListOfDeclStmt
 	Allocate             *AllocateStmt
+	StackAllocate        *StackAllocateStmt
 	Free                 *FreeStmt
 }
 
@@ -87,6 +89,12 @@ type ListOfDeclStmt struct {
 }
 
 type AllocateStmt struct {
+	Type string
+	Name string
+	Size string
+}
+
+type StackAllocateStmt struct {
 	Type string
 	Name string
 	Size string
@@ -141,11 +149,23 @@ type PubTopLevelFuncDeclStmt struct {
 	Body       []*Statement
 }
 
+type ReductionClause struct {
+	Operation string
+	Variable  string
+}
+
 type ParallelForStmt struct {
-	Var   string
-	Start string
-	End   string
-	Body  []*Statement
+	Var        string
+	Start      string
+	End        string
+	Step       string
+	Reductions []*ReductionClause
+	Body       []*Statement
+}
+
+type ParallelWhileStmt struct {
+	Condition string
+	Body      []*Statement
 }
 
 type ParallelBlockStmt struct {

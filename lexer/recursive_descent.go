@@ -678,16 +678,73 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 			equalsIndex := strings.Index(line, "=")
 			toIndex := strings.Index(line, "to")
 			colonIndex := strings.LastIndex(line, ":")
+
+			// Check for step clause
+			stepIndex := strings.Index(line, "step")
+			var stepClauseEnd int
+			if stepIndex != -1 && stepIndex > toIndex && stepIndex < colonIndex {
+				stepClauseEnd = stepIndex
+			} else {
+				stepClauseEnd = colonIndex
+			}
+
+			// Check for reduce clause
+			reduceIndex := strings.Index(line, "reduce(")
+			var reduceClauseStart int
+			if reduceIndex != -1 && reduceIndex < colonIndex {
+				reduceClauseStart = reduceIndex
+				if stepClauseEnd == stepIndex {
+					// If we have both step and reduce, step ends where reduce starts
+					stepClauseEnd = reduceIndex
+				}
+			} else {
+				reduceClauseStart = colonIndex
+			}
+
 			if equalsIndex == -1 || toIndex == -1 || colonIndex == -1 ||
-				!(equalsIndex > strings.Index(line, "for") && equalsIndex < toIndex && toIndex < colonIndex) {
+				!(equalsIndex > strings.Index(line, "for") && equalsIndex < toIndex && toIndex < stepClauseEnd) {
 				return nil, lineNum + 1, fmt.Errorf("parallel for statement format error at line %d", lineNum+1)
 			}
 
 			var (
-				varName = strings.TrimSpace(line[strings.Index(line, "for")+len("for") : equalsIndex])
-				start   = strings.TrimSpace(line[equalsIndex+1 : toIndex])
-				end     = strings.TrimSpace(line[toIndex+len("to") : colonIndex])
+				varName    = strings.TrimSpace(line[strings.Index(line, "for")+len("for") : equalsIndex])
+				start      = strings.TrimSpace(line[equalsIndex+1 : toIndex])
+				end        string
+				step       string
+				reductions []*ReductionClause
 			)
+
+			// Parse end value (up to step or reduce clause)
+			if stepIndex != -1 && stepIndex > toIndex && stepIndex < reduceClauseStart {
+				end = strings.TrimSpace(line[toIndex+len("to") : stepIndex])
+				// Parse step value
+				stepEnd := reduceClauseStart
+				step = strings.TrimSpace(line[stepIndex+len("step") : stepEnd])
+			} else {
+				end = strings.TrimSpace(line[toIndex+len("to") : reduceClauseStart])
+			}
+
+			// Parse reduce clause if present
+			if reduceIndex != -1 {
+				reduceEnd := strings.Index(line[reduceIndex:], ")")
+				if reduceEnd == -1 {
+					return nil, lineNum + 1, fmt.Errorf("parallel for statement missing closing ')' for reduce clause at line %d", lineNum+1)
+				}
+				reduceContent := strings.TrimSpace(line[reduceIndex+len("reduce(") : reduceIndex+reduceEnd])
+
+				// Parse comma-separated reduction clauses: "max: var1, sum: var2"
+				clauses := strings.Split(reduceContent, ",")
+				for _, clause := range clauses {
+					clause = strings.TrimSpace(clause)
+					parts := strings.Split(clause, ":")
+					if len(parts) != 2 {
+						return nil, lineNum + 1, fmt.Errorf("parallel for statement invalid reduce clause format at line %d (expected 'operation: variable')", lineNum+1)
+					}
+					operation := strings.TrimSpace(parts[0])
+					variable := strings.TrimSpace(parts[1])
+					reductions = append(reductions, &ReductionClause{Operation: operation, Variable: variable})
+				}
+			}
 
 			if varName == "" || start == "" || end == "" {
 				return nil, lineNum + 1, fmt.Errorf("parallel for statement missing variable, start, or end expression at line %d", lineNum+1)
@@ -716,7 +773,51 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 
 			nextLine := findEndOfBlock(lines, lineNum+1, expectedBodyIndent)
 
-			return &Statement{ParallelFor: &ParallelForStmt{Var: varName, Start: start, End: end, Body: body}}, nextLine, nil
+			return &Statement{ParallelFor: &ParallelForStmt{
+				Var:        varName,
+				Start:      start,
+				End:        end,
+				Step:       step,
+				Reductions: reductions,
+				Body:       body,
+			}}, nextLine, nil
+		} else if len(parts) >= 3 && parts[1] == "while" && strings.HasSuffix(line, ":") {
+			// Parse "parallel while condition:"
+			whileIndex := strings.Index(line, "while")
+			colonIndex := strings.LastIndex(line, ":")
+			if whileIndex == -1 || colonIndex == -1 || whileIndex >= colonIndex {
+				return nil, lineNum + 1, fmt.Errorf("parallel while statement format error at line %d", lineNum+1)
+			}
+
+			condition := strings.TrimSpace(line[whileIndex+len("while") : colonIndex])
+			if condition == "" {
+				return nil, lineNum + 1, fmt.Errorf("parallel while statement missing condition at line %d", lineNum+1)
+			}
+
+			expectedBodyIndent := currentIndent + 4
+			if currentIndent == 0 {
+				bodyStartLine := lineNum + 1
+				for bodyStartLine < len(lines) {
+					bodyLine := lines[bodyStartLine]
+					if strings.TrimSpace(bodyLine) != "" && !strings.HasPrefix(strings.TrimSpace(bodyLine), "#") {
+						expectedBodyIndent = getIndentation(bodyLine)
+						break
+					}
+					bodyStartLine++
+				}
+				if expectedBodyIndent <= currentIndent {
+					expectedBodyIndent = currentIndent + 4
+				}
+			}
+
+			body, err := parseStatements(lines, lineNum+1, expectedBodyIndent)
+			if err != nil {
+				return nil, lineNum + 1, err
+			}
+
+			nextLine := findEndOfBlock(lines, lineNum+1, expectedBodyIndent)
+
+			return &Statement{ParallelWhile: &ParallelWhileStmt{Condition: condition, Body: body}}, nextLine, nil
 		} else if strings.HasSuffix(line, ":") {
 			expectedBodyIndent := currentIndent + 4
 			if currentIndent == 0 {
@@ -743,7 +844,7 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 
 			return &Statement{ParallelBlock: &ParallelBlockStmt{Body: body}}, nextLine, nil
 		} else {
-			return nil, lineNum + 1, fmt.Errorf("parallel statement format error at line %d (expected: 'parallel:' for block or 'parallel for var = start to end:' for loop)", lineNum+1)
+			return nil, lineNum + 1, fmt.Errorf("parallel statement format error at line %d (expected: 'parallel:' for block, 'parallel for var = start to end:' for loop, or 'parallel while condition:' for while loop)", lineNum+1)
 		}
 
 	case "import":
@@ -977,6 +1078,15 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 		varName := parts[2]
 		size := strings.Join(parts[4:], " ")
 		return &Statement{Allocate: &AllocateStmt{Type: varType, Name: varName, Size: size}}, lineNum + 1, nil
+
+	case "stallocate":
+		if len(parts) < 5 || parts[3] != "=" {
+			return nil, lineNum + 1, fmt.Errorf("stallocate statement format error at line %d (expected: stallocate type name = size)", lineNum+1)
+		}
+		varType := parts[1]
+		varName := parts[2]
+		size := strings.Join(parts[4:], " ")
+		return &Statement{StackAllocate: &StackAllocateStmt{Type: varType, Name: varName, Size: size}}, lineNum + 1, nil
 
 	case "free":
 		if len(parts) < 2 {
@@ -1746,7 +1856,7 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 		keywords := []string{"if", "for", "while", "fn", "class",
 			"var", "return", "import", "pub", "ref", "u16", "u32", "u64",
 			"i16", "i32", "i64", "f32", "f64", "print", "sleep", "break",
-			"continue", "foreach", "parallel", "char*", "allocate", "free"}
+			"continue", "foreach", "parallel", "char*", "allocate", "stallocate", "free"}
 		if slices.Contains(keywords, firstWord) {
 			isKeyword = true
 		}

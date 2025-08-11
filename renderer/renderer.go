@@ -2666,9 +2666,66 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			start := lexer.ResolveSymbol(stmt.ParallelFor.Start, currentModule)
 			end := lexer.ResolveSymbol(stmt.ParallelFor.End, currentModule)
 			end = convertThisReferencesGranular(end)
-			fmt.Fprintf(b, "%s#pragma omp parallel for\n", indent)
-			fmt.Fprintf(b, "%sfor (int %s = %s; %s <= %s; %s++) {\n", indent, varName, start, varName, end, varName)
+
+			// Build the OpenMP pragma with reduction clauses
+			pragma := "#pragma omp parallel for"
+
+			// Add reduction clauses if present
+			if len(stmt.ParallelFor.Reductions) > 0 {
+				// Group reductions by operation type
+				reductionGroups := make(map[string][]string)
+				for _, reduction := range stmt.ParallelFor.Reductions {
+					var ompOp string
+					switch reduction.Operation {
+					case "sum":
+						ompOp = "+"
+					case "max":
+						ompOp = "max"
+					case "min":
+						ompOp = "min"
+					case "product":
+						ompOp = "*"
+					default:
+						ompOp = reduction.Operation // Use as-is for custom operations
+					}
+					reductionVar := lexer.ResolveSymbol(reduction.Variable, currentModule)
+					reductionGroups[ompOp] = append(reductionGroups[ompOp], reductionVar)
+				}
+				
+				// Build separate reduction clauses for each operation
+				var allReductions []string
+				for op, vars := range reductionGroups {
+					reductionClause := fmt.Sprintf("reduction(%s:%s)", op, strings.Join(vars, ","))
+					allReductions = append(allReductions, reductionClause)
+				}
+				pragma += " " + strings.Join(allReductions, " ")
+			}
+
+			fmt.Fprintf(b, "%s%s\n", indent, pragma)
+
+			// Generate the for loop with optional step
+			if stmt.ParallelFor.Step != "" && stmt.ParallelFor.Step != "1" {
+				step := lexer.ResolveSymbol(stmt.ParallelFor.Step, currentModule)
+				step = convertThisReferencesGranular(step)
+				fmt.Fprintf(b, "%sfor (int %s = %s; %s <= %s; %s += %s) {\n", indent, varName, start, varName, end, varName, step)
+			} else {
+				fmt.Fprintf(b, "%sfor (int %s = %s; %s <= %s; %s++) {\n", indent, varName, start, varName, end, varName)
+			}
 			renderStatements(b, stmt.ParallelFor.Body, indent+"    ", className, program, currentFunctionReturnType)
+			fmt.Fprintf(b, "%s}\n", indent)
+		case stmt.ParallelWhile != nil:
+			condition := stmt.ParallelWhile.Condition
+			condition = processNotKeyword(condition)
+			condition = lexer.ResolveSymbol(condition, currentModule)
+			condition = convertThisReferencesGranular(condition)
+			fmt.Fprintf(b, "%s#pragma omp parallel\n", indent)
+			fmt.Fprintf(b, "%s{\n", indent)
+			fmt.Fprintf(b, "%s    while (%s) {\n", indent, condition)
+			fmt.Fprintf(b, "%s        #pragma omp single nowait\n", indent)
+			fmt.Fprintf(b, "%s        {\n", indent)
+			renderStatements(b, stmt.ParallelWhile.Body, indent+"            ", className, program, currentFunctionReturnType)
+			fmt.Fprintf(b, "%s        }\n", indent)
+			fmt.Fprintf(b, "%s    }\n", indent)
 			fmt.Fprintf(b, "%s}\n", indent)
 		case stmt.ParallelBlock != nil:
 			fmt.Fprintf(b, "%s#pragma omp parallel sections\n", indent)
@@ -2709,6 +2766,30 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				} else {
 					fmt.Fprintf(b, "%s%s* %s = (%s*)malloc(%s * sizeof(%s));\n", indent, cType, varName, cType, size, cType)
 				}
+			}
+
+		case stmt.StackAllocate != nil:
+			varType := stmt.StackAllocate.Type
+			varName := lexer.ResolveSymbol(stmt.StackAllocate.Name, currentModule)
+			size := lexer.ResolveSymbol(stmt.StackAllocate.Size, currentModule)
+			cType := mapTypeToCType(varType)
+
+			varName = convertPropertyAccess(varName)
+
+			// Stack allocation using Variable Length Arrays (VLA)
+			if strings.HasPrefix(varName, "this->") {
+				// Member variables can't be stack allocated, fall back to heap
+				fmt.Printf("Error: Member variable %s can't be stack allocated\n", varName)
+				os.Exit(1)
+				// if useGC {
+				// 	fmt.Fprintf(b, "%s%s = (%s*)GC_malloc(%s * sizeof(%s));\n", indent, varName, cType, size, cType)
+				// } else {
+				// 	fmt.Fprintf(b, "%s%s = (%s*)malloc(%s * sizeof(%s));\n", indent, varName, cType, size, cType)
+				// }
+			} else {
+				fmt.Printf("Debug: Stack variable allocation: %s\n", varName)
+				// Use Variable Length Arrays for stack allocation
+				fmt.Fprintf(b, "%s%s %s[%s];\n", indent, cType, varName, size)
 			}
 
 		case stmt.Free != nil:

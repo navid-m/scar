@@ -1,0 +1,9 @@
+
+int counter = 0
+int limit = 400
+
+parallel while counter < limit:
+    print "Parallel counter: %d" | counter
+    counter = counter + 1
+
+print "Final counter: %d" | counter
