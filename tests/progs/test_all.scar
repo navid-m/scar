@@ -10,7 +10,6 @@ for i = 0 to len(files):
     string filename = files[i]
     
     if strings::ends_with(filename, ".scar"):
-        print "Found .scar file: %s" | filename
         print "Testing: %s" | filename
         filename = strings::trim_suffix(filename, ".scar")
         string command = fmt!("scar %s", filename)
