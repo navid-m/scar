@@ -4389,6 +4389,9 @@ func containsValidExpressionElements(value string) bool {
 	if strings.Contains(value, "(") && strings.Contains(value, ")") {
 		return true
 	}
+	if strings.Contains(value, "->") {
+		return true
+	}
 	return false
 }
 
