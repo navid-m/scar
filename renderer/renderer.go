@@ -558,6 +558,30 @@ func processMethodArguments(args string) string {
 
 func convertPropertyAccess(expr string) string {
 	fmt.Printf("Debug: convertPropertyAccess called with: '%s'\n", expr)
+	bitwiseOps := map[string]string{
+		"b_or":     "|",
+		"b_and":    "&",
+		"b_xor":    "^",
+		"b_lshift": "<<",
+		"b_rshift": ">>",
+	}
+	result := expr
+	for bitwiseOp, cOp := range bitwiseOps {
+		oldResult := result
+		result = strings.ReplaceAll(result, " "+bitwiseOp+" ", " "+cOp+" ")
+		result = strings.ReplaceAll(result, " "+bitwiseOp+"(", " "+cOp+"(")
+		result = strings.ReplaceAll(result, ")"+bitwiseOp+" ", ")"+cOp+" ")
+		result = strings.ReplaceAll(result, ")"+bitwiseOp+"(", ")"+cOp+"(")
+		pattern := regexp.MustCompile(`(\w)\s+` + regexp.QuoteMeta(bitwiseOp) + `\s+`)
+		result = pattern.ReplaceAllString(result, "$1 "+cOp+" ")
+
+		if result != oldResult {
+			fmt.Printf("DEBUG: convertPropertyAccess bitwise conversion %s -> %s: '%s' became '%s'\n", bitwiseOp, cOp, oldResult, result)
+		}
+	}
+	if result != expr {
+		return result
+	}
 
 	if isNumericLiteral(expr) {
 		fmt.Printf("Debug: convertPropertyAccess - expression is a numeric literal, skipping conversion\n")
@@ -3201,6 +3225,56 @@ func findMatchingParen(s string, openPos int) int {
 }
 
 func convertMethodCallToC(expr string) string {
+	bitwiseOps := map[string]string{
+		"b_or":     "|",
+		"b_and":    "&",
+		"b_xor":    "^",
+		"b_lshift": "<<",
+		"b_rshift": ">>",
+	}
+
+	// Convert bitwise operators first (both with and without spaces)
+	result := expr
+	for bitwiseOp, cOp := range bitwiseOps {
+		oldResult := result
+		// Handle multiple patterns for each operator:
+		// " b_op " - spaces on both sides
+		// " b_op(" - space before, paren after
+		// ")b_op " - paren before, space after
+		// ")b_op(" - parens on both sides
+		// "Nb_op " - number/identifier before, space after
+		result = strings.ReplaceAll(result, " "+bitwiseOp+" ", " "+cOp+" ")
+		result = strings.ReplaceAll(result, " "+bitwiseOp+"(", " "+cOp+"(")
+		result = strings.ReplaceAll(result, ")"+bitwiseOp+" ", ")"+cOp+" ")
+		result = strings.ReplaceAll(result, ")"+bitwiseOp+"(", ")"+cOp+"(")
+
+		// Handle cases where operators follow numbers or identifiers directly
+		// Use regex to match word characters or digits followed by space + operator + space
+		pattern := regexp.MustCompile(`(\w)\s+` + regexp.QuoteMeta(bitwiseOp) + `\s+`)
+		matches := pattern.FindAllString(result, -1)
+		if len(matches) > 0 {
+			fmt.Printf("DEBUG: Found regex matches for %s in '%s': %v\n", bitwiseOp, result, matches)
+		}
+		result = pattern.ReplaceAllString(result, "$1 "+cOp+" ")
+
+		if result != oldResult {
+			fmt.Printf("DEBUG: Bitwise conversion %s -> %s: '%s' became '%s'\n", bitwiseOp, cOp, oldResult, result)
+		}
+	}
+
+	// If we made any bitwise conversions, return early with method call conversion
+	if result != expr {
+		methodCallPattern := regexp.MustCompile(`(?:\bthis\.\w+|\b\w+)\.[a-zA-Z_]\w*\([^)]*\)`)
+		methodCalls := methodCallPattern.FindAllString(result, -1)
+		for _, methodCall := range methodCalls {
+			converted := convertSingleMethodCall(methodCall)
+			if converted != "" && converted != methodCall {
+				result = strings.ReplaceAll(result, methodCall, converted)
+			}
+		}
+		return result
+	}
+
 	if strings.Contains(expr, "<<") || strings.Contains(expr, ">>") {
 		var (
 			methodCallPattern = regexp.MustCompile(`(?:\bthis\.\w+|\b\w+)\.[a-zA-Z_]\w*\([^)]*\)`)
