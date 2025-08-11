@@ -17,6 +17,7 @@ import (
 	"unicode"
 
 	"scar/lexer"
+	"scar/logger"
 )
 
 var (
@@ -463,7 +464,7 @@ func collectClassInfoWithModule(classDecl *lexer.ClassDeclStmt, moduleName strin
 					if isRef {
 						fieldType = strings.TrimPrefix(fieldType, "ref ")
 					}
-					fmt.Printf("Debug: Field %s, Value %s, Inferred Type: %s, IsRef: %v\n", fieldName, stmt.VarAssign.Value, fieldType, isRef)
+					logger.Debug("Field %s, Value %s, Inferred Type: %s, IsRef: %v\n", fieldName, stmt.VarAssign.Value, fieldType, isRef)
 					fieldInfo := FieldInfo{
 						Name:  fieldName,
 						Type:  fieldType,
@@ -595,10 +596,10 @@ func processMethodArguments(args string) string {
 }
 
 func convertPropertyAccess(expr string) string {
-	fmt.Printf("Debug: convertPropertyAccess called with: '%s'\n", expr)
+	logger.Debug("convertPropertyAccess called with: '%s'\n", expr)
 	// Print stack trace to see what's calling this function
 	if strings.Contains(expr, "- >") {
-		fmt.Printf("Debug: MANGLED ARROW DETECTED! Stack trace:\n")
+		logger.Debug("MANGLED ARROW DETECTED! Stack trace:\n")
 		debug.PrintStack()
 	}
 	bitwiseOps := map[string]string{
@@ -619,7 +620,7 @@ func convertPropertyAccess(expr string) string {
 		result = pattern.ReplaceAllString(result, "$1 "+cOp+" ")
 
 		if result != oldResult {
-			fmt.Printf("Debug: convertPropertyAccess bitwise conversion %s -> %s: '%s' became '%s'\n", bitwiseOp, cOp, oldResult, result)
+			logger.Debug("convertPropertyAccess bitwise conversion %s -> %s: '%s' became '%s'\n", bitwiseOp, cOp, oldResult, result)
 		}
 	}
 	if result != expr {
@@ -627,21 +628,21 @@ func convertPropertyAccess(expr string) string {
 	}
 
 	if isNumericLiteral(expr) {
-		fmt.Printf("Debug: convertPropertyAccess - expression is a numeric literal, skipping conversion\n")
+		logger.Debug("convertPropertyAccess - expression is a numeric literal, skipping conversion\n")
 		return expr
 	}
 
 	if strings.Contains(expr, ".") && !strings.Contains(expr, "(") {
-		fmt.Printf("Debug: convertPropertyAccess - passed dot and paren checks\n")
+		logger.Debug("convertPropertyAccess - passed dot and paren checks\n")
 		dotIndex := strings.Index(expr, ".")
-		fmt.Printf("Debug: convertPropertyAccess - dotIndex: %d\n", dotIndex)
+		logger.Debug("convertPropertyAccess - dotIndex: %d\n", dotIndex)
 		if dotIndex > 0 {
-			fmt.Printf("Debug: convertPropertyAccess - passed dotIndex > 0 check\n")
+			logger.Debug("convertPropertyAccess - passed dotIndex > 0 check\n")
 			objectName := expr[:dotIndex]
-			fmt.Printf("Debug: convertPropertyAccess - objectName: '%s'\n", objectName)
+			logger.Debug("convertPropertyAccess - objectName: '%s'\n", objectName)
 
 			if isNumericLiteral(objectName) {
-				fmt.Printf("Debug: convertPropertyAccess - objectName is numeric, checking if full number literal\n")
+				logger.Debug("convertPropertyAccess - objectName is numeric, checking if full number literal\n")
 				numberEnd := dotIndex + 1
 				for numberEnd < len(expr) && unicode.IsDigit(rune(expr[numberEnd])) {
 					numberEnd++
@@ -649,7 +650,7 @@ func convertPropertyAccess(expr string) string {
 				if numberEnd < len(expr) && (expr[numberEnd] == ' ' || expr[numberEnd] == '*' || expr[numberEnd] == '/' || expr[numberEnd] == '+' || expr[numberEnd] == '-') {
 					potentialNumber := expr[:numberEnd]
 					if isNumericLiteral(potentialNumber) {
-						fmt.Printf("Debug: convertPropertyAccess - detected floating point number '%s' in expression, skipping conversion\n", potentialNumber)
+						logger.Debug("convertPropertyAccess - detected floating point number '%s' in expression, skipping conversion\n", potentialNumber)
 						return expr
 					}
 				}
@@ -657,42 +658,42 @@ func convertPropertyAccess(expr string) string {
 
 			// Check if this is an array element access like arr[i] - keep as dot notation
 			if strings.Contains(objectName, "[") && strings.Contains(objectName, "]") {
-				fmt.Printf("Debug: convertPropertyAccess - detected array element access, keeping dot notation\n")
+				logger.Debug("convertPropertyAccess - detected array element access, keeping dot notation\n")
 				return expr
 			}
 
 			if !strings.Contains(objectName, " ") && !strings.Contains(objectName, "\"") {
-				fmt.Printf("Debug: convertPropertyAccess - passed objectName checks\n")
+				logger.Debug("convertPropertyAccess - passed objectName checks\n")
 				originalExpr := expr
 				expr = strings.Replace(expr, ".", "->", 1)
-				fmt.Printf("Debug: convertPropertyAccess converted '%s' to '%s'\n", originalExpr, expr)
+				logger.Debug("convertPropertyAccess converted '%s' to '%s'\n", originalExpr, expr)
 			} else {
-				fmt.Printf("Debug: convertPropertyAccess - failed objectName checks\n")
+				logger.Debug("convertPropertyAccess - failed objectName checks\n")
 			}
 		} else {
-			fmt.Printf("Debug: convertPropertyAccess - failed dotIndex > 0 check\n")
+			logger.Debug("convertPropertyAccess - failed dotIndex > 0 check\n")
 		}
 	} else {
-		fmt.Printf("Debug: convertPropertyAccess - failed dot or paren checks\n")
+		logger.Debug("convertPropertyAccess - failed dot or paren checks\n")
 	}
 	return expr
 }
 
 func processNotKeyword(condition string) string {
-	fmt.Printf("Debug: processNotKeyword called with: '%s'\n", condition)
+	logger.Debug("processNotKeyword called with: '%s'\n", condition)
 	condition = strings.TrimSpace(condition)
 	if strings.HasPrefix(condition, "not ") {
 		remaining := strings.TrimSpace(condition[4:])
 		result := "!(" + remaining + ")"
-		fmt.Printf("Debug: processNotKeyword converted '%s' to '%s'\n", condition, result)
+		logger.Debug("processNotKeyword converted '%s' to '%s'\n", condition, result)
 		return result
 	}
-	fmt.Printf("Debug: processNotKeyword - no 'not' prefix found\n")
+	logger.Debug("processNotKeyword - no 'not' prefix found\n")
 	return condition
 }
 
 func processStringFunctionArg(arg string) string {
-	fmt.Printf("Debug: processStringFunctionArg called with: '%s'\n", arg)
+	logger.Debug("processStringFunctionArg called with: '%s'\n", arg)
 	arg = convertPropertyAccess(arg)
 
 	if isFunctionCall(arg) {
@@ -703,10 +704,10 @@ func processStringFunctionArg(arg string) string {
 		funcName := strings.TrimSpace(arg[:parenIndex])
 		resolvedFuncName := lexer.ResolveSymbol(funcName, currentModule)
 
-		fmt.Printf("Debug: Function call detected - funcName: '%s', resolvedFuncName: '%s'\n", funcName, resolvedFuncName)
+		logger.Debug("Function call detected - funcName: '%s', resolvedFuncName: '%s'\n", funcName, resolvedFuncName)
 
 		if functionReturnsString(resolvedFuncName) {
-			fmt.Printf("Debug: Function returns string, transforming...\n")
+			logger.Debug("Function returns string, transforming...\n")
 			argsStr := arg[parenIndex+1 : len(arg)-1]
 			tempBufferName := fmt.Sprintf("temp_str_buffer_%d", len(arg)*31%1000)
 			if strings.TrimSpace(argsStr) == "" {
@@ -979,7 +980,7 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 				} else if stmt.VarDecl.Type == "string" {
 					isStringField := stmt.VarDecl.Type == "string"
 
-					fmt.Printf("Debug: VarDecl field %s, value %s, isStringField %v\n", fieldName, value, isStringField)
+					logger.Debug("VarDecl field %s, value %s, isStringField %v\n", fieldName, value, isStringField)
 
 					if isStringField {
 						if !strings.HasPrefix(value, "\"") && !strings.HasSuffix(value, "\"") && isValidIdentifier(value) {
@@ -1012,7 +1013,7 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 					}
 				}
 
-				fmt.Printf("Debug: VarAssign field %s, value %s, isStringField %v\n", fieldName, value, isStringField)
+				logger.Debug("VarAssign field %s, value %s, isStringField %v\n", fieldName, value, isStringField)
 
 				if isStringField {
 					if !strings.HasPrefix(value, "\"") && !strings.HasSuffix(value, "\"") && isValidIdentifier(value) {
@@ -1866,7 +1867,7 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 					Type: varType,
 				}
 				globalObjects[stmt.VarDecl.Name] = objectInfo
-				fmt.Printf("Debug: Tracked object '%s' of type '%s'\n", stmt.VarDecl.Name, varType)
+				logger.Debug("Tracked object '%s' of type '%s'\n", stmt.VarDecl.Name, varType)
 			}
 
 			if stmt.VarDecl.IsRef {
@@ -2520,8 +2521,8 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			}
 			argsStr := strings.Join(args, ", ")
 
-			fmt.Printf("Debug: Method call - object: '%s', method: '%s', args: %v\n", objectName, methodName, stmt.MethodCall.Args)
-			fmt.Printf("Debug: Current class name: '%s'\n", className)
+			logger.Debug("Method call - object: '%s', method: '%s', args: %v\n", objectName, methodName, stmt.MethodCall.Args)
+			logger.Debug("Current class name: '%s'\n", className)
 
 			if objectName == "this" {
 				resolvedClassName := className
@@ -2596,7 +2597,7 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 						for _, method := range classInfo.Methods {
 							if method.Name == methodName {
 								resolvedClassName = className
-								fmt.Printf("Debug: Inferred object '%s' as type '%s' based on method '%s'\n", stmt.MethodCall.Object, className, methodName)
+								logger.Debug("Inferred object '%s' as type '%s' based on method '%s'\n", stmt.MethodCall.Object, className, methodName)
 								break
 							}
 						}
@@ -2943,14 +2944,14 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			)
 
 			if strings.HasPrefix(varName, "this->") {
-				fmt.Printf("Debug: Member variable allocation: %s\n", varName)
+				logger.Debug("Member variable allocation: %s\n", varName)
 				if useGC {
 					fmt.Fprintf(b, "%s%s = (%s*)GC_malloc(%s * sizeof(%s));\n", indent, varName, cType, size, cType)
 				} else {
 					fmt.Fprintf(b, "%s%s = (%s*)malloc(%s * sizeof(%s));\n", indent, varName, cType, size, cType)
 				}
 			} else {
-				fmt.Printf("Debug: Local variable allocation: %s\n", varName)
+				logger.Debug("Local variable allocation: %s\n", varName)
 				if useGC {
 					fmt.Fprintf(b, "%s%s* %s = (%s*)GC_malloc(%s * sizeof(%s));\n", indent, cType, varName, cType, size, cType)
 				} else {
@@ -2980,7 +2981,7 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				// 	fmt.Fprintf(b, "%s%s = (%s*)malloc(%s * sizeof(%s));\n", indent, varName, cType, size, cType)
 				// }
 			} else {
-				fmt.Printf("Debug: Stack variable allocation: %s\n", varName)
+				logger.Debug("Stack variable allocation: %s\n", varName)
 				// Use Variable Length Arrays for stack allocation
 				fmt.Fprintf(b, "%s%s %s[%s];\n", indent, cType, varName, size)
 			}
@@ -3341,7 +3342,7 @@ func findMatchingParen(s string, openPos int) int {
 }
 
 func convertMethodCallToC(expr string) string {
-	fmt.Printf("Debug: convertMethodCallToC called with: '%s'\n", expr)
+	logger.Debug("convertMethodCallToC called with: '%s'\n", expr)
 	expr = strings.ReplaceAll(expr, "->", "__ARROW__")
 
 	bitwiseOps := map[string]string{
@@ -3371,16 +3372,16 @@ func convertMethodCallToC(expr string) string {
 		pattern := regexp.MustCompile(`(\w)\s+` + regexp.QuoteMeta(bitwiseOp) + `\s+`)
 		matches := pattern.FindAllString(result, -1)
 		if len(matches) > 0 {
-			fmt.Printf("DEBUG: Found regex matches for %s in '%s': %v\n", bitwiseOp, result, matches)
+			logger.Debug("Found regex matches for %s in '%s': %v\n", bitwiseOp, result, matches)
 		}
 		beforeRegex := result
 		result = pattern.ReplaceAllString(result, "$1 "+cOp+" ")
 		if result != beforeRegex {
-			fmt.Printf("DEBUG: Regex replacement for %s: '%s' became '%s'\n", bitwiseOp, beforeRegex, result)
+			logger.Debug("Regex replacement for %s: '%s' became '%s'\n", bitwiseOp, beforeRegex, result)
 		}
 
 		if result != oldResult {
-			fmt.Printf("DEBUG: Bitwise conversion %s -> %s: '%s' became '%s'\n", bitwiseOp, cOp, oldResult, result)
+			logger.Debug("Bitwise conversion %s -> %s: '%s' became '%s'\n", bitwiseOp, cOp, oldResult, result)
 		}
 	}
 
@@ -3830,7 +3831,7 @@ func convertSingleMethodCall(expr string) string {
 				}
 
 				className := ""
-				fmt.Printf("Debug: Looking up field type for '%s', currentClassName='%s'\n", fieldName, currentClassName)
+				logger.Debug("Looking up field type for '%s', currentClassName='%s'\n", fieldName, currentClassName)
 
 				if currentClassName != "" {
 					if classInfo, exists := globalClasses[currentClassName]; exists {
@@ -3841,7 +3842,7 @@ func convertSingleMethodCall(expr string) string {
 									fieldType = after
 								}
 								className = fieldType
-								fmt.Printf("Debug: Found field '%s' of type '%s' in class '%s'\n", fieldName, fieldType, currentClassName)
+								logger.Debug("Found field '%s' of type '%s' in class '%s'\n", fieldName, fieldType, currentClassName)
 								break
 							}
 						}
@@ -3849,7 +3850,7 @@ func convertSingleMethodCall(expr string) string {
 				}
 
 				if className == "" {
-					fmt.Printf("Debug: Searching all classes for field '%s'\n", fieldName)
+					logger.Debug("Searching all classes for field '%s'\n", fieldName)
 					for classNameIter, classInfo := range globalClasses {
 						for _, field := range classInfo.Fields {
 							if field.Name == fieldName {
@@ -3858,7 +3859,7 @@ func convertSingleMethodCall(expr string) string {
 									fieldType = after
 								}
 								className = fieldType
-								fmt.Printf("Debug: Found field '%s' of type '%s' in class '%s'\n", fieldName, fieldType, classNameIter)
+								logger.Debug("Found field '%s' of type '%s' in class '%s'\n", fieldName, fieldType, classNameIter)
 								break
 							}
 						}
@@ -3868,7 +3869,7 @@ func convertSingleMethodCall(expr string) string {
 					}
 				}
 
-				fmt.Printf("Debug: Final className for field '%s': '%s'\n", fieldName, className)
+				logger.Debug("Final className for field '%s': '%s'\n", fieldName, className)
 				if className == "" {
 					return expr
 				}
@@ -3878,11 +3879,11 @@ func convertSingleMethodCall(expr string) string {
 				var result string
 				if args == "" {
 					result = fmt.Sprintf("%s%s_%s(%s)%s", prefix, className, methodName, objectRef, suffix)
-					fmt.Printf("Debug: Generated method call (no args): '%s'\n", result)
+					logger.Debug("Generated method call (no args): '%s'\n", result)
 				} else {
 					processedArgs := processMethodArguments(args)
 					result = fmt.Sprintf("%s%s_%s(%s, %s)%s", prefix, className, methodName, objectRef, processedArgs, suffix)
-					fmt.Printf("Debug: Generated method call (with args): '%s'\n", result)
+					logger.Debug("Generated method call (with args): '%s'\n", result)
 				}
 
 				return result
@@ -3981,14 +3982,14 @@ func convertSingleMethodCall(expr string) string {
 								fieldType = after
 							}
 							resolvedClassName = fieldType
-							fmt.Printf("Debug: Found field '%s' of type '%s' in class '%s'\n", fieldName, fieldType, currentClassName)
+							logger.Debug("Found field '%s' of type '%s' in class '%s'\n", fieldName, fieldType, currentClassName)
 							break
 						}
 					}
 				}
 			}
 			if resolvedClassName == "" {
-				fmt.Printf("Debug: Could not resolve field type for '%s' in class '%s'\n", fieldName, currentClassName)
+				logger.Debug("Could not resolve field type for '%s' in class '%s'\n", fieldName, currentClassName)
 				return expr
 			}
 		} else {
@@ -4000,7 +4001,7 @@ func convertSingleMethodCall(expr string) string {
 				baseObjectName = baseObjectName[:arrowIndex]
 			}
 
-			fmt.Printf("Debug: Looking for object '%s' in globalObjects\n", baseObjectName)
+			logger.Debug("Looking for object '%s' in globalObjects\n", baseObjectName)
 			for objName, obj := range globalObjects {
 				if objName == baseObjectName {
 					resolvedClassName = obj.Type
@@ -4008,13 +4009,13 @@ func convertSingleMethodCall(expr string) string {
 						parts := strings.Split(resolvedClassName, ".")
 						resolvedClassName = lexer.GenerateUniqueSymbol(parts[1], parts[0])
 					}
-					fmt.Printf("Debug: Found object '%s' of type '%s' in globalObjects\n", baseObjectName, resolvedClassName)
+					logger.Debug("Found object '%s' of type '%s' in globalObjects\n", baseObjectName, resolvedClassName)
 					break
 				}
 			}
 
 			if resolvedClassName == "" {
-				fmt.Printf("Debug: Could not resolve object '%s' from globalObjects, checking if it's a method call pattern\n", baseObjectName)
+				logger.Debug("Could not resolve object '%s' from globalObjects, checking if it's a method call pattern\n", baseObjectName)
 				return strings.ReplaceAll(expr, "__ARROW__", "->")
 			}
 		}
@@ -4494,7 +4495,7 @@ func isCustomClassType(typeName string) bool {
 }
 
 func mapTypeToCType(mapType string) string {
-	fmt.Printf("Debug: mapTypeToCType called with: '%s'\n", mapType)
+	logger.Debug("mapTypeToCType called with: '%s'\n", mapType)
 
 	// Handle ref types by stripping "ref " prefix and making it a pointer
 	if strings.HasPrefix(mapType, "ref ") {
@@ -4502,21 +4503,21 @@ func mapTypeToCType(mapType string) string {
 		cType := mapTypeToCType(baseType)
 		// Don't double-add asterisk if already a pointer
 		if strings.HasSuffix(cType, "*") {
-			fmt.Printf("Debug: ref type '%s' -> '%s' (already pointer)\n", mapType, cType)
+			logger.Debug("ref type '%s' -> '%s' (already pointer)\n", mapType, cType)
 			return cType
 		}
 		result := cType + "*"
-		fmt.Printf("Debug: ref type '%s' -> '%s'\n", mapType, result)
+		logger.Debug("ref type '%s' -> '%s'\n", mapType, result)
 		return result
 	}
 
 	if isEnumType(mapType) {
-		fmt.Printf("Debug: enum type '%s' -> '%s'\n", mapType, mapType)
+		logger.Debug("enum type '%s' -> '%s'\n", mapType, mapType)
 		return mapType
 	}
 	if isCustomClassType(mapType) {
 		result := mapType + "*"
-		fmt.Printf("Debug: custom class type '%s' -> '%s'\n", mapType, result)
+		logger.Debug("custom class type '%s' -> '%s'\n", mapType, result)
 		return result
 	}
 	switch mapType {
