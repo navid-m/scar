@@ -618,7 +618,7 @@ func convertPropertyAccess(expr string) string {
 		result = pattern.ReplaceAllString(result, "$1 "+cOp+" ")
 
 		if result != oldResult {
-			fmt.Printf("DEBUG: convertPropertyAccess bitwise conversion %s -> %s: '%s' became '%s'\n", bitwiseOp, cOp, oldResult, result)
+			fmt.Printf("Debug: convertPropertyAccess bitwise conversion %s -> %s: '%s' became '%s'\n", bitwiseOp, cOp, oldResult, result)
 		}
 	}
 	if result != expr {
