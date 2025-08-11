@@ -36,9 +36,14 @@ if len(args) > 1:
     int parsed_depth = math::to_int(args[1])
     max_depth = math::max(MIN_DEPTH + 2, parsed_depth)
 
+print "hi"
+
 # Stretch tree
 ref TreeNode stretch_tree = TreeNode::bottom_up_tree(max_depth + 1)
 int stretch_check = stretch_tree.item_check()
+
+print "hi2"
+
 print "stretch tree of depth %d\t check: %d" | (max_depth + 1), stretch_check
 
 # Long lived tree
@@ -58,7 +63,7 @@ for i = 0 to (result_count - 1):
     
     parallel for t = 0 to (NO_TASKS - 1) reduce(sum: total_check):
         int check = 0
-        for j = n to 1 step -1:
+        for i32 j = n; j >= 1; j--:
             ref TreeNode tree = TreeNode::bottom_up_tree(depth)
             check = check + tree.item_check()
         total_check = total_check + check

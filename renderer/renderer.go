@@ -3196,7 +3196,32 @@ func convertMethodCallToC(expr string) string {
 			return fmt.Sprintf("%s %s %s", convertedLeft, op, right)
 		}
 	}
+
+	// Handle arithmetic expressions by recursively processing all method calls
 	arithmeticOps := []string{"+", "-", "*", "/", "%"}
+	for _, arithOp := range arithmeticOps {
+		if strings.Contains(expr, arithOp) {
+			// Check for method calls in the expression and convert them first
+			result := expr
+
+			// Find all method call patterns including this.field.method() calls
+			methodCallPattern := regexp.MustCompile(`(?:\bthis\.\w+|\b\w+)\.[a-zA-Z_]\w*\([^)]*\)`)
+			methodCalls := methodCallPattern.FindAllString(expr, -1)
+
+			for _, methodCall := range methodCalls {
+				converted := convertSingleMethodCall(methodCall)
+				if converted != "" && converted != methodCall {
+					result = strings.Replace(result, methodCall, converted, -1)
+				}
+			}
+
+			if result != expr {
+				return result
+			}
+		}
+	}
+
+	// Fallback to processing arithmetic expressions the old way
 	var hasArithmetic bool
 	for _, arithOp := range arithmeticOps {
 		opIndex := -1
@@ -3217,7 +3242,6 @@ func convertMethodCallToC(expr string) string {
 			right = strings.TrimSpace(expr[opIndex+len(arithOp):])
 			op = arithOp
 			hasArithmetic = true
-			fmt.Printf("Debug: Found arithmetic operator '%s' at index %d, left='%s', right='%s'\n", arithOp, opIndex, left, right)
 			break
 		}
 	}
@@ -3225,12 +3249,10 @@ func convertMethodCallToC(expr string) string {
 	if hasArithmetic && isMethodCall(left) {
 		convertedLeft := convertSingleMethodCall(left)
 		if convertedLeft != "" {
-			fmt.Printf("Debug: Converted arithmetic expression: '%s %s %s'\n", convertedLeft, op, right)
 			return fmt.Sprintf("%s %s %s", convertedLeft, op, right)
 		}
 	}
 
-	fmt.Printf("Debug: convertMethodCallToC called with: '%s', falling back to convertSingleMethodCall\n", expr)
 	return convertSingleMethodCall(expr)
 }
 
@@ -3548,6 +3570,51 @@ func convertSingleMethodCall(expr string) string {
 		if dotIndex >= len(expr) || expr[dotIndex] != '.' {
 			return expr
 		}
+
+		restOfExpr := expr[dotIndex+1:]
+
+		nextDotIndex := strings.Index(restOfExpr, ".")
+		if nextDotIndex != -1 {
+			fieldName := restOfExpr[:nextDotIndex]
+			methodPart := restOfExpr[nextDotIndex+1:]
+
+			parenIndex := strings.Index(methodPart, "(")
+			if parenIndex != -1 {
+				methodName := methodPart[:parenIndex]
+				closeParen := findMatchingParen(methodPart, parenIndex)
+				if closeParen == -1 {
+					return expr
+				}
+
+				args := ""
+				if closeParen > parenIndex+1 {
+					args = methodPart[parenIndex+1 : closeParen]
+				}
+
+				suffix := ""
+				if closeParen+1 < len(methodPart) {
+					suffix = methodPart[closeParen+1:]
+				}
+
+				className := currentClassName
+				if className == "" {
+					return expr
+				}
+
+				objectRef := fmt.Sprintf("this->%s", fieldName)
+
+				var result string
+				if args == "" {
+					result = fmt.Sprintf("%s%s_%s(%s)%s", prefix, className, methodName, objectRef, suffix)
+				} else {
+					processedArgs := processMethodArguments(args)
+					result = fmt.Sprintf("%s%s_%s(%s, %s)%s", prefix, className, methodName, objectRef, processedArgs, suffix)
+				}
+
+				return result
+			}
+		}
+
 		parenIndex := strings.Index(expr[dotIndex:], "(")
 		if parenIndex == -1 {
 			fieldName := expr[dotIndex+1:]
@@ -3591,6 +3658,7 @@ func convertSingleMethodCall(expr string) string {
 		}
 		return fmt.Sprintf("%s%s_%s(this, %s)%s", prefix, className, methodName, args, suffix)
 	}
+
 	dotIndex := strings.Index(expr, ".")
 	if dotIndex == -1 {
 		return expr
@@ -3620,22 +3688,30 @@ func convertSingleMethodCall(expr string) string {
 	}
 
 	var resolvedClassName string
-	for objName, obj := range globalObjects {
-		if objName == objectName {
-			resolvedClassName = obj.Type
-			if strings.Contains(resolvedClassName, ".") {
-				parts := strings.Split(resolvedClassName, ".")
-				resolvedClassName = lexer.GenerateUniqueSymbol(parts[1], parts[0])
+	var resolvedObjectName string
+
+	if strings.HasPrefix(objectName, "this.") {
+		fieldName := objectName[5:] // Remove "this."
+		resolvedClassName = currentClassName
+		resolvedObjectName = fmt.Sprintf("this->%s", fieldName)
+	} else {
+		for objName, obj := range globalObjects {
+			if objName == objectName {
+				resolvedClassName = obj.Type
+				if strings.Contains(resolvedClassName, ".") {
+					parts := strings.Split(resolvedClassName, ".")
+					resolvedClassName = lexer.GenerateUniqueSymbol(parts[1], parts[0])
+				}
+				break
 			}
-			break
 		}
-	}
 
-	if resolvedClassName == "" {
-		return expr
-	}
+		if resolvedClassName == "" {
+			return expr
+		}
 
-	resolvedObjectName := lexer.ResolveSymbol(objectName, currentModule)
+		resolvedObjectName = lexer.ResolveSymbol(objectName, currentModule)
+	}
 
 	if args == "" {
 		return fmt.Sprintf("%s_%s(%s)", resolvedClassName, methodName, resolvedObjectName)
