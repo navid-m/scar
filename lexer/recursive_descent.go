@@ -1740,11 +1740,18 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 		}
 
 		if strings.Contains(line, ".") && strings.Contains(line, "(") && strings.Contains(line, ")") && !strings.Contains(line, "=") {
-			dotIndex := strings.Index(line, ".")
 			parenIndex := strings.Index(line, "(")
-			if dotIndex < parenIndex {
-				objectName := strings.TrimSpace(line[:dotIndex])
-				methodPart := strings.TrimSpace(line[dotIndex+1:])
+			lastDotIndex := -1
+			for i := parenIndex - 1; i >= 0; i-- {
+				if line[i] == '.' {
+					lastDotIndex = i
+					break
+				}
+			}
+
+			if lastDotIndex != -1 {
+				objectName := strings.TrimSpace(line[:lastDotIndex])
+				methodPart := strings.TrimSpace(line[lastDotIndex+1:])
 				methodEndIndex := strings.Index(methodPart, "(")
 
 				if methodEndIndex == -1 {

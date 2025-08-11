@@ -4,8 +4,8 @@ import "std/math"
 class Node:
     init(int val):
         this.val = val
-        this.left = nil
-        this.right = nil
+        ref Node this.left = nil
+        ref Node this.right = nil
 
     fn insert(int x):
         if x < this.val:
@@ -31,6 +31,7 @@ fn generate_random_tree(int n) -> ref Node:
     if n <= 0:
         return nil
     ref Node root = new Node(random::num(0, 1000))
+    int ignored_sum = 0
     parallel for i = 1 to (n - 1) reduce(+: ignored_sum):
         int val = random::num(0, 1000)
         root.insert(val)
@@ -76,16 +77,20 @@ fn aliasing_test():
 fn dynamic_allocation_stress(int n):
     allocate ref Node nodes = n
     for i = 0 to (n - 1):
-        nodes[i] = new Node(i)
+        ref Node newNode = new Node(i)
+        nodes[i] = newNode
     parallel for i = 0 to (n - 1):
         if i % 2 == 0:
-            nodes[i].val = nodes[i].val * 2
+            ref Node node = nodes[i]
+            node.val = node.val * 2
         else:
-            nodes[i].val = nodes[i].val * 3
+            ref Node node = nodes[i]
+            node.val = node.val * 3
 
     int sum = 0
     for i = 0 to (n - 1):
-        sum = sum + nodes[i].val
+        ref Node node = nodes[i]
+        sum = sum + node.val
 
     print "Dynamic allocation sum: %d" | sum
 

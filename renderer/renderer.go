@@ -3828,7 +3828,46 @@ func convertSingleMethodCall(expr string) string {
 					suffix = methodPart[closeParen+1:]
 				}
 
-				className := currentClassName
+				className := ""
+				fmt.Printf("Debug: Looking up field type for '%s', currentClassName='%s'\n", fieldName, currentClassName)
+
+				if currentClassName != "" {
+					if classInfo, exists := globalClasses[currentClassName]; exists {
+						for _, field := range classInfo.Fields {
+							if field.Name == fieldName {
+								fieldType := field.Type
+								if after, ok := strings.CutPrefix(fieldType, "ref "); ok {
+									fieldType = after
+								}
+								className = fieldType
+								fmt.Printf("Debug: Found field '%s' of type '%s' in class '%s'\n", fieldName, fieldType, currentClassName)
+								break
+							}
+						}
+					}
+				}
+
+				if className == "" {
+					fmt.Printf("Debug: Searching all classes for field '%s'\n", fieldName)
+					for classNameIter, classInfo := range globalClasses {
+						for _, field := range classInfo.Fields {
+							if field.Name == fieldName {
+								fieldType := field.Type
+								if after, ok := strings.CutPrefix(fieldType, "ref "); ok {
+									fieldType = after
+								}
+								className = fieldType
+								fmt.Printf("Debug: Found field '%s' of type '%s' in class '%s'\n", fieldName, fieldType, classNameIter)
+								break
+							}
+						}
+						if className != "" {
+							break
+						}
+					}
+				}
+
+				fmt.Printf("Debug: Final className for field '%s': '%s'\n", fieldName, className)
 				if className == "" {
 					return expr
 				}
@@ -3838,9 +3877,11 @@ func convertSingleMethodCall(expr string) string {
 				var result string
 				if args == "" {
 					result = fmt.Sprintf("%s%s_%s(%s)%s", prefix, className, methodName, objectRef, suffix)
+					fmt.Printf("Debug: Generated method call (no args): '%s'\n", result)
 				} else {
 					processedArgs := processMethodArguments(args)
 					result = fmt.Sprintf("%s%s_%s(%s, %s)%s", prefix, className, methodName, objectRef, processedArgs, suffix)
+					fmt.Printf("Debug: Generated method call (with args): '%s'\n", result)
 				}
 
 				return result
