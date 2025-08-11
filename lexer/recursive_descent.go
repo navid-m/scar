@@ -1782,10 +1782,13 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 		}
 
 		if len(parts) >= 5 && parts[2] == "=" && parts[3] == "new" {
-			typeName := parts[0]
-			varName := parts[1]
-			newPart := strings.TrimSpace(line[strings.Index(line, "new")+3:])
-			parenStart := strings.Index(newPart, "(")
+			var (
+				typeName   = parts[0]
+				varName    = parts[1]
+				newPart    = strings.TrimSpace(line[strings.Index(line, "new")+3:])
+				parenStart = strings.Index(newPart, "(")
+			)
+
 			if parenStart == -1 {
 				return nil, lineNum + 1, fmt.Errorf("object declaration missing parentheses at line %d", lineNum+1)
 			}
