@@ -605,6 +605,19 @@ func convertPropertyAccess(expr string) string {
 	return expr
 }
 
+func processNotKeyword(condition string) string {
+	fmt.Printf("Debug: processNotKeyword called with: '%s'\n", condition)
+	condition = strings.TrimSpace(condition)
+	if strings.HasPrefix(condition, "not ") {
+		remaining := strings.TrimSpace(condition[4:])
+		result := "!(" + remaining + ")"
+		fmt.Printf("Debug: processNotKeyword converted '%s' to '%s'\n", condition, result)
+		return result
+	}
+	fmt.Printf("Debug: processNotKeyword - no 'not' prefix found\n")
+	return condition
+}
+
 func processStringFunctionArg(arg string) string {
 	fmt.Printf("Debug: processStringFunctionArg called with: '%s'\n", arg)
 	arg = convertPropertyAccess(arg)
@@ -1509,7 +1522,9 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			fmt.Fprintf(b, "%s    _exception = _prev_exception;\n", indent)
 			fmt.Fprintf(b, "%s}\n", indent)
 		case stmt.While != nil:
-			condition := lexer.ResolveSymbol(stmt.While.Condition, currentModule)
+			condition := stmt.While.Condition
+			condition = processNotKeyword(condition)
+			condition = lexer.ResolveSymbol(condition, currentModule)
 			condition = convertThisReferencesGranular(condition)
 			fmt.Fprintf(b, "%swhile (%s) {\n", indent, condition)
 			renderStatements(b, stmt.While.Body, indent+"    ", className, program, currentFunctionReturnType)
@@ -1654,7 +1669,7 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			fmt.Fprintf(b, "%s}\n", indent)
 		case stmt.If != nil:
 			condition := stmt.If.Condition
-			// Process get! and has! expressions first (before this. conversion)
+			condition = processNotKeyword(condition)
 			condition = processGetExpressions(condition, program)
 			condition = processHasExpressions(condition, program)
 			condition = convertPropertyAccess(condition)
@@ -1674,7 +1689,7 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 
 			for _, elif := range stmt.If.ElseIfs {
 				elifCondition := elif.Condition
-				// Process get! and has! expressions first (before this. conversion)
+				elifCondition = processNotKeyword(elifCondition)
 				elifCondition = processGetExpressions(elifCondition, program)
 				elifCondition = processHasExpressions(elifCondition, program)
 				elifCondition = convertPropertyAccess(elifCondition)
@@ -3416,6 +3431,9 @@ func convertSingleMethodCall(expr string) string {
 		if startIdx == -1 {
 			return expr
 		}
+
+		prefix := expr[:startIdx]
+
 		dotIndex := startIdx + 4
 		if dotIndex >= len(expr) || expr[dotIndex] != '.' {
 			return expr
@@ -3423,7 +3441,7 @@ func convertSingleMethodCall(expr string) string {
 		parenIndex := strings.Index(expr[dotIndex:], "(")
 		if parenIndex == -1 {
 			fieldName := expr[dotIndex+1:]
-			return fmt.Sprintf("this->%s", fieldName)
+			return fmt.Sprintf("%sthis->%s", prefix, fieldName)
 		}
 
 		parenIndex += dotIndex
@@ -3438,6 +3456,12 @@ func convertSingleMethodCall(expr string) string {
 		if closeParen == -1 {
 			return expr
 		}
+
+		suffix := ""
+		if closeParen+1 < len(expr) {
+			suffix = expr[closeParen+1:]
+		}
+
 		args := ""
 		if closeParen > parenIndex+1 {
 			args = expr[parenIndex+1 : closeParen]
@@ -3453,9 +3477,9 @@ func convertSingleMethodCall(expr string) string {
 			}
 		}
 		if args == "" {
-			return fmt.Sprintf("%s_%s(this)", className, methodName)
+			return fmt.Sprintf("%s%s_%s(this)%s", prefix, className, methodName, suffix)
 		}
-		return fmt.Sprintf("%s_%s(this, %s)", className, methodName, args)
+		return fmt.Sprintf("%s%s_%s(this, %s)%s", prefix, className, methodName, args, suffix)
 	}
 	dotIndex := strings.Index(expr, ".")
 	if dotIndex == -1 {

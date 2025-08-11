@@ -1,0 +1,3 @@
+bool something = !true
+
+print "%d" | something

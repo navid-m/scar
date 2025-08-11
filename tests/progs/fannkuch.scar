@@ -1,0 +1,207 @@
+# Fannkuch Redux benchmark implementation in Scar
+# Based on the Computer Language Benchmarks Game
+
+import "std/os"
+import "std/math"
+
+class FannkuchRedux:
+    init:
+        this.n = 0
+        ref int this.factorial_table = nil
+        ref int this.count = nil
+        ref int this.temp_permutation = nil
+        ref int this.current_permutation = nil
+        this.maximum_flip_count = 0
+        this.checksum = 0
+
+    fn compute_factorials() -> void:
+        # Create factorial lookup table
+        allocate int this.factorial_table = (this.n + 1)
+        this.factorial_table[0] = 1
+        for i = 1 to this.n:
+            this.factorial_table[i] = i * this.factorial_table[i - 1]
+
+    fn set_n(int value) -> void:
+        this.n = value
+        this.compute_factorials()
+        
+        # Allocate working arrays
+        allocate int this.count = this.n
+        allocate int this.temp_permutation = this.n
+        allocate int this.current_permutation = this.n
+
+    fn initialize_permutation(int permutation_index) -> void:
+        # Initialize count array
+        this.count[0] = 0
+        
+        # Initialize current permutation to identity
+        for i = 0 to (this.n - 1):
+            this.current_permutation[i] = i
+
+        # Convert permutation index to factoradic and apply rotations
+        int i = this.n - 1
+        while i > 0:
+            int d = permutation_index / this.factorial_table[i]
+            permutation_index = permutation_index % this.factorial_table[i]
+            this.count[i] = d
+
+            # Copy current permutation to temp
+            for j = 0 to (this.n - 1):
+                this.temp_permutation[j] = this.current_permutation[j]
+
+            # Apply rotation
+            for j = 0 to i:
+                int source_index = j + d
+                if source_index <= i:
+                    this.current_permutation[j] = this.temp_permutation[source_index]
+                else:
+                    this.current_permutation[j] = this.temp_permutation[source_index - i - 1]
+            
+            i = i - 1
+
+    fn count_flips() -> int:
+        # If first element is already 0, no flips needed
+        if this.current_permutation[0] == 0:
+            return 0
+
+        # Copy current permutation to temp (skip index 0)
+        for i = 1 to (this.n - 1):
+            this.temp_permutation[i] = this.current_permutation[i]
+
+        int flip_count = 1
+        int first_value = this.current_permutation[0]
+
+        # Flip until the element at first_value index is 0
+        while this.temp_permutation[first_value] > 0:
+            # Record new first value and restore old first value
+            int new_first_value = this.temp_permutation[first_value]
+            this.temp_permutation[first_value] = first_value
+
+            # Flip middle elements if needed
+            if first_value > 2:
+                int low_index = 1
+                int high_index = first_value - 1
+                
+                while low_index < high_index:
+                    int temp = this.temp_permutation[high_index]
+                    this.temp_permutation[high_index] = this.temp_permutation[low_index]
+                    this.temp_permutation[low_index] = temp
+                    low_index = low_index + 1
+                    high_index = high_index - 1
+
+            first_value = new_first_value
+            flip_count = flip_count + 1
+
+        return flip_count
+
+    fn next_permutation() -> bool:
+        # Generate next permutation using Heap's algorithm
+        int first_value = this.current_permutation[1]
+        this.current_permutation[1] = this.current_permutation[0]
+        this.current_permutation[0] = first_value
+
+        int i = 1
+        while true:
+            this.count[i] = this.count[i] + 1
+            if this.count[i] <= i:
+                break
+            
+            this.count[i] = 0
+            i = i + 1
+            
+            if i >= this.n:
+                return false  # No more permutations
+
+            int new_first_value = this.current_permutation[0]
+            this.current_permutation[0] = this.current_permutation[1]
+
+            for j = 1 to (i - 1):
+                this.current_permutation[j] = this.current_permutation[j + 1]
+
+            this.current_permutation[i] = first_value
+            first_value = new_first_value
+
+        return true
+
+    fn compute_block(int start_index, int block_size) -> void:
+        this.initialize_permutation(start_index)
+        
+        int end_index = start_index + block_size - 1
+        int max_index = this.factorial_table[this.n] - 1
+        if end_index > max_index:
+            end_index = max_index
+
+        int permutation_index = start_index
+        while permutation_index <= end_index:
+            int flip_count = this.count_flips()
+            
+            if flip_count > 0:
+                # Update checksum
+                if permutation_index % 2 == 0:
+                    this.checksum = this.checksum + flip_count
+                else:
+                    this.checksum = this.checksum - flip_count
+
+                # Update maximum flip count
+                if flip_count > this.maximum_flip_count:
+                    this.maximum_flip_count = flip_count
+
+            # Break if this is the last permutation
+            if permutation_index >= end_index:
+                break
+
+            # Generate next permutation
+            if not this.next_permutation():
+                break
+            
+            permutation_index = permutation_index + 1
+
+    fn run_fannkuch(int n_value) -> void:
+        this.set_n(n_value)
+        
+        # Determine block size for potential parallelization
+        int preferred_blocks = 24
+        int total_permutations = this.factorial_table[this.n]
+        int block_size = total_permutations / preferred_blocks
+        if block_size < 1:
+            block_size = 1
+
+        this.maximum_flip_count = 0
+        this.checksum = 0
+
+        # Process all blocks (sequential for now)
+        int start_index = 0
+        while start_index < total_permutations:
+            this.compute_block(start_index, block_size)
+            start_index = start_index + block_size
+
+        # Output results
+        print "%d" | this.checksum
+        print "Pfannkuchen(%d) = %d" | this.n, this.maximum_flip_count
+
+    fn cleanup() -> void:
+        if this.factorial_table != nil:
+            free this.factorial_table
+        if this.count != nil:
+            free this.count
+        if this.temp_permutation != nil:
+            free this.temp_permutation
+        if this.current_permutation != nil:
+            free this.current_permutation
+
+# Main execution - top-level statements
+list[string] args = os::get_args()
+
+if len(args) < 2:
+    print "Usage: fannkuch <n>"
+    print "Where n is the size of the permutation (typically 7-12)"
+else:
+    # Parse the argument
+    int n = math::to_int(args[1])
+    if n < 1:
+        print "Error: n must be a positive integer"
+    else:
+        # Create and run the fannkuch calculator
+        var fannkuch = new FannkuchRedux()
+        fannkuch.run_fannkuch(n)
+        fannkuch.cleanup()
