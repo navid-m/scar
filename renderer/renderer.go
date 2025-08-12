@@ -962,35 +962,36 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 				}
 
 			case stmt.VarDecl != nil:
-				fieldName := stmt.VarDecl.Name
+				varName := stmt.VarDecl.Name
 				value := stmt.VarDecl.Value
 
-				if fieldName == "this" {
+				if varName == "this" {
 					continue
 				}
 
-				fieldName = strings.TrimPrefix(fieldName, "this.")
-
-				if stmt.VarDecl.IsRef {
-					if value == "0" || value == "NULL" {
-						fmt.Fprintf(b, "    this->%s = NULL;\n", fieldName)
+				if strings.HasPrefix(varName, "this.") {
+					fieldName := varName[5:]
+					if stmt.VarDecl.IsRef {
+						if value == "0" || value == "NULL" {
+							fmt.Fprintf(b, "    this->%s = NULL;\n", fieldName)
+						} else {
+							fmt.Fprintf(b, "    this->%s = %s;\n", fieldName, value)
+						}
+					} else if stmt.VarDecl.Type == "string" {
+						isStringField := stmt.VarDecl.Type == "string"
+						logger.Debug("VarDecl field %s, value %s, isStringField %v\n", fieldName, value, isStringField)
+						if isStringField {
+							if !strings.HasPrefix(value, "\"") && !strings.HasSuffix(value, "\"") && isValidIdentifier(value) {
+								value = fmt.Sprintf("\"%s\"", value)
+							}
+							fmt.Fprintf(b, "    strcpy(this->%s, %s);\n", fieldName, value)
+						}
 					} else {
+						value = strings.ReplaceAll(value, "this.", "this->")
 						fmt.Fprintf(b, "    this->%s = %s;\n", fieldName, value)
 					}
-				} else if stmt.VarDecl.Type == "string" {
-					isStringField := stmt.VarDecl.Type == "string"
-
-					logger.Debug("VarDecl field %s, value %s, isStringField %v\n", fieldName, value, isStringField)
-
-					if isStringField {
-						if !strings.HasPrefix(value, "\"") && !strings.HasSuffix(value, "\"") && isValidIdentifier(value) {
-							value = fmt.Sprintf("\"%s\"", value)
-						}
-						fmt.Fprintf(b, "    strcpy(this->%s, %s);\n", fieldName, value)
-					}
 				} else {
-					value = strings.ReplaceAll(value, "this.", "this->")
-					fmt.Fprintf(b, "    this->%s = %s;\n", fieldName, value)
+					renderStatements(b, []*lexer.Statement{stmt}, "    ", className, program, "")
 				}
 
 			case stmt.VarAssign != nil:
