@@ -1,0 +1,9 @@
+class SomeType:
+    pass
+
+fn some_function() -> SomeType:
+    pass
+    print "yo"
+    return new SomeType()
+
+some_function()
