@@ -25,12 +25,18 @@ import (
 func main() {
 	flag.Usage = meta.ShowUsage
 	var (
-		asm   = flag.Bool("asm", false, "show assembly output")
-		c     = flag.Bool("c", false, "show c output")
-		gc    = flag.Bool("gc", false, "use bdwgc garbage collector")
-		keepc = flag.Bool("keepc", false, "keep generated c file")
+		asm     = flag.Bool("asm", false, "show assembly output")
+		c       = flag.Bool("c", false, "show c output")
+		gc      = flag.Bool("gc", false, "use bdwgc garbage collector")
+		keepc   = flag.Bool("keepc", false, "keep generated c file")
+		version = flag.Bool("v", false, "show version")
 	)
 	flag.Parse()
+
+	if *version {
+		fmt.Println(meta.Version)
+		return
+	}
 
 	if len(flag.Args()) < 1 {
 		meta.ShowUsage()
