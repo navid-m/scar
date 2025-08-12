@@ -1062,6 +1062,9 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 	case "break":
 		return &Statement{Break: &BreakStmt{Break: "break"}}, lineNum + 1, nil
 
+	case "pass":
+		return &Statement{Pass: &PassStmt{Pass: "pass"}}, lineNum + 1, nil
+
 	case "continue":
 		return &Statement{Continue: &ContinueStmt{Continue: "continue"}}, lineNum + 1, nil
 

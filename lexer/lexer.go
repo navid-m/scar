@@ -82,6 +82,7 @@ type Statement struct {
 	Allocate             *AllocateStmt
 	StackAllocate        *StackAllocateStmt
 	Free                 *FreeStmt
+	Pass                 *PassStmt
 }
 
 type ListOfDeclStmt struct {
@@ -312,6 +313,10 @@ type ElifStmt struct {
 
 type ElseStmt struct {
 	Body []*Statement
+}
+
+type PassStmt struct {
+	Pass string
 }
 
 type BreakStmt struct {

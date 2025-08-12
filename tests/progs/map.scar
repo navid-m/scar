@@ -1,0 +1,11 @@
+class SomeCustomType:
+    init:
+        pass
+
+
+map[string: string] some_map = []
+
+put!(some_map, "key1", "value1")
+put!(some_map, "key2", "value2")
+
+print "%s" | get!(some_map, "key1")
