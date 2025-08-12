@@ -5,4 +5,4 @@ vendor/
 *.out
 errors
 *.DS_Store
-summary.md
+summary.spec.md

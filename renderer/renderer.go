@@ -2221,6 +2221,7 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 					}
 					for i, elem := range stmt.ListDecl.Elements {
 						elem = lexer.ResolveSymbol(elem, currentModule)
+						elem = convertNewToConstructor(elem)
 						if listType == "string" {
 							if !strings.HasPrefix(elem, "\"") && !strings.HasSuffix(elem, "\"") {
 								elem = fmt.Sprintf("\"%s\"", elem)
@@ -2639,6 +2640,7 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			fmt.Fprintf(b, "%s%s_%s(%s);\n", indent, className, methodName, argsStr)
 		case stmt.FunctionCall != nil:
 			funcName := lexer.ResolveSymbol(stmt.FunctionCall.Name, currentModule)
+			funcName = convertNewToConstructor(funcName)
 			args := make([]string, 0)
 
 			if functionReturnsString(funcName) {
@@ -2998,6 +3000,15 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				fmt.Fprintf(b, "%sfree(%s);\n", indent, variable)
 				fmt.Fprintf(b, "%s%s = NULL;\n", indent, variable)
 			}
+		case stmt.NewExpr != nil:
+			className := stmt.NewExpr.ClassName
+			args := make([]string, 0)
+			for _, arg := range stmt.NewExpr.Args {
+				resolvedArg := lexer.ResolveSymbol(arg, currentModule)
+				args = append(args, resolvedArg)
+			}
+			argsStr := strings.Join(args, ", ")
+			fmt.Fprintf(b, "%s%s_new(%s);\n", indent, className, argsStr)
 		}
 	}
 }

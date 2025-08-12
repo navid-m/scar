@@ -324,6 +324,10 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 		return parseEnumDeclaration(lines, lineNum, currentIndent)
 	}
 
+	if strings.HasPrefix(line, "new ") {
+		return parseNewExprStatement(line, lineNum)
+	}
+
 	if strings.HasPrefix(line, "catlist!(") && strings.HasSuffix(line, ")") {
 		var (
 			argsStr = strings.TrimSpace(line[9 : len(line)-1])
@@ -1956,7 +1960,7 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 		keywords := []string{"if", "for", "while", "fn", "class",
 			"var", "return", "import", "pub", "ref", "u16", "u32", "u64",
 			"i16", "i32", "i64", "f32", "f64", "print", "sleep", "break",
-			"continue", "foreach", "parallel", "char*", "allocate", "stallocate", "free"}
+			"continue", "foreach", "parallel", "char*", "allocate", "stallocate", "free", "new"}
 		if slices.Contains(keywords, firstWord) {
 			isKeyword = true
 		}
@@ -2062,4 +2066,26 @@ func parseArgumentsRespectingNesting(argsStr string) []string {
 	}
 
 	return args
+}
+
+func parseNewExprStatement(line string, lineNum int) (*Statement, int, error) {
+	expr := strings.TrimSpace(line[4:])
+	parenPos := strings.Index(expr, "(")
+	if parenPos == -1 {
+		return nil, lineNum, fmt.Errorf("invalid new expression: %s", line)
+	}
+
+	className := strings.TrimSpace(expr[:parenPos])
+	if className == "" {
+		return nil, lineNum, fmt.Errorf("missing class name in new expression: %s", line)
+	}
+	argsStr := expr[parenPos+1 : len(expr)-1]
+	args := []string{}
+	if strings.TrimSpace(argsStr) != "" {
+		args = splitRespectingQuotes(argsStr)
+	}
+	return &Statement{NewExpr: &NewExprStmt{
+		ClassName: className,
+		Args:      args,
+	}}, lineNum + 1, nil
 }

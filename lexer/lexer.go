@@ -83,6 +83,7 @@ type Statement struct {
 	StackAllocate        *StackAllocateStmt
 	Free                 *FreeStmt
 	Pass                 *PassStmt
+	NewExpr              *NewExprStmt
 }
 
 type ListOfDeclStmt struct {
@@ -105,6 +106,11 @@ type StackAllocateStmt struct {
 
 type FreeStmt struct {
 	Variable string
+}
+
+type NewExprStmt struct {
+	ClassName string
+	Args      []string
 }
 
 type CatListStmt struct {
