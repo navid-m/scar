@@ -27,6 +27,7 @@ pub fn do_thing() -> void:
         print "i = %d" | i
         sleep 0.1
     print "Parallel for loop completed."
+
 do_thing()
 ```
 
