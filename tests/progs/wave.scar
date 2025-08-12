@@ -1,0 +1,94 @@
+import "std/os"
+import "std/math"
+
+fn render_wave_frame(int width, int height, f64 time):
+    for int y = 0; y < height; y++:
+        for int x = 0; x < width; x++:
+            f64 fx = (f64)x / 4.0
+            f64 fy = (f64)y / 2.0
+            f64 value = math::sin(fx + time) + math::cos(fy + time * 0.7)
+            
+            if value > 1.0:
+                put "@"
+            elif value > 0.5:
+                put "#"
+            elif value > 0.0:
+                put "*"
+            elif value > -0.5:
+                put "."
+            else:
+                put " "
+        put "\n"
+
+fn render_plasma_wave(int width, int height, f64 time):
+    for int y = 0; y < height; y++:
+        for int x = 0; x < width; x++:
+            f64 fx = (f64)x / 6.0
+            f64 fy = (f64)y / 3.0
+            f64 plasma = math::sin(fx + time) + math::sin(fy + time * 0.7) + math::sin((fx + fy) * 0.5 + time * 1.3) + math::sin(math::sqrt(fx * fx + fy * fy) + time * 2.0)
+            
+            if plasma > 2.0:
+                put "██"
+            elif plasma > 1.0:
+                put "▓▓"
+            elif plasma > 0.0:
+                put "▒▒"
+            elif plasma > -1.0:
+                put "░░"
+            else:
+                put "  "
+        put "\n"
+
+fn render_ripple_wave(int width, int height, f64 time):
+    f64 cx = (f64)width / 2.0
+    f64 cy = (f64)height / 2.0
+    
+    for int y = 0; y < height; y++:
+        for int x = 0; x < width; x++:
+            f64 dx = (f64)x - cx
+            f64 dy = (f64)y - cy
+            f64 distance = math::sqrt(dx * dx + dy * dy)
+            
+            # Ripple effect from center
+            f64 ripple = math::sin(distance * 0.5 - time * 3.0) + math::cos(distance * 0.3 + time * 2.0)
+            
+            if ripple > 1.0:
+                put "█"
+            elif ripple > 0.5:
+                put "▓"
+            elif ripple > 0.0:
+                put "▒"
+            elif ripple > -0.5:
+                put "░"
+            else:
+                put "·"
+        put "\n"
+
+int width = 80
+int height = 24
+int frames = 500
+f64 speed = 0.22
+
+# Clear screen and hide cursor
+put "\x1b[2J\x1b[?25l"
+
+for int i = 0; i < frames; i++:
+    f64 t = (f64)i * speed
+    
+    # Position cursor at top-left
+    put "\x1b[1;1H"
+    
+    # Cycle through different wave patterns
+    int pattern = (i / 80) % 3
+    
+    if pattern == 0:
+        render_wave_frame(width, height, t)
+    elif pattern == 1:
+        render_plasma_wave(width / 2, height, t)  # Half width for double chars
+    else:
+        render_ripple_wave(width, height, t)
+    
+    sleep 0.1  # 50ms delay
+
+# Restore cursor and clear screen
+put "\x1b[?25h\x1b[2J\x1b[1;1H"

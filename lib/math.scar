@@ -204,6 +204,31 @@ pub fn atan(float x) -> float:
         i = i + 1
     return result
 
+pub fn atan2(float y, float x) -> float:
+    if x == 0.0:
+        if y > 0.0:
+            return math::PI / 2.0
+        elif y < 0.0:
+            return -math::PI / 2.0
+        else:
+            return 0.0
+    
+    if y == 0.0:
+        if x > 0.0:
+            return 0.0
+        else:
+            return math::PI
+    
+    float ratio = y / x
+    float angle = math::atan(ratio)
+
+    if x > 0.0:
+        return angle
+    elif y >= 0.0:
+        return angle + math::PI
+    else:
+        return angle - math::PI
+
 ## Square root using Newton's method
 ## Will return -1.0 if x < 0.0
 pub fn sqrt(f64 x) -> f64:
