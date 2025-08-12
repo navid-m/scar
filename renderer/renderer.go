@@ -597,7 +597,9 @@ func processMethodArguments(args string) string {
 
 func convertPropertyAccess(expr string) string {
 	logger.Debug("convertPropertyAccess called with: '%s'\n", expr)
-	// Print stack trace to see what's calling this function
+	if strings.Contains(expr, "__get_") && strings.Contains(expr, "_value") {
+		logger.Debug("convertPropertyAccess: DETECTED GET EXPRESSION: '%s'\n", expr)
+	}
 	if strings.Contains(expr, "- >") {
 		logger.Debug("MANGLED ARROW DETECTED! Stack trace:\n")
 		debug.PrintStack()
@@ -656,7 +658,6 @@ func convertPropertyAccess(expr string) string {
 				}
 			}
 
-			// Check if this is an array element access like arr[i] - keep as dot notation
 			if strings.Contains(objectName, "[") && strings.Contains(objectName, "]") {
 				logger.Debug("convertPropertyAccess - detected array element access, keeping dot notation\n")
 				return expr
@@ -1593,16 +1594,12 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 					args      = make([]string, len(variables))
 				)
 				for i, v := range variables {
-					if strings.HasPrefix(v, "get!") {
-						getArgs := v[4:]
-						getArgs = strings.TrimSpace(getArgs[1 : len(getArgs)-1])
-						parts := strings.SplitN(getArgs, ",", 2)
-						if len(parts) == 2 {
-							mapName := strings.TrimSpace(parts[0])
-							key := strings.TrimSpace(parts[1])
-							args[i] = renderMapAccess(mapName, key, program)
+					if strings.Contains(v, "get!") {
+						processedVar := processGetExpressions(v, program)
+						if isMethodCall(processedVar) {
+							args[i] = convertMethodCallToC(processedVar)
 						} else {
-							args[i] = v
+							args[i] = processedVar
 						}
 					} else if isMethodCall(v) {
 						args[i] = convertMethodCallToC(v)
@@ -3242,11 +3239,14 @@ func convertThisReferencesGranular(expr string) string {
 
 // Processes all get! expressions in a string and replaces them with the C code
 func processGetExpressions(expr string, program *lexer.Program) string {
-	re := regexp.MustCompile(`get!\s*\(([^)]+)\)`)
+	logger.Debug("processGetExpressions called with: '%s'\n", expr)
+	re := regexp.MustCompile(`get!\s*\(([^)]+)\)((?:\.[a-zA-Z_][a-zA-Z0-9_]*)*)`)
 	matches := re.FindAllStringSubmatchIndex(expr, -1)
 	if len(matches) == 0 {
+		logger.Debug("processGetExpressions: no matches found\n")
 		return expr
 	}
+	logger.Debug("processGetExpressions: found %d matches\n", len(matches))
 
 	result := expr
 	offset := 0
@@ -3254,6 +3254,11 @@ func processGetExpressions(expr string, program *lexer.Program) string {
 	for _, match := range matches {
 		fullMatch := expr[match[0]:match[1]]
 		argsStr := expr[match[2]:match[3]]
+		var propertyAccess string
+		if len(match) > 4 && match[4] != -1 {
+			propertyAccess = expr[match[4]:match[5]]
+		}
+
 		args := []string{}
 		start := 0
 		parenCount := 0
@@ -3289,6 +3294,12 @@ func processGetExpressions(expr string, program *lexer.Program) string {
 				before  = result[:match[0]+offset]
 				after   = result[match[1]+offset:]
 			)
+
+			if propertyAccess != "" {
+				propertyAccess = strings.ReplaceAll(propertyAccess, ".", "->")
+				cCode = cCode + propertyAccess
+			}
+
 			result = before + cCode + after
 			offset += len(cCode) - len(fullMatch)
 		}
