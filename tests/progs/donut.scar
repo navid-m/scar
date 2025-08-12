@@ -1,0 +1,81 @@
+import "std/os"
+import "std/math"
+
+pub f32 A = 0.0
+pub f32 B = 0.0
+pub allocate f32 z = 1760
+pub allocate i32 b = 1760
+put "\x1b[2J"
+
+while true:
+    for int idx = 0; idx < 1760; idx++:
+        b[idx] = 32
+        z[idx] = 0.0
+    
+    parallel for j_idx = 0 to 89:
+        f32 j = (f32)j_idx * 0.07
+        
+        for idxa = 0 to 314:
+            f32 i = (f32)idxa * 0.02 
+            f32 c = math::sin(i)
+            f32 d = math::cos(j)
+            f32 e = math::sin(A)
+            f32 f = math::sin(j)
+            f32 g = math::cos(A)
+            f32 h = d + 2.0
+            f32 D = 1.0 / (c * h * e + f * g + 5.0)
+            f32 l = math::cos(i)
+            f32 m = math::cos(B)
+            f32 n = math::sin(B)
+            f32 t = c * h * g - f * e
+            
+            int x = 40 + (int)(30.0 * D * (l * h * m - t * n))
+            int y = 12 + (int)(15.0 * D * (l * h * n + t * m))
+            int o = x + 80 * y
+            int N = (int)(8.0 * ((f * e - c * d * g) * m - c * d * e - f * g - l * d * n))
+            
+            if 22 > y && y > 0 && x > 0 && 80 > x && o >= 0 && o < 1760 && D > z[o]:
+                z[o] = D
+                string chars = ".,-~:;=!*#$@"
+                int char_idx = N
+                if char_idx < 0:
+                    char_idx = 0
+                if char_idx >= 12:
+                    char_idx = 11
+                if char_idx == 0:
+                    b[o] = 46   # '.'
+                elif char_idx == 1:
+                    b[o] = 44   # ','
+                elif char_idx == 2:
+                    b[o] = 45   # '-'
+                elif char_idx == 3:
+                    b[o] = 126  # '~'
+                elif char_idx == 4:
+                    b[o] = 58   # ':'
+                elif char_idx == 5:
+                    b[o] = 59   # ';'
+                elif char_idx == 6:
+                    b[o] = 61   # '='
+                elif char_idx == 7:
+                    b[o] = 33   # '!'
+                elif char_idx == 8:
+                    b[o] = 42   # '*'
+                elif char_idx == 9:
+                    b[o] = 35   # '#'
+                elif char_idx == 10:
+                    b[o] = 36  # '$'
+                else:
+                    b[o] = 64   # '@'
+    
+    put "\x1b[H"
+    for int k = 0; k < 1761; k++:
+        if k % 80 == 0 && k > 0:
+            put "\n"
+        else:
+            if k < 1760:
+                put "%c" | (char)b[k]
+        
+        A = A + 0.00004
+        B = B + 0.00002
+    
+    sleep 0.03
