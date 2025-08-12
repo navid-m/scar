@@ -1981,6 +1981,12 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			value = resolveImportedSymbols(value, program.Imports)
 			value = resolveLenFunctionCalls(value)
 
+			if err := checkTypeCompatibility(varName, varType, value); err != nil {
+				fmt.Fprintf(b, "%s// %s\n", indent, err.Error())
+				fmt.Fprintf(b, "%s#error \"%s\"\n", indent, err.Error())
+				continue
+			}
+
 			if strings.HasPrefix(varName, "this.") {
 				fieldName := varName[5:]
 				if stmt.VarDecl.Type == "string" {

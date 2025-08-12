@@ -9,3 +9,5 @@ z = false
 
 i32 a = 5
 i32 b = a
+
+string asdf = 12.0
