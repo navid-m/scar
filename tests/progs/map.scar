@@ -1,8 +1,12 @@
+import "std/random"
+
 class SomeCustomType:
     init:
+        i32 this.x = random::num(0, 100)
+        print "%d" | this.x
         pass
 
-
+var sct = new SomeCustomType()
 map[string: string] some_map = []
 
 put!(some_map, "key1", "value1")
