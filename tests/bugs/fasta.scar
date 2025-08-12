@@ -55,11 +55,6 @@ fn initialize_amino_acids() -> void:
     accumulate_probabilities(iub, 15)
     accumulate_probabilities(homosapiens, 4)
 
-fn min(int a, int b) -> int:
-    if a < b:
-        return a
-    return b
-
 class AminoAcid:
     init(f64 prob, u8 character):
         f64 this.p = prob
