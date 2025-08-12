@@ -1354,6 +1354,37 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 					}
 				}
 
+				firstListType := listType
+				if strings.HasPrefix(listType, "list[") && strings.HasSuffix(listType, "]") {
+					firstListType = extractListInnerType(listType)
+				}
+
+				for i := 1; i < len(stmt.CatList.Lists); i++ {
+					otherList := stmt.CatList.Lists[i]
+					if strings.HasPrefix(otherList, "list_of!(") && strings.HasSuffix(otherList, ")") {
+						continue
+					}
+
+					otherListType := "int"
+					for listName, arrayType := range globalArrays {
+						if listName == otherList {
+							otherListType = arrayType
+							break
+						}
+					}
+
+					if strings.HasPrefix(otherListType, "list[") && strings.HasSuffix(otherListType, "]") {
+						otherListType = extractListInnerType(otherListType)
+					}
+
+					if firstListType != otherListType {
+						err := fmt.Errorf("TypeError: Cannot concatenate lists of different types. '%s' is type '%s' but '%s' is type '%s'", firstList, firstListType, otherList, otherListType)
+						fmt.Fprintf(b, "%s// %s\n", indent, err.Error())
+						fmt.Fprintf(b, "%s#error \"%s\"\n", indent, err.Error())
+						continue
+					}
+				}
+
 				if listType == "string" {
 					fmt.Fprintf(b, "%schar %s[1000][256]; // Concatenated list\n", indent, targetVar)
 					fmt.Fprintf(b, "%sint %s_len = 0;\n", indent, targetVar)
@@ -1423,6 +1454,37 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 					if listName == stmt.CatList.Lists[0] {
 						listType = arrayType
 						break
+					}
+				}
+
+				firstListType := listType
+				if strings.HasPrefix(listType, "list[") && strings.HasSuffix(listType, "]") {
+					firstListType = extractListInnerType(listType)
+				}
+
+				for i := 1; i < len(stmt.CatList.Lists); i++ {
+					otherList := stmt.CatList.Lists[i]
+					if strings.HasPrefix(otherList, "list_of!(") && strings.HasSuffix(otherList, ")") {
+						continue
+					}
+
+					otherListType := "int" // default
+					for listName, arrayType := range globalArrays {
+						if listName == otherList {
+							otherListType = arrayType
+							break
+						}
+					}
+
+					if strings.HasPrefix(otherListType, "list[") && strings.HasSuffix(otherListType, "]") {
+						otherListType = extractListInnerType(otherListType)
+					}
+
+					if firstListType != otherListType {
+						err := fmt.Errorf("TypeError: Cannot concatenate lists of different types. '%s' is type '%s' but '%s' is type '%s'", stmt.CatList.Lists[0], firstListType, otherList, otherListType)
+						fmt.Fprintf(b, "%s// %s\n", indent, err.Error())
+						fmt.Fprintf(b, "%s#error \"%s\"\n", indent, err.Error())
+						continue
 					}
 				}
 
@@ -2181,6 +2243,20 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			value = lexer.ResolveSymbol(value, currentModule)
 			value = fixFloatCastGranular(value)
 			value = convertThisReferencesGranular(value)
+
+			if listType, exists := globalArrays[stmt.IndexAssign.ListName]; exists {
+				innerType := listType
+				if strings.HasPrefix(listType, "list[") && strings.HasSuffix(listType, "]") {
+					innerType = extractListInnerType(listType)
+				}
+				err := checkTypeCompatibility(fmt.Sprintf("%s[%s]", listName, index), innerType, value)
+				if err != nil {
+					fmt.Fprintf(b, "%s// %s\n", indent, err.Error())
+					fmt.Fprintf(b, "%s#error \"%s\"\n", indent, err.Error())
+					continue
+				}
+			}
+
 			fmt.Fprintf(b, "%s%s[%s] = %s;\n", indent, listName, index, value)
 
 		case stmt.ListDecl != nil:
@@ -4362,11 +4438,19 @@ func checkTypeCompatibility(varName, varType, value string) error {
 			return nil
 		}
 
-		return fmt.Errorf("TypeError: Unknown identifier or type for value '%s' when assigning to variable '%s' of type '%s'", value, varName, varType)
+		logger.ErrorAndExit(
+			fmt.Sprintf(
+				"TypeError: Unknown identifier or type for value '%s' when assigning to variable '%s' of type '%s'", value, varName, varType,
+			),
+		)
 	}
 
 	if !areTypesCompatible(varType, valueType) {
-		return fmt.Errorf("TypeError: Cannot assign value of type '%s' to variable '%s' of type '%s'", valueType, varName, varType)
+		logger.ErrorAndExit(
+			fmt.Sprintf(
+				"TypeError: Cannot assign value of type '%s' to variable '%s' of type '%s'", valueType, varName, varType,
+			),
+		)
 	}
 
 	return nil

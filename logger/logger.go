@@ -21,3 +21,11 @@ func Debug(msg string, args ...any) {
 		fmt.Fprintf(os.Stderr, "Debug: %s", msg)
 	}
 }
+
+func ErrorAndExit(msg string, args ...any) {
+	if len(args) > 0 {
+		msg = fmt.Sprintf(msg, args...)
+	}
+	fmt.Fprintf(os.Stderr, "\033[31m%s\033[0m\n", msg)
+	os.Exit(1)
+}
