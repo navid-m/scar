@@ -2942,8 +2942,8 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 
 			varName = convertPropertyAccess(varName)
 
-			fmt.Printf(
-				"Debug: Allocate - original varName: %s, after convertPropertyAccess: %s\n",
+			logger.Debug(
+				"Allocate - original varName: %s, after convertPropertyAccess: %s\n",
 				lexer.ResolveSymbol(stmt.Allocate.Name, currentModule),
 				varName,
 			)
