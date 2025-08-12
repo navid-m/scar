@@ -1,3 +1,9 @@
+// By Navid M (c)
+// Date: 2025
+// License: GPL3
+//
+// Contains logger functionality for the scar programming language.
+
 package logger
 
 import (
