@@ -2709,3 +2709,77 @@ check = check + tree.item_check()
 		t.Errorf("Expected method declaration '%s' not found. Generated code:\n%s", expectedMethodDecl, result)
 	}
 }
+
+func TestObjectInstantiation(t *testing.T) {
+	program := &lexer.Program{
+		Statements: []*lexer.Statement{
+			{
+				ClassDecl: &lexer.ClassDeclStmt{
+					Name: "TestClass",
+					Constructor: &lexer.ConstructorStmt{
+						Parameters: []*lexer.MethodParameter{},
+						Fields: []*lexer.Statement{
+							{
+								Print: &lexer.PrintStmt{
+									Print: "Constructor called",
+								},
+							},
+						},
+					},
+					Methods: []*lexer.MethodDeclStmt{},
+				},
+			},
+			{
+				VarDecl: &lexer.VarDeclStmt{
+					Name:  "obj1",
+					Type:  "TestClass",
+					Value: "new TestClass()",
+				},
+			},
+			{
+				NewExpr: &lexer.NewExprStmt{
+					ClassName: "TestClass",
+					Args:      []string{},
+				},
+			},
+			{
+				ListDecl: &lexer.ListDeclStmt{
+					Type:     "TestClass",
+					Name:     "objects",
+					Elements: []string{"new TestClass()", "new TestClass()"},
+				},
+			},
+		},
+	}
+
+	cCode := RenderC(program, "", false)
+	expectedConstructor := "TestClass* TestClass_new()"
+	if !strings.Contains(cCode, expectedConstructor) {
+		t.Errorf("Expected constructor declaration '%s' not found in generated code", expectedConstructor)
+	}
+	expectedVarAssign := "TestClass* obj1 = TestClass_new();"
+	normalizedCCode := strings.Join(strings.Fields(cCode), " ")
+	normalizedVarAssign := strings.Join(strings.Fields(expectedVarAssign), " ")
+
+	if !strings.Contains(normalizedCCode, normalizedVarAssign) {
+		t.Errorf("Expected variable assignment '%s' not found in generated code", expectedVarAssign)
+	}
+	expectedStandalone := "TestClass_new();"
+	if !strings.Contains(normalizedCCode, expectedStandalone) {
+		t.Errorf("Expected standalone new expression '%s' not found in generated code", expectedStandalone)
+	}
+
+	var (
+		expectedListElement1   = "objects[0] = TestClass_new();"
+		expectedListElement2   = "objects[1] = TestClass_new();"
+		normalizedListElement1 = strings.Join(strings.Fields(expectedListElement1), " ")
+		normalizedListElement2 = strings.Join(strings.Fields(expectedListElement2), " ")
+	)
+
+	if !strings.Contains(normalizedCCode, normalizedListElement1) {
+		t.Errorf("Expected list element assignment '%s' not found in generated code", expectedListElement1)
+	}
+	if !strings.Contains(normalizedCCode, normalizedListElement2) {
+		t.Errorf("Expected list element assignment '%s' not found in generated code", expectedListElement2)
+	}
+}

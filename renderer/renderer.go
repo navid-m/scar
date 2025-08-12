@@ -1995,6 +1995,7 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 					if isFunctionCall(value) {
 						value = resolveFunctionCall(value)
 					}
+					value = convertNewToConstructor(value)
 					cType := mapTypeToCType(varType)
 					fmt.Fprintf(b, "%s%s %s = %s;\n", indent, cType, varName, value)
 				}
