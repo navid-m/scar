@@ -677,8 +677,10 @@ func isValidMapType(mapContent string) bool {
 		return false
 	}
 
-	keyType := strings.TrimSpace(mapContent[:colonPos])
-	valueType := strings.TrimSpace(mapContent[colonPos+1:])
+	var (
+		keyType   = strings.TrimSpace(mapContent[:colonPos])
+		valueType = strings.TrimSpace(mapContent[colonPos+1:])
+	)
 
 	if keyType == "" || valueType == "" {
 		return false
