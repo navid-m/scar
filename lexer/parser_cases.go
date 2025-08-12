@@ -655,6 +655,10 @@ func parseMethodStatement(lines []string, lineNum, currentIndent int) (*MethodDe
 	}
 
 	methodName := strings.TrimSpace(signature[:parenStart])
+	if methodName == "new" {
+		return nil, lineNum + 1, fmt.Errorf("method name 'new' is reserved and cannot be used in class at line %d", lineNum+1)
+	}
+
 	parenEnd := strings.Index(signature, ")")
 	if parenEnd == -1 || parenEnd <= parenStart {
 		return nil, lineNum + 1, fmt.Errorf("method declaration missing closing parenthesis at line %d", lineNum+1)
