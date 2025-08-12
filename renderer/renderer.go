@@ -925,8 +925,10 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 		for _, stmt := range classDecl.Constructor.Fields {
 			switch {
 			case stmt.MapDecl != nil && strings.HasPrefix(stmt.MapDecl.Name, "this."):
-				fieldName := strings.TrimPrefix(stmt.MapDecl.Name, "this.")
-				mapSize := len(stmt.MapDecl.Pairs)
+				var (
+					fieldName = strings.TrimPrefix(stmt.MapDecl.Name, "this.")
+					mapSize   = len(stmt.MapDecl.Pairs)
+				)
 
 				// Set initial capacity - use a reasonable default for empty maps
 				initialCapacity := 10
