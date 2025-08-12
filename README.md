@@ -15,7 +15,7 @@ Prioritizes:
 
 #### Resources
 
-Complete documentation is available [here](https://scarlang-docs.pages.dev).
+Documentation is available [here](https://scarlang-docs.pages.dev).
 
 The VSCode extension is available [here](https://marketplace.visualstudio.com/items?itemName=NavidM.scar).
 
