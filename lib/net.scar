@@ -1,0 +1,126 @@
+## VERY basic. Will wrap libcurl in the future.
+
+import "std/strings"
+
+pub fn url_encode(string input) -> string:
+    if input == "":
+        return ""
+    string result = ""
+    for i = 0 to strings::length(input) - 1:
+        string c = input[i]
+        int ascii_val = strings::ord_char(c)
+        if (ascii_val >= 48 and ascii_val <= 57) or (ascii_val >= 65 and ascii_val <= 90) or (ascii_val >= 97 and ascii_val <= 122) or strings::equal(c, '-') or strings::equal(c, '_') or strings::equal(c, '.') or strings::equal(c, '~'):
+            result = cat!(result, c)
+        else:
+            string hex = ""
+            if ascii_val < 16:
+                hex = fmt!("%s%s", "0", strings::to_hex(ascii_val))
+            else:
+                hex = strings::to_hex(ascii_val)
+            result = fmt!("%s%s%s", result, "%", hex)
+    print "%s" | result
+    return result
+
+## URL decode a string
+pub fn url_decode(string input) -> string:
+    $raw (
+        #include <stdio.h>
+        #include <stdlib.h>
+        #include <string.h>
+        #include <ctype.h>
+        
+        int input_len = strlen(input);
+        char *output = malloc(input_len + 1);
+        if (output == NULL) {
+            return strdup("");
+        }
+        
+        char *ptr = output;
+        
+        for (int i = 0; i < input_len; i++) {
+            if (input[i] == '%' && i + 2 < input_len) {
+                int hex_val;
+                if (sscanf(&input[i + 1], "%2x", &hex_val) == 1) {
+                    *ptr++ = (char)hex_val;
+                    i += 2;
+                } else {
+                    *ptr++ = input[i];
+                }
+            } else if (input[i] == '+') {
+                *ptr++ = ' ';
+            } else {
+                *ptr++ = input[i];
+            }
+        }
+        *ptr = '\0';
+        
+        return output;
+    )
+
+## Simple HTTP GET request using system curl command
+pub fn http_get(string url) -> string:
+    $raw (
+        #include <stdio.h>
+        #include <stdlib.h>
+        #include <string.h>
+        
+        char *result = malloc(8192);
+        char command[512];
+        
+        snprintf(command, sizeof(command), "curl -s \"%s\"", url);
+        
+        FILE *fp = popen(command, "r");
+        if (fp == NULL) {
+            strcpy(result, "Error: curl command failed or not available");
+            return result;
+        }
+        
+        char buffer[1024];
+        result[0] = '\0';
+        
+        while (fgets(buffer, sizeof(buffer), fp) != NULL) {
+            strcat(result, buffer);
+        }
+        
+        pclose(fp);
+        
+        if (strlen(result) == 0) {
+            strcpy(result, "No response received");
+        }
+        
+        return result;
+    )
+
+## Simple HTTP POST request using system curl command
+pub fn http_post(string url, string data) -> string:
+    $raw (
+        #include <stdio.h>
+        #include <stdlib.h>
+        #include <string.h>
+        
+        char *result = malloc(8192);
+        char command[1024];
+        
+        snprintf(command, sizeof(command), "curl -s -X POST -d \"%s\" \"%s\"", data, url);
+        
+        FILE *fp = popen(command, "r");
+        if (fp == NULL) {
+            strcpy(result, "Error: curl command failed or not available");
+            return result;
+        }
+        
+        char buffer[1024];
+        result[0] = '\0';
+        
+        while (fgets(buffer, sizeof(buffer), fp) != NULL) {
+            strcat(result, buffer);
+        }
+        
+        pclose(fp);
+        
+        if (strlen(result) == 0) {
+            strcpy(result, "No response received");
+        }
+        
+        return result;
+    )

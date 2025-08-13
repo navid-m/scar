@@ -99,3 +99,39 @@ pub fn ends_with(string str, string suffix) -> bool:
         
         return strcmp(str + str_len - suffix_len, suffix) == 0;
     )
+
+pub fn contains(string str, string substring) -> bool:
+    $raw (
+        if (str == NULL || substring == NULL) {
+            return false;
+        }
+        return strstr(str, substring) != NULL;
+    )
+
+pub fn to_hex(int value) -> char*:
+    $raw (
+        char *result = malloc(16);
+        if (result == NULL) {
+            return strdup("");
+        }
+        
+        if (value < 0) {
+            strcpy(result, "0");
+            return result;
+        }
+        
+        sprintf(result, "%X", value);
+        return result;
+    )
+
+pub fn equal(string a, string b) -> bool:
+    $raw (
+        if (a == NULL && b == NULL) {
+            return true;
+        }
+        if (a == NULL || b == NULL) {
+            return false;
+        }
+        
+        return strcmp(a, b) == 0;
+    )
