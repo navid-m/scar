@@ -2566,11 +2566,13 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			fmt.Fprintf(b, "%s    fclose(%s);\n", indent, fpVarName)
 			fmt.Fprintf(b, "%s}\n", indent)
 		case stmt.MethodCall != nil:
-			objectName := stmt.MethodCall.Object
-			methodName := stmt.MethodCall.Method
-			rawArgs := stmt.MethodCall.Args
-			reconstructedArgs := make([]string, 0, len(rawArgs))
-			i := 0
+			var (
+				objectName        = stmt.MethodCall.Object
+				methodName        = stmt.MethodCall.Method
+				rawArgs           = stmt.MethodCall.Args
+				reconstructedArgs = make([]string, 0, len(rawArgs))
+				i                 = 0
+			)
 
 			for i < len(rawArgs) {
 				arg := rawArgs[i]
