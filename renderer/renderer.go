@@ -2239,9 +2239,12 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				}
 			}
 		case stmt.IndexAssign != nil:
-			listName := lexer.ResolveSymbol(stmt.IndexAssign.ListName, currentModule)
-			index := stmt.IndexAssign.Index
-			value := stmt.IndexAssign.Value
+			var (
+				listName = lexer.ResolveSymbol(stmt.IndexAssign.ListName, currentModule)
+				index    = stmt.IndexAssign.Index
+				value    = stmt.IndexAssign.Value
+			)
+
 			index = lexer.ResolveSymbol(index, currentModule)
 			value = lexer.ResolveSymbol(value, currentModule)
 			value = fixFloatCastGranular(value)
@@ -2267,11 +2270,9 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			listName := lexer.ResolveSymbol(stmt.ListDecl.Name, currentModule)
 			globalArrays[stmt.ListDecl.Name] = stmt.ListDecl.Type
 
-			// Handle complex nested types
 			if isComplexCollectionType(listType) {
 				renderComplexListDecl(b, stmt.ListDecl, indent, currentModule)
 			} else {
-				// Traditional simple list handling
 				cListType := mapTypeToCType(listType)
 				if len(stmt.ListDecl.Elements) == 1 && !strings.Contains(stmt.ListDecl.Elements[0], ",") &&
 					!strings.HasPrefix(stmt.ListDecl.Elements[0], "\"") && !strings.HasSuffix(stmt.ListDecl.Elements[0], "\"") &&
@@ -2429,7 +2430,6 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 					reconstructedValue = fmt.Sprintf("%s.%s(%s)", objectName, methodName, argsStr)
 				}
 
-				// Apply the same transformations as VarAssign
 				reconstructedValue = fixFloatCastGranular(reconstructedValue)
 				reconstructedValue = convertThisReferencesGranular(reconstructedValue)
 				reconstructedValue = convertNewToConstructor(reconstructedValue)
