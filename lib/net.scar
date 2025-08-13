@@ -1,7 +1,8 @@
-## VERY basic. Will wrap libcurl in the future.
+## Cross-platform networking library using system calls
 
 import "std/strings"
 
+## URL encode a string
 pub fn url_encode(string input) -> char*:
     $raw (
         char *encodedText = (char*)malloc(sizeof(char)*strlen(input)*3+1);
@@ -10,7 +11,8 @@ pub fn url_encode(string input) -> char*:
         for (int i = 0; i < strlen(input); i++) {
             if (('a' <= input[i] && input[i] <= 'z')
                 || ('A' <= input[i] && input[i] <= 'Z')
-                || ('0' <= input[i] && input[i] <= '9')) {
+                || ('0' <= input[i] && input[i] <= '9')
+                || input[i] == '-' || input[i] == '_' || input[i] == '.' || input[i] == '~') {
                     encodedText[pos++] = input[i];
                 } else {
                     encodedText[pos++] = '%';
@@ -26,51 +28,52 @@ pub fn url_encode(string input) -> char*:
 pub fn url_decode(char* str) -> char*:
     $raw (
         int d = 0;
-
         char *dStr = malloc(strlen(str) + 1);
         char eStr[] = "00";
-      
         strcpy(dStr, str);
-      
         while(!d) {
-          d = 1;
-          int i;
-          for(i=0;i<strlen(dStr);++i) {
-            if(dStr[i] == '%') {
-              if(dStr[i+1] == 0)
-                return dStr;  
-              if(isxdigit(dStr[i+1]) && isxdigit(dStr[i+2])) {
-    
-                d = 0;      
-                eStr[0] = dStr[i+1];
-                eStr[1] = dStr[i+2];
-      
-                long int x = strtol(eStr, NULL, 16);
-                memmove(&dStr[i+1], &dStr[i+3], strlen(&dStr[i+3])+1);
-                dStr[i] = x;
-              }
+            d = 1;
+            int i;
+            for(i=0;i<strlen(dStr);++i) {
+                if(dStr[i] == '%') {
+                    if(dStr[i+1] == 0)
+                        return dStr;  
+                    if(isxdigit(dStr[i+1]) && isxdigit(dStr[i+2])) {
+                        d = 0;      
+                        eStr[0] = dStr[i+1];
+                        eStr[1] = dStr[i+2];
+                        long int x = strtol(eStr, NULL, 16);
+                        memmove(&dStr[i+1], &dStr[i+3], strlen(&dStr[i+3])+1);
+                        dStr[i] = x;
+                    }
+                }
             }
-          }
         }
     )
     return strings::replace(dStr, "+", " ")
 
-## Simple HTTP GET request using system curl command
-pub fn http_get(string url) -> string:
-    $raw (
-        #include <stdio.h>
-        #include <stdlib.h>
-        #include <string.h>
+pub class HttpResponse:
+    init:
+        i32 this.status_code = 0
+        string this.body = ""
+        string this.error = ""
+
+## HTTP GET request using cross-platform system approach
+pub fn http_get(string url) -> net::HttpResponse:
+    $raw (        
+        net_HttpResponse* response = net_HttpResponse_new();
         
         char *result = malloc(8192);
         char command[512];
         
-        snprintf(command, sizeof(command), "curl -s \"%s\"", url);
+        snprintf(command, sizeof(command), "curl -s -w \"%%{http_code}\" \"%s\"", url);
         
         FILE *fp = popen(command, "r");
         if (fp == NULL) {
-            strcpy(result, "Error: curl command failed or not available");
-            return result;
+            strcpy(response->error, "curl command failed or not available");
+            response->status_code = 0;
+            free(result);
+            return response;
         }
         
         char buffer[1024];
@@ -80,31 +83,44 @@ pub fn http_get(string url) -> string:
             strcat(result, buffer);
         }
         
-        pclose(fp);
+        int exit_code = pclose(fp);
         
-        if (strlen(result) == 0) {
-            strcpy(result, "No response received");
+        if (strlen(result) >= 3) {
+            // Extract status code from end of response
+            char status_str[4];
+            strcpy(status_str, result + strlen(result) - 3);
+            response->status_code = atoi(status_str);
+            
+            // Remove status code from body
+            result[strlen(result) - 3] = '\0';
+            strncpy(response->body, result, 255);
+            response->body[255] = '\0';
+        } else {
+            strcpy(response->error, "Invalid response from server");
+            response->status_code = 0;
         }
         
-        return result;
+        free(result);
+        return response;
     )
 
-## Simple HTTP POST request using system curl command
-pub fn http_post(string url, string data) -> string:
+## HTTP POST request using cross-platform system approach  
+pub fn http_post(string url, string data) -> net::HttpResponse:
     $raw (
-        #include <stdio.h>
-        #include <stdlib.h>
-        #include <string.h>
+        net_HttpResponse* response = net_HttpResponse_new();
         
         char *result = malloc(8192);
-        char command[1024];
+        char *command = malloc(1024 + strlen(data));
         
-        snprintf(command, sizeof(command), "curl -s -X POST -d \"%s\" \"%s\"", data, url);
+        snprintf(command, 1024 + strlen(data), "curl -s -w \"%%{http_code}\" -X POST -d \"%s\" \"%s\"", data, url);
         
         FILE *fp = popen(command, "r");
         if (fp == NULL) {
-            strcpy(result, "Error: curl command failed or not available");
-            return result;
+            strcpy(response->error, "curl command failed or not available");
+            response->status_code = 0;
+            free(result);
+            free(command);
+            return response;
         }
         
         char buffer[1024];
@@ -116,9 +132,130 @@ pub fn http_post(string url, string data) -> string:
         
         pclose(fp);
         
-        if (strlen(result) == 0) {
-            strcpy(result, "No response received");
+        if (strlen(result) >= 3) {
+            char status_str[4];
+            strcpy(status_str, result + strlen(result) - 3);
+            response->status_code = atoi(status_str);
+            
+            result[strlen(result) - 3] = '\0';
+            strncpy(response->body, result, 255);
+            response->body[255] = '\0';
+        } else {
+            strcpy(response->error, "Invalid response from server");
+            response->status_code = 0;
         }
         
-        return result;
+        free(result);
+        free(command);
+        return response;
+    )
+
+## HTTP PUT request
+pub fn http_put(string url, string data) -> net::HttpResponse:
+    $raw (
+        net_HttpResponse* response = net_HttpResponse_new();
+        
+        char *result = malloc(8192);
+        char *command = malloc(1024 + strlen(data));
+        
+        snprintf(command, 1024 + strlen(data), "curl -s -w \"%%{http_code}\" -X PUT -d \"%s\" \"%s\"", data, url);
+        
+        FILE *fp = popen(command, "r");
+        if (fp == NULL) {
+            strcpy(response->error, "curl command failed or not available");
+            response->status_code = 0;
+            free(result);
+            free(command);
+            return response;
+        }
+        
+        char buffer[1024];
+        result[0] = '\0';
+        
+        while (fgets(buffer, sizeof(buffer), fp) != NULL) {
+            strcat(result, buffer);
+        }
+        
+        pclose(fp);
+        
+        if (strlen(result) >= 3) {
+            char status_str[4];
+            strcpy(status_str, result + strlen(result) - 3);
+            response->status_code = atoi(status_str);
+            
+            result[strlen(result) - 3] = '\0';
+            strncpy(response->body, result, 255);
+            response->body[255] = '\0';
+        } else {
+            strcpy(response->error, "Invalid response from server");
+            response->status_code = 0;
+        }
+        
+        free(result);
+        free(command);
+        return response;
+    )
+
+## HTTP DELETE request
+pub fn http_delete(string url) -> net::HttpResponse:
+    $raw (
+        net_HttpResponse* response = net_HttpResponse_new();
+        
+        char *result = malloc(8192);
+        char command[512];
+        
+        snprintf(command, sizeof(command), "curl -s -w \"%%{http_code}\" -X DELETE \"%s\"", url);
+        
+        FILE *fp = popen(command, "r");
+        if (fp == NULL) {
+            strcpy(response->error, "curl command failed or not available");
+            response->status_code = 0;
+            free(result);
+            return response;
+        }
+        
+        char buffer[1024];
+        result[0] = '\0';
+        
+        while (fgets(buffer, sizeof(buffer), fp) != NULL) {
+            strcat(result, buffer);
+        }
+        
+        pclose(fp);
+        
+        if (strlen(result) >= 3) {
+            char status_str[4];
+            strcpy(status_str, result + strlen(result) - 3);
+            response->status_code = atoi(status_str);
+            
+            result[strlen(result) - 3] = '\0';
+            strncpy(response->body, result, 255);
+            response->body[255] = '\0';
+        } else {
+            strcpy(response->error, "Invalid response from server");
+            response->status_code = 0;
+        }
+        
+        free(result);
+        return response;
+    )
+
+## Download a file from URL to local path
+pub fn download_file(string url, string filepath) -> bool:
+    $raw (
+        char command[1024];
+        snprintf(command, sizeof(command), "curl -s -o \"%s\" \"%s\"", filepath, url);
+        
+        int result = system(command);
+        return (result == 0);
+    )
+
+## Simple function to check if a URL is reachable
+pub fn ping_url(string url) -> bool:
+    $raw (
+        char command[512];
+        snprintf(command, sizeof(command), "curl -s --head \"%s\" > /dev/null 2>&1", url);
+        
+        int result = system(command);
+        return (result == 0);
     )
