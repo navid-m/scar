@@ -1,4 +1,4 @@
-## Cross-platform networking library using system calls
+## VERY basic. Will wrap libcurl in the future.
 
 import "std/strings"
 
