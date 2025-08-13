@@ -100,7 +100,6 @@ func RenderC(program *lexer.Program, baseDir string, gcFlag bool) string {
 			}
 			globalFunctions[stmt.PubTopLevelFuncDecl.Name] = topLevelFunc
 		}
-		// Handle enum declarations
 		if stmt.EnumDecl != nil {
 			enumInfo := &EnumInfo{
 				Name:   stmt.EnumDecl.Name,
@@ -108,7 +107,6 @@ func RenderC(program *lexer.Program, baseDir string, gcFlag bool) string {
 			}
 			globalEnums[stmt.EnumDecl.Name] = enumInfo
 		}
-		// Handle public enum declarations
 		if stmt.PubEnumDecl != nil {
 			enumInfo := &EnumInfo{
 				Name:   stmt.PubEnumDecl.Name,
@@ -123,6 +121,7 @@ func RenderC(program *lexer.Program, baseDir string, gcFlag bool) string {
 			collectClassInfoWithModule(classDecl, module.Name)
 		}
 	}
+
 	for _, enumInfo := range globalEnums {
 		b.WriteString("typedef enum {\n")
 		for i, value := range enumInfo.Values {
