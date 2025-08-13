@@ -1050,7 +1050,6 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 
 	b.WriteString("    return this;\n}\n\n")
 
-	// Generate instance map access helper functions after constructor
 	if classDecl.Constructor != nil {
 		for _, stmt := range classDecl.Constructor.Fields {
 			if stmt.MapDecl != nil && strings.HasPrefix(stmt.MapDecl.Name, "this.") {
@@ -1158,7 +1157,6 @@ func generateInstanceMapAccessHelper(b *strings.Builder, className, fieldName, k
 	fmt.Fprintf(b, "}\n\n")
 }
 
-// New helper function for instance map put:
 func generateInstanceMapPutHelper(b *strings.Builder, className, fieldName, keyType, valueType string) {
 	cKeyType := mapTypeToCType(keyType)
 	if keyType == "string" {
@@ -3624,7 +3622,6 @@ func convertMethodCallToC(expr string) string {
 	return result
 }
 
-// Generates a function for map access
 func generateMapAccessHelper(b *strings.Builder, mapName, keyType, valueType string) {
 	helperName := fmt.Sprintf("__get_%s_value", mapName)
 	var cKeyType string
@@ -3637,7 +3634,6 @@ func generateMapAccessHelper(b *strings.Builder, mapName, keyType, valueType str
 		cKeyType = mapTypeToCType(keyType)
 	}
 
-	// Handle value type conversion - for return type
 	var cValueType string
 	switch valueType {
 	case "string":
@@ -3651,22 +3647,16 @@ func generateMapAccessHelper(b *strings.Builder, mapName, keyType, valueType str
 	fmt.Fprintf(b, "%s %s(%s key) {\n", cValueType, helperName, cKeyType)
 	fmt.Fprintf(b, "    for (int i = 0; i < %s_size; i++) {\n", mapName)
 
-	// Key comparison
 	if keyType == "string" {
-		// String key comparison
 		fmt.Fprintf(b, "        if (strcmp(%s_keys[i], key) == 0) {\n", mapName)
 	} else {
-		// Numeric or char key comparison
 		fmt.Fprintf(b, "        if (%s_keys[i] == key) {\n", mapName)
 	}
 
-	// Return value - for string values, x_values[i] is already char*
 	fmt.Fprintf(b, "            return %s_values[i];\n", mapName)
-
 	fmt.Fprintf(b, "        }\n")
 	fmt.Fprintf(b, "    }\n")
 
-	// Default return value
 	switch valueType {
 	case "string":
 		fmt.Fprintf(b, "    return \"\";\n")
