@@ -2662,6 +2662,28 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 					fmt.Fprintf(b, "%s%s_%s(this, %s);\n", indent, resolvedClassName, methodName, argsStr)
 				}
 			} else {
+				if strings.HasPrefix(objectName, "new_") && strings.Contains(objectName, "(") {
+					newPrefix := objectName[4:]
+					parenPos := strings.Index(newPrefix, "(")
+					if parenPos != -1 {
+						className := newPrefix[:parenPos]
+						constructorArgs := newPrefix[parenPos+1 : len(newPrefix)-1]
+						var constructorCall string
+						if constructorArgs == "" {
+							constructorCall = fmt.Sprintf("%s_new()", className)
+						} else {
+							constructorCall = fmt.Sprintf("%s_new(%s)", className, constructorArgs)
+						}
+
+						if argsStr == "" {
+							fmt.Fprintf(b, "%s%s_%s(%s);\n", indent, className, methodName, constructorCall)
+						} else {
+							fmt.Fprintf(b, "%s%s_%s(%s, %s);\n", indent, className, methodName, constructorCall, argsStr)
+						}
+						continue
+					}
+				}
+
 				objectName = lexer.ResolveSymbol(objectName, currentModule)
 				var resolvedClassName string
 				for _, obj := range globalObjects {

@@ -2075,15 +2075,80 @@ func parseNewExprStatement(line string, lineNum int) (*Statement, int, error) {
 		return nil, lineNum, fmt.Errorf("invalid new expression: %s", line)
 	}
 
+	parenDepth := 0
+	closingParenPos := -1
+	for i := parenPos; i < len(expr); i++ {
+		if expr[i] == '(' {
+			parenDepth++
+		} else if expr[i] == ')' {
+			parenDepth--
+			if parenDepth == 0 {
+				closingParenPos = i
+				break
+			}
+		}
+	}
+
+	if closingParenPos == -1 {
+		return nil, lineNum, fmt.Errorf("invalid new expression, missing closing parenthesis: %s", line)
+	}
+
 	className := strings.TrimSpace(expr[:parenPos])
 	if className == "" {
 		return nil, lineNum, fmt.Errorf("missing class name in new expression: %s", line)
 	}
-	argsStr := expr[parenPos+1 : len(expr)-1]
+	argsStr := expr[parenPos+1 : closingParenPos]
 	args := []string{}
 	if strings.TrimSpace(argsStr) != "" {
 		args = splitRespectingQuotes(argsStr)
 	}
+
+	remaining := strings.TrimSpace(expr[closingParenPos+1:])
+	if strings.HasPrefix(remaining, ".") {
+		methodCall := remaining[1:] // Remove the dot
+		methodParenPos := strings.Index(methodCall, "(")
+		if methodParenPos == -1 {
+			return nil, lineNum, fmt.Errorf("invalid method call after new expression: %s", line)
+		}
+
+		methodName := strings.TrimSpace(methodCall[:methodParenPos])
+		if methodName == "" {
+			return nil, lineNum, fmt.Errorf("missing method name in chained call: %s", line)
+		}
+
+		methodParenDepth := 0
+		methodClosingParenPos := -1
+		for i := methodParenPos; i < len(methodCall); i++ {
+			if methodCall[i] == '(' {
+				methodParenDepth++
+			} else if methodCall[i] == ')' {
+				methodParenDepth--
+				if methodParenDepth == 0 {
+					methodClosingParenPos = i
+					break
+				}
+			}
+		}
+
+		if methodClosingParenPos == -1 {
+			return nil, lineNum, fmt.Errorf("invalid method call, missing closing parenthesis: %s", line)
+		}
+
+		methodArgsStr := methodCall[methodParenPos+1 : methodClosingParenPos]
+		methodArgs := []string{}
+		if strings.TrimSpace(methodArgsStr) != "" {
+			methodArgs = splitRespectingQuotes(methodArgsStr)
+		}
+
+		tempObjectName := fmt.Sprintf("new_%s(%s)", className, strings.Join(args, ", "))
+
+		return &Statement{MethodCall: &MethodCallStmt{
+			Object: tempObjectName,
+			Method: methodName,
+			Args:   methodArgs,
+		}}, lineNum + 1, nil
+	}
+
 	return &Statement{NewExpr: &NewExprStmt{
 		ClassName: className,
 		Args:      args,

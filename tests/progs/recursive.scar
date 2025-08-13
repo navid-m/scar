@@ -25,5 +25,4 @@ class RecursiveMadness:
             return 0
         return x % 4 + 2  # something bounded but dynamic
 
-var insane = new RecursiveMadness()
-insane.start(6)
+new RecursiveMadness().start(6)
