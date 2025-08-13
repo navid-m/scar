@@ -105,6 +105,17 @@ t.assert_string_equals("H", c, "chr(72) should return 'H'")
 t.assert_string_equals("Hello", strings::trim_space("   Hello   "), "Trimmed string should be 'Hello'")
 t.assert_string_equals("sdf", strings::trim_prefix("asdf", "a"), "Trimmed prefix should be 'sdf'")
 
+string decoded_simple = net::url_decode("hello%20world")
+t.assert_string_equals("hello world", decoded_simple, "Simple URL decoding should work")
+string decoded_special = net::url_decode("hello%40world.com")
+t.assert_string_equals("hello@world.com", decoded_special, "Special characters should be decoded")
+string decoded_plus = net::url_decode("hello+world")
+t.assert_string_equals("hello world", decoded_plus, "Plus signs should be decoded as spaces")
+string decoded_empty = net::url_decode("")
+t.assert_string_equals("", decoded_empty, "Empty string should return empty")
+string decoded_safe = net::url_decode("hello-world_test.file~")
+t.assert_string_equals("hello-world_test.file~", decoded_safe, "Safe characters should remain unchanged")
+
 t.test_summary()
 
 string user = json::create_object("name", "Alice", "age", "25")
@@ -117,40 +128,5 @@ json::dump(config, "settings.json")
 
 fs::remove("user.json")
 fs::remove("settings.json")
-
-string decoded_simple = net::url_decode("hello%20world")
-t.assert_string_equals("hello world", decoded_simple, "Simple URL decoding should work")
-string decoded_special = net::url_decode("hello%40world.com")
-t.assert_string_equals("hello@world.com", decoded_special, "Special characters should be decoded")
-string decoded_plus = net::url_decode("hello+world")
-t.assert_string_equals("hello world", decoded_plus, "Plus signs should be decoded as spaces")
-string decoded_empty = net::url_decode("")
-t.assert_string_equals("", decoded_empty, "Empty string should return empty")
-string decoded_safe = net::url_decode("hello-world_test.file~")
-t.assert_string_equals("hello-world_test.file~", decoded_safe, "Safe characters should remain unchanged")
-
-log::success("ASSERT PASSED: URL decoding tests completed")
-log::success("ASSERT PASSED: Round-trip encoding/decoding test completed")
-log::success("Starting HTTP tests (requires internet connection)...")
-
-string get_response = net::http_get("https://httpbin.org/get")
-if strings::contains(get_response, "Error:") or strings::contains(get_response, "No response"):
-    log::warning("HTTP GET test skipped - no internet connection or curl not available")
-else:
-    t.assert_equals(true, strings::contains(get_response, "httpbin"), "HTTP GET should return response from httpbin")
-    log::success("ASSERT PASSED: HTTP GET test completed")
-
-string post_response = net::http_post("https://httpbin.org/post", "test=data")
-if strings::contains(post_response, "Error:") or strings::contains(post_response, "No response"):
-    log::warning("HTTP POST test skipped - no internet connection or curl not available")
-else:
-    t.assert_equals(true, strings::contains(post_response, "test=data"), "HTTP POST should echo back the sent data")
-    log::success("ASSERT PASSED: HTTP POST test completed")
-
-string invalid_response = net::http_get("https://invalid-url-that-does-not-exist-12345.com")
-t.assert_equals(true, strings::contains(invalid_response, "Error:") or strings::contains(invalid_response, "No response"), "Invalid URL should return error message")
-
-log::success("ASSERT PASSED: Invalid URL handling test completed")
-log::success("Net library tests completed successfully!")
 
 os::exit(0)

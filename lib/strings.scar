@@ -135,3 +135,48 @@ pub fn equal(string a, string b) -> bool:
         
         return strcmp(a, b) == 0;
     )
+
+pub fn replace(string str, string old_substr, string new_substr) -> char*:
+    $raw (
+        if (str == NULL || old_substr == NULL || new_substr == NULL) {
+            return str ? strdup(str) : strdup("");
+        }
+        
+        int old_len = strlen(old_substr);
+        int new_len = strlen(new_substr);
+        int str_len = strlen(str);
+        
+        if (old_len == 0) {
+            return strdup(str);
+        }
+        int count = 0;
+        char *temp = str;
+        while ((temp = strstr(temp, old_substr)) != NULL) {
+            count++;
+            temp += old_len;
+        }
+        
+        if (count == 0) {
+            return strdup(str);
+        }
+        
+        int result_len = str_len + count * (new_len - old_len);
+        char *result = malloc(result_len + 1);
+        if (result == NULL) {
+            return strdup("");
+        }
+        
+        char *src = str;
+        char *dst = result;
+        
+        while ((temp = strstr(src, old_substr)) != NULL) {
+            int prefix_len = temp - src;
+            strncpy(dst, src, prefix_len);
+            dst += prefix_len;
+            strcpy(dst, new_substr);
+            dst += new_len;
+            src = temp + old_len;
+        }        
+        strcpy(dst, src);
+        return result;
+    )

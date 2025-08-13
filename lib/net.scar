@@ -2,60 +2,58 @@
 
 import "std/strings"
 
-pub fn url_encode(string input) -> string:
-    if input == "":
-        return ""
-    string result = ""
-    for i = 0 to strings::length(input) - 1:
-        string c = input[i]
-        int ascii_val = strings::ord_char(c)
-        if (ascii_val >= 48 and ascii_val <= 57) or (ascii_val >= 65 and ascii_val <= 90) or (ascii_val >= 97 and ascii_val <= 122) or strings::equal(c, '-') or strings::equal(c, '_') or strings::equal(c, '.') or strings::equal(c, '~'):
-            result = cat!(result, c)
-        else:
-            string hex = ""
-            if ascii_val < 16:
-                hex = fmt!("%s%s", "0", strings::to_hex(ascii_val))
-            else:
-                hex = strings::to_hex(ascii_val)
-            result = fmt!("%s%s%s", result, "%", hex)
-    print "%s" | result
-    return result
+pub fn url_encode(string input) -> char*:
+    $raw (
+        char *encodedText = (char*)malloc(sizeof(char)*strlen(input)*3+1);
+        const char *hex = "0123456789abcdef";
+        int pos = 0;
+        for (int i = 0; i < strlen(input); i++) {
+            if (('a' <= input[i] && input[i] <= 'z')
+                || ('A' <= input[i] && input[i] <= 'Z')
+                || ('0' <= input[i] && input[i] <= '9')) {
+                    encodedText[pos++] = input[i];
+                } else {
+                    encodedText[pos++] = '%';
+                    encodedText[pos++] = hex[input[i] >> 4];
+                    encodedText[pos++] = hex[input[i] & 15];
+                }
+        }
+        encodedText[pos] = '\0';
+        return encodedText;
+    )
 
 ## URL decode a string
-pub fn url_decode(string input) -> string:
+pub fn url_decode(char* str) -> char*:
     $raw (
-        #include <stdio.h>
-        #include <stdlib.h>
-        #include <string.h>
-        #include <ctype.h>
-        
-        int input_len = strlen(input);
-        char *output = malloc(input_len + 1);
-        if (output == NULL) {
-            return strdup("");
-        }
-        
-        char *ptr = output;
-        
-        for (int i = 0; i < input_len; i++) {
-            if (input[i] == '%' && i + 2 < input_len) {
-                int hex_val;
-                if (sscanf(&input[i + 1], "%2x", &hex_val) == 1) {
-                    *ptr++ = (char)hex_val;
-                    i += 2;
-                } else {
-                    *ptr++ = input[i];
-                }
-            } else if (input[i] == '+') {
-                *ptr++ = ' ';
-            } else {
-                *ptr++ = input[i];
+        int d = 0;
+
+        char *dStr = malloc(strlen(str) + 1);
+        char eStr[] = "00";
+      
+        strcpy(dStr, str);
+      
+        while(!d) {
+          d = 1;
+          int i;
+          for(i=0;i<strlen(dStr);++i) {
+            if(dStr[i] == '%') {
+              if(dStr[i+1] == 0)
+                return dStr;  
+              if(isxdigit(dStr[i+1]) && isxdigit(dStr[i+2])) {
+    
+                d = 0;      
+                eStr[0] = dStr[i+1];
+                eStr[1] = dStr[i+2];
+      
+                long int x = strtol(eStr, NULL, 16);
+                memmove(&dStr[i+1], &dStr[i+3], strlen(&dStr[i+3])+1);
+                dStr[i] = x;
+              }
             }
+          }
         }
-        *ptr = '\0';
-        
-        return output;
     )
+    return strings::replace(dStr, "+", " ")
 
 ## Simple HTTP GET request using system curl command
 pub fn http_get(string url) -> string:
