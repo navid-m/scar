@@ -12,173 +12,6 @@ import (
 	"strings"
 )
 
-func findMapTypeEnd(line string) int {
-	if !strings.HasPrefix(line, "map[") {
-		return -1
-	}
-
-	bracketDepth := 0
-	start := strings.Index(line, "[")
-	if start == -1 {
-		return -1
-	}
-
-	for i := start; i < len(line); i++ {
-		switch line[i] {
-		case '[':
-			bracketDepth++
-		case ']':
-			bracketDepth--
-			if bracketDepth == 0 {
-				return i
-			}
-		}
-	}
-	return -1
-}
-
-func findListTypeEnd(typeDecl string) int {
-	if !strings.HasPrefix(typeDecl, "list[") {
-		return -1
-	}
-
-	bracketDepth := 0
-	start := strings.Index(typeDecl, "[")
-	if start == -1 {
-		return -1
-	}
-
-	for i := start; i < len(typeDecl); i++ {
-		switch typeDecl[i] {
-		case '[':
-			bracketDepth++
-		case ']':
-			bracketDepth--
-			if bracketDepth == 0 {
-				return i
-			}
-		}
-	}
-	return -1
-}
-
-// Finds the colon that separates key:value in a map pair,
-// ignoring colons inside nested brackets, parentheses, or quotes
-func findPairColonPosition(pairStr string) int {
-	bracketDepth := 0
-	parenDepth := 0
-	inQuotes := false
-
-	for i, char := range pairStr {
-		switch char {
-		case '"':
-			if i == 0 || pairStr[i-1] != '\\' {
-				inQuotes = !inQuotes
-			}
-		case '[':
-			if !inQuotes {
-				bracketDepth++
-			}
-		case ']':
-			if !inQuotes {
-				bracketDepth--
-			}
-		case '(':
-			if !inQuotes {
-				parenDepth++
-			}
-		case ')':
-			if !inQuotes {
-				parenDepth--
-			}
-		case ':':
-			if !inQuotes && bracketDepth == 0 && parenDepth == 0 {
-				return i
-			}
-		}
-	}
-	return -1
-}
-
-// Splits list elements by comma while respecting nested brackets and quotes
-func splitListElementsRespectingBrackets(elementsStr string) []string {
-	var elements []string
-	var current strings.Builder
-	bracketDepth := 0
-	inQuotes := false
-
-	for i, char := range elementsStr {
-		switch char {
-		case '"':
-			if i == 0 || elementsStr[i-1] != '\\' {
-				inQuotes = !inQuotes
-			}
-			current.WriteRune(char)
-		case '[':
-			if !inQuotes {
-				bracketDepth++
-			}
-			current.WriteRune(char)
-		case ']':
-			if !inQuotes {
-				bracketDepth--
-			}
-			current.WriteRune(char)
-		case ',':
-			if !inQuotes && bracketDepth == 0 {
-				element := strings.TrimSpace(current.String())
-				if element != "" {
-					elements = append(elements, element)
-				}
-				current.Reset()
-			} else {
-				current.WriteRune(char)
-			}
-		default:
-			current.WriteRune(char)
-		}
-	}
-
-	element := strings.TrimSpace(current.String())
-	if element != "" {
-		elements = append(elements, element)
-	}
-
-	return elements
-}
-
-// Finds the closing bracket that matches the opening bracket at the given position
-func findMatchingClosingBracket(str string, openPos int) int {
-	if openPos >= len(str) || str[openPos] != '[' {
-		return -1
-	}
-
-	bracketDepth := 0
-	inQuotes := false
-
-	for i := openPos; i < len(str); i++ {
-		switch str[i] {
-		case '"':
-			if i == 0 || str[i-1] != '\\' {
-				inQuotes = !inQuotes
-			}
-		case '[':
-			if !inQuotes {
-				bracketDepth++
-			}
-		case ']':
-			if !inQuotes {
-				bracketDepth--
-				if bracketDepth == 0 {
-					return i
-				}
-			}
-		}
-	}
-
-	return -1
-}
-
 func parseStatements(lines []string, startLine, expectedIndent int) ([]*Statement, error) {
 	var statements []*Statement
 	i := startLine
@@ -2153,4 +1986,171 @@ func parseNewExprStatement(line string, lineNum int) (*Statement, int, error) {
 		ClassName: className,
 		Args:      args,
 	}}, lineNum + 1, nil
+}
+
+func findMapTypeEnd(line string) int {
+	if !strings.HasPrefix(line, "map[") {
+		return -1
+	}
+
+	bracketDepth := 0
+	start := strings.Index(line, "[")
+	if start == -1 {
+		return -1
+	}
+
+	for i := start; i < len(line); i++ {
+		switch line[i] {
+		case '[':
+			bracketDepth++
+		case ']':
+			bracketDepth--
+			if bracketDepth == 0 {
+				return i
+			}
+		}
+	}
+	return -1
+}
+
+func findListTypeEnd(typeDecl string) int {
+	if !strings.HasPrefix(typeDecl, "list[") {
+		return -1
+	}
+
+	bracketDepth := 0
+	start := strings.Index(typeDecl, "[")
+	if start == -1 {
+		return -1
+	}
+
+	for i := start; i < len(typeDecl); i++ {
+		switch typeDecl[i] {
+		case '[':
+			bracketDepth++
+		case ']':
+			bracketDepth--
+			if bracketDepth == 0 {
+				return i
+			}
+		}
+	}
+	return -1
+}
+
+// Finds the colon that separates key:value in a map pair,
+// ignoring colons inside nested brackets, parentheses, or quotes
+func findPairColonPosition(pairStr string) int {
+	bracketDepth := 0
+	parenDepth := 0
+	inQuotes := false
+
+	for i, char := range pairStr {
+		switch char {
+		case '"':
+			if i == 0 || pairStr[i-1] != '\\' {
+				inQuotes = !inQuotes
+			}
+		case '[':
+			if !inQuotes {
+				bracketDepth++
+			}
+		case ']':
+			if !inQuotes {
+				bracketDepth--
+			}
+		case '(':
+			if !inQuotes {
+				parenDepth++
+			}
+		case ')':
+			if !inQuotes {
+				parenDepth--
+			}
+		case ':':
+			if !inQuotes && bracketDepth == 0 && parenDepth == 0 {
+				return i
+			}
+		}
+	}
+	return -1
+}
+
+// Splits list elements by comma while respecting nested brackets and quotes
+func splitListElementsRespectingBrackets(elementsStr string) []string {
+	var elements []string
+	var current strings.Builder
+	bracketDepth := 0
+	inQuotes := false
+
+	for i, char := range elementsStr {
+		switch char {
+		case '"':
+			if i == 0 || elementsStr[i-1] != '\\' {
+				inQuotes = !inQuotes
+			}
+			current.WriteRune(char)
+		case '[':
+			if !inQuotes {
+				bracketDepth++
+			}
+			current.WriteRune(char)
+		case ']':
+			if !inQuotes {
+				bracketDepth--
+			}
+			current.WriteRune(char)
+		case ',':
+			if !inQuotes && bracketDepth == 0 {
+				element := strings.TrimSpace(current.String())
+				if element != "" {
+					elements = append(elements, element)
+				}
+				current.Reset()
+			} else {
+				current.WriteRune(char)
+			}
+		default:
+			current.WriteRune(char)
+		}
+	}
+
+	element := strings.TrimSpace(current.String())
+	if element != "" {
+		elements = append(elements, element)
+	}
+
+	return elements
+}
+
+// Finds the closing bracket that matches the opening bracket at the given position
+func findMatchingClosingBracket(str string, openPos int) int {
+	if openPos >= len(str) || str[openPos] != '[' {
+		return -1
+	}
+
+	bracketDepth := 0
+	inQuotes := false
+
+	for i := openPos; i < len(str); i++ {
+		switch str[i] {
+		case '"':
+			if i == 0 || str[i-1] != '\\' {
+				inQuotes = !inQuotes
+			}
+		case '[':
+			if !inQuotes {
+				bracketDepth++
+			}
+		case ']':
+			if !inQuotes {
+				bracketDepth--
+				if bracketDepth == 0 {
+					return i
+				}
+			}
+		}
+	}
+
+	return -1
 }
