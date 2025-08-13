@@ -531,9 +531,11 @@ func resolveFunctionCall(value string) string {
 	if parenIndex == -1 {
 		return value
 	}
-	funcName := strings.TrimSpace(value[:parenIndex])
-	argsWithParens := value[parenIndex:]
-	resolvedFuncName := lexer.ResolveSymbol(funcName, currentModule)
+	var (
+		funcName         = strings.TrimSpace(value[:parenIndex])
+		argsWithParens   = value[parenIndex:]
+		resolvedFuncName = lexer.ResolveSymbol(funcName, currentModule)
+	)
 	if functionReturnsString(resolvedFuncName) {
 		tempBufferName := fmt.Sprintf("temp_str_buffer_%d", len(value)*31%1000) // Simple hash for uniqueness
 
