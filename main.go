@@ -86,7 +86,7 @@ func main() {
 	}
 
 	input = preprocessor.ProcessSourceLevelMacros(input)
-	program, err := lexer.ParseWithIndentation(input)
+	program, err := lexer.InnerParseWithIndentation(input, ptf)
 
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%s", "\033[31mSyntaxError: "+err.Error()+"\033[0m")

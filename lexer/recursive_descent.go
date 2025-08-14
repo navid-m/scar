@@ -153,6 +153,12 @@ func parseEnumDeclaration(lines []string, startLine, indentLevel int) (*Statemen
 func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int, error) {
 	line := strings.TrimSpace(lines[lineNum])
 
+	if !isStandardLibraryFile(CurrentSourceFile) {
+		if hasReserved, reservedCmd := containsReservedC(line); hasReserved {
+			return nil, lineNum + 1, fmt.Errorf("reserved word: '%s' at line %d", reservedCmd, lineNum+1)
+		}
+	}
+
 	if strings.HasPrefix(line, "pub enum ") || strings.HasPrefix(line, "enum ") {
 		return parseEnumDeclaration(lines, lineNum, currentIndent)
 	}
@@ -1432,6 +1438,10 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 		return nil, lineNum + 1, fmt.Errorf("catch statement must follow a try statement at line %d", lineNum+1)
 
 	case "$raw":
+		if !isStandardLibraryFile(CurrentSourceFile) {
+			return nil, lineNum + 1, fmt.Errorf("$raw blocks are only allowed in the standard library at line %d", lineNum+1)
+		}
+
 		if !strings.HasSuffix(line, "(") {
 			return nil, lineNum + 1, fmt.Errorf("$raw block must start with '(' at line %d", lineNum+1)
 		}
@@ -1467,6 +1477,13 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 		}
 
 		code := strings.TrimSpace(rawCode.String())
+
+		if !isStandardLibraryFile(CurrentSourceFile) {
+			if hasReserved, reservedCmd := containsReservedC(code); hasReserved {
+				return nil, lineNum + 1, fmt.Errorf("reserved word: '%s' at line %d", reservedCmd, lineNum+1)
+			}
+		}
+
 		return &Statement{RawCode: &RawCodeStmt{Code: code}}, currentLine, nil
 
 	default:

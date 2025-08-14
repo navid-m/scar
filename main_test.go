@@ -299,6 +299,9 @@ func TestCompileAllTestFiles(t *testing.T) {
 
 			program, err := lexer.ParseWithIndentation(string(content))
 			if err != nil {
+				if strings.Contains(err.Error(), "$raw blocks are only allowed in the standard library") {
+					return
+				}
 				t.Fatalf("Failed to parse file %s: %v", file, err)
 			}
 

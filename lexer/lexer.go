@@ -8,6 +8,9 @@ package lexer
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 )
@@ -453,8 +456,48 @@ type VarDeclReadStmt struct {
 }
 
 var LoadedModules = make(map[string]*ModuleInfo)
+var CurrentSourceFile string
+
+func isStandardLibraryFile(filePath string) bool {
+	if filePath == "" {
+		return false
+	}
+	absPath, err := filepath.Abs(filePath)
+	if err != nil {
+		return false
+	}
+	dir := filepath.Dir(absPath)
+	if filepath.Base(dir) != "lib" {
+		return false
+	}
+	parentDir := filepath.Dir(dir)
+	executableName := "scar"
+	if runtime.GOOS == "windows" {
+		executableName = "scar.exe"
+	}
+	executablePath := filepath.Join(parentDir, executableName)
+	if _, err := os.Stat(executablePath); err == nil {
+		return true
+	}
+	return false
+}
+
+func containsReservedC(code string) (bool, string) {
+	for _, cmd := range reservedC {
+		if strings.Contains(code, cmd+"(") {
+			return true, cmd
+		}
+	}
+	return false, ""
+}
 
 func ParseWithIndentation(input string) (*Program, error) {
+	return InnerParseWithIndentation(input, "")
+}
+
+func InnerParseWithIndentation(input string, sourceFile string) (*Program, error) {
+	CurrentSourceFile = sourceFile
+
 	var (
 		lines           = strings.Split(input, "\n")
 		statements, err = parseStatements(lines, 0, 0)
@@ -729,6 +772,18 @@ func findMapColonPosition(mapContent string) int {
 
 func IsOperator(s string) bool {
 	return slices.Contains([]string{"+", "-", "*", "/", "%"}, s)
+}
+
+var reservedC = []string{
+	"printf", "fprintf", "sprintf", "snprintf",
+	"strcpy", "strncpy", "strcat", "strncat",
+	"gets", "scanf", "fscanf", "sscanf",
+	"system", "exec", "popen",
+	"malloc", "calloc", "realloc", "free",
+	"memcpy", "memmove", "memset",
+	"fopen", "fclose", "fread", "fwrite",
+	"access", "unlink", "mkdir", "rmdir",
+	"stat", "chmod", "chown",
 }
 
 func getIndentation(line string) int {
