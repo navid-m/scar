@@ -189,6 +189,24 @@ string decoded_empty = net::url_decode("")
 t.assert_string_equals("", decoded_empty, "Empty string should return empty")
 string decoded_safe = net::url_decode("hello-world_test.file~")
 t.assert_string_equals("hello-world_test.file~", decoded_safe, "Safe characters should remain unchanged")
+# Regex Tests
+t.assert_equals(true, regex::matches("^[a-z]+$", "hello"), "regex::matches should match lowercase letters")
+t.assert_equals(false, regex::matches("^[a-z]+$", "hello123"), "regex::matches should not match mixed")
+
+list[string] m = regex::find("(\\d+)-(\\w+)", "foo 123-abc bar")
+t.assert_equals(3, len(m), "regex::find should return full match and 2 groups")
+t.assert_string_equals("123-abc", m[0], "Full match should be '123-abc'")
+t.assert_string_equals("123", m[1], "First group should be '123'")
+t.assert_string_equals("abc", m[2], "Second group should be 'abc'")
+
+string rep = regex::replace("\\s+", "a  b   c", "-")
+t.assert_string_equals("a-b-c", rep, "regex::replace should collapse spaces into '-'")
+
+list[string] parts = regex::split("\\s*,\\s*", "a, b ,c")
+t.assert_equals(3, len(parts), "regex::split should split into 3 parts")
+t.assert_string_equals("a", parts[0], "First part 'a'")
+t.assert_string_equals("b", parts[1], "Second part 'b'")
+t.assert_string_equals("c", parts[2], "Third part 'c'")
 
 net::HttpResponse hello = net::http_get("https://httpbin.org/get")
 
