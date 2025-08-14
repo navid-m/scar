@@ -66,7 +66,10 @@ func main() {
 		baseDir = filepath.Dir(ptf)
 		data, err := os.ReadFile(ptf + ".scar")
 		if err != nil {
-			log.Fatal("Could not find file.")
+			data, err = os.ReadFile(ptf)
+			if err != nil {
+				log.Fatal("Could not find file.")
+			}
 		}
 		input = string(data)
 	}
