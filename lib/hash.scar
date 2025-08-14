@@ -15,8 +15,8 @@ pub fn fnv1a(string data) -> i32:
 pub fn fnv1a_64(ref string data) -> void:
     $raw (
         static char result[32];
-        uint64_t hash = 14695981039346656037ULL;  // FNV-1a 64-bit offset basis
-        uint64_t prime = 1099511628211ULL;        // FNV-1a 64-bit prime
+        uint64_t hash = 14695981039346656037ULL;
+        uint64_t prime = 1099511628211ULL;
         
         for (int i = 0; i < strlen(data); i++) {
             hash ^= (uint64_t)data[i];
