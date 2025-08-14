@@ -125,7 +125,6 @@ t.assert_string_equals("apple", split_result1.get_element(0), "First part should
 t.assert_string_equals("banana", split_result1.get_element(1), "Second part should be 'banana'")
 t.assert_string_equals("cherry", split_result1.get_element(2), "Third part should be 'cherry'")
 
-
 # OS Tests
 log::success(fmt!("ASSERT PASSED: Currently directory correctly detected as: %s", os::cwd()))
 log::success(fmt!("ASSERT PASSED: Home directory detected as: %s", os::homedir()))
