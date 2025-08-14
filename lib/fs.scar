@@ -9,7 +9,7 @@ pub fn remove_dir(string path) -> bool:
     $raw (
         return rmdir(path) == 0;
     )
-
+    
 pub fn read_bytes(string filename) -> list[int]:
     $raw (
         FILE* file = fopen(filename, "rb");
@@ -95,4 +95,62 @@ pub fn read_lines(string filename) -> list[string]:
         }
         free(lines_temp);
         return lines_count;
+    )
+
+pub fn list_dir(string path) -> list[string]:
+    $raw (
+        char** entries_temp = malloc(1000 * sizeof(char*));
+        int entries_count = 0;
+        
+        #ifdef _WIN32
+            WIN32_FIND_DATA find_data;
+            char search_path[1024];
+            snprintf(search_path, sizeof(search_path), "%s\\*", path);
+            
+            HANDLE handle = FindFirstFile(search_path, &find_data);
+            if (handle == INVALID_HANDLE_VALUE) {
+                for (int _i = 0; _i < entries_count && _i < _max_size; _i++) {
+                    strcpy(_output_array[_i], "");
+                }
+                free(entries_temp);
+                return 0;
+            }
+            
+            do {
+                if (strcmp(find_data.cFileName, ".") != 0 && strcmp(find_data.cFileName, "..") != 0) {
+                    entries_temp[entries_count] = malloc(strlen(find_data.cFileName) + 1);
+                    strcpy(entries_temp[entries_count], find_data.cFileName);
+                    entries_count++;
+                }
+            } while (FindNextFile(handle, &find_data) && entries_count < 1000);
+            
+            FindClose(handle);
+        #else
+            DIR* dir = opendir(path);
+            if (dir == NULL) {
+                for (int _i = 0; _i < entries_count && _i < _max_size; _i++) {
+                    strcpy(_output_array[_i], "");
+                }
+                free(entries_temp);
+                return 0;
+            }
+            
+            struct dirent* entry;
+            while ((entry = readdir(dir)) != NULL && entries_count < 1000) {
+                if (strcmp(entry->d_name, ".") != 0 && strcmp(entry->d_name, "..") != 0) {
+                    entries_temp[entries_count] = malloc(strlen(entry->d_name) + 1);
+                    strcpy(entries_temp[entries_count], entry->d_name);
+                    entries_count++;
+                }
+            }
+            
+            closedir(dir);
+        #endif
+        
+        for (int _i = 0; _i < entries_count && _i < _max_size; _i++) {
+            strcpy(_output_array[_i], entries_temp[_i]);
+            free(entries_temp[_i]);
+        }
+        free(entries_temp);
+        return entries_count;
     )

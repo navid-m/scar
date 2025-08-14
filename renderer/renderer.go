@@ -29,6 +29,7 @@ var (
 	globalVars        = make(map[string]*lexer.PubVarDeclStmt)
 	globalAllocations = make(map[string]*lexer.PubAllocateStmt)
 	localVars         = make(map[string]string)
+	writeCounter      = 0
 	currentModule     = ""
 	currentClassName  = ""
 	currentFunction   *lexer.TopLevelFuncDeclStmt
@@ -2613,9 +2614,10 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				content   = lexer.ResolveSymbol(stmt.VarDeclWrite.Content, currentModule)
 				filePath  = fmt.Sprintf("\"%s\"", stmt.VarDeclWrite.FilePath)
 				mode      = stmt.VarDeclWrite.Mode
-				fpVarName = fmt.Sprintf("fp_write_%d", len(stmt.VarDeclWrite.FilePath))
+				fpVarName = fmt.Sprintf("fp_write_%d", writeCounter)
 				fileMode  string
 			)
+			writeCounter++
 			switch mode {
 			case "append!":
 				fileMode = "\"a\""

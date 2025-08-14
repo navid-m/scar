@@ -168,6 +168,28 @@ list[string] otherdata = fs::read_lines("output.txt")
 t.assert_string_equals("Hello World", otherdata[0], "First line should be 'Hello World'")
 fs::remove("output.txt")
 
+# Filesystem Tests
+fs::make_dir("test_dir")
+write("test1.txt", "test_dir/test1.txt", overwrite!)
+write("test2.txt", "test_dir/test2.txt", overwrite!)
+list[string] dir_contents = fs::list_dir("test_dir")
+
+bool found_test1 = false
+bool found_test2 = false
+
+for i = 0 to len(dir_contents) - 1:
+    if strings::compare(dir_contents[i], "test1.txt") == 0:
+        found_test1 = true
+    if strings::compare(dir_contents[i], "test2.txt") == 0:
+        found_test2 = true
+
+t.assert_equals(true, found_test1, "Should find test1.txt in directory")
+t.assert_equals(true, found_test2, "Should find test2.txt in directory")
+
+fs::remove("test_dir/test1.txt")
+fs::remove("test_dir/test2.txt")
+fs::remove_dir("test_dir")
+
 list[string] args = os::get_args()
 for i = 0 to len(args) - 1:
     log::success(fmt!("ASSERT PASSED: Command line argument %d: %s", i, args[i]))
