@@ -866,14 +866,18 @@ func LoadModule(moduleName string, baseDir string) (*ModuleInfo, error) {
 	program.Statements = hoistedStatements
 
 	module := &ModuleInfo{
-		Name:          moduleName,
-		FilePath:      modulePath,
-		PublicVars:    make(map[string]*VarDeclStmt),
-		PublicClasses: make(map[string]*ClassDeclStmt),
-		PublicFuncs:   make(map[string]*MethodDeclStmt),
+		Name:            moduleName,
+		FilePath:        modulePath,
+		PublicVars:      make(map[string]*VarDeclStmt),
+		PublicClasses:   make(map[string]*ClassDeclStmt),
+		PublicFuncs:     make(map[string]*MethodDeclStmt),
+		ExternalImports: []string{},
 	}
 
 	for _, stmt := range program.Statements {
+		if stmt.ExternalImport != nil {
+			module.ExternalImports = append(module.ExternalImports, stmt.ExternalImport.Header)
+		}
 		if stmt.PubVarDecl != nil {
 			varDecl := &VarDeclStmt{
 				Type:  stmt.PubVarDecl.Type,

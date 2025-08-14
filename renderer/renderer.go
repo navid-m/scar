@@ -70,6 +70,10 @@ func RenderC(program *lexer.Program, baseDir string, gcFlag bool) string {
 		}
 	}
 
+	for _, module := range lexer.LoadedModules {
+		externalImports = append(externalImports, module.ExternalImports...)
+	}
+
 	for _, stmt := range program.Statements {
 		if stmt.ClassDecl != nil {
 			collectClassInfo(stmt.ClassDecl)

@@ -65,12 +65,11 @@ pub fn trim_prefix(string str, string prefix) -> string:
         }
     )
 
-pub fn trim_suffix(string str, string suffix) -> string:
+pub fn trim_suffix(string str, string suffix) -> char*:
     $raw (
         if (str == NULL || suffix == NULL) {
             return str ? str : "";
         }
-        
         size_t suffix_len = strlen(suffix);
         size_t str_len = strlen(str);
         if (str_len >= suffix_len && strcmp(str + str_len - suffix_len, suffix) == 0) {

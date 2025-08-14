@@ -21,11 +21,12 @@ type ExternalImportStmt struct {
 }
 
 type ModuleInfo struct {
-	Name          string
-	FilePath      string
-	PublicVars    map[string]*VarDeclStmt
-	PublicClasses map[string]*ClassDeclStmt
-	PublicFuncs   map[string]*MethodDeclStmt
+	Name            string
+	FilePath        string
+	PublicVars      map[string]*VarDeclStmt
+	PublicClasses   map[string]*ClassDeclStmt
+	PublicFuncs     map[string]*MethodDeclStmt
+	ExternalImports []string
 }
 
 type Program struct {

@@ -61,95 +61,39 @@ pub class HttpResponse:
         string this.error = ""
 
 ## HTTP GET request using cross-platform system approach
-pub fn http_get(string url) -> net::HttpResponse:
+pub fn http_get(char* url) -> net::HttpResponse:
     $raw (        
-        net_HttpResponse* response = net_HttpResponse_new();
-        
-        char *result = malloc(8192);
-        char command[512];
-        
-        snprintf(command, sizeof(command), "curl -s -w \"%%{http_code}\" \"%s\"", url);
-        
-        FILE *fp = popen(command, "r");
-        if (fp == NULL) {
-            strcpy(response->error, "curl command failed or not available");
-            response->status_code = 0;
-            free(result);
-            return response;
+        CURL *curl;
+        CURLcode res;
+        curl = curl_easy_init();
+        if (curl) {
+            curl_easy_setopt(curl, CURLOPT_URL, url);
+            curl_easy_setopt(curl, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_3);
+            res = curl_easy_perform(curl);
+            if (res != CURLE_OK)
+                fprintf(stderr, "http_get failed: %s\n",curl_easy_strerror(res));
+            curl_easy_cleanup(curl);
         }
-        
-        char buffer[1024];
-        result[0] = '\0';
-        
-        while (fgets(buffer, sizeof(buffer), fp) != NULL) {
-            strcat(result, buffer);
-        }
-        
-        int exit_code = pclose(fp);
-        
-        if (strlen(result) >= 3) {
-            // Extract status code from end of response
-            char status_str[4];
-            strcpy(status_str, result + strlen(result) - 3);
-            response->status_code = atoi(status_str);
-            
-            // Remove status code from body
-            result[strlen(result) - 3] = '\0';
-            strncpy(response->body, result, 255);
-            response->body[255] = '\0';
-        } else {
-            strcpy(response->error, "Invalid response from server");
-            response->status_code = 0;
-        }
-        
-        free(result);
-        return response;
     )
 
 ## HTTP POST request using cross-platform system approach  
-pub fn http_post(string url, string data) -> net::HttpResponse:
+pub fn http_post(char* url, char* data) -> net::HttpResponse:
     $raw (
-        net_HttpResponse* response = net_HttpResponse_new();
-        
-        char *result = malloc(8192);
-        char *command = malloc(1024 + strlen(data));
-        
-        snprintf(command, 1024 + strlen(data), "curl -s -w \"%%{http_code}\" -X POST -d \"%s\" \"%s\"", data, url);
-        
-        FILE *fp = popen(command, "r");
-        if (fp == NULL) {
-            strcpy(response->error, "curl command failed or not available");
-            response->status_code = 0;
-            free(result);
-            free(command);
-            return response;
+        CURL *curl;
+        CURLcode res;
+       
+        curl_global_init(CURL_GLOBAL_ALL);
+        curl = curl_easy_init();
+        if (curl) {
+          curl_easy_setopt(curl, CURLOPT_URL, url);
+          curl_easy_setopt(curl, CURLOPT_POSTFIELDS, data);
+          res = curl_easy_perform(curl);
+          if(res != CURLE_OK)
+            fprintf(stderr, "curl_easy_perform() failed: %s\n",
+                    curl_easy_strerror(res));
+          curl_easy_cleanup(curl);
         }
-        
-        char buffer[1024];
-        result[0] = '\0';
-        
-        while (fgets(buffer, sizeof(buffer), fp) != NULL) {
-            strcat(result, buffer);
-        }
-        
-        pclose(fp);
-        
-        if (strlen(result) >= 3) {
-            char status_str[4];
-            strcpy(status_str, result + strlen(result) - 3);
-            response->status_code = atoi(status_str);
-            
-            result[strlen(result) - 3] = '\0';
-            strncpy(response->body, result, 255);
-            response->body[255] = '\0';
-        } else {
-            strcpy(response->error, "Invalid response from server");
-            response->status_code = 0;
-        }
-        
-        free(result);
-        free(command);
-        return response;
+        curl_global_cleanup();
     )
 
 ## HTTP PUT request
