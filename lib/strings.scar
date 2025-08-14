@@ -189,20 +189,35 @@ pub fn split(string str, string delimiter) -> collections::StringArrayList:
     if strings::length(delimiter) == 0:
         result.add_element(str)
         return result
-    string unique_marker = "\x01"
-    string marked_str = strings::replace(str, delimiter, unique_marker)
-    int marker_ascii = ord(unique_marker)
+    
+    int str_len = strings::length(str)
+    int delim_len = strings::length(delimiter)
     string current_part = ""
-    int str_len = strings::length(marked_str)
     int i = 0
+    
     while i < str_len:
-        string current_char = strings::get_char_at(marked_str, i)
-        if ord(current_char) == marker_ascii:
+        bool found_delimiter = true
+        if i + delim_len <= str_len:
+            int j = 0
+            while j < delim_len:
+                string str_char = strings::get_char_at(str, i + j)
+                string delim_char = strings::get_char_at(delimiter, j)
+                if strings::compare(str_char, delim_char) != 0:
+                    found_delimiter = false
+                    break
+                j = j + 1
+        else:
+            found_delimiter = false
+        
+        if found_delimiter:
             result.add_element(current_part)
             current_part = ""
+            i = i + delim_len
         else:
+            string current_char = strings::get_char_at(str, i)
             current_part = fmt!("%s%s", current_part, current_char)
-        i = i + 1
+            i = i + 1
+    
     result.add_element(current_part)
     return result
 
