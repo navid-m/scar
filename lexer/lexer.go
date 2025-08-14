@@ -482,7 +482,7 @@ func isStandardLibraryFile(filePath string) bool {
 	return false
 }
 
-func containsReservedC(code string) (bool, string) {
+func containsReserved(code string) (bool, string) {
 	for _, cmd := range reservedC {
 		if strings.Contains(code, cmd+"(") {
 			return true, cmd
