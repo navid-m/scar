@@ -282,3 +282,143 @@ pub fn log_base(float x, float base) -> float:
     if x <= 0.0 or base <= 0.0 or base == 1.0:
         return -1.0
     return math::ln(x) / math::ln(base)
+
+pub fn radians(float degrees) -> float:
+    float factor = math::PI / 180.0
+    return degrees * factor
+
+pub fn degrees(float radians) -> float:
+    float factor = 180.0 / math::PI
+    return radians * factor
+
+pub fn log10(float x) -> float:
+    float ln10 = math::ln(10.0)
+    if x <= 0.0:
+        return -1.0
+    return math::ln(x) / ln10
+
+pub fn log2(float x) -> float:
+    float ln2 = math::ln(2.0)
+    if x <= 0.0:
+        return -1.0
+    return math::ln(x) / ln2
+
+## Power with float exponent using exp(exp * ln(base))
+## Returns 0.0 for non-positive base
+pub fn powf(float base, float exponent) -> float:
+    if base <= 0.0:
+        return 0.0
+    float ln_base = math::ln(base)
+    float prod = exponent * ln_base
+    return math::exp(prod)
+
+## Square root for float using Newton's method
+## Returns -1.0 if x < 0.0
+pub fn sqrtf(float x) -> float:
+    if x < 0.0:
+        return -1.0
+    if x == 0.0:
+        return 0.0
+    float guess = x / 2.0
+    float epsilon = 0.000001
+    int i = 0
+    while i < 50:
+        float new_guess = (guess + x / guess) / 2.0
+        float diff = new_guess - guess
+        if diff < 0.0:
+            diff = -diff
+        if diff < epsilon:
+            return new_guess
+        guess = new_guess
+        i = i + 1
+    return guess
+
+pub fn trunc(float x) -> float:
+    int i = (int)x
+    return (float)i
+
+pub fn fract(float x) -> float:
+    float fx = math::floor(x)
+    float r = x - fx
+    return r
+
+pub fn sign(float x) -> int:
+    if x > 0.0:
+        return 1
+    elif x < 0.0:
+        return -1
+    return 0
+
+pub fn minf(float a, float b) -> float:
+    if a < b:
+        return a
+    return b
+
+pub fn maxf(float a, float b) -> float:
+    if a > b:
+        return a
+    return b
+
+pub fn clampf(float value, float min_value, float max_value) -> float:
+    if value < min_value:
+        return min_value
+    elif value > max_value:
+        return max_value
+    return value
+
+pub fn lerp(float a, float b, float t) -> float:
+    float diff = b - a
+    float prod = t * diff
+    return a + prod
+
+pub fn hypot(float x, float y) -> float:
+    float xsq = x * x
+    float ysq = y * y
+    float sum = xsq + ysq
+    return math::sqrtf(sum)
+
+pub fn cbrt(float x) -> float:
+    if x == 0.0:
+        return 0.0
+    float guess = x
+    float epsilon = 0.000001
+    int i = 0
+    while i < 50:
+        float g2 = guess * guess
+        float g3 = g2 * guess
+        float num = g3 - x
+        float den = 3.0 * g2
+        float delta = num / den
+        float new_guess = guess - delta
+        float diff = new_guess - guess
+        if diff < 0.0:
+            diff = -diff
+        if diff < epsilon:
+            return new_guess
+        guess = new_guess
+        i = i + 1
+    return guess
+
+pub fn exp2(float x) -> float:
+    float ln2 = math::ln(2.0)
+    float prod = x * ln2
+    return math::exp(prod)
+
+pub fn sinh(float x) -> float:
+    float ex = math::exp(x)
+    float enx = math::exp(-x)
+    float num = ex - enx
+    return num / 2.0
+
+pub fn cosh(float x) -> float:
+    float ex = math::exp(x)
+    float enx = math::exp(-x)
+    float num = ex + enx
+    return num / 2.0
+
+pub fn tanh(float x) -> float:
+    float s = math::sinh(x)
+    float c = math::cosh(x)
+    if c == 0.0:
+        return 0.0
+    return s / c
