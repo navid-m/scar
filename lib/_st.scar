@@ -39,6 +39,79 @@ t.assert_float_equals(2.718282, math::exp(1.0), 0.0000001, "exp(1.0) should be a
 t.assert_float_equals(0.0, math::ln(1.0), 0.0000001, "ln(1.0) should be approximately 0.0")
 t.assert_equals(123, math::to_int("123"), "to_int should return 123")
 
+# Vector2 Tests
+ref math::Vector2 v2zero = new math::Vector2()
+t.assert_equals(0, v2zero.x, "Vector2 default x should be 0")
+t.assert_equals(0, v2zero.y, "Vector2 default y should be 0")
+
+ref math::Vector2 v2a = new math::Vector2()
+ref math::Vector2 v2b = new math::Vector2()
+v2a.x = 1.0
+v2a.y = 2.0
+v2b.x = 3.0
+v2b.y = 4.0
+
+ref math::Vector2 v2add = v2a.add(v2b)
+t.assert_float_equals(4.0, v2add.x, 0.0001, "Vector2 add.x should be 4")
+t.assert_float_equals(6.0, v2add.y, 0.0001, "Vector2 add.y should be 6")
+
+ref math::Vector2 v2sub = v2a.sub(v2b)
+t.assert_float_equals(-2.0, v2sub.x, 0.0001, "Vector2 sub.x should be -2")
+t.assert_float_equals(-2.0, v2sub.y, 0.0001, "Vector2 sub.y should be -2")
+
+ref math::Vector2 v2mul = v2a.mul(v2b)
+t.assert_float_equals(3.0, v2mul.x, 0.0001, "Vector2 mul.x should be 3")
+t.assert_float_equals(8.0, v2mul.y, 0.0001, "Vector2 mul.y should be 8")
+v2a.x = 8.0
+v2a.y = 6.0
+v2b.x = 2.0
+v2b.y = 3.0
+ref math::Vector2 v2div = v2a.div(v2b)
+t.assert_float_equals(4.0, v2div.x, 0.0001, "Vector2 div.x should be 4")
+t.assert_float_equals(2.0, v2div.y, 0.0001, "Vector2 div.y should be 2")
+
+# Vector3 Tests
+ref math::Vector3 v3zero = new math::Vector3()
+t.assert_equals(0, v3zero.x, "Vector3 default x should be 0")
+t.assert_equals(0, v3zero.y, "Vector3 default y should be 0")
+t.assert_equals(0, v3zero.z, "Vector3 default z should be 0")
+
+ref math::Vector3 v3a = new math::Vector3()
+
+ref math::Vector3 v3b = new math::Vector3()
+v3a.x = 1.0
+v3a.y = 2.0
+v3a.z = 3.0
+v3b.x = 4.0
+v3b.y = 5.0
+v3b.z = 6.0
+
+ref math::Vector3 v3add = v3a.add(v3b)
+t.assert_float_equals(5.0, v3add.x, 0.0001, "Vector3 add.x should be 5")
+t.assert_float_equals(7.0, v3add.y, 0.0001, "Vector3 add.y should be 7")
+t.assert_float_equals(9.0, v3add.z, 0.0001, "Vector3 add.z should be 9")
+
+ref math::Vector3 v3sub = v3a.sub(v3b)
+t.assert_float_equals(-3.0, v3sub.x, 0.0001, "Vector3 sub.x should be -3")
+t.assert_float_equals(-3.0, v3sub.y, 0.0001, "Vector3 sub.y should be -3")
+t.assert_float_equals(-3.0, v3sub.z, 0.0001, "Vector3 sub.z should be -3")
+
+ref math::Vector3 v3mul = v3a.mul(v3b)
+t.assert_float_equals(4.0, v3mul.x, 0.0001, "Vector3 mul.x should be 4")
+t.assert_float_equals(10.0, v3mul.y, 0.0001, "Vector3 mul.y should be 10")
+t.assert_float_equals(18.0, v3mul.z, 0.0001, "Vector3 mul.z should be 18")
+v3a.x = 8.0
+v3a.y = 9.0
+v3a.z = 12.0
+v3b.x = 2.0
+v3b.y = 3.0
+v3b.z = 4.0
+
+ref math::Vector3 v3div = v3a.div(v3b)
+t.assert_float_equals(4.0, v3div.x, 0.0001, "Vector3 div.x should be 4")
+t.assert_float_equals(3.0, v3div.y, 0.0001, "Vector3 div.y should be 3")
+t.assert_float_equals(3.0, v3div.z, 0.0001, "Vector3 div.z should be 3")
+
 # String Tests
 t.assert_equals(0, strings::compare("Hello, World!", "Hello, World!"), "String comparison should be equal")
 t.assert_equals(5, strings::length("Hello"), "String length should be 5")
