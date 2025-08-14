@@ -87,11 +87,9 @@ pub fn read_dir(string path) -> list[string]:
     )
 
 pub fn clear():
-    $raw (
-        #include <stdio.h>
-        #if defined(_WIN32) || defined(_WIN64)
-            system("cls");
-        #else
-            system("clear");
-        #endif
-    )
+    external import "stdio.h"
+
+    platform (Windows):
+        system("cls")
+    platform (Posix):
+        system("clear")
