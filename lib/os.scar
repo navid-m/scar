@@ -4,9 +4,7 @@ pub fn exec(string command) -> i64:
     )
 
 pub fn exec_with_args(string command, list[string] args) -> i64:
-    $raw (
-        return system(fmt!("%s %s", command, args));
-    )
+    return system(fmt!("%s %s", command, args));
 
 pub fn exit(i64 code):
     $raw (
