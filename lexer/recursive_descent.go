@@ -87,8 +87,10 @@ func splitRespectingQuotes(input string) []string {
 }
 
 func parseEnumDeclaration(lines []string, startLine, indentLevel int) (*Statement, int, error) {
-	line := strings.TrimSpace(lines[startLine])
-	isPublic := strings.HasPrefix(line, "pub ")
+	var (
+		line     = strings.TrimSpace(lines[startLine])
+		isPublic = strings.HasPrefix(line, "pub ")
+	)
 	if isPublic {
 		line = strings.TrimSpace(strings.TrimPrefix(line, "pub"))
 	}
