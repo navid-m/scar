@@ -1,18 +1,12 @@
 pub fn warn(string message) -> void:
-    $raw (
-        fprintf(stderr, "[WARNING] %s\n", message);
-    )
+    fprintf(stderr, "[WARNING] %s\n", message);
 
 pub fn error(string message) -> void:
-    $raw (
-        fprintf(stderr, "[ERROR] %s\n", message);
-    )
+    fprintf(stderr, "[ERROR] %s\n", message);
 
 pub fn to_stderr(string message) -> void:
-    $raw (
-        fprintf(stderr, "%s", message);
-    )
-
+    fprintf(stderr, "%s", message);
+    
 pub fn info(string message) -> void:
     put "[INFO] %s \n " | message
 
