@@ -1,0 +1,8 @@
+import "std/strings"
+
+# Returns the number of populated entries in a list[string]
+pub fn length_strl(list[string] list) -> i64:
+    for i = 0 to len(list) - 1:
+        if strings::equal((char*)list[i], ""):
+            return i
+    return 0

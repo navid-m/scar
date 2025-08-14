@@ -15,6 +15,7 @@ import "std/json"
 import "std/net"
 import "std/threads"
 import "std/regex"
+import "std/lists"
 
 # Setup
 var list = new collections::ArrayList(4)
@@ -189,12 +190,19 @@ string decoded_empty = net::url_decode("")
 t.assert_string_equals("", decoded_empty, "Empty string should return empty")
 string decoded_safe = net::url_decode("hello-world_test.file~")
 t.assert_string_equals("hello-world_test.file~", decoded_safe, "Safe characters should remain unchanged")
+
 # Regex Tests
 t.assert_equals(true, regex::matches("^[a-z]+$", "hello"), "regex::matches should match lowercase letters")
 t.assert_equals(false, regex::matches("^[a-z]+$", "hello123"), "regex::matches should not match mixed")
 
 list[string] m = regex::find("(\\d+)-(\\w+)", "foo 123-abc bar")
-t.assert_equals(3, len(m), "regex::find should return full match and 2 groups")
+
+i32 cf = 0
+
+for i = 0 to len(m) - 1:
+    cf = cf + 1
+
+t.assert_equals(3, cf, "regex::find should return full match and 2 groups")
 t.assert_string_equals("123-abc", m[0], "Full match should be '123-abc'")
 t.assert_string_equals("123", m[1], "First group should be '123'")
 t.assert_string_equals("abc", m[2], "Second group should be 'abc'")
@@ -203,17 +211,25 @@ string rep = regex::replace("\\s+", "a  b   c", "-")
 t.assert_string_equals("a-b-c", rep, "regex::replace should collapse spaces into '-'")
 
 list[string] parts = regex::split("\\s*,\\s*", "a, b ,c")
-t.assert_equals(3, len(parts), "regex::split should split into 3 parts")
+
+i32 ca = 0
+
+for i = 0 to len(parts) - 1:
+    ca = ca + 1
+
+t.assert_equals(3, ca, "regex::split should split into 3 parts")
 t.assert_string_equals("a", parts[0], "First part 'a'")
 t.assert_string_equals("b", parts[1], "Second part 'b'")
 t.assert_string_equals("c", parts[2], "Third part 'c'")
 
+# Networking Tests
 net::HttpResponse hello = net::http_get("https://httpbin.org/get")
 
 print "%s" | hello.body
 
 t.test_summary()
 
+# JSON Tests
 string user = json::create_object("name", "Alice", "age", "25")
 json::dump(user, "user.json")
 string loaded   = json::load("user.json")
