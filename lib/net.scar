@@ -52,12 +52,14 @@ pub fn url_decode(char* str) -> char*:
     )
     return strings::replace(dStr, "+", " ")
 
+## Represents some response from a HTTP request
 pub class HttpResponse:
     init:
         i32 this.status_code = 0
         string this.body = ""
         string this.error = ""
 
+## Send a GET request to the specified URL and return the response
 pub fn http_get(char* url) -> net::HttpResponse:
     $raw (
         typedef struct {
