@@ -62,6 +62,7 @@ func main() {
 	}
 
 	hasCurl := preprocessor.ContainsExternalCurlWithPath(input, baseDir)
+	hasRegex := preprocessor.ContainsExternalRegexWithPath(input, baseDir)
 	cleanedName := strings.ReplaceAll(filepath.Base(ptf), ".scar", "")
 	input = preprocessor.ProcessSourceLevelMacros(input)
 	program, err := lexer.ParseWithIndentation(input)
@@ -144,6 +145,9 @@ func main() {
 		if hasCurl {
 			compileArgs = append(compileArgs, "-lcurl")
 		}
+		if hasRegex {
+			compileArgs = append(compileArgs, "-lpcre")
+		}
 		if *gc {
 			if gcFlags := findBundledBoehm(); gcFlags != nil {
 				compileArgs = append(compileArgs, gcFlags...)
@@ -162,6 +166,9 @@ func main() {
 		if hasCurl {
 			compileArgs = append(compileArgs, "-lcurl")
 		}
+		if hasRegex {
+			compileArgs = append(compileArgs, "-lpcre")
+		}
 		if *gc {
 			if gcFlags := findBundledBoehm(); gcFlags != nil {
 				compileArgs = append(compileArgs, gcFlags...)
@@ -178,12 +185,14 @@ func main() {
 			"-fopenmp",
 			"-w",
 			tmpCPath,
-			"-lpcre",
 			"-o",
 			outputBinary,
 		}
 		if hasCurl {
 			compileArgs = append(compileArgs, "-lcurl")
+		}
+		if hasRegex {
+			compileArgs = append(compileArgs, "-lpcre")
 		}
 		if *gc {
 			if gcFlags := findBundledBoehm(); gcFlags != nil {
