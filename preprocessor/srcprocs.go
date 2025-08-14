@@ -9,6 +9,9 @@ package preprocessor
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
+	"regexp"
 	"scar/lexer"
 	"strings"
 )
@@ -151,18 +154,117 @@ func ProcessDeleteExpressions(source string) string {
 }
 
 func ContainsExternalCurl(source string) bool {
-	inString := false
-	for _, char := range source {
-		if char == '"' {
-			if inString {
-				inString = false
-			} else {
-				inString = true
-			}
+	return ContainsExternalCurlWithPath(source, "")
+}
+
+func ContainsExternalCurlWithPath(source string, basePath string) bool {
+	visited := make(map[string]bool)
+	return containsExternalCurlRecursive(source, basePath, visited)
+}
+
+func containsExternalCurlRecursive(source string, basePath string, visited map[string]bool) bool {
+	if containsDirectCurlImport(source) {
+		return true
+	}
+
+	imports := extractImports(source)
+	for _, importPath := range imports {
+		filePath := resolveImportPath(importPath, basePath)
+		if filePath == "" {
+			continue
 		}
-		if !inString && strings.Contains(string(char), "external import \"curl/curl.h\"") {
+
+		if visited[filePath] {
+			continue
+		}
+		visited[filePath] = true
+		importedSource, err := os.ReadFile(filePath)
+		if err != nil {
+			continue
+		}
+
+		if containsExternalCurlRecursive(string(importedSource), filepath.Dir(filePath), visited) {
 			return true
 		}
 	}
+
 	return false
+}
+
+func containsDirectCurlImport(source string) bool {
+	target := `external import "curl/curl.h"`
+	inString := false
+	escaped := false
+
+	for i := 0; i < len(source); i++ {
+		char := source[i]
+		if escaped {
+			escaped = false
+			continue
+		}
+
+		if char == '\\' {
+			escaped = true
+			continue
+		}
+		if char == '"' {
+			inString = !inString
+			continue
+		}
+		if !inString {
+			if i+len(target) <= len(source) {
+				if source[i:i+len(target)] == target {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+func extractImports(source string) []string {
+	importRegex := regexp.MustCompile(`import\s+"([^"]+)"`)
+	matches := importRegex.FindAllStringSubmatch(source, -1)
+	var imports []string
+	for _, match := range matches {
+		if len(match) > 1 {
+			imports = append(imports, match[1])
+		}
+	}
+	return imports
+}
+
+func resolveImportPath(importPath string, basePath string) string {
+	if after, ok := strings.CutPrefix(importPath, "std/"); ok {
+		stdPath := after
+		if basePath != "" {
+			projectRoot := findProjectRoot(basePath)
+			if projectRoot != "" {
+				return filepath.Join(projectRoot, "lib", stdPath+".scar")
+			}
+		}
+		return filepath.Join("lib", stdPath+".scar")
+	}
+
+	if basePath != "" {
+		return filepath.Join(basePath, importPath+".scar")
+	}
+
+	return importPath + ".scar"
+}
+
+func findProjectRoot(startPath string) string {
+	currentPath := startPath
+	for {
+		libPath := filepath.Join(currentPath, "lib")
+		if info, err := os.Stat(libPath); err == nil && info.IsDir() {
+			return currentPath
+		}
+		parentPath := filepath.Dir(currentPath)
+		if parentPath == currentPath {
+			break
+		}
+		currentPath = parentPath
+	}
+	return ""
 }
