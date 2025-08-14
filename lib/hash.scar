@@ -1,9 +1,9 @@
 ## FNV-1a hash algorithm
 pub fn fnv1a(string data) -> i32:
-    i32 hash = 2166136261
-    i32 prime = 16777619
-    i32 len = len(data)
-    i32 i = 0
+    i32 hash    = 2166136261
+    i32 prime   = 16777619
+    i32 len     = len(data)
+    i32 i       = 0
     
     for i = 0 to len - 1:
         hash = hash ^ ord(data[i])
@@ -15,8 +15,8 @@ pub fn fnv1a(string data) -> i32:
 pub fn fnv1a_64(ref string data) -> void:
     $raw (
         static char result[32];
-        uint64_t hash = 14695981039346656037ULL;
-        uint64_t prime = 1099511628211ULL;
+        uint64_t hash   = 14695981039346656037ULL;
+        uint64_t prime  = 1099511628211ULL;
         
         for (int i = 0; i < strlen(data); i++) {
             hash ^= (uint64_t)data[i];
