@@ -17,11 +17,13 @@ import (
 // RemoveComments removes both full-line and inline comments from source code
 // but preserves comments inside $raw blocks (for C preprocessor directives)
 func RemoveComments(source string) string {
-	var result strings.Builder
-	inString := false
-	inRawBlock := false
-	rawParenDepth := 0
-	lineStart := 0
+	var (
+		result        strings.Builder
+		inString      = false
+		inRawBlock    = false
+		rawParenDepth = 0
+		lineStart     = 0
+	)
 
 	for i := 0; i < len(source); i++ {
 		if source[i] == '"' && (i == 0 || source[i-1] != '\\') {
@@ -32,11 +34,10 @@ func RemoveComments(source string) string {
 		if !inString && i+6 < len(source) && source[i:i+6] == "$raw (" {
 			inRawBlock = true
 			rawParenDepth = 1
-			// Skip ahead past "$raw ("
-			for j := 0; j < 6; j++ {
+			for j := range 6 {
 				result.WriteByte(source[i+j])
 			}
-			i += 5 // Will be incremented by 1 in the loop
+			i += 5
 			continue
 		}
 
