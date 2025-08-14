@@ -118,6 +118,14 @@ t.assert_float_equals(3.0, v3div.z, 0.0001, "Vector3 div.z should be 3")
 t.assert_equals(0, strings::compare("Hello, World!", "Hello, World!"), "String comparison should be equal")
 t.assert_equals(5, strings::length("Hello"), "String length should be 5")
 
+# String Split Tests
+ref collections::StringArrayList split_result1 = strings::split("apple,banana,cherry", ",")
+t.assert_equals(3, split_result1.get_size(), "Split should produce 3 parts")
+t.assert_string_equals("apple", split_result1.get_element(0), "First part should be 'apple'")
+t.assert_string_equals("banana", split_result1.get_element(1), "Second part should be 'banana'")
+t.assert_string_equals("cherry", split_result1.get_element(2), "Third part should be 'cherry'")
+
+
 # OS Tests
 log::success(fmt!("ASSERT PASSED: Currently directory correctly detected as: %s", os::cwd()))
 log::success(fmt!("ASSERT PASSED: Home directory detected as: %s", os::homedir()))

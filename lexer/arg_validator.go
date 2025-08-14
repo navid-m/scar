@@ -167,7 +167,6 @@ func (av *ArgumentValidator) ValidateStringFunctionCall(expr string, line int) e
 	return nil
 }
 
-// Parses function arguments while respecting nested parentheses
 func parseArguments(argsStr string) []string {
 	if strings.TrimSpace(argsStr) == "" {
 		return []string{}
@@ -176,17 +175,31 @@ func parseArguments(argsStr string) []string {
 	var args []string
 	var current strings.Builder
 	parenDepth := 0
+	inString := false
+	var stringDelimiter rune
 
 	for _, char := range argsStr {
 		switch char {
+		case '"', '\'':
+			if !inString {
+				inString = true
+				stringDelimiter = char
+			} else if char == stringDelimiter {
+				inString = false
+			}
+			current.WriteRune(char)
 		case '(':
-			parenDepth++
+			if !inString {
+				parenDepth++
+			}
 			current.WriteRune(char)
 		case ')':
-			parenDepth--
+			if !inString {
+				parenDepth--
+			}
 			current.WriteRune(char)
 		case ',':
-			if parenDepth == 0 {
+			if parenDepth == 0 && !inString {
 				args = append(args, strings.TrimSpace(current.String()))
 				current.Reset()
 			} else {

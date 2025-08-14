@@ -179,3 +179,40 @@ pub fn replace(string str, string old_substr, string new_substr) -> char*:
         strcpy(dst, src);
         return result;
     )
+
+pub fn split(string str, string delimiter) -> collections::StringArrayList:
+    var result = new collections::StringArrayList(10)
+    if strings::length(str) == 0:
+        result.add_element("")
+        return result
+    
+    if strings::length(delimiter) == 0:
+        result.add_element(str)
+        return result
+    string unique_marker = "\x01"
+    string marked_str = strings::replace(str, delimiter, unique_marker)
+    int marker_ascii = ord(unique_marker)
+    string current_part = ""
+    int str_len = strings::length(marked_str)
+    int i = 0
+    while i < str_len:
+        string current_char = strings::get_char_at(marked_str, i)
+        if ord(current_char) == marker_ascii:
+            result.add_element(current_part)
+            current_part = ""
+        else:
+            current_part = fmt!("%s%s", current_part, current_char)
+        i = i + 1
+    result.add_element(current_part)
+    return result
+
+pub fn get_char_at(string str, int index) -> string:
+    $raw (
+        if (str == NULL || index < 0 || index >= strlen(str)) {
+            return "";
+        }
+        char result[2];
+        result[0] = str[index];
+        result[1] = '\0';
+    )
+    return result
