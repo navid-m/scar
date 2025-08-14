@@ -1,0 +1,229 @@
+## Cross-platform threading primitives for Scar
+## Provides: Thread spawn/join/detach, Mutex, sleep/yield, CPU count, current thread id
+
+pub class Thread:
+    init:
+        i64 this.handle = 0
+
+pub class Mutex:
+    init:
+        i64 this.handle = 0
+
+## Spawn a native thread to run a C function pointer with an argument pointer.
+##
+## WARNING: func_ptr must be a native function pointer compatible with the platform:
+## - Windows: DWORD WINAPI fn(void* arg)
+## - Unix:    void* fn(void* arg)
+pub fn spawn(i64 func_ptr, i64 arg_ptr) -> threads::Thread:
+    platform (Windows):
+        $raw (
+            #include <windows.h>
+            #include <stdint.h>
+            threads_Thread* t = threads_Thread_new();
+            HANDLE h = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)(uintptr_t)func_ptr, (LPVOID)(uintptr_t)arg_ptr, 0, NULL);
+            t->handle = (long long)(intptr_t)h;
+            return t;
+        )
+    platform (Posix):
+        $raw (
+            #include <pthread.h>
+            #include <stdlib.h>
+            #include <stdint.h>
+            threads_Thread* t = threads_Thread_new();
+            pthread_t* th = (pthread_t*)malloc(sizeof(pthread_t));
+            if (th) {
+                pthread_create(th, NULL, (void*(*)(void*))(uintptr_t)func_ptr, (void*)(uintptr_t)arg_ptr);
+                t->handle = (long long)(intptr_t)th;
+            } else {
+                t->handle = 0;
+            }
+            return t;
+        )
+
+## Join a thread created by spawn()
+pub fn join(threads::Thread t):
+    platform (Windows):
+        $raw (
+            #include <windows.h>
+            HANDLE h = (HANDLE)(intptr_t)t->handle;
+            if (h) {
+                WaitForSingleObject(h, INFINITE);
+                CloseHandle(h);
+                t->handle = 0;
+            }
+        )
+    platform (Posix):
+        $raw (
+            #include <pthread.h>
+            #include <stdlib.h>
+            pthread_t* th = (pthread_t*)(intptr_t)t->handle;
+            if (th) {
+                pthread_join(*th, NULL);
+                free(th);
+                t->handle = 0;
+            }
+        )
+
+## Detach a thread (cannot be joined afterward)
+pub fn detach(threads::Thread t):
+    platform (Windows):
+        $raw (
+            #include <windows.h>
+            HANDLE h = (HANDLE)(intptr_t)t->handle;
+            if (h) {
+                CloseHandle(h);
+                t->handle = 0;
+            }
+        )
+    platform (Posix):
+        $raw (
+            #include <pthread.h>
+            #include <stdlib.h>
+            pthread_t* th = (pthread_t*)(intptr_t)t->handle;
+            if (th) {
+                pthread_detach(*th);
+                free(th);
+                t->handle = 0;
+            }
+        )
+
+## Create a mutex
+pub fn mutex_create() -> threads::Mutex:
+    platform (Windows):
+        $raw (
+            #include <windows.h>
+            #include <stdlib.h>
+            threads_Mutex* m = threads_Mutex_new();
+            CRITICAL_SECTION* cs = (CRITICAL_SECTION*)malloc(sizeof(CRITICAL_SECTION));
+            if (cs) {
+                InitializeCriticalSection(cs);
+                m->handle = (long long)(intptr_t)cs;
+            } else {
+                m->handle = 0;
+            }
+            return m;
+        )
+    platform (Posix):
+        $raw (
+            #include <pthread.h>
+            #include <stdlib.h>
+            threads_Mutex* m = threads_Mutex_new();
+            pthread_mutex_t* pm = (pthread_mutex_t*)malloc(sizeof(pthread_mutex_t));
+            if (pm) {
+                pthread_mutex_init(pm, NULL);
+                m->handle = (long long)(intptr_t)pm;
+            } else {
+                m->handle = 0;
+            }
+            return m;
+        )
+
+pub fn mutex_lock(threads::Mutex m):
+    platform (Windows):
+        $raw (
+            #include <windows.h>
+            CRITICAL_SECTION* cs = (CRITICAL_SECTION*)(intptr_t)m->handle;
+            if (cs) EnterCriticalSection(cs);
+        )
+    platform (Posix):
+        $raw (
+            #include <pthread.h>
+            pthread_mutex_t* pm = (pthread_mutex_t*)(intptr_t)m->handle;
+            if (pm) pthread_mutex_lock(pm);
+        )
+
+pub fn mutex_unlock(threads::Mutex m):
+    platform (Windows):
+        $raw (
+            #include <windows.h>
+            CRITICAL_SECTION* cs = (CRITICAL_SECTION*)(intptr_t)m->handle;
+            if (cs) LeaveCriticalSection(cs);
+        )
+    platform (Posix):
+        $raw (
+            #include <pthread.h>
+            pthread_mutex_t* pm = (pthread_mutex_t*)(intptr_t)m->handle;
+            if (pm) pthread_mutex_unlock(pm);
+        )
+
+pub fn mutex_destroy(threads::Mutex m):
+    platform (Windows):
+        $raw (
+            #include <windows.h>
+            #include <stdlib.h>
+            CRITICAL_SECTION* cs = (CRITICAL_SECTION*)(intptr_t)m->handle;
+            if (cs) {
+                DeleteCriticalSection(cs);
+                free(cs);
+                m->handle = 0;
+            }
+        )
+    platform (Posix):
+        $raw (
+            #include <pthread.h>
+            pthread_mutex_t* pm = (pthread_mutex_t*)(intptr_t)m->handle;
+            if (pm) {
+                pthread_mutex_destroy(pm);
+                free(pm);
+                m->handle = 0;
+            }
+        )
+
+## Sleep for the specified milliseconds
+pub fn sleep_ms(i32 ms):
+    platform (Windows):
+        $raw (
+            #include <windows.h>
+            Sleep((DWORD)ms);
+        )
+    platform (Posix):
+        $raw (
+            #include <unistd.h>
+            usleep((useconds_t)ms * 1000);
+        )
+
+## Yield current thread's time slice
+pub fn yield_thread():
+    platform (Windows):
+        $raw (
+            #include <windows.h>
+            SwitchToThread();
+        )
+    platform (Posix):
+        $raw (
+            #include <sched.h>
+            sched_yield();
+        )
+
+## Number of logical CPUs available
+pub fn num_cpus() -> i32:
+    int n = 1
+    platform (Windows):
+        $raw (
+            #include <windows.h>
+            SYSTEM_INFO si; GetSystemInfo(&si);
+            n = (int)si.dwNumberOfProcessors;
+        )
+    platform (Posix):
+        $raw (
+            #include <unistd.h>
+            long v = sysconf(_SC_NPROCESSORS_ONLN);
+            n = (int)(v > 0 ? v : 1);
+        )
+    return n
+
+## Get current thread id as 64-bit value
+pub fn current_thread_id() -> u64:
+    u64 tid = (u64)0
+    platform (Windows):
+        $raw (
+            #include <windows.h>
+            tid = (unsigned long long)GetCurrentThreadId();
+        )
+    platform (Posix):
+        $raw (
+            #include <pthread.h>
+            #include <stdint.h>
+            tid = (unsigned long long)(uintptr_t)pthread_self();
+        )
+    return tid
