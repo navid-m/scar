@@ -485,3 +485,31 @@ pub fn tanh(float x) -> float:
     if c == 0.0:
         return 0.0
     return s / c
+
+pub class Matrix3x2:
+    init(f32 m00, f32 m01, f32 m10, f32 m11, f32 m20, f32 m21):
+        f32 this.m00 = m00
+        f32 this.m01 = m01
+        f32 this.m10 = m10
+        f32 this.m11 = m11
+        f32 this.m20 = m20
+        f32 this.m21 = m21
+
+pub class Matrix4x4:
+    init(f32 m00, f32 m01, f32 m02, f32 m03, f32 m10, f32 m11, f32 m12, f32 m13, f32 m20, f32 m21, f32 m22, f32 m23, f32 m30, f32 m31, f32 m32, f32 m33):
+        f32 this.m00 = m00
+        f32 this.m01 = m01
+        f32 this.m02 = m02
+        f32 this.m03 = m03
+        f32 this.m10 = m10
+        f32 this.m11 = m11
+        f32 this.m12 = m12
+        f32 this.m13 = m13
+        f32 this.m20 = m20
+        f32 this.m21 = m21
+        f32 this.m22 = m22
+        f32 this.m23 = m23
+        f32 this.m30 = m30
+        f32 this.m31 = m31
+        f32 this.m32 = m32
+        f32 this.m33 = m33
