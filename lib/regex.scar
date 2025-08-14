@@ -1,0 +1,149 @@
+## On Windows:  mingw && pacman -S mingw-w64-x86_64-pcre
+## On Linux:    sudo apt-get install libpcre3-dev
+## On macOS:    brew install pcre
+
+external import "pcre.h"
+
+pub i64 _max_str_len = 954020
+
+pub fn matches(string pattern, string text) -> bool: 
+    $raw (
+        #include <string.h>
+        const char *err = NULL; int erroffset = 0;
+        const pcre *re = pcre_compile(pattern, 0, &err, &erroffset, NULL);
+        if (!re) return 0;
+        int rc = pcre_exec(re, NULL, text, (int)strlen(text), 0, 0, NULL, 0);
+        pcre_free((void*)re);
+        return rc >= 0;
+    )
+
+pub fn find(string pattern, string text) -> list[string]:
+    $raw (
+        #include <string.h>
+        const char *err = NULL; int erroffset = 0;
+        const pcre *re = pcre_compile(pattern, 0, &err, &erroffset, NULL);
+        if (!re) return 0;
+        int ovecsize = 30; 
+        int ovector[30];
+        int rc = pcre_exec(re, NULL, text, (int)strlen(text), 0, 0, ovector, ovecsize);
+        int count = 0;
+        if (rc >= 0) {
+            int groups = rc; 
+            if (groups > _max_size) groups = _max_size;
+            for (int i = 0; i < groups; i++) {
+                int start = ovector[2*i];
+                int end   = ovector[2*i + 1];
+                int len   = end - start;
+                if (len < 0) len = 0;
+                if (len >= regex__max_str_len) len = regex__max_str_len - 1;
+                strncpy(_output_array[i], text + start, len);
+                _output_array[i][len] = '\0';
+                count++;
+            }
+        }
+        pcre_free((void*)re);
+        return count;
+    )
+
+pub fn replace(string pattern, string text, string replacement) -> char*:
+    $raw (
+        #include <string.h>
+        #include <stdlib.h>
+        const char *err = NULL; int erroffset = 0;
+        const pcre *re = pcre_compile(pattern, 0, &err, &erroffset, NULL);
+        if (!re) {
+            char* out = (char*)malloc(1); if (out) out[0] = '\0';
+            return out;
+        }
+
+        int text_len = (int)strlen(text);
+        int repl_len = (int)strlen(replacement);
+        int cap = text_len + 1; 
+        char* out = (char*)malloc(cap);
+        int out_len = 0;
+
+        int ovecsize = 30;
+        int ovector[30];
+        int start_offset = 0;
+        while (start_offset <= text_len) {
+            int rc = pcre_exec(re, NULL, text, text_len, start_offset, 0, ovector, ovecsize);
+            if (rc < 0) {
+                int chunk_len = text_len - start_offset;
+                if (out_len + chunk_len + 1 > cap) {
+                    cap = (out_len + chunk_len + 1) * 2;
+                    out = (char*)realloc(out, cap);
+                }
+                if (chunk_len > 0) memcpy(out + out_len, text + start_offset, chunk_len);
+                out_len += chunk_len;
+                break;
+            }
+            int mstart = ovector[0];
+            int mend   = ovector[1];
+            int before_len = mstart - start_offset;
+            if (before_len > 0) {
+                if (out_len + before_len + 1 > cap) {
+                    cap = (out_len + before_len + 1 + repl_len) * 2;
+                    out = (char*)realloc(out, cap);
+                }
+                memcpy(out + out_len, text + start_offset, before_len);
+                out_len += before_len;
+            }
+            if (repl_len > 0) {
+                if (out_len + repl_len + 1 > cap) {
+                    cap = (out_len + repl_len + 1) * 2;
+                    out = (char*)realloc(out, cap);
+                }
+                memcpy(out + out_len, replacement, repl_len);
+                out_len += repl_len;
+            }
+            start_offset = mend;
+            if (mend == mstart) {
+                start_offset++;
+            }
+        }
+        if (out) out[out_len] = '\0';
+        pcre_free((void*)re);
+        return out;
+    )
+
+pub fn split(string pattern, string text) -> list[string]:
+    $raw (
+        #include <string.h>
+        const char *err = NULL; int erroffset = 0;
+        const pcre *re = pcre_compile(pattern, 0, &err, &erroffset, NULL);
+        if (!re) return 0;
+        
+        int count = 0;
+        int text_len = (int)strlen(text);
+        int ovecsize = 30;
+        int ovector[30];
+        int start_offset = 0;
+        int last_end = 0;
+
+        while (start_offset <= text_len && count < _max_size) {
+            int rc = pcre_exec(re, NULL, text, text_len, start_offset, 0, ovector, ovecsize);
+            if (rc < 0) {
+                int seg_len = text_len - last_end;
+                if (seg_len >= regex__max_str_len) seg_len = regex__max_str_len - 1;
+                strncpy(_output_array[count], text + last_end, seg_len);
+                _output_array[count][seg_len] = '\0';
+                count++;
+                break;
+            }
+            int mstart = ovector[0];
+            int mend   = ovector[1];
+            int seg_len = mstart - last_end;
+            if (seg_len < 0) seg_len = 0;
+            if (count < _max_size) {
+                if (seg_len >= regex__max_str_len) seg_len = regex__max_str_len - 1;
+                strncpy(_output_array[count], text + last_end, seg_len);
+                _output_array[count][seg_len] = '\0';
+                count++;
+            }
+            last_end = mend;
+            start_offset = mend;
+            if (mend == mstart) start_offset++;
+        }
+        pcre_free((void*)re);
+        return count;
+    )
