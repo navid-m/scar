@@ -1,5 +1,61 @@
 import "std/strings"
 
+pub fn make_dir(string path) -> bool:
+    $raw (
+        return mkdir(path) == 0;
+    )
+
+pub fn remove_dir(string path) -> bool:
+    $raw (
+        return rmdir(path) == 0;
+    )
+
+pub fn read_bytes(string filename) -> list[int]:
+    $raw (
+        FILE* file = fopen(filename, "rb");
+        if (file == NULL) {
+            return 0;
+        }
+        
+        fseek(file, 0, SEEK_END);
+        long file_size = ftell(file);
+        fseek(file, 0, SEEK_SET);
+        
+        if (file_size > _max_size) {
+            file_size = _max_size;
+        }
+        
+        unsigned char* buffer = malloc(file_size);
+        size_t bytes_read = fread(buffer, 1, file_size, file);
+        fclose(file);
+        
+        for (int _i = 0; _i < bytes_read; _i++) {
+            _output_array[_i] = (int)buffer[_i];
+        }
+        
+        free(buffer);
+        return (int)bytes_read;
+    )
+
+pub fn write_bytes(string filename, list[int] data) -> bool:
+    $raw (
+        FILE* file = fopen(filename, "wb");
+        if (file == NULL) {
+            return 0;
+        }
+        
+        for (int i = 0; i < len(data); i++) {
+            unsigned char byte = (unsigned char)data[i];
+            if (fwrite(&byte, 1, 1, file) != 1) {
+                fclose(file);
+                return 0;
+            }
+        }
+        
+        fclose(file);
+        return 1;
+    )
+
 pub fn exists(string path) -> bool:
     $raw (
         return access(path, F_OK) == 0;
