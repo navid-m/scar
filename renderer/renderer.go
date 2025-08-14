@@ -274,19 +274,20 @@ bool __check_key_exists(int* keys, int size, int key) {
 		cType := mapTypeToCType(varDecl.Type)
 		value := varDecl.Value
 
-		if varDecl.Type == "string" {
+		switch varDecl.Type {
+		case "string":
 			if !strings.HasPrefix(value, "\"") {
 				value = fmt.Sprintf("\"%s\"", value)
 			}
 			fmt.Fprintf(&b, "char %s[256];\n", varName)
 			fmt.Fprintf(&b, "void init_%s() { strcpy(%s, %s); }\n", varName, varName, value)
-		} else if varDecl.Type == "lstring" {
+		case "lstring":
 			if !strings.HasPrefix(value, "\"") {
 				value = fmt.Sprintf("\"%s\"", value)
 			}
 			fmt.Fprintf(&b, "char %s[10000];\n", varName)
 			fmt.Fprintf(&b, "void init_%s() { strcpy(%s, %s); }\n", varName, varName, value)
-		} else {
+		default:
 			fmt.Fprintf(&b, "%s %s = %s;\n", cType, varName, value)
 		}
 	}
