@@ -1,5 +1,3 @@
-## VERY basic. Will wrap libcurl in the future.
-
 import "std/strings"
 
 external import "curl/curl.h"
