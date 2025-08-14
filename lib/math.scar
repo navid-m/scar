@@ -7,8 +7,8 @@ pub f32 PHI     = 1.61803398875
 
 pub class Vector2:
     init:
-        i32 this.x = 0
-        i32 this.y = 0
+        f32 this.x = 0.0
+        f32 this.y = 0.0
     
     fn add(ref math::Vector2 other) -> math::Vector2:
         ref math::Vector2 result = this
@@ -36,9 +36,9 @@ pub class Vector2:
 
 pub class Vector3:
     init:
-        i32 this.x = 0
-        i32 this.y = 0
-        i32 this.z = 0
+        f32 this.x = 0.0
+        f32 this.y = 0.0
+        f32 this.z = 0.0
     
     fn add(ref math::Vector3 other) -> math::Vector3:
         ref math::Vector3 result = this
