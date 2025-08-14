@@ -6,9 +6,7 @@ pub class ArrayList:
         this.size = 0
         this.capacity = initial_capacity
         ref i32 this.data = nil
-        $raw (
-            this->data = malloc(this->capacity * sizeof(int));
-        )
+        allocate i32 this.data = sizeof(int) * initial_capacity
     
     fn add_element(i32 value) -> void:
         if this.size >= this.capacity:
