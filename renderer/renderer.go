@@ -217,8 +217,14 @@ bool __check_key_exists(int* keys, int size, int key) {
 
 		if constructor == nil {
 			for _, module := range lexer.LoadedModules {
-				if classDecl, exists := module.PublicClasses[className]; exists {
-					constructor = classDecl.Constructor
+				for originalClassName, classDecl := range module.PublicClasses {
+					moduleClassName := lexer.GenerateUniqueSymbol(originalClassName, module.Name)
+					if moduleClassName == className {
+						constructor = classDecl.Constructor
+						break
+					}
+				}
+				if constructor != nil {
 					break
 				}
 			}

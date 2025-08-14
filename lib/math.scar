@@ -6,63 +6,63 @@ pub f32 TAU     = 6.28318530718
 pub f32 PHI     = 1.61803398875
 
 pub class Vector2:
-    init:
-        f32 this.x = 0.0
-        f32 this.y = 0.0
+    init(f32 x, f32 y):
+        f32 this.x = x
+        f32 this.y = y
     
     fn add(ref math::Vector2 other) -> math::Vector2:
-        ref math::Vector2 result = this
+        ref math::Vector2 result = new math::Vector2(this.x, this.y)
         result.x = this.x + other.x
         result.y = this.y + other.y
         return result
     
     fn sub(ref math::Vector2 other) -> math::Vector2:
-        ref math::Vector2 result = this
+        ref math::Vector2 result = new math::Vector2(this.x, this.y)
         result.x = this.x - other.x
         result.y = this.y - other.y
         return result
     
     fn mul(ref math::Vector2 other) -> math::Vector2:
-        ref math::Vector2 result = this
+        ref math::Vector2 result = new math::Vector2(this.x, this.y)
         result.x = this.x * other.x
         result.y = this.y * other.y
         return result
     
     fn div(ref math::Vector2 other) -> math::Vector2:
-        ref math::Vector2 result = this
+        ref math::Vector2 result = new math::Vector2(this.x, this.y)
         result.x = this.x / other.x
         result.y = this.y / other.y
         return result
 
 pub class Vector3:
-    init:
-        f32 this.x = 0.0
-        f32 this.y = 0.0
-        f32 this.z = 0.0
+    init(f32 x, f32 y, f32 z):
+        f32 this.x = x
+        f32 this.y = y
+        f32 this.z = z
     
     fn add(ref math::Vector3 other) -> math::Vector3:
-        ref math::Vector3 result = this
+        ref math::Vector3 result = new math::Vector3(this.x, this.y, this.z)
         result.x = this.x + other.x
         result.y = this.y + other.y
         result.z = this.z + other.z
         return result
     
     fn sub(ref math::Vector3 other) -> math::Vector3:
-        ref math::Vector3 result = this
+        ref math::Vector3 result = new math::Vector3(this.x, this.y, this.z)
         result.x = this.x - other.x
         result.y = this.y - other.y
         result.z = this.z - other.z
         return result
     
     fn mul(ref math::Vector3 other) -> math::Vector3:
-        ref math::Vector3 result = this
+        ref math::Vector3 result = new math::Vector3(this.x, this.y, this.z)
         result.x = this.x * other.x
         result.y = this.y * other.y
         result.z = this.z * other.z
         return result
     
     fn div(ref math::Vector3 other) -> math::Vector3:
-        ref math::Vector3 result = this
+        ref math::Vector3 result = new math::Vector3(this.x, this.y, this.z)
         result.x = this.x / other.x
         result.y = this.y / other.y
         result.z = this.z / other.z

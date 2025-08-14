@@ -40,12 +40,12 @@ t.assert_float_equals(0.0, math::ln(1.0), 0.0000001, "ln(1.0) should be approxim
 t.assert_equals(123, math::to_int("123"), "to_int should return 123")
 
 # Vector2 Tests
-ref math::Vector2 v2zero = new math::Vector2()
+ref math::Vector2 v2zero = new math::Vector2(0.0,0.0)
 t.assert_equals(0, v2zero.x, "Vector2 default x should be 0")
 t.assert_equals(0, v2zero.y, "Vector2 default y should be 0")
 
-ref math::Vector2 v2a = new math::Vector2()
-ref math::Vector2 v2b = new math::Vector2()
+ref math::Vector2 v2a = new math::Vector2(0.0,0.0)
+ref math::Vector2 v2b = new math::Vector2(0.0,0.0)
 v2a.x = 1.0
 v2a.y = 2.0
 v2b.x = 3.0
@@ -71,14 +71,13 @@ t.assert_float_equals(4.0, v2div.x, 0.0001, "Vector2 div.x should be 4")
 t.assert_float_equals(2.0, v2div.y, 0.0001, "Vector2 div.y should be 2")
 
 # Vector3 Tests
-ref math::Vector3 v3zero = new math::Vector3()
+ref math::Vector3 v3zero = new math::Vector3(0.0, 0.0, 0.0)
 t.assert_equals(0, v3zero.x, "Vector3 default x should be 0")
 t.assert_equals(0, v3zero.y, "Vector3 default y should be 0")
 t.assert_equals(0, v3zero.z, "Vector3 default z should be 0")
 
-ref math::Vector3 v3a = new math::Vector3()
-
-ref math::Vector3 v3b = new math::Vector3()
+ref math::Vector3 v3a = new math::Vector3(0.0, 0.0, 0.0)
+ref math::Vector3 v3b = new math::Vector3(0.0, 0.0, 0.0)
 v3a.x = 1.0
 v3a.y = 2.0
 v3a.z = 3.0
