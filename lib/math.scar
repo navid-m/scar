@@ -5,6 +5,69 @@ pub i32 MIN_INT = -2147483648
 pub f32 TAU     = 6.28318530718
 pub f32 PHI     = 1.61803398875
 
+pub class Vector2:
+    init:
+        i32 this.x = 0
+        i32 this.y = 0
+    
+    fn add(ref math::Vector2 other) -> math::Vector2:
+        ref math::Vector2 result = this
+        result.x = this.x + other.x
+        result.y = this.y + other.y
+        return result
+    
+    fn sub(ref math::Vector2 other) -> math::Vector2:
+        ref math::Vector2 result = this
+        result.x = this.x - other.x
+        result.y = this.y - other.y
+        return result
+    
+    fn mul(ref math::Vector2 other) -> math::Vector2:
+        ref math::Vector2 result = this
+        result.x = this.x * other.x
+        result.y = this.y * other.y
+        return result
+    
+    fn div(ref math::Vector2 other) -> math::Vector2:
+        ref math::Vector2 result = this
+        result.x = this.x / other.x
+        result.y = this.y / other.y
+        return result
+
+pub class Vector3:
+    init:
+        i32 this.x = 0
+        i32 this.y = 0
+        i32 this.z = 0
+    
+    fn add(ref math::Vector3 other) -> math::Vector3:
+        ref math::Vector3 result = this
+        result.x = this.x + other.x
+        result.y = this.y + other.y
+        result.z = this.z + other.z
+        return result
+    
+    fn sub(ref math::Vector3 other) -> math::Vector3:
+        ref math::Vector3 result = this
+        result.x = this.x - other.x
+        result.y = this.y - other.y
+        result.z = this.z - other.z
+        return result
+    
+    fn mul(ref math::Vector3 other) -> math::Vector3:
+        ref math::Vector3 result = this
+        result.x = this.x * other.x
+        result.y = this.y * other.y
+        result.z = this.z * other.z
+        return result
+    
+    fn div(ref math::Vector3 other) -> math::Vector3:
+        ref math::Vector3 result = this
+        result.x = this.x / other.x
+        result.y = this.y / other.y
+        result.z = this.z / other.z
+        return result
+
 pub fn to_int(string value) -> i32:
     i32 i = 0
     i32 result = 0
