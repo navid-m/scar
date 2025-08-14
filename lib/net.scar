@@ -209,6 +209,7 @@ pub fn http_put(string url, string data) -> net::HttpResponse:
         }
 
         net_HttpResponse* response = net_HttpResponse_new();
+
         response->status_code = 0;
         response->body[0] = '\0';
         response->error[0] = '\0';
@@ -216,6 +217,7 @@ pub fn http_put(string url, string data) -> net::HttpResponse:
         CURL *curl = NULL;
         CURLcode res;
         Memory chunk;
+
         chunk.data = (char*)malloc(1);
         chunk.size = 0;
 
