@@ -27,6 +27,7 @@ func main() {
 	var (
 		asm     = flag.Bool("asm", false, "show assembly output")
 		c       = flag.Bool("c", false, "show c output")
+		dll     = flag.Bool("dll", false, "compile as dynamic link library")
 		gc      = flag.Bool("gc", false, "use bdwgc garbage collector")
 		keepc   = flag.Bool("keepc", false, "keep generated c file")
 		version = flag.Bool("v", false, "show version")
@@ -121,6 +122,21 @@ func main() {
 		compileArgs  = []string{"-w", "-fopenmp", tmpCPath, "-o", outputBinary, extCflag}
 	)
 
+	if *dll {
+		compileArgs = append(compileArgs, "-shared", "-fPIC")
+		if runtime.GOOS == "windows" {
+			outputBinary += ".dll"
+		} else {
+			outputBinary += ".so"
+		}
+		for i, arg := range compileArgs {
+			if arg == "-o" && i+1 < len(compileArgs) {
+				compileArgs[i+1] = outputBinary
+				break
+			}
+		}
+	}
+
 	if *gc {
 		if gcFlags := findBundledBoehm(); gcFlags != nil {
 			compileArgs = append(compileArgs, gcFlags...)
@@ -141,6 +157,16 @@ func main() {
 			"-I/opt/homebrew/opt/libomp/include",
 			"-L/opt/homebrew/opt/libomp/lib",
 			"-o", outputBinary,
+		}
+		if *dll {
+			compileArgs = append(compileArgs, "-shared", "-fPIC")
+			outputBinary = "./" + cleanedName + ".dylib"
+			for i, arg := range compileArgs {
+				if arg == "-o" && i+1 < len(compileArgs) {
+					compileArgs[i+1] = outputBinary
+					break
+				}
+			}
 		}
 		if hasCurl {
 			compileArgs = append(compileArgs, "-lcurl")
@@ -163,6 +189,16 @@ func main() {
 			tmpCPath,
 			"-o", outputBinary,
 		}
+		if *dll {
+			compileArgs = append(compileArgs, "-shared", "-fPIC")
+			outputBinary = "./" + cleanedName + ".so"
+			for i, arg := range compileArgs {
+				if arg == "-o" && i+1 < len(compileArgs) {
+					compileArgs[i+1] = outputBinary
+					break
+				}
+			}
+		}
 		if hasCurl {
 			compileArgs = append(compileArgs, "-lcurl")
 		}
@@ -180,13 +216,25 @@ func main() {
 		}
 	case "windows":
 		cmpPath = "gcc"
-		outputBinary += ".exe"
+		if !*dll {
+			outputBinary += ".exe"
+		}
 		compileArgs = []string{
 			"-fopenmp",
 			"-w",
 			tmpCPath,
 			"-o",
 			outputBinary,
+		}
+		if *dll {
+			compileArgs = append(compileArgs, "-shared")
+			outputBinary = "./" + cleanedName + ".dll"
+			for i, arg := range compileArgs {
+				if arg == "-o" && i+1 < len(compileArgs) {
+					compileArgs[i+1] = outputBinary
+					break
+				}
+			}
 		}
 		if hasCurl {
 			compileArgs = append(compileArgs, "-lcurl")
