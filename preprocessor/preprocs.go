@@ -27,6 +27,9 @@ func InsertMacros(output string) string {
 		outp = replaceRandCalls(outp)
 		outp = insertRand(outp)
 	}
+	if strings.Contains(output, "lstring") {
+		outp = insertLstring(outp)
+	}
 	if strings.Contains(output, "cat") {
 		outp = insertCat(outp)
 	}
@@ -61,6 +64,10 @@ func InsertMacros(output string) string {
 
 func insertCstring(output string) string {
 	return "typedef char* cstring;\n" + output
+}
+
+func insertLstring(output string) string {
+	return "typedef char* lstring;\n" + output
 }
 
 func insertSprintf(output string) string {

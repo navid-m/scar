@@ -174,3 +174,67 @@ pub fn murmur3(string data, i32 seed) -> i32:
         
         return (int32_t)hash;
     )
+
+pub fn base64_encode(string data) -> string:
+    $raw (
+        static const char *enc = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+        if (!data) { strcpy(_output_buffer, ""); return; }
+        size_t len = strlen(data);
+        size_t out_len = 4 * ((len + 2) / 3);
+        char *out = (char*)malloc(out_len + 1);
+        if (!out) { strcpy(_output_buffer, ""); return; }
+        size_t i = 0, j = 0;
+        while (i < len) {
+            uint32_t octet_a = i < len ? (unsigned char)data[i++] : 0;
+            uint32_t octet_b = i < len ? (unsigned char)data[i++] : 0;
+            uint32_t octet_c = i < len ? (unsigned char)data[i++] : 0;
+            uint32_t triple = (octet_a << 16) | (octet_b << 8) | octet_c;
+            out[j++] = enc[(triple >> 18) & 0x3F];
+            out[j++] = enc[(triple >> 12) & 0x3F];
+            out[j++] = (i - 1 > len) ? '=' : enc[(triple >> 6) & 0x3F];
+            out[j++] = (i > len) ? '=' : enc[triple & 0x3F];
+        }
+        size_t mod = len % 3;
+        if (mod) {
+            out[out_len-1] = '=';
+            if (mod == 1) out[out_len-2] = '=';
+        }
+        out[out_len] = '\0';
+        strncpy(_output_buffer, out, 24920);
+        _output_buffer[24920] = '\0';
+        free(out);
+    )
+
+pub fn base64_decode(string b64) -> string:
+    $raw (
+        if (!b64) { strcpy(_output_buffer, ""); return; }
+        static int8_t dec[256];
+        static int init = 0;
+        if (!init) {
+            for (int i = 0; i < 256; i++) dec[i] = -1;
+            const char *enc = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+            for (int i = 0; i < 64; i++) dec[(unsigned char)enc[i]] = (int8_t)i;
+            init = 1;
+        }
+        size_t len = strlen(b64);
+        char *out = (char*)malloc((len / 4) * 3 + 1);
+        if (!out) { strcpy(_output_buffer, ""); return; }
+        size_t i = 0, j = 0;
+        uint32_t accum = 0; int bits = 0;
+        while (i < len) {
+            unsigned char c = (unsigned char)b64[i++];
+            if (c == '=') { break; }
+            int8_t v = dec[c];
+            if (v < 0) { continue; }
+            accum = (accum << 6) | (uint32_t)v;
+            bits += 6;
+            if (bits >= 8) {
+                bits -= 8;
+                out[j++] = (char)((accum >> bits) & 0xFF);
+            }
+        }
+        out[j] = '\0';
+        strncpy(_output_buffer, out, 24920);
+        _output_buffer[24920] = '\0';
+        free(out);
+    )

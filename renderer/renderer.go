@@ -34,20 +34,21 @@ var (
 	currentFunction   *lexer.TopLevelFuncDeclStmt
 	useGC             = false
 	primitiveTypes    = map[string]string{
-		"int":    "int",
-		"float":  "float",
-		"double": "double",
-		"bool":   "bool",
-		"char":   "char",
-		"string": "char*",
-		"u16":    "uint16_t",
-		"u32":    "uint32_t",
-		"u64":    "uint64_t",
-		"i16":    "int16_t",
-		"i32":    "int32_t",
-		"i64":    "int64_t",
-		"f32":    "float",
-		"f64":    "double",
+		"int":     "int",
+		"float":   "float",
+		"double":  "double",
+		"bool":    "bool",
+		"char":    "char",
+		"string":  "char*",
+		"lstring": "char*",
+		"u16":     "uint16_t",
+		"u32":     "uint32_t",
+		"u64":     "uint64_t",
+		"i16":     "int16_t",
+		"i32":     "int32_t",
+		"i64":     "int64_t",
+		"f32":     "float",
+		"f64":     "double",
 	}
 )
 
@@ -278,6 +279,12 @@ bool __check_key_exists(int* keys, int size, int key) {
 			}
 			fmt.Fprintf(&b, "char %s[256];\n", varName)
 			fmt.Fprintf(&b, "void init_%s() { strcpy(%s, %s); }\n", varName, varName, value)
+		} else if varDecl.Type == "lstring" {
+			if !strings.HasPrefix(value, "\"") {
+				value = fmt.Sprintf("\"%s\"", value)
+			}
+			fmt.Fprintf(&b, "char %s[10000];\n", varName)
+			fmt.Fprintf(&b, "void init_%s() { strcpy(%s, %s); }\n", varName, varName, value)
 		} else {
 			fmt.Fprintf(&b, "%s %s = %s;\n", cType, varName, value)
 		}
@@ -311,6 +318,8 @@ bool __check_key_exists(int* keys, int size, int key) {
 			uniqueName := lexer.GenerateUniqueSymbol(varName, module.Name)
 			if varDecl.Type == "string" {
 				fmt.Fprintf(&b, "extern char %s[256];\n", uniqueName)
+			} else if varDecl.Type == "lstring" {
+				fmt.Fprintf(&b, "extern char %s[10000];\n", uniqueName)
 			} else {
 				fmt.Fprintf(&b, "extern %s %s;\n", cType, uniqueName)
 			}
@@ -329,6 +338,12 @@ bool __check_key_exists(int* keys, int size, int key) {
 					value = fmt.Sprintf("\"%s\"", value)
 				}
 				fmt.Fprintf(&b, "char %s[256];\n", uniqueName)
+				fmt.Fprintf(&b, "void init_%s() { strcpy(%s, %s); }\n", uniqueName, uniqueName, value)
+			} else if varDecl.Type == "lstring" {
+				if !strings.HasPrefix(value, "\"") {
+					value = fmt.Sprintf("\"%s\"", value)
+				}
+				fmt.Fprintf(&b, "char %s[10000];\n", uniqueName)
 				fmt.Fprintf(&b, "void init_%s() { strcpy(%s, %s); }\n", uniqueName, uniqueName, value)
 			} else {
 				fmt.Fprintf(&b, "%s %s = %s;\n", cType, uniqueName, value)
@@ -792,6 +807,9 @@ func processCatExpression(expr string) string {
 
 func inferTypeFromValue(value string) string {
 	if strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"") {
+		if len(value) > 256 {
+			return "lstring"
+		}
 		return "string"
 	}
 	if value == "NULL" {
@@ -814,6 +832,7 @@ func inferTypeFromValue(value string) string {
 
 func generateStructDefinition(b *strings.Builder, classInfo *ClassInfo, structName string) {
 	fmt.Fprintf(b, "#define MAX_STRING_LENGTH 256\n")
+	fmt.Fprintf(b, "#define MAX_LSTRING_LENGTH 10000\n")
 	fmt.Fprintf(b, "#define MAX_MAP_SIZE 100\n")
 
 	hasSelfReference := false
@@ -2523,6 +2542,11 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 
 			if varType == "string" {
 				fmt.Fprintf(b, "%s%s %s[256];\n", indent, cType, varName)
+			} else if varType == "lstring" {
+				fmt.Fprintf(b, "%s%s %s[10000];\n", indent, cType, varName)
+			}
+
+			if varType == "string" || varType == "lstring" {
 				if value != "" {
 					if isFunctionCall(value) {
 						funcName, args := parseFunctionCall(value)
@@ -4371,7 +4395,7 @@ func isArithmeticExpression(value string) bool {
 			return true
 		}
 	}
-	operators := []string{"+", "-", "*", "/", "%"}
+	operators := []string{"+", "-", "*", "/", "%", "b_xor", "b_and", "b_or", "<<", ">>"}
 	for _, op := range operators {
 		if strings.Contains(value, " "+op+" ") {
 			return true
@@ -4485,8 +4509,14 @@ func areTypesCompatible(targetType, valueType string) bool {
 func checkTypeCompatibility(varName, varType, value string) error {
 	valueType := inferValueType(value)
 
-	if valueType == "unknown" {
+	if valueType == "unknown" || valueType == "string" {
 		if isFunctionCall(value) {
+			return nil
+		}
+		if value == "\"\"" {
+			return nil
+		}
+		if regexp.MustCompile(`^".*"$`).MatchString(value) {
 			return nil
 		}
 
@@ -4541,6 +4571,12 @@ func containsValidExpressionElements(value string) bool {
 	}
 	logicalOps := []string{"&&", "||", "and", "or"}
 	for _, op := range logicalOps {
+		if strings.Contains(value, " "+op+" ") {
+			return true
+		}
+	}
+	bitwiseOps := []string{"b_xor", "b_and", "b_or", "<<", ">>", "^"}
+	for _, op := range bitwiseOps {
 		if strings.Contains(value, " "+op+" ") {
 			return true
 		}

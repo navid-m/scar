@@ -15,6 +15,7 @@ import "std/json"
 import "std/net"
 import "std/threads"
 import "std/regex"
+import "std/crypto"
 
 # Setup
 var list = new collections::ArrayList(4)
@@ -220,6 +221,13 @@ t.assert_equals(3, ca, "regex::split should split into 3 parts")
 t.assert_string_equals("a", parts[0], "First part 'a'")
 t.assert_string_equals("b", parts[1], "Second part 'b'")
 t.assert_string_equals("c", parts[2], "Third part 'c'")
+
+# Crypto Tests
+string asdf = crypto::vigenere_encrypt("Hello World", "key")
+t.assert_string_equals("Hello World", crypto::vigenere_decrypt(asdf, "key"), "Vigenere encryption should work")
+
+string somethingelse = crypto::xor_cipher("Hello World", "key")
+log::success(fmt!("Got %s", somethingelse))
 
 # Networking Tests
 net::HttpResponse hello = net::http_get("https://httpbin.org/get")

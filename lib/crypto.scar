@@ -1,0 +1,111 @@
+import "std/strings"
+import "std/random"
+
+## Pure-Scar XOR cipher (no $raw). Repeats key over text and XORs each byte.
+pub fn xor_cipher(string text, string key) -> char*:
+    if strings::length(key) == 0:
+        return ""
+    i32 n = strings::length(text)
+    i32 k = strings::length(key)
+    lstring out = ""
+    i32 i = 0
+    for i = 0 to n - 1:
+        char tc = text[i]
+        char kc = key[i % k]
+        i32 tv = strings::ord_char(tc)
+        i32 kv = strings::ord_char(kc)
+        i32 xv = tv b_xor kv
+        char* ch = strings::chr(xv)
+        out = cat!(out, ch)
+    return out
+
+pub fn caesar_encrypt(string text, i32 shift) -> string:
+    $raw (
+        if (!text) { strcpy(_output_buffer, ""); return; }
+        int s = shift % 26; if (s < 0) s += 26;
+        size_t n = strlen(text);
+        char *out = (char*)malloc(n + 1); if (!out) { strcpy(_output_buffer, ""); return; }
+        for (size_t i = 0; i < n; i++) {
+            char c = text[i];
+            if (c >= 'a' && c <= 'z') out[i] = (char)('a' + ((c - 'a' + s) % 26));
+            else if (c >= 'A' && c <= 'Z') out[i] = (char)('A' + ((c - 'A' + s) % 26));
+            else out[i] = c;
+        }
+        out[n] = '\0';
+        strncpy(_output_buffer, out, 25402 - 1);
+        _output_buffer[25402 - 1] = '\0';
+        free(out);
+    )
+
+pub fn caesar_decrypt(string text, i32 shift) -> string:
+    return crypto::caesar_encrypt(text, -shift)
+
+pub fn vigenere_encrypt(string text, string key) -> string:
+    $raw (
+        if (!text || !key || key[0] == '\0') { strcpy(_output_buffer, ""); return; }
+        size_t n = strlen(text);
+        size_t k = strlen(key);
+        char *out = (char*)malloc(n + 1); if (!out) { strcpy(_output_buffer, ""); return; }
+        size_t j = 0;
+        for (size_t i = 0; i < n; i++) {
+            char c = text[i];
+            if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')) {
+                char kc = key[j % k];
+                if (kc >= 'a' && kc <= 'z') kc = (char)(kc - 'a');
+                else if (kc >= 'A' && kc <= 'Z') kc = (char)(kc - 'A');
+                else kc = 0;
+                if (c >= 'a' && c <= 'z') out[i] = (char)('a' + ((c - 'a' + kc) % 26));
+                else out[i] = (char)('A' + ((c - 'A' + kc) % 26));
+                j++;
+            } else {
+                out[i] = c;
+            }
+        }
+        out[n] = '\0';
+        strncpy(_output_buffer, out, 25402 - 1);
+        _output_buffer[25402 - 1] = '\0';
+        free(out);
+    )
+
+pub fn vigenere_decrypt(string text, string key) -> string:
+    $raw (
+        if (!text || !key || key[0] == '\0') { strcpy(_output_buffer, ""); return; }
+        size_t n = strlen(text);
+        size_t k = strlen(key);
+        char *out = (char*)malloc(n + 1); if (!out) { strcpy(_output_buffer, ""); return; }
+        size_t j = 0;
+        for (size_t i = 0; i < n; i++) {
+            char c = text[i];
+            if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')) {
+                char kc = key[j % k];
+                if (kc >= 'a' && kc <= 'z') kc = (char)(kc - 'a');
+                else if (kc >= 'A' && kc <= 'Z') kc = (char)(kc - 'A');
+                else kc = 0;
+                if (c >= 'a' && c <= 'z') out[i] = (char)('a' + ((26 + (c - 'a') - kc) % 26));
+                else out[i] = (char)('A' + ((26 + (c - 'A') - kc) % 26));
+                j++;
+            } else {
+                out[i] = c;
+            }
+        }
+        out[n] = '\0';
+        strncpy(_output_buffer, out, 25402 - 1);
+        _output_buffer[25402 - 1] = '\0';
+        free(out);
+    )
+
+pub fn random_salt(i32 length) -> string:
+    $raw (
+        static const char *alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+        int n = length; if (n <= 0) { strcpy(_output_buffer, ""); return; }
+        int alpha_len = (int)strlen(alphabet);
+        char *out = (char*)malloc(n + 1); if (!out) { strcpy(_output_buffer, ""); return; }
+        for (int i = 0; i < n; i++) {
+            int r = rand();
+            out[i] = alphabet[r % alpha_len];
+        }
+        out[n] = '\0';
+        strncpy(_output_buffer, out, 25402 - 1);
+        _output_buffer[25402 - 1] = '\0';
+        free(out);
+    )
