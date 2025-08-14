@@ -96,9 +96,9 @@ pub fn vigenere_decrypt(string text, string key) -> string:
 pub fn random_salt(i32 length) -> string:
     $raw (
         static const char *alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-        int n = length; if (n <= 0) { strcpy(_output_buffer, ""); return; }
-        int alpha_len = (int)strlen(alphabet);
-        char *out = (char*)malloc(n + 1); if (!out) { strcpy(_output_buffer, ""); return; }
+        int n           = length; if (n <= 0) { strcpy(_output_buffer, ""); return; }
+        int alpha_len   = (int)strlen(alphabet);
+        char *out       = (char*)malloc(n + 1); if (!out) { strcpy(_output_buffer, ""); return; }
         for (int i = 0; i < n; i++) {
             int r = rand();
             out[i] = alphabet[r % alpha_len];
