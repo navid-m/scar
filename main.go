@@ -44,9 +44,10 @@ func main() {
 	}
 
 	var (
-		input   string
-		baseDir string
-		ptf     string
+		input    string
+		baseDir  string
+		ptf      string
+		extCflag string
 	)
 
 	if len(flag.Args()) > 0 {
@@ -74,6 +75,10 @@ func main() {
 			fmt.Fprintf(os.Stderr, "\033[31m%v\033[0m\n", err)
 		}
 		log.Fatal("Failed to compile.")
+	}
+
+	if preprocessor.ContainsExternalCurl(input) {
+		extCflag = "-lcurl"
 	}
 
 	cCode := preprocessor.InsertMacros(renderer.RenderC(program, baseDir, *gc))
@@ -111,7 +116,7 @@ func main() {
 	var (
 		outputBinary = "./" + cleanedName
 		cmpPath      = "clang"
-		compileArgs  = []string{"-w", "-fopenmp", tmpCPath, "-o", outputBinary}
+		compileArgs  = []string{"-w", "-fopenmp", tmpCPath, "-o", outputBinary, extCflag}
 	)
 
 	if *gc {

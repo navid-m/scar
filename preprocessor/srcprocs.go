@@ -149,3 +149,20 @@ func ProcessDeleteExpressions(source string) string {
 
 	return result.String()
 }
+
+func ContainsExternalCurl(source string) bool {
+	inString := false
+	for _, char := range source {
+		if char == '"' {
+			if inString {
+				inString = false
+			} else {
+				inString = true
+			}
+		}
+		if !inString && strings.Contains(string(char), "external import \"curl/curl.h\"") {
+			return true
+		}
+	}
+	return false
+}
