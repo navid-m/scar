@@ -116,6 +116,8 @@ t.assert_string_equals("", decoded_empty, "Empty string should return empty")
 string decoded_safe = net::url_decode("hello-world_test.file~")
 t.assert_string_equals("hello-world_test.file~", decoded_safe, "Safe characters should remain unchanged")
 
+net::http_get("https://httpbin.org/get")
+
 t.test_summary()
 
 string user = json::create_object("name", "Alice", "age", "25")
