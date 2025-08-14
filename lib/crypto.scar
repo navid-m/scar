@@ -1,7 +1,6 @@
 import "std/strings"
 import "std/random"
 
-## Pure-Scar XOR cipher (no $raw). Repeats key over text and XORs each byte.
 pub fn xor_cipher(string text, string key) -> char*:
     if strings::length(key) == 0:
         return ""
