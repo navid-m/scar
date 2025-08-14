@@ -123,113 +123,199 @@ pub fn http_get(char* url) -> net::HttpResponse:
         return response;
     )
 
-## HTTP POST request using cross-platform system approach  
+## Send a POST request to the specified URL and return the response
 pub fn http_post(char* url, char* data) -> net::HttpResponse:
     $raw (
-        CURL *curl;
+        typedef struct {
+            char *data;
+            size_t size;
+        } Memory;
+
+        size_t write_callback(void *contents, size_t size, size_t nmemb, void *userp) {
+            size_t realsize = size * nmemb;
+            Memory *mem = (Memory *)userp;
+            char *ptr = (char*)realloc(mem->data, mem->size + realsize + 1);
+            if (!ptr) return 0;
+            mem->data = ptr;
+            memcpy(&(mem->data[mem->size]), contents, realsize);
+            mem->size += realsize;
+            mem->data[mem->size] = '\0';
+            return realsize;
+        }
+
+        net_HttpResponse* response = net_HttpResponse_new();
+        response->status_code = 0;
+        response->body[0] = '\0';
+        response->error[0] = '\0';
+
+        CURL *curl = NULL;
         CURLcode res;
-       
-        curl_global_init(CURL_GLOBAL_ALL);
+        Memory chunk;
+        chunk.data = (char*)malloc(1);
+        chunk.size = 0;
+
+        curl_global_init(CURL_GLOBAL_DEFAULT);
         curl = curl_easy_init();
         if (curl) {
-          curl_easy_setopt(curl, CURLOPT_URL, url);
-          curl_easy_setopt(curl, CURLOPT_POSTFIELDS, data);
-          res = curl_easy_perform(curl);
-          if(res != CURLE_OK)
-            fprintf(stderr, "curl_easy_perform() failed: %s\n",
-                    curl_easy_strerror(res));
-          curl_easy_cleanup(curl);
+            curl_easy_setopt(curl, CURLOPT_URL, url);
+            curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+            curl_easy_setopt(curl, CURLOPT_POSTFIELDS, data);
+            curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
+            curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void *)&chunk);
+
+            res = curl_easy_perform(curl);
+            if (res != CURLE_OK) {
+                const char* err = curl_easy_strerror(res);
+                strncpy(response->error, err, 255);
+                response->error[255] = '\0';
+            } else {
+                long http_code = 0;
+                curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
+                response->status_code = (int)http_code;
+                if (chunk.size > 0 && chunk.data) {
+                    strncpy(response->body, chunk.data, 255);
+                    response->body[255] = '\0';
+                }
+            }
+            curl_easy_cleanup(curl);
+        } else {
+            strncpy(response->error, "curl_easy_init failed", 255);
+            response->error[255] = '\0';
         }
+
+        if (chunk.data) free(chunk.data);
         curl_global_cleanup();
+        return response;
     )
 
 ## HTTP PUT request
 pub fn http_put(string url, string data) -> net::HttpResponse:
     $raw (
+        typedef struct {
+            char *data;
+            size_t size;
+        } Memory;
+
+        size_t write_callback(void *contents, size_t size, size_t nmemb, void *userp) {
+            size_t realsize = size * nmemb;
+            Memory *mem = (Memory *)userp;
+            char *ptr = (char*)realloc(mem->data, mem->size + realsize + 1);
+            if (!ptr) return 0;
+            mem->data = ptr;
+            memcpy(&(mem->data[mem->size]), contents, realsize);
+            mem->size += realsize;
+            mem->data[mem->size] = '\0';
+            return realsize;
+        }
+
         net_HttpResponse* response = net_HttpResponse_new();
-        
-        char *result = malloc(8192);
-        char *command = malloc(1024 + strlen(data));
-        
-        snprintf(command, 1024 + strlen(data), "curl -s -w \"%%{http_code}\" -X PUT -d \"%s\" \"%s\"", data, url);
-        
-        FILE *fp = popen(command, "r");
-        if (fp == NULL) {
-            strcpy(response->error, "curl command failed or not available");
-            response->status_code = 0;
-            free(result);
-            free(command);
-            return response;
-        }
-        
-        char buffer[1024];
-        result[0] = '\0';
-        
-        while (fgets(buffer, sizeof(buffer), fp) != NULL) {
-            strcat(result, buffer);
-        }
-        
-        pclose(fp);
-        
-        if (strlen(result) >= 3) {
-            char status_str[4];
-            strcpy(status_str, result + strlen(result) - 3);
-            response->status_code = atoi(status_str);
-            
-            result[strlen(result) - 3] = '\0';
-            strncpy(response->body, result, 255);
-            response->body[255] = '\0';
+        response->status_code = 0;
+        response->body[0] = '\0';
+        response->error[0] = '\0';
+
+        CURL *curl = NULL;
+        CURLcode res;
+        Memory chunk;
+        chunk.data = (char*)malloc(1);
+        chunk.size = 0;
+
+        curl_global_init(CURL_GLOBAL_DEFAULT);
+        curl = curl_easy_init();
+        if (curl) {
+            curl_easy_setopt(curl, CURLOPT_URL, url);
+            curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+            curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "PUT");
+            curl_easy_setopt(curl, CURLOPT_POSTFIELDS, data);
+            curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
+            curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void *)&chunk);
+
+            res = curl_easy_perform(curl);
+            if (res != CURLE_OK) {
+                const char* err = curl_easy_strerror(res);
+                strncpy(response->error, err, 255);
+                response->error[255] = '\0';
+            } else {
+                long http_code = 0;
+                curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
+                response->status_code = (int)http_code;
+                if (chunk.size > 0 && chunk.data) {
+                    strncpy(response->body, chunk.data, 255);
+                    response->body[255] = '\0';
+                }
+            }
+            curl_easy_cleanup(curl);
         } else {
-            strcpy(response->error, "Invalid response from server");
-            response->status_code = 0;
+            strncpy(response->error, "curl_easy_init failed", 255);
+            response->error[255] = '\0';
         }
-        
-        free(result);
-        free(command);
+
+        if (chunk.data) free(chunk.data);
+        curl_global_cleanup();
         return response;
     )
 
 ## HTTP DELETE request
 pub fn http_delete(string url) -> net::HttpResponse:
     $raw (
+        typedef struct {
+            char *data;
+            size_t size;
+        } Memory;
+
+        size_t write_callback(void *contents, size_t size, size_t nmemb, void *userp) {
+            size_t realsize = size * nmemb;
+            Memory *mem = (Memory *)userp;
+            char *ptr = (char*)realloc(mem->data, mem->size + realsize + 1);
+            if (!ptr) return 0;
+            mem->data = ptr;
+            memcpy(&(mem->data[mem->size]), contents, realsize);
+            mem->size += realsize;
+            mem->data[mem->size] = '\0';
+            return realsize;
+        }
+
         net_HttpResponse* response = net_HttpResponse_new();
-        
-        char *result = malloc(8192);
-        char command[512];
-        
-        snprintf(command, sizeof(command), "curl -s -w \"%%{http_code}\" -X DELETE \"%s\"", url);
-        
-        FILE *fp = popen(command, "r");
-        if (fp == NULL) {
-            strcpy(response->error, "curl command failed or not available");
-            response->status_code = 0;
-            free(result);
-            return response;
-        }
-        
-        char buffer[1024];
-        result[0] = '\0';
-        
-        while (fgets(buffer, sizeof(buffer), fp) != NULL) {
-            strcat(result, buffer);
-        }
-        
-        pclose(fp);
-        
-        if (strlen(result) >= 3) {
-            char status_str[4];
-            strcpy(status_str, result + strlen(result) - 3);
-            response->status_code = atoi(status_str);
-            
-            result[strlen(result) - 3] = '\0';
-            strncpy(response->body, result, 255);
-            response->body[255] = '\0';
+        response->status_code = 0;
+        response->body[0] = '\0';
+        response->error[0] = '\0';
+
+        CURL *curl = NULL;
+        CURLcode res;
+        Memory chunk;
+        chunk.data = (char*)malloc(1);
+        chunk.size = 0;
+
+        curl_global_init(CURL_GLOBAL_DEFAULT);
+        curl = curl_easy_init();
+        if (curl) {
+            curl_easy_setopt(curl, CURLOPT_URL, url);
+            curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+            curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "DELETE");
+            curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
+            curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void *)&chunk);
+
+            res = curl_easy_perform(curl);
+            if (res != CURLE_OK) {
+                const char* err = curl_easy_strerror(res);
+                strncpy(response->error, err, 255);
+                response->error[255] = '\0';
+            } else {
+                long http_code = 0;
+                curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
+                response->status_code = (int)http_code;
+                if (chunk.size > 0 && chunk.data) {
+                    strncpy(response->body, chunk.data, 255);
+                    response->body[255] = '\0';
+                }
+            }
+            curl_easy_cleanup(curl);
         } else {
-            strcpy(response->error, "Invalid response from server");
-            response->status_code = 0;
+            strncpy(response->error, "curl_easy_init failed", 255);
+            response->error[255] = '\0';
         }
-        
-        free(result);
+
+        if (chunk.data) free(chunk.data);
+        curl_global_cleanup();
         return response;
     )
 
