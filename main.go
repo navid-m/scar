@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"scar/lexer"
+	"scar/logger"
 	"scar/meta"
 	"scar/preprocessor"
 	"scar/renderer"
@@ -27,12 +28,19 @@ func main() {
 	var (
 		asm     = flag.Bool("asm", false, "show assembly output")
 		c       = flag.Bool("c", false, "show c output")
+		debug   = flag.Bool("d", false, "enable verbose logging")
 		dll     = flag.Bool("dll", false, "compile as dynamic link library")
 		gc      = flag.Bool("gc", false, "use bdwgc garbage collector")
 		keepc   = flag.Bool("keepc", false, "keep generated c file")
+		outName = flag.String("o", "", "output executable name")
+		opt     = flag.Bool("opt", false, "optimise for performance")
 		version = flag.Bool("v", false, "show version")
 	)
 	flag.Parse()
+
+	if *debug {
+		logger.Loud = true
+	}
 
 	if *version {
 		fmt.Println(meta.Version)
@@ -62,11 +70,20 @@ func main() {
 		input = string(data)
 	}
 
-	hasCurl := preprocessor.ContainsExternalCurlWithPath(input, baseDir)
-	hasRegex := preprocessor.ContainsExternalRegexWithPath(input, baseDir)
-	cleanedName := strings.ReplaceAll(filepath.Base(ptf), ".scar", "")
+	var (
+		hasCurl     = preprocessor.ContainsExternalCurlWithPath(input, baseDir)
+		hasRegex    = preprocessor.ContainsExternalRegexWithPath(input, baseDir)
+		cleanedName = strings.ReplaceAll(filepath.Base(ptf), ".scar", "")
+		outputName  = cleanedName
+	)
+
+	if *outName != "" {
+		outputName = *outName
+	}
+
 	input = preprocessor.ProcessSourceLevelMacros(input)
 	program, err := lexer.ParseWithIndentation(input)
+
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%s", "\033[31mSyntaxError: "+err.Error()+"\033[0m")
 		os.Exit(1)
@@ -117,17 +134,21 @@ func main() {
 	}
 
 	var (
-		outputBinary = "./" + cleanedName
+		outputBinary = "./" + outputName
 		cmpPath      = "clang"
 		compileArgs  = []string{"-w", "-fopenmp", tmpCPath, "-o", outputBinary, extCflag}
 	)
 
+	if *opt {
+		compileArgs = append([]string{"-O2", "-fno-fast-math"}, compileArgs...)
+	}
+
 	if *dll {
 		compileArgs = append(compileArgs, "-shared", "-fPIC")
 		if runtime.GOOS == "windows" {
-			outputBinary += ".dll"
+			outputBinary = "./" + outputName + ".dll"
 		} else {
-			outputBinary += ".so"
+			outputBinary = "./" + outputName + ".so"
 		}
 		for i, arg := range compileArgs {
 			if arg == "-o" && i+1 < len(compileArgs) {
@@ -158,9 +179,12 @@ func main() {
 			"-L/opt/homebrew/opt/libomp/lib",
 			"-o", outputBinary,
 		}
+		if *opt {
+			compileArgs = append([]string{"-O2", "-fno-fast-math"}, compileArgs...)
+		}
 		if *dll {
 			compileArgs = append(compileArgs, "-shared", "-fPIC")
-			outputBinary = "./" + cleanedName + ".dylib"
+			outputBinary = "./" + outputName + ".dylib"
 			for i, arg := range compileArgs {
 				if arg == "-o" && i+1 < len(compileArgs) {
 					compileArgs[i+1] = outputBinary
@@ -189,9 +213,12 @@ func main() {
 			tmpCPath,
 			"-o", outputBinary,
 		}
+		if *opt {
+			compileArgs = append([]string{"-O2", "-fno-fast-math"}, compileArgs...)
+		}
 		if *dll {
 			compileArgs = append(compileArgs, "-shared", "-fPIC")
-			outputBinary = "./" + cleanedName + ".so"
+			outputBinary = "./" + outputName + ".so"
 			for i, arg := range compileArgs {
 				if arg == "-o" && i+1 < len(compileArgs) {
 					compileArgs[i+1] = outputBinary
@@ -217,7 +244,7 @@ func main() {
 	case "windows":
 		cmpPath = "gcc"
 		if !*dll {
-			outputBinary += ".exe"
+			outputBinary = "./" + outputName + ".exe"
 		}
 		compileArgs = []string{
 			"-fopenmp",
@@ -226,9 +253,12 @@ func main() {
 			"-o",
 			outputBinary,
 		}
+		if *opt {
+			compileArgs = append([]string{"-O2", "-fno-fast-math"}, compileArgs...)
+		}
 		if *dll {
 			compileArgs = append(compileArgs, "-shared")
-			outputBinary = "./" + cleanedName + ".dll"
+			outputBinary = "./" + outputName + ".dll"
 			for i, arg := range compileArgs {
 				if arg == "-o" && i+1 < len(compileArgs) {
 					compileArgs[i+1] = outputBinary
