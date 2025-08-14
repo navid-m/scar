@@ -32,7 +32,8 @@ func main() {
 		dll     = flag.Bool("dll", false, "compile as dynamic link library")
 		gc      = flag.Bool("gc", false, "use bdwgc garbage collector")
 		keepc   = flag.Bool("keepc", false, "keep generated c file")
-		outName = flag.String("o", "", "output executable name")
+		linker  = flag.String("l", "", "additional linker options (e.g., -lm -lpthread)")
+		outName = flag.String("o", "", "output binary name")
 		opt     = flag.Bool("opt", false, "optimise for performance")
 		version = flag.Bool("v", false, "show version")
 	)
@@ -141,6 +142,11 @@ func main() {
 
 	if *opt {
 		compileArgs = append([]string{"-O2", "-fno-fast-math"}, compileArgs...)
+	}
+
+	if *linker != "" {
+		linkerOpts := strings.Fields(*linker)
+		compileArgs = append(compileArgs, linkerOpts...)
 	}
 
 	if *dll {
@@ -255,6 +261,10 @@ func main() {
 		}
 		if *opt {
 			compileArgs = append([]string{"-O2", "-fno-fast-math"}, compileArgs...)
+		}
+		if *linker != "" {
+			linkerOpts := strings.Fields(*linker)
+			compileArgs = append(compileArgs, linkerOpts...)
 		}
 		if *dll {
 			compileArgs = append(compileArgs, "-shared")
