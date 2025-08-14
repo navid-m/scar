@@ -1488,8 +1488,11 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 
 	default:
 		if len(parts) >= 3 && parts[1] == "=" {
-			varName := parts[0]
-			eqIndex := strings.Index(line, "=")
+			var (
+				varName = parts[0]
+				eqIndex = strings.Index(line, "=")
+			)
+
 			if eqIndex == -1 {
 				return nil, lineNum, fmt.Errorf("malformed assignment")
 			}
@@ -1499,6 +1502,7 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 			if strings.HasSuffix(value, ";") {
 				value = strings.TrimSpace(value[:len(value)-1])
 			}
+
 			if strings.Contains(value, ".") && strings.Contains(value, "(") && strings.Contains(value, ")") && !strings.HasPrefix(value, "new ") {
 				dotIndex := strings.Index(value, ".")
 				parenIndex := strings.Index(value, "(")
