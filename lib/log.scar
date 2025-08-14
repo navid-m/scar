@@ -8,6 +8,11 @@ pub fn error(string message) -> void:
         fprintf(stderr, "[ERROR] %s\n", message);
     )
 
+pub fn to_stderr(string message) -> void:
+    $raw (
+        fprintf(stderr, "%s", message);
+    )
+
 pub fn info(string message) -> void:
     put "[INFO] %s \n " | message
 
