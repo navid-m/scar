@@ -178,6 +178,7 @@ func main() {
 			"-fopenmp",
 			"-w",
 			tmpCPath,
+			"-lpcre",
 			"-o",
 			outputBinary,
 		}
