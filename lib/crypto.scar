@@ -1,21 +1,33 @@
 import "std/strings"
 import "std/random"
 
-pub fn xor_cipher(string text, string key) -> char*:
+pub fn xor_cipher(string text, string key) -> lstring:
     if strings::length(key) == 0:
         return ""
     i32 n = strings::length(text)
     i32 k = strings::length(key)
     lstring out = ""
-    i32 i = 0
     for i = 0 to n - 1:
         char tc = text[i]
         char kc = key[i % k]
         i32 tv = strings::ord_char(tc)
         i32 kv = strings::ord_char(kc)
         i32 xv = tv b_xor kv
-        char* ch = strings::chr(xv)
+        string ch = strings::chr(xv)
         out = cat!(out, ch)
+    return out
+
+pub fn xor_cipher_hex(string text, string key) -> lstring:
+    if strings::length(key) == 0:
+        return ""
+    i32 n = strings::length(text)
+    i32 k = strings::length(key)
+    lstring out = ""
+    for i = 0 to n - 1:
+        i32 tv = strings::ord_char(text[i])
+        i32 kv = strings::ord_char(key[i % k])
+        i32 xv = tv b_xor kv
+        out = cat!(out, fmt!("%02X", xv))
     return out
 
 pub fn caesar_encrypt(string text, i32 shift) -> string:
