@@ -1446,9 +1446,11 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 			return nil, lineNum + 1, fmt.Errorf("$raw block must start with '(' at line %d", lineNum+1)
 		}
 
-		var rawCode strings.Builder
-		currentLine := lineNum + 1
-		parenCount := 1
+		var (
+			rawCode     strings.Builder
+			currentLine = lineNum + 1
+			parenCount  = 1
+		)
 
 		for currentLine < len(lines) && parenCount > 0 {
 			line := lines[currentLine]
