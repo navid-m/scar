@@ -15,7 +15,6 @@ import "std/json"
 import "std/net"
 import "std/threads"
 import "std/regex"
-import "std/lists"
 
 # Setup
 var list = new collections::ArrayList(4)
