@@ -322,19 +322,58 @@ pub fn http_delete(string url) -> net::HttpResponse:
 ## Download a file from URL to local path
 pub fn download_file(string url, string filepath) -> bool:
     $raw (
-        char command[1024];
-        snprintf(command, sizeof(command), "curl -s -o \"%s\" \"%s\"", filepath, url);
-        
-        int result = system(command);
-        return (result == 0);
+        CURL *curl = NULL;
+        CURLcode res;
+        int ok = 0;
+        FILE *fp = fopen(filepath, "wb");
+        if (!fp) {
+            return 0;
+        }
+
+        curl_global_init(CURL_GLOBAL_DEFAULT);
+        curl = curl_easy_init();
+        if (curl) {
+            curl_easy_setopt(curl, CURLOPT_URL, url);
+            curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+            curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, fwrite);
+            curl_easy_setopt(curl, CURLOPT_WRITEDATA, fp);
+
+            res = curl_easy_perform(curl);
+            if (res == CURLE_OK) {
+                long http_code = 0;
+                curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
+                ok = (http_code >= 200 && http_code < 400);
+            }
+            curl_easy_cleanup(curl);
+        }
+        curl_global_cleanup();
+        fclose(fp);
+        return ok;
     )
 
-## Simple function to check if a URL is reachable
+## Check if a URL is reachable
 pub fn ping_url(string url) -> bool:
     $raw (
-        char command[512];
-        snprintf(command, sizeof(command), "curl -s --head \"%s\" > /dev/null 2>&1", url);
-        
-        int result = system(command);
-        return (result == 0);
+        CURL *curl = NULL;
+        CURLcode res;
+        int ok = 0;
+
+        curl_global_init(CURL_GLOBAL_DEFAULT);
+        curl = curl_easy_init();
+        if (curl) {
+            curl_easy_setopt(curl, CURLOPT_URL, url);
+            curl_easy_setopt(curl, CURLOPT_NOBODY, 1L); // HEAD request
+            curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+            curl_easy_setopt(curl, CURLOPT_TIMEOUT, 10L);
+
+            res = curl_easy_perform(curl);
+            if (res == CURLE_OK) {
+                long http_code = 0;
+                curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
+                ok = (http_code >= 200 && http_code < 400);
+            }
+            curl_easy_cleanup(curl);
+        }
+        curl_global_cleanup();
+        return ok;
     )
