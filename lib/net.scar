@@ -2,6 +2,8 @@
 
 import "std/strings"
 
+external import "curl/curl.h"
+
 ## URL encode a string
 pub fn url_encode(string input) -> char*:
     $raw (

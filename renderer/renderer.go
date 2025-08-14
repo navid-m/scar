@@ -63,6 +63,13 @@ func RenderC(program *lexer.Program, baseDir string, gcFlag bool) string {
 		}
 	}
 
+	var externalImports []string
+	for _, stmt := range program.Statements {
+		if stmt.ExternalImport != nil {
+			externalImports = append(externalImports, stmt.ExternalImport.Header)
+		}
+	}
+
 	for _, stmt := range program.Statements {
 		if stmt.ClassDecl != nil {
 			collectClassInfo(stmt.ClassDecl)
@@ -149,6 +156,9 @@ func RenderC(program *lexer.Program, baseDir string, gcFlag bool) string {
 	if useGC {
 		b.WriteString(`#include <gc.h>
 `)
+	}
+	for _, header := range externalImports {
+		b.WriteString(fmt.Sprintf("#include <%s>\n", header))
 	}
 
 	b.WriteString(`

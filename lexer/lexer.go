@@ -16,6 +16,10 @@ type ImportStmt struct {
 	Module string
 }
 
+type ExternalImportStmt struct {
+	Header string
+}
+
 type ModuleInfo struct {
 	Name          string
 	FilePath      string
@@ -31,6 +35,7 @@ type Program struct {
 
 type Statement struct {
 	Import               *ImportStmt
+	ExternalImport       *ExternalImportStmt
 	Print                *PrintStmt
 	Sleep                *SleepStmt
 	While                *WhileStmt
