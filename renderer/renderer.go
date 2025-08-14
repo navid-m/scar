@@ -1751,7 +1751,16 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 					}
 				}
 
-				fmt.Fprintf(b, "%sreturn %s;\n", indent, value)
+				if currentFunctionReturnType == "string" && className == "" {
+					if value == `""` {
+						fmt.Fprintf(b, "%sstrcpy(_output_buffer, \"\");\n", indent)
+					} else {
+						fmt.Fprintf(b, "%sstrcpy(_output_buffer, %s);\n", indent, value)
+					}
+					fmt.Fprintf(b, "%sreturn;\n", indent)
+				} else {
+					fmt.Fprintf(b, "%sreturn %s;\n", indent, value)
+				}
 			}
 		case stmt.GetMap != nil:
 			mapAccess := renderMapAccess(stmt.GetMap.MapName, stmt.GetMap.Key, program)
@@ -4341,7 +4350,11 @@ func generateTopLevelFunctionImplementation(b *strings.Builder, funcDecl *lexer.
 				} else {
 					value = strings.ReplaceAll(value, "this.", "this->")
 					value = lexer.ResolveSymbol(value, currentModule)
-					fmt.Fprintf(b, "    strcpy(_output_buffer, %s);\n", value)
+					if value == `""` {
+						fmt.Fprintf(b, "    strcpy(_output_buffer, \"\");\n")
+					} else {
+						fmt.Fprintf(b, "    strcpy(_output_buffer, %s);\n", value)
+					}
 					fmt.Fprintf(b, "    return;\n")
 				}
 			} else {

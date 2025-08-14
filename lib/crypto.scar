@@ -1,12 +1,12 @@
 import "std/strings"
 import "std/random"
 
-pub fn xor_cipher(string text, string key) -> lstring:
+pub fn xor_cipher(string text, string key) -> string:
     if strings::length(key) == 0:
         return ""
     i32 n = strings::length(text)
     i32 k = strings::length(key)
-    lstring out = ""
+    string out = ""
     for i = 0 to n - 1:
         char tc = text[i]
         char kc = key[i % k]
