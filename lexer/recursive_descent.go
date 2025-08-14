@@ -1323,6 +1323,40 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 
 		return &Statement{If: &IfStmt{Condition: condition, Body: body, ElseIfs: elseIfs, Else: elseStmt}}, nextLine, nil
 
+	case "platform":
+		open := strings.Index(line, "(")
+		close := strings.LastIndex(line, ")")
+		if open == -1 || close == -1 || close < open || !strings.HasSuffix(strings.TrimSpace(line), ":") {
+			return nil, lineNum + 1, fmt.Errorf("platform statement format error at line %d", lineNum+1)
+		}
+		platformName := strings.TrimSpace(line[open+1 : close])
+		if platformName == "" {
+			return nil, lineNum + 1, fmt.Errorf("platform name missing at line %d", lineNum+1)
+		}
+
+		expectedBodyIndent := currentIndent + 4
+		if currentIndent == 0 {
+			bodyStartLine := lineNum + 1
+			for bodyStartLine < len(lines) {
+				bodyLine := lines[bodyStartLine]
+				if strings.TrimSpace(bodyLine) != "" && !strings.HasPrefix(strings.TrimSpace(bodyLine), "#") {
+					expectedBodyIndent = getIndentation(bodyLine)
+					break
+				}
+				bodyStartLine++
+			}
+			if expectedBodyIndent <= currentIndent {
+				expectedBodyIndent = currentIndent + 4
+			}
+		}
+
+		body, err := parseStatements(lines, lineNum+1, expectedBodyIndent)
+		if err != nil {
+			return nil, lineNum + 1, err
+		}
+		nextLine := findEndOfBlock(lines, lineNum+1, expectedBodyIndent)
+		return &Statement{Platform: &PlatformStmt{Platform: platformName, Body: body}}, nextLine, nil
+
 	case "put":
 		if len(parts) < 2 {
 			return nil, lineNum + 1, fmt.Errorf("put statement requires a string at line %d", lineNum+1)

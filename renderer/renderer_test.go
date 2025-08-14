@@ -25,6 +25,45 @@ func TestRenderC(t *testing.T) {
 	}
 }
 
+func TestPlatformBlocks(t *testing.T) {
+    program := &lexer.Program{
+        Statements: []*lexer.Statement{
+            {
+                Platform: &lexer.PlatformStmt{
+                    Platform: "Windows",
+                    Body: []*lexer.Statement{
+                        {Print: &lexer.PrintStmt{Print: "Windows block"}},
+                    },
+                },
+            },
+            {
+                Platform: &lexer.PlatformStmt{
+                    Platform: "Posix",
+                    Body: []*lexer.Statement{
+                        {Print: &lexer.PrintStmt{Print: "Posix block"}},
+                    },
+                },
+            },
+        },
+    }
+
+    cCode := RenderC(program, "", false)
+
+    if !strings.Contains(cCode, "#ifdef _WIN32") {
+        t.Errorf("Expected C code to contain Windows guard '#ifdef _WIN32' but it didn't")
+    }
+    if !strings.Contains(cCode, "printf(\"Windows block\\n\");") {
+        t.Errorf("Expected C code to contain Windows printf line but it didn't")
+    }
+
+    if !strings.Contains(cCode, "#ifndef _WIN32") {
+        t.Errorf("Expected C code to contain Posix guard '#ifndef _WIN32' but it didn't")
+    }
+    if !strings.Contains(cCode, "printf(\"Posix block\\n\");") {
+        t.Errorf("Expected C code to contain Posix printf line but it didn't")
+    }
+}
+
 func TestRenderCWithForLoop(t *testing.T) {
 	program := &lexer.Program{
 		Statements: []*lexer.Statement{

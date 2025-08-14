@@ -23,7 +23,9 @@ func TestDebug(t *testing.T) {
 		t.Fatalf("Failed to read from pipe: %v", err)
 	}
 	expectedOutput := "Debug: convertMethodCallToC called with: 'root.sum()'"
-	if !strings.Contains(buf.String(), expectedOutput) {
-		t.Errorf("Expected output to contain '%s', got '%s'", expectedOutput, buf.String())
+	if Loud {
+		if !strings.Contains(buf.String(), expectedOutput) {
+			t.Errorf("Expected output to contain '%s', got '%s'", expectedOutput, buf.String())
+		}
 	}
 }

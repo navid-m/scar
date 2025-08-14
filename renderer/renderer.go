@@ -1283,6 +1283,23 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 
 	for _, stmt := range stmts {
 		switch {
+		case stmt.Platform != nil:
+			plat := strings.TrimSpace(stmt.Platform.Platform)
+			var open, close string
+			switch plat {
+			case "Windows":
+				open = "#ifdef _WIN32\n"
+				close = "#endif\n"
+			case "Posix":
+				open = "#ifndef _WIN32\n"
+				close = "#endif\n"
+			default:
+				open = fmt.Sprintf("#ifdef %s\n", plat)
+				close = "#endif\n"
+			}
+			fmt.Fprintf(b, "%s%s", indent, open)
+			renderStatements(b, stmt.Platform.Body, indent, className, program, currentFunctionReturnType)
+			fmt.Fprintf(b, "%s%s", indent, close)
 		case stmt.Put != nil:
 			if stmt.Put.Format != "" && len(stmt.Put.Variables) > 0 {
 				var (

@@ -90,6 +90,7 @@ type Statement struct {
 	Free                 *FreeStmt
 	Pass                 *PassStmt
 	NewExpr              *NewExprStmt
+	Platform             *PlatformStmt
 }
 
 type ListOfDeclStmt struct {
@@ -117,6 +118,11 @@ type FreeStmt struct {
 type NewExprStmt struct {
 	ClassName string
 	Args      []string
+}
+
+type PlatformStmt struct {
+	Platform string
+	Body     []*Statement
 }
 
 type CatListStmt struct {
