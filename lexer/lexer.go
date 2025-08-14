@@ -633,9 +633,10 @@ func ResolveSymbol(symbolName string, currentModule string) string {
 		if !strings.ContainsAny(result, " *+-/()[]<>=!") {
 			parts := strings.SplitN(result, ".", 2)
 			if len(parts) == 2 {
-				moduleName := parts[0]
-				symbol := parts[1]
-
+				var (
+					moduleName = parts[0]
+					symbol     = parts[1]
+				)
 				if module, exists := LoadedModules[moduleName]; exists {
 					if _, exists := module.PublicVars[symbol]; exists {
 						return fmt.Sprintf("%s_%s", moduleName, symbol)
