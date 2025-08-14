@@ -155,7 +155,7 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 
 	if !isStandardLibraryFile(CurrentSourceFile) {
 		if hasReserved, reservedCmd := containsReservedC(line); hasReserved {
-			return nil, lineNum + 1, fmt.Errorf("reserved word: '%s' at line %d", reservedCmd, lineNum+1)
+			return nil, lineNum + 1, fmt.Errorf("undeclared identifier: '%s' at line %d", reservedCmd, lineNum+1)
 		}
 	}
 
@@ -1480,7 +1480,7 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 
 		if !isStandardLibraryFile(CurrentSourceFile) {
 			if hasReserved, reservedCmd := containsReservedC(code); hasReserved {
-				return nil, lineNum + 1, fmt.Errorf("reserved word: '%s' at line %d", reservedCmd, lineNum+1)
+				return nil, lineNum + 1, fmt.Errorf("undeclared identifier: '%s' at line %d", reservedCmd, lineNum+1)
 			}
 		}
 
