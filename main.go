@@ -260,10 +260,13 @@ func main() {
 
 		compileArgs = []string{
 			"-fopenmp",
-			"-Wall",
-			"-Wextra",
-			"-w",
 		}
+
+		if hasNet {
+			compileArgs = append(compileArgs, "-Wall", "-Wextra")
+		}
+
+		compileArgs = append(compileArgs, "-w")
 
 		if *opt {
 			compileArgs = append([]string{"-O2", "-fno-fast-math"}, compileArgs...)
