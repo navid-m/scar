@@ -16,27 +16,27 @@ class FunctionDoc:
 class ClassDoc:
     init:
         string  this.name = ""
-        # list[string]  this.comments = []
-        # list[FunctionDoc]  this.methods = []
-        # list[string]  this.fields = []
+        list[string]  this.comments = []
+        list[FunctionDoc]  this.methods = []
+        list[string]  this.fields = []
         bool  this.is_public = false
 
 class ModuleDoc:
     init:
         string  this.filename = ""
         string  this.module_name = ""
-        # list[string]  this.imports = []
-        # list[FunctionDoc]  this.functions = []
-        # list[ClassDoc]  this.classes = []
-        # list[string]  this.global_vars = []
-        # list[string]  this.comments = []
+        list[string]  this.imports = []
+        list[FunctionDoc]  this.functions = []
+        list[ClassDoc]  this.classes = []
+        list[string]  this.global_vars = []
+        list[string]  this.comments = []
 
-# # Parse a single line for documentation comments
-# fn parse_doc_comment(string line) -> string:
-#     string trimmed = strings::trim(line)
-#     if strings::starts_with(trimmed, "#"):
-#         return strings::trim(strings::substring(trimmed, 1, strings::length(trimmed)))
-#     return ""
+# Parse a single line for documentation comments
+fn parse_doc_comment(lstring line) -> string:
+    lstring trimmed = strings::trim_space(line)
+    if strings::starts_with(trimmed, "#"):
+        return strings::trim_space(strings::substring(trimmed, 1, strings::length(trimmed)))
+    return ""
 
 # # Extract function signature information
 # fn parse_function_signature(string line) -> FunctionDoc:

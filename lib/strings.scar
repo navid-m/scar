@@ -107,6 +107,22 @@ pub fn contains(string str, string substring) -> bool:
         return strstr(str, substring) != NULL;
     )
 
+pub fn starts_with(string str, string prefix) -> bool:
+    $raw (
+        if (str == NULL || prefix == NULL) {
+            return false;
+        }
+        
+        int str_len = strlen(str);
+        int prefix_len = strlen(prefix);
+        
+        if (prefix_len > str_len) {
+            return false;
+        }
+        
+        return strncmp(str, prefix, prefix_len) == 0;
+    )
+
 pub fn to_hex(int value) -> char*:
     $raw (
         char *result = malloc(16);
