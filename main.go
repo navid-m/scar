@@ -209,6 +209,9 @@ func main() {
 		if hasRegex {
 			compileArgs = append(compileArgs, "-lpcre")
 		}
+		if hasJson {
+			compileArgs = append(compileArgs, "-ljansson")
+		}
 		if *gc {
 			if gcFlags := findBundledBoehm(); gcFlags != nil {
 				compileArgs = append(compileArgs, gcFlags...)
@@ -242,6 +245,9 @@ func main() {
 		}
 		if hasRegex {
 			compileArgs = append(compileArgs, "-lpcre")
+		}
+		if hasJson {
+			compileArgs = append(compileArgs, "-ljansson")
 		}
 		if *gc {
 			if gcFlags := findBundledBoehm(); gcFlags != nil {
