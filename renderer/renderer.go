@@ -2574,7 +2574,14 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			if isComplexCollectionType(listType) {
 				renderComplexListDecl(b, stmt.ListDecl, indent, currentModule)
 			} else {
-				cListType := mapTypeToCType(listType)
+				var cListType string
+				if strings.HasPrefix(listType, "list[") && strings.HasSuffix(listType, "]") {
+					innerType := strings.TrimPrefix(strings.TrimSuffix(listType, "]"), "list[")
+					cListType = mapTypeToCType(innerType)
+				} else {
+					cListType = mapTypeToCType(listType)
+				}
+
 				if len(stmt.ListDecl.Elements) == 1 && !strings.Contains(stmt.ListDecl.Elements[0], ",") &&
 					!strings.HasPrefix(stmt.ListDecl.Elements[0], "\"") && !strings.HasSuffix(stmt.ListDecl.Elements[0], "\"") &&
 					!isNumericOrBoolean(stmt.ListDecl.Elements[0]) {
@@ -4528,18 +4535,26 @@ func generateTopLevelFunctionImplementation(b *strings.Builder, funcDecl *lexer.
 	}
 
 	for _, param := range funcDecl.Parameters {
-		var (
-			paramType = mapTypeToCType(param.Type)
-			paramName = param.Name
-		)
+		paramName := param.Name
+
 		if param.IsList || strings.HasPrefix(param.Type, "list[") {
-			if param.Type == "string" {
+			if strings.HasPrefix(param.Type, "list[") && strings.HasSuffix(param.Type, "]") {
+				innerType := strings.TrimPrefix(strings.TrimSuffix(param.Type, "]"), "list[")
+				if innerType == "string" {
+					paramList = append(paramList, fmt.Sprintf("char %s[][256]", paramName))
+				} else {
+					cType := mapTypeToCType(innerType)
+					paramList = append(paramList, fmt.Sprintf("%s %s[]", cType, paramName))
+				}
+			} else if param.Type == "string" {
 				paramList = append(paramList, fmt.Sprintf("char %s[][256]", paramName))
 			} else {
+				paramType := mapTypeToCType(param.Type)
 				paramList = append(paramList, fmt.Sprintf("%s %s[]", paramType, paramName))
 			}
 			paramList = append(paramList, fmt.Sprintf("int %s_len", paramName))
 		} else {
+			paramType := mapTypeToCType(param.Type)
 			if param.Type == "string" {
 				paramType = "char*"
 			}
