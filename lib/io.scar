@@ -1,4 +1,6 @@
 import "std/math"
+import "std/collections"
+import "std/strings"
 
 pub fn readln() -> lstring:
     $raw (
@@ -34,3 +36,8 @@ pub fn read_bool() -> bool:
 
 pub fn read_char() -> char:
     return io::readln()[0]
+
+pub fn read_split(char* delimiter) -> collections::StringArrayList:
+    lstring line = io::readln()
+    collections::StringArrayList x = strings::split(line, delimiter)
+    return x
