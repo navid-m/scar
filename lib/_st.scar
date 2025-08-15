@@ -261,18 +261,30 @@ net::HttpResponse hello = net::http_get("https://httpbin.org/get")
 
 print "%s" | hello.body
 
-t.test_summary()
-
 # JSON Tests
-string user = json::create_object("name", "Alice", "age", "25")
-json::dump(user, "user.json")
-string loaded   = json::load("user.json")
-string name     = json::get_value(loaded, "name")
-string age      = json::get_value(loaded, "age")
-string config   = json::create_object("theme", "dark", "debug", "true")
-json::dump(config, "settings.json")
+run void* user = json::new_object()
+json::obj_set_new(user, "name", json::new_string("Alice"))
+json::obj_set_new(user, "age", json::new_integer(25))
+json::save_to_file(user, "user.json")
+
+run void* loaded = json::loadup_file("user.json")
+string name = json::get_object_string(loaded, "name")
+i64 age = json::get_object_integer(loaded, "age")
+t.assert_string_equals("Alice", name, "JSON name should be 'Alice'")
+t.assert_equals(25, age, "JSON age should be 25")
+run void* config = json::new_object()
+json::obj_set_new(config, "theme", json::new_string("dark"))
+json::obj_set_new(config, "debug", json::new_boolean(true))
+json::save_to_file(config, "settings.json")
+
+# Clean up JSON objects
+json::dec_ref(user)
+json::dec_ref(loaded)
+json::dec_ref(config)
 
 fs::remove("user.json")
 fs::remove("settings.json")
+
+t.test_summary()
 
 os::exit(0)

@@ -1,235 +1,436 @@
-## JSON serialization and deserialization functions
-## Simple JSON handling for Scar language
+## JSON library using jansson C library
+## On Windows:  mingw && pacman -S mingw-w64-x86_64-jansson
+## On Linux:    sudo apt-get install libjansson-dev
+## On macOS:    brew install jansson
 
-pub fn serialize(string data) -> string:
+external import "jansson.h"
+
+pub i32 JSON_OBJECT = 0
+pub i32 JSON_ARRAY = 1
+pub i32 JSON_STRING = 2
+pub i32 JSON_INTEGER = 3
+pub i32 JSON_REAL = 4
+pub i32 JSON_TRUE = 5
+pub i32 JSON_FALSE = 6
+pub i32 JSON_NULL = 7
+
+## Parse JSON string and return json_t pointer
+pub fn parse(string json_string) -> void*:
     $raw (
-        #include <stdio.h>
-        #include <string.h>
-        #include <ctype.h>
-        
-        char *ptr = _output_buffer;
-        *ptr++ = '"';
-        
-        for (int i = 0; i < strlen(data); i++) {
-            char c = data[i];
-            switch (c) {
-                case '"':
-                    *ptr++ = '\\';
-                    *ptr++ = '"';
-                    break;
-                case '\\':
-                    *ptr++ = '\\';
-                    *ptr++ = '\\';
-                    break;
-                case '\b':
-                    *ptr++ = '\\';
-                    *ptr++ = 'b';
-                    break;
-                case '\f':
-                    *ptr++ = '\\';
-                    *ptr++ = 'f';
-                    break;
-                case '\n':
-                    *ptr++ = '\\';
-                    *ptr++ = 'n';
-                    break;
-                case '\r':
-                    *ptr++ = '\\';
-                    *ptr++ = 'r';
-                    break;
-                case '\t':
-                    *ptr++ = '\\';
-                    *ptr++ = 't';
-                    break;
-                default:
-                    if (c < 32) {
-                        sprintf(ptr, "\\u%04x", (unsigned char)c);
-                        ptr += 6;
-                    } else {
-                        *ptr++ = c;
-                    }
-                    break;
-            }
-        }
-        *ptr++ = '"';
-        *ptr = '\0';
+        json_error_t error;
+        json_t *root = json_loads(json_string, 0, &error);
+        return root;
     )
 
-pub fn deserialize(string json_string) -> string:
+## Parse JSON from file and return json_t pointer
+pub fn loadup_file(string filename) -> void*:
     $raw (
-        #include <stdio.h>
-        #include <string.h>
-        #include <stdlib.h>
-        
-        char *ptr = _output_buffer;
-        int len = strlen(json_string);
-        
-        int start = 0;
-        int end = len;
-        
-        if (len >= 2 && json_string[0] == '"' && json_string[len-1] == '"') {
-            start = 1;
-            end = len - 1;
-        }
-        
-        for (int i = start; i < end; i++) {
-            if (json_string[i] == '\\' && i + 1 < end) {
-                switch (json_string[i + 1]) {
-                    case '"':
-                        *ptr++ = '"';
-                        i++;
-                        break;
-                    case '\\':
-                        *ptr++ = '\\';
-                        i++;
-                        break;
-                    case 'b':
-                        *ptr++ = '\b';
-                        i++;
-                        break;
-                    case 'f':
-                        *ptr++ = '\f';
-                        i++;
-                        break;
-                    case 'n':
-                        *ptr++ = '\n';
-                        i++;
-                        break;
-                    case 'r':
-                        *ptr++ = '\r';
-                        i++;
-                        break;
-                    case 't':
-                        *ptr++ = '\t';
-                        i++;
-                        break;
-                    case 'u':
-                        if (i + 5 < end) {
-                            char hex[5];
-                            strncpy(hex, &json_string[i + 2], 4);
-                            hex[4] = '\0';
-                            unsigned int codepoint = strtol(hex, NULL, 16);
-                            if (codepoint < 128) {
-                                *ptr++ = (char)codepoint;
-                            } else {
-                                // For simplicity, just copy the original sequence
-                                *ptr++ = json_string[i];
-                            }
-                            i += 5;
-                        } else {
-                            *ptr++ = json_string[i];
-                        }
-                        break;
-                    default:
-                        *ptr++ = json_string[i];
-                        break;
-                }
-            } else {
-                *ptr++ = json_string[i];
-            }
-        }
-        *ptr = '\0';
+        json_error_t error;
+        json_t *root = json_load_file(filename, 0, &error);
+        return root;
     )
 
-## Write JSON string to a file
-pub fn dump(string json_data, string filename) -> bool:
+## Convert json_t to string representation
+pub fn to_string(void* json_obj) -> string:
     $raw (
-        #include <stdio.h>
-        FILE* file = fopen(filename, "w");
-        if (file == NULL) {
-            return false;
-        }
-        
-        fprintf(file, "%s", json_data);
-        fclose(file);
-        return true;
-    )
-
-## Load JSON string from a file
-pub fn load(string filename) -> string:
-    $raw (
-        #include <stdio.h>
-        #include <stdlib.h>
-        FILE* file = fopen(filename, "r");
-        
-        if (file == NULL) {
+        if (!json_obj) {
             strcpy(_output_buffer, "");
             return;
         }
-        
-        fseek(file, 0, SEEK_END);
-        long file_size = ftell(file);
-        fseek(file, 0, SEEK_SET);
-        
-        if (file_size >= 4096) {
-            file_size = 4095;
+        char *json_string = json_dumps((json_t*)json_obj, JSON_COMPACT);
+        if (json_string) {
+            strncpy(_output_buffer, json_string, 4095);
+            _output_buffer[4095] = '\0';
+            free(json_string);
+        } else {
+            strcpy(_output_buffer, "");
         }
-        
-        size_t bytes_read = fread(_output_buffer, 1, file_size, file);
-        _output_buffer[bytes_read] = '\0';
-        
-        fclose(file);
     )
 
-## Create a JSON object string from key-value pairs (basic implementation)
-pub fn create_object(string key1, string value1, string key2, string value2) -> string:
+## Convert json_t to pretty-printed string
+pub fn to_string_pretty(void* json_obj) -> string:
     $raw (
-        snprintf(_output_buffer, 4096, 
-            "{\"%s\":\"%s\",\"%s\":\"%s\"}", 
-            key1, value1, key2, value2);
-    )
-
-## Create a JSON array string from values (basic implementation) 
-pub fn create_array(string value1, string value2, string value3) -> string:
-    $raw (
-        snprintf(_output_buffer, 4096, 
-            "[\"%s\",\"%s\",\"%s\"]", 
-            value1, value2, value3);
-    )
-
-## Extract value from JSON object by key (simple parser)
-pub fn get_value(string json_obj, string key) -> string:
-    $raw (
-        #include <stdio.h>
-        #include <string.h>
-        _output_buffer[0] = '\0';
-        char search_pattern[256];
-        snprintf(search_pattern, sizeof(search_pattern), "\"%s\":", key);
-        
-        char* key_pos = strstr(json_obj, search_pattern);
-        if (key_pos == NULL) {
+        if (!json_obj) {
+            strcpy(_output_buffer, "");
             return;
         }
-        
-        char* value_start = key_pos + strlen(search_pattern);
-        
-        while (*value_start == ' ' || *value_start == '\t') {
-            value_start++;
-        }
-        if (*value_start == '"') {
-            value_start++; // Skip opening quote
-            char* value_end = strchr(value_start, '"');
-            if (value_end != NULL) {
-                size_t value_len = value_end - value_start;
-                if (value_len < 4096) {
-                    strncpy(_output_buffer, value_start, value_len);
-                    _output_buffer[value_len] = '\0';
-                }
-            }
+        char *json_string = json_dumps((json_t*)json_obj, JSON_INDENT(2));
+        if (json_string) {
+            strncpy(_output_buffer, json_string, 4095);
+            _output_buffer[4095] = '\0';
+            free(json_string);
         } else {
-            char* value_end = value_start;
-            while (*value_end != ',' && *value_end != '}' && *value_end != '\0') {
-                value_end++;
-            }
-            size_t value_len = value_end - value_start;
-            if (value_len < 4096) {
-                strncpy(_output_buffer, value_start, value_len);
-                _output_buffer[value_len] = '\0';
-                int end_pos = strlen(_output_buffer) - 1;
-                while (end_pos >= 0 && (_output_buffer[end_pos] == ' ' || _output_buffer[end_pos] == '\t')) {
-                    _output_buffer[end_pos] = '\0';
-                    end_pos--;
-                }
-            }
+            strcpy(_output_buffer, "");
         }
+    )
+
+## Save json_t to file
+pub fn save_to_file(void* json_obj, string filename) -> bool:
+    $raw (
+        if (!json_obj) return false;
+        int result = json_dump_file((json_t*)json_obj, filename, JSON_INDENT(2));
+        return result == 0;
+    )
+
+## Get the type of a JSON value
+pub fn get_type(void* json_obj) -> i32:
+    $raw (
+        if (!json_obj) return JSON_NULL;
+        return (int)json_typeof((json_t*)json_obj);
+    )
+
+## Check if JSON value is of specific type
+pub fn check_is_object(void* json_obj) -> bool:
+    $raw (
+        return json_obj && json_is_object((json_t*)json_obj);
+    )
+
+pub fn check_is_array(void* json_obj) -> bool:
+    $raw (
+        return json_obj && json_is_array((json_t*)json_obj);
+    )
+
+pub fn check_is_string(void* json_obj) -> bool:
+    $raw (
+        return json_obj && json_is_string((json_t*)json_obj);
+    )
+
+pub fn check_is_integer(void* json_obj) -> bool:
+    $raw (
+        return json_obj && json_is_integer((json_t*)json_obj);
+    )
+
+pub fn check_is_real(void* json_obj) -> bool:
+    $raw (
+        return json_obj && json_is_real((json_t*)json_obj);
+    )
+
+pub fn check_is_number(void* json_obj) -> bool:
+    $raw (
+        return json_obj && json_is_number((json_t*)json_obj);
+    )
+
+pub fn check_is_true(void* json_obj) -> bool:
+    $raw (
+        return json_obj && json_is_true((json_t*)json_obj);
+    )
+
+pub fn check_is_false(void* json_obj) -> bool:
+    $raw (
+        return json_obj && json_is_false((json_t*)json_obj);
+    )
+
+pub fn check_is_boolean(void* json_obj) -> bool:
+    $raw (
+        return json_obj && json_is_boolean((json_t*)json_obj);
+    )
+
+pub fn check_is_null(void* json_obj) -> bool:
+    $raw (
+        return json_obj && json_is_null((json_t*)json_obj);
+    )
+
+## Create JSON values
+pub fn new_object() -> void*:
+    $raw (
+        return json_object();
+    )
+
+pub fn new_array() -> void*:
+    $raw (
+        return json_array();
+    )
+
+pub fn new_string(string value) -> void*:
+    $raw (
+        return json_string(value);
+    )
+
+pub fn new_integer(i64 value) -> void*:
+    $raw (
+        return json_integer(value);
+    )
+
+pub fn new_real(f64 value) -> void*:
+    $raw (
+        return json_real(value);
+    )
+
+pub fn new_true() -> void*:
+    $raw (
+        return json_true();
+    )
+
+pub fn new_false() -> void*:
+    $raw (
+        return json_false();
+    )
+
+pub fn new_boolean(bool value) -> void*:
+    $raw (
+        return value ? json_true() : json_false();
+    )
+
+pub fn new_null() -> void*:
+    $raw (
+        return json_null();
+    )
+
+## Extract values from JSON
+pub fn get_string_value(void* json_obj) -> string:
+    $raw (
+        if (!json_obj || !json_is_string((json_t*)json_obj)) {
+            strcpy(_output_buffer, "");
+            return;
+        }
+        const char* str = json_string_value((json_t*)json_obj);
+        if (str) {
+            strncpy(_output_buffer, str, 4095);
+            _output_buffer[4095] = '\0';
+        } else {
+            strcpy(_output_buffer, "");
+        }
+    )
+
+pub fn get_integer_value(void* json_obj) -> i64:
+    $raw (
+        if (!json_obj || !json_is_integer((json_t*)json_obj)) {
+            return 0;
+        }
+        return json_integer_value((json_t*)json_obj);
+    )
+
+pub fn get_real_value(void* json_obj) -> f64:
+    $raw (
+        if (!json_obj || !json_is_real((json_t*)json_obj)) {
+            return 0.0;
+        }
+        return json_real_value((json_t*)json_obj);
+    )
+
+pub fn get_number_value(void* json_obj) -> f64:
+    $raw (
+        if (!json_obj || !json_is_number((json_t*)json_obj)) {
+            return 0.0;
+        }
+        return json_number_value((json_t*)json_obj);
+    )
+
+pub fn get_boolean_value(void* json_obj) -> bool:
+    $raw (
+        if (!json_obj) return false;
+        return json_is_true((json_t*)json_obj);
+    )
+
+## Object operations
+pub fn obj_get(void* json_obj, string key) -> void*:
+    $raw (
+        if (!json_obj || !json_is_object((json_t*)json_obj)) {
+            return NULL;
+        }
+        return json_object_get((json_t*)json_obj, key);
+    )
+
+pub fn obj_set(void* json_obj, string key, void* value) -> bool:
+    $raw (
+        if (!json_obj || !json_is_object((json_t*)json_obj) || !value) {
+            return false;
+        }
+        int result = json_object_set((json_t*)json_obj, key, (json_t*)value);
+        return result == 0;
+    )
+
+pub fn obj_set_new(void* json_obj, string key, void* value) -> bool:
+    $raw (
+        if (!json_obj || !json_is_object((json_t*)json_obj) || !value) {
+            return false;
+        }
+        int result = json_object_set_new((json_t*)json_obj, key, (json_t*)value);
+        return result == 0;
+    )
+
+pub fn obj_del(void* json_obj, string key) -> bool:
+    $raw (
+        if (!json_obj || !json_is_object((json_t*)json_obj)) {
+            return false;
+        }
+        int result = json_object_del((json_t*)json_obj, key);
+        return result == 0;
+    )
+
+pub fn obj_clear(void* json_obj) -> bool:
+    $raw (
+        if (!json_obj || !json_is_object((json_t*)json_obj)) {
+            return false;
+        }
+        int result = json_object_clear((json_t*)json_obj);
+        return result == 0;
+    )
+
+pub fn obj_size(void* json_obj) -> i32:
+    $raw (
+        if (!json_obj || !json_is_object((json_t*)json_obj)) {
+            return 0;
+        }
+        return (int)json_object_size((json_t*)json_obj);
+    )
+
+## Array operations
+pub fn arr_get(void* json_array, i32 index) -> void*:
+    $raw (
+        if (!json_array || !json_is_array((json_t*)json_array)) {
+            return NULL;
+        }
+        return json_array_get((json_t*)json_array, index);
+    )
+
+pub fn arr_set(void* json_array, i32 index, void* value) -> bool:
+    $raw (
+        if (!json_array || !json_is_array((json_t*)json_array) || !value) {
+            return false;
+        }
+        int result = json_array_set((json_t*)json_array, index, (json_t*)value);
+        return result == 0;
+    )
+
+pub fn arr_set_new(void* json_array, i32 index, void* value) -> bool:
+    $raw (
+        if (!json_array || !json_is_array((json_t*)json_array) || !value) {
+            return false;
+        }
+        int result = json_array_set_new((json_t*)json_array, index, (json_t*)value);
+        return result == 0;
+    )
+
+pub fn arr_append(void* json_array, void* value) -> bool:
+    $raw (
+        if (!json_array || !json_is_array((json_t*)json_array) || !value) {
+            return false;
+        }
+        int result = json_array_append((json_t*)json_array, (json_t*)value);
+        return result == 0;
+    )
+
+pub fn arr_append_new(void* json_array, void* value) -> bool:
+    $raw (
+        if (!json_array || !json_is_array((json_t*)json_array) || !value) {
+            return false;
+        }
+        int result = json_array_append_new((json_t*)json_array, (json_t*)value);
+        return result == 0;
+    )
+
+pub fn arr_insert(void* json_array, i32 index, void* value) -> bool:
+    $raw (
+        if (!json_array || !json_is_array((json_t*)json_array) || !value) {
+            return false;
+        }
+        int result = json_array_insert((json_t*)json_array, index, (json_t*)value);
+        return result == 0;
+    )
+
+pub fn arr_insert_new(void* json_array, i32 index, void* value) -> bool:
+    $raw (
+        if (!json_array || !json_is_array((json_t*)json_array) || !value) {
+            return false;
+        }
+        int result = json_array_insert_new((json_t*)json_array, index, (json_t*)value);
+        return result == 0;
+    )
+
+pub fn arr_remove(void* json_array, i32 index) -> bool:
+    $raw (
+        if (!json_array || !json_is_array((json_t*)json_array)) {
+            return false;
+        }
+        int result = json_array_remove((json_t*)json_array, index);
+        return result == 0;
+    )
+
+pub fn arr_clear(void* json_array) -> bool:
+    $raw (
+        if (!json_array || !json_is_array((json_t*)json_array)) {
+            return false;
+        }
+        int result = json_array_clear((json_t*)json_array);
+        return result == 0;
+    )
+
+pub fn arr_size(void* json_array) -> i32:
+    $raw (
+        if (!json_array || !json_is_array((json_t*)json_array)) {
+            return 0;
+        }
+        return (int)json_array_size((json_t*)json_array);
+    )
+
+## Memory management
+pub fn inc_ref(void* json_obj) -> void*:
+    $raw (
+        if (json_obj) {
+            return json_incref((json_t*)json_obj);
+        }
+        return NULL;
+    )
+
+pub fn dec_ref(void* json_obj) -> void:
+    $raw (
+        if (json_obj) {
+            json_decref((json_t*)json_obj);
+        }
+    )
+
+## Utility functions for easier usage
+pub fn get_object_string(void* json_obj, string key) -> string:
+    $raw (
+        if (!json_obj || !json_is_object((json_t*)json_obj)) {
+            strcpy(_output_buffer, "");
+            return;
+        }
+        json_t *value = json_object_get((json_t*)json_obj, key);
+        if (!value || !json_is_string(value)) {
+            strcpy(_output_buffer, "");
+            return;
+        }
+        const char* str = json_string_value(value);
+        if (str) {
+            strncpy(_output_buffer, str, 4095);
+            _output_buffer[4095] = '\0';
+        } else {
+            strcpy(_output_buffer, "");
+        }
+    )
+
+pub fn get_object_integer(void* json_obj, string key) -> i64:
+    $raw (
+        if (!json_obj || !json_is_object((json_t*)json_obj)) {
+            return 0;
+        }
+        json_t *value = json_object_get((json_t*)json_obj, key);
+        if (!value || !json_is_integer(value)) {
+            return 0;
+        }
+        return json_integer_value(value);
+    )
+
+pub fn get_object_real(void* json_obj, string key) -> f64:
+    $raw (
+        if (!json_obj || !json_is_object((json_t*)json_obj)) {
+            return 0.0;
+        }
+        json_t *value = json_object_get((json_t*)json_obj, key);
+        if (!value || !json_is_real(value)) {
+            return 0.0;
+        }
+        return json_real_value(value);
+    )
+
+pub fn get_object_boolean(void* json_obj, string key) -> bool:
+    $raw (
+        if (!json_obj || !json_is_object((json_t*)json_obj)) {
+            return false;
+        }
+        json_t *value = json_object_get((json_t*)json_obj, key);
+        if (!value) return false;
+        return json_is_true(value);
     )

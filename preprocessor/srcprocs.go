@@ -153,6 +153,75 @@ func ProcessDeleteExpressions(source string) string {
 	return result.String()
 }
 
+func ContainsExternalJson(source string) bool {
+	return ContainsExternalJsonWithPath(source, "")
+}
+
+func ContainsExternalJsonWithPath(source string, basePath string) bool {
+	visited := make(map[string]bool)
+	return containsExternalJsonRecursive(source, basePath, visited)
+}
+
+func containsExternalJsonRecursive(source string, basePath string, visited map[string]bool) bool {
+	if containsDirectJsonImport(source) {
+		return true
+	}
+
+	imports := extractImports(source)
+	for _, importPath := range imports {
+		filePath := resolveImportPath(importPath, basePath)
+		if filePath == "" {
+			continue
+		}
+
+		if visited[filePath] {
+			continue
+		}
+		visited[filePath] = true
+		importedSource, err := os.ReadFile(filePath)
+		if err != nil {
+			continue
+		}
+
+		if containsExternalJsonRecursive(string(importedSource), filepath.Dir(filePath), visited) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func containsDirectJsonImport(source string) bool {
+	target := `external import "jansson.h"`
+	inString := false
+	escaped := false
+
+	for i := 0; i < len(source); i++ {
+		char := source[i]
+		if escaped {
+			escaped = false
+			continue
+		}
+
+		if char == '\\' {
+			escaped = true
+			continue
+		}
+		if char == '"' {
+			inString = !inString
+			continue
+		}
+		if !inString {
+			if i+len(target) <= len(source) {
+				if source[i:i+len(target)] == target {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
 func ContainsExternalCurl(source string) bool {
 	return ContainsExternalCurlWithPath(source, "")
 }

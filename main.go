@@ -77,6 +77,7 @@ func main() {
 	var (
 		hasCurl     = preprocessor.ContainsExternalCurlWithPath(input, baseDir)
 		hasRegex    = preprocessor.ContainsExternalRegexWithPath(input, baseDir)
+		hasJson     = preprocessor.ContainsExternalJsonWithPath(input, baseDir)
 		cleanedName = strings.ReplaceAll(filepath.Base(ptf), ".scar", "")
 		outputName  = cleanedName
 	)
@@ -284,6 +285,9 @@ func main() {
 		}
 		if hasRegex {
 			compileArgs = append(compileArgs, "-lpcre")
+		}
+		if hasJson {
+			compileArgs = append(compileArgs, "-ljansson")
 		}
 		if *gc {
 			if gcFlags := findBundledBoehm(); gcFlags != nil {
