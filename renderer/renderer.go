@@ -1598,11 +1598,12 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				innerType = fullListType
 			}
 
-			// Extract function name and existing arguments
-			openParen := strings.Index(resolvedCall, "(")
-			closeParen := strings.LastIndex(resolvedCall, ")")
+			var (
+				openParen  = strings.Index(resolvedCall, "(")
+				closeParen = strings.LastIndex(resolvedCall, ")")
+			)
+
 			if openParen == -1 || closeParen == -1 {
-				// Invalid function call format
 				fmt.Fprintf(b, "%s// Error: Invalid function call format: %s\n", indent, resolvedCall)
 				continue
 			}
@@ -5339,8 +5340,10 @@ func isComplexCollectionType(typeName string) bool {
 
 // Handles rendering of complex nested collection types
 func renderComplexListDecl(b *strings.Builder, listDecl *lexer.ListDeclStmt, indent, currentModule string) {
-	listType := listDecl.Type
-	listName := lexer.ResolveSymbol(listDecl.Name, currentModule)
+	var (
+		listType = listDecl.Type
+		listName = lexer.ResolveSymbol(listDecl.Name, currentModule)
+	)
 
 	if strings.HasPrefix(listType, "list[list[") {
 		innerType := extractListInnerType(listType)
