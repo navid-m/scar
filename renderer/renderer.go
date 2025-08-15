@@ -2218,6 +2218,8 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				value   = stmt.VarDecl.Value
 			)
 
+			logger.Debug("VarDecl: varType=%s, varName=%s, value=%s\n", varType, varName, value)
+
 			localVars[varName] = varType
 
 			var classNames []string
@@ -2287,7 +2289,17 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 
 			if strings.HasPrefix(varName, "this.") {
 				fieldName := varName[5:]
-				if stmt.VarDecl.Type == "string" {
+				isListField := false
+				fieldType := strings.TrimPrefix(stmt.VarDecl.Type, "ref ")
+				if strings.HasPrefix(fieldType, "list[") && strings.HasSuffix(fieldType, "]") {
+					isListField = true
+				}
+
+				if isListField && value == "[]" {
+					logger.Debug("VarDecl: Handling list field initialization with [] for %s\n", fieldName)
+					fmt.Fprintf(b, "%sthis->%s_len = 0;\n", indent, fieldName)
+				} else if stmt.VarDecl.Type == "string" || (strings.HasPrefix(stmt.VarDecl.Type, "ref ") && strings.TrimPrefix(stmt.VarDecl.Type, "ref ") == "string") {
+					logger.Debug("VarDecl: Handling string field initialization for %s = %s\n", fieldName, value)
 					if isFunctionCall(value) {
 						funcName, args := parseFunctionCall(value)
 						resolvedFuncName := lexer.ResolveSymbol(funcName, currentModule)
@@ -2316,7 +2328,9 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 					if isFunctionCall(value) {
 						value = resolveFunctionCall(value)
 					}
-					fmt.Fprintf(b, "%sthis->%s = %s;\n", indent, fieldName, value)
+					if !isListField || value != "[]" {
+						fmt.Fprintf(b, "%sthis->%s = %s;\n", indent, fieldName, value)
+					}
 				}
 			} else {
 				if stmt.VarDecl.Type == "string" {
@@ -2372,6 +2386,8 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				value   = stmt.VarAssign.Value
 			)
 
+			logger.Debug("VarAssign: varName=%s, value=%s\n", varName, value)
+
 			value = lexer.ResolveSymbol(value, currentModule)
 			value = fixFloatCastGranular(value)
 			value = convertThisReferencesGranular(value)
@@ -2379,15 +2395,37 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			value = convertMethodCallToC(value)    // Convert method calls like 'obj.method()' to 'Class_method(obj)'
 			value = convertPropertyAccess(value)   // Convert property access from dot to arrow notation
 
+			logger.Debug("VarAssign after processing: varName=%s, value=%s\n", varName, value)
+
 			var varType string
 			if localType, exists := localVars[varName]; exists {
 				varType = localType
 			} else {
-				for _, classInfo := range globalClasses {
-					for _, field := range classInfo.Fields {
-						if field.Name == varName || ("this->"+field.Name) == varName {
-							varType = field.Type
-							break
+				if strings.Contains(varName, "->") {
+					parts := strings.Split(varName, "->")
+					if len(parts) == 2 {
+						objName := parts[0]
+						fieldName := parts[1]
+
+						if objType, exists := localVars[objName]; exists {
+							if classInfo, exists := globalClasses[objType]; exists {
+								for _, field := range classInfo.Fields {
+									if field.Name == fieldName {
+										varType = field.Type
+										break
+									}
+								}
+							}
+						}
+					}
+				} else {
+					// Check for this-> fields
+					for _, classInfo := range globalClasses {
+						for _, field := range classInfo.Fields {
+							if field.Name == varName || ("this->"+field.Name) == varName {
+								varType = field.Type
+								break
+							}
 						}
 					}
 				}
@@ -2472,22 +2510,56 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			} else {
 				var varType string
 
-				// First check if it's a local variable
 				if localType, exists := localVars[varName]; exists {
 					varType = localType
 				} else {
-					// Fallback to checking class fields
-					for _, classInfo := range globalClasses {
-						for _, field := range classInfo.Fields {
-							if field.Name == varName || ("this->"+field.Name) == varName {
-								varType = field.Type
-								break
+					if strings.Contains(varName, "->") {
+						parts := strings.Split(varName, "->")
+						if len(parts) == 2 {
+							objName := parts[0]
+							fieldName := parts[1]
+
+							if objType, exists := localVars[objName]; exists {
+								if classInfo, exists := globalClasses[objType]; exists {
+									for _, field := range classInfo.Fields {
+										if field.Name == fieldName {
+											varType = field.Type
+											break
+										}
+									}
+								}
+							}
+						}
+					} else {
+						for _, classInfo := range globalClasses {
+							for _, field := range classInfo.Fields {
+								if field.Name == varName || ("this->"+field.Name) == varName {
+									varType = field.Type
+									break
+								}
 							}
 						}
 					}
 				}
 
-				if varType == "string" {
+				isListField := false
+				fieldType := strings.TrimPrefix(varType, "ref ")
+				if strings.HasPrefix(fieldType, "list[") && strings.HasSuffix(fieldType, "]") {
+					isListField = true
+				}
+
+				logger.Debug("VarAssign field check: varName=%s, varType=%s, fieldType=%s, isListField=%v, value=%s\n", varName, varType, fieldType, isListField, value)
+
+				if isListField && value == "[]" {
+					logger.Debug("Handling list field assignment with [] for %s\n", varName)
+					if strings.HasPrefix(varName, "this->") {
+						fieldName := varName[6:]
+						fmt.Fprintf(b, "%sthis->%s_len = 0;\n", indent, fieldName)
+					} else {
+						fmt.Fprintf(b, "%s%s_len = 0;\n", indent, varName)
+					}
+				} else if varType == "string" {
+					logger.Debug("Handling string field assignment for %s = %s\n", varName, value)
 					value = processCatExpression(value)
 
 					if isFunctionCall(value) {
@@ -2503,6 +2575,7 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 						}
 					}
 				} else {
+					logger.Debug("VarAssign fallback case: varName=%s, value=%s, varType=%s\n", varName, value, varType)
 					if isFunctionCall(value) {
 						if _, isListVar := globalArrays[varName]; isListVar {
 							var (
