@@ -21,3 +21,7 @@ pub fn readln_with_prompt(string prompt) -> lstring:
 pub fn read_int() -> i32:
     i32 y = math::to_int(io::readln())
     return y
+
+pub fn read_float() -> f32:
+    f32 y = math::to_float(io::readln())
+    return y

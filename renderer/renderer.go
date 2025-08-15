@@ -3192,7 +3192,8 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 }
 
 func fixFloatCastGranular(expr string) string {
-	return strings.ReplaceAll(expr, "float(", "(float)(")
+	re := regexp.MustCompile(`\bfloat\(`)
+	return re.ReplaceAllString(expr, "(float)(")
 }
 
 // Converts 'new ClassName(args)' to 'ClassName_new(args)'
