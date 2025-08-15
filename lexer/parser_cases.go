@@ -851,9 +851,7 @@ func LoadModule(moduleName string, baseDir string) (*ModuleInfo, error) {
 		return nil, fmt.Errorf("failed to read module '%s': %v", moduleName, err)
 	}
 
-	// Remove comments from the imported module source
 	sourceWithoutComments := RemoveComments(string(data))
-
 	program, err := InnerParseWithIndentation(ReplaceDoubleColonsOutsideStrings(sourceWithoutComments), modulePath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse module '%s': %v", moduleName, err)
