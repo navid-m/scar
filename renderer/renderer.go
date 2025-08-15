@@ -494,6 +494,18 @@ func collectClassInfoWithModule(classDecl *lexer.ClassDeclStmt, moduleName strin
 					fieldMap[fieldName] = true
 				}
 			}
+			if stmt.ListDecl != nil && strings.HasPrefix(stmt.ListDecl.Name, "this.") {
+				fieldName := strings.TrimPrefix(stmt.ListDecl.Name, "this.")
+				if _, exists := fieldMap[fieldName]; !exists {
+					fieldInfo := FieldInfo{
+						Name:  fieldName,
+						Type:  stmt.ListDecl.Type,
+						IsRef: false,
+					}
+					classInfo.Fields = append(classInfo.Fields, fieldInfo)
+					fieldMap[fieldName] = true
+				}
+			}
 			if stmt.VarAssign != nil && strings.HasPrefix(stmt.VarAssign.Name, "this.") {
 				fieldName := stmt.VarAssign.Name[5:]
 				if _, exists := fieldMap[fieldName]; !exists {
@@ -582,7 +594,13 @@ func populateClassInfo(classDecl *lexer.ClassDeclStmt, className string) {
 				fieldMap[param.Name] = true
 			}
 		}
+		logger.Debug("Processing %d constructor field statements\n", len(classDecl.Constructor.Fields))
 		for _, stmt := range classDecl.Constructor.Fields {
+			logger.Debug("Statement type: VarDecl=%v, VarAssign=%v, MapDecl=%v\n", stmt.VarDecl != nil, stmt.VarAssign != nil, stmt.MapDecl != nil)
+			if stmt.VarDecl == nil && stmt.VarAssign == nil && stmt.MapDecl == nil {
+				logger.Debug("Unhandled statement type - checking other fields\n")
+				logger.Debug("  ListDecl=%v, Print=%v, If=%v, For=%v\n", stmt.ListDecl != nil, stmt.Print != nil, stmt.If != nil, stmt.For != nil)
+			}
 			if stmt.VarDecl != nil {
 				fieldName := stmt.VarDecl.Name
 				fieldName = strings.TrimPrefix(fieldName, "this.")
@@ -596,6 +614,33 @@ func populateClassInfo(classDecl *lexer.ClassDeclStmt, className string) {
 						Name:  fieldName,
 						Type:  fieldType,
 						IsRef: isRef,
+					}
+					classInfo.Fields = append(classInfo.Fields, fieldInfo)
+					fieldMap[fieldName] = true
+				}
+			}
+			if stmt.ListDecl != nil && strings.HasPrefix(stmt.ListDecl.Name, "this.") {
+				fieldName := strings.TrimPrefix(stmt.ListDecl.Name, "this.")
+				if _, exists := fieldMap[fieldName]; !exists {
+					// For list fields, store as list[T] type
+					listType := fmt.Sprintf("list[%s]", stmt.ListDecl.Type)
+					fieldInfo := FieldInfo{
+						Name:  fieldName,
+						Type:  listType,
+						IsRef: false,
+					}
+					logger.Debug("Adding ListDecl field to class info: %s, Type: %s\n", fieldName, listType)
+					classInfo.Fields = append(classInfo.Fields, fieldInfo)
+					fieldMap[fieldName] = true
+				}
+			}
+			if stmt.ListDecl != nil && strings.HasPrefix(stmt.ListDecl.Name, "this.") {
+				fieldName := strings.TrimPrefix(stmt.ListDecl.Name, "this.")
+				if _, exists := fieldMap[fieldName]; !exists {
+					fieldInfo := FieldInfo{
+						Name:  fieldName,
+						Type:  stmt.ListDecl.Type,
+						IsRef: false,
 					}
 					classInfo.Fields = append(classInfo.Fields, fieldInfo)
 					fieldMap[fieldName] = true
@@ -1019,6 +1064,14 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 	// Populate class info before processing constructor so it's available for field type checks
 	populateClassInfo(classDecl, className)
 
+	// Debug: print populated class info
+	if classInfo, exists := globalClasses[className]; exists {
+		logger.Debug("Populated class %s with %d fields:\n", className, len(classInfo.Fields))
+		for _, field := range classInfo.Fields {
+			logger.Debug("  Field: %s, Type: %s, IsRef: %v\n", field.Name, field.Type, field.IsRef)
+		}
+	}
+
 	if classDecl.Constructor != nil && len(classDecl.Constructor.Parameters) > 0 {
 		fmt.Fprintf(b, "%s* %s_new(", className, className)
 		for i, param := range classDecl.Constructor.Parameters {
@@ -1161,39 +1214,18 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 								fmt.Fprintf(b, "    this->%s = %s;\n", fieldName, value)
 							}
 						}
-					} else if stmt.VarDecl.Type == "string" {
-						isStringField := stmt.VarDecl.Type == "string"
-						logger.Debug("VarDecl field %s, value %s, isStringField %v\n", fieldName, value, isStringField)
-						if isStringField {
+					} else {
+						// Check if this is a list field by looking at the VarDecl type directly
+						isListField := strings.HasPrefix(stmt.VarDecl.Type, "list[") && strings.HasSuffix(stmt.VarDecl.Type, "]")
+
+						if isListField && value == "[]" {
+							// Empty list initialization
+							fmt.Fprintf(b, "    this->%s_len = 0;\n", fieldName)
+						} else if stmt.VarDecl.Type == "string" {
 							if !strings.HasPrefix(value, "\"") && !strings.HasSuffix(value, "\"") && isValidIdentifier(value) {
 								value = fmt.Sprintf("\"%s\"", value)
 							}
 							fmt.Fprintf(b, "    strcpy(this->%s, %s);\n", fieldName, value)
-						}
-					} else {
-						isListField := false
-						logger.Debug("VarDecl checking field %s for list type\n", fieldName)
-						if classInfo, exists := globalClasses[className]; exists {
-							logger.Debug("Found class %s with %d fields\n", className, len(classInfo.Fields))
-							for _, field := range classInfo.Fields {
-								logger.Debug("  Checking field: %s (type: %s)\n", field.Name, field.Type)
-								if field.Name == fieldName {
-									fieldType := field.Type
-									fieldType = strings.TrimPrefix(fieldType, "ref ")
-									logger.Debug("  Field %s has type %s (after ref removal)\n", fieldName, fieldType)
-									if strings.HasPrefix(fieldType, "list[") && strings.HasSuffix(fieldType, "]") {
-										isListField = true
-										logger.Debug("  Detected as list field!\n")
-									}
-									break
-								}
-							}
-						} else {
-							logger.Debug("Class %s not found in globalClasses\n", className)
-						}
-
-						if isListField && value == "[]" {
-							fmt.Fprintf(b, "    this->%s_len = 0;\n", fieldName)
 						} else {
 							value = strings.ReplaceAll(value, "this.", "this->")
 							if !isListField || value != "[]" {
@@ -1204,6 +1236,10 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 				} else {
 					renderStatements(b, []*lexer.Statement{stmt}, "    ", className, program, "")
 				}
+
+			case stmt.ListDecl != nil && strings.HasPrefix(stmt.ListDecl.Name, "this."):
+				fieldName := strings.TrimPrefix(stmt.ListDecl.Name, "this.")
+				fmt.Fprintf(b, "    this->%s_len = 0;\n", fieldName)
 
 			case stmt.VarAssign != nil:
 				fieldName := stmt.VarAssign.Name
