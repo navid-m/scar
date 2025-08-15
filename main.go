@@ -141,7 +141,7 @@ func main() {
 
 	var (
 		outputBinary = "./" + outputName
-		cmpPath      = "clang"
+		cmpPath      = "gcc"
 		compileArgs  = []string{"-w", "-fopenmp", tmpCPath, "-o", outputBinary, extCflag}
 	)
 
@@ -182,26 +182,25 @@ func main() {
 	switch runtime.GOOS {
 	case "darwin":
 		cmpPath = "/opt/homebrew/opt/llvm/bin/clang"
+
 		compileArgs = []string{
 			"-w",
 			"-fopenmp",
-			tmpCPath,
 			"-I/opt/homebrew/opt/libomp/include",
+			"-I/opt/homebrew/include",
+			tmpCPath,
 			"-L/opt/homebrew/opt/libomp/lib",
-			"-o", outputBinary,
+			"-L/opt/homebrew/lib",
+			"-o", "./" + outputName,
 		}
+
 		if *opt {
 			compileArgs = append([]string{"-O2", "-fno-fast-math"}, compileArgs...)
 		}
+
 		if *dll {
 			compileArgs = append(compileArgs, "-shared", "-fPIC")
-			outputBinary = "./" + outputName + ".dylib"
-			for i, arg := range compileArgs {
-				if arg == "-o" && i+1 < len(compileArgs) {
-					compileArgs[i+1] = outputBinary
-					break
-				}
-			}
+			compileArgs[len(compileArgs)-2] = "./" + outputName + ".dylib"
 		}
 		if hasCurl {
 			compileArgs = append(compileArgs, "-lcurl")
@@ -212,6 +211,7 @@ func main() {
 		if hasJson {
 			compileArgs = append(compileArgs, "-ljansson")
 		}
+
 		if *gc {
 			if gcFlags := findBundledBoehm(); gcFlags != nil {
 				compileArgs = append(compileArgs, gcFlags...)
@@ -221,6 +221,7 @@ func main() {
 				compileArgs = append(compileArgs, "-lgc")
 			}
 		}
+
 	case "linux":
 		compileArgs = []string{
 			"-fopenmp",
