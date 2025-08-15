@@ -121,7 +121,59 @@ t.assert_float_equals(3.0, v3div.z, 0.0001, "Vector3 div.z should be 3")
 t.assert_equals(0, strings::compare("Hello, World!", "Hello, World!"), "String comparison should be equal")
 t.assert_equals(5, strings::length("Hello"), "String length should be 5")
 
-# String Split Tests
+bool ew1 = strings::ends_with("filename.txt", "txt")
+t.assert_equals(true, ew1, "ends_with should return true for matching suffix")
+bool ew2 = strings::ends_with("abc", "abcd")
+t.assert_equals(false, ew2, "ends_with should return false when suffix longer than string")
+
+bool c1 = strings::contains("hello world", "world")
+t.assert_equals(true, c1, "contains should find substring")
+bool c2 = strings::contains("hello", "z")
+t.assert_equals(false, c2, "contains should return false when not found")
+
+string ts1 = strings::trim_suffix("hello", "lo")
+t.assert_string_equals("hel", ts1, "trim_suffix should remove matching suffix")
+string ts2 = strings::trim_suffix("hello", "zz")
+t.assert_string_equals("hello", ts2, "trim_suffix should return original when no match")
+
+string hex1 = strings::to_hex(255)
+t.assert_string_equals("FF", hex1, "to_hex(255) should be 'FF'")
+string hex2 = strings::to_hex(-5)
+t.assert_string_equals("0", hex2, "to_hex of negative should be '0'")
+
+t.assert_equals(true, strings::equal("same", "same"), "equal should be true for same strings")
+t.assert_equals(false, strings::equal("a", "b"), "equal should be false for different strings")
+
+string rep1 = strings::replace("a-b-a-b", "a", "x")
+t.assert_string_equals("x-b-x-b", rep1, "replace should substitute all occurrences")
+string rep2 = strings::replace("abc", "z", "x")
+t.assert_string_equals("abc", rep2, "replace should return original when no matches")
+string rep3 = strings::replace("abc", "", "x")
+t.assert_string_equals("abc", rep3, "replace with empty old_substr should return original")
+
+string ch1 = strings::get_char_at("hello", 1)
+t.assert_string_equals("e", ch1, "get_char_at should return character at index")
+string ch2 = strings::get_char_at("hello", 99)
+t.assert_string_equals("", ch2, "get_char_at out of bounds should return empty string")
+
+ref collections::StringArrayList sp1 = strings::split("a|b|c", "|")
+t.assert_equals(3, sp1.get_size(), "split should produce 3 elements when delimiter present")
+t.assert_string_equals("a", sp1.get_element(0), "split[0] should be 'a'")
+t.assert_string_equals("b", sp1.get_element(1), "split[1] should be 'b'")
+t.assert_string_equals("c", sp1.get_element(2), "split[2] should be 'c'")
+
+ref collections::StringArrayList sp2 = strings::split("abc", "")
+t.assert_equals(1, sp2.get_size(), "split with empty delimiter should return whole string")
+t.assert_string_equals("abc", sp2.get_element(0), "split(empty delim) should equal original")
+
+ref collections::StringArrayList sp3 = strings::split("", ",")
+t.assert_equals(1, sp3.get_size(), "split empty string should return one empty element")
+t.assert_string_equals("", sp3.get_element(0), "split empty string -> empty element")
+
+ref collections::StringArrayList sp4 = strings::split("abc", ",,,")
+t.assert_equals(1, sp4.get_size(), "split with delimiter longer than string should return original as one element")
+t.assert_string_equals("abc", sp4.get_element(0), "split with long delim should equal original")
+
 ref collections::StringArrayList split_result1 = strings::split("apple,banana,cherry", ",")
 t.assert_equals(3, split_result1.get_size(), "Split should produce 3 parts")
 t.assert_string_equals("apple", split_result1.get_element(0), "First part should be 'apple'")

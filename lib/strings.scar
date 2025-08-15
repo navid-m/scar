@@ -65,22 +65,22 @@ pub fn trim_prefix(string str, string prefix) -> string:
         }
     )
 
-pub fn trim_suffix(string str, string suffix) -> char*:
+pub fn trim_suffix(lstring str, lstring suffix) -> lstring:
     $raw (
         if (str == NULL || suffix == NULL) {
             return str ? str : "";
         }
-        size_t suffix_len = strlen(suffix);
         size_t str_len = strlen(str);
+        size_t suffix_len = strlen(suffix);
         if (str_len >= suffix_len && strcmp(str + str_len - suffix_len, suffix) == 0) {
-            size_t result_len = str_len - suffix_len;
-            char buffer[256];
-            strncpy(buffer, str, result_len);
-            buffer[result_len] = '\0';
-            return buffer;
-        } else {
-            return str;
+            size_t new_len = str_len - suffix_len;
+            char* out = (char*)malloc(new_len + 1);
+            if (!out) return "";
+            memcpy(out, str, new_len);
+            out[new_len] = '\0';
+            return out;
         }
+        return str;
     )
 
 pub fn ends_with(string str, string suffix) -> bool:
