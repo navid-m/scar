@@ -320,11 +320,12 @@ bool __check_key_exists(int* keys, int size, int key) {
 		for varName, varDecl := range module.PublicVars {
 			cType := mapTypeToCType(varDecl.Type)
 			uniqueName := lexer.GenerateUniqueSymbol(varName, module.Name)
-			if varDecl.Type == "string" {
+			switch varDecl.Type {
+			case "string":
 				fmt.Fprintf(&b, "extern char %s[256];\n", uniqueName)
-			} else if varDecl.Type == "lstring" {
+			case "lstring":
 				fmt.Fprintf(&b, "extern char %s[10000];\n", uniqueName)
-			} else {
+			default:
 				fmt.Fprintf(&b, "extern %s %s;\n", cType, uniqueName)
 			}
 		}
@@ -337,19 +338,20 @@ bool __check_key_exists(int* keys, int size, int key) {
 				uniqueName = lexer.GenerateUniqueSymbol(varName, module.Name)
 				value      = varDecl.Value
 			)
-			if varDecl.Type == "string" {
+			switch varDecl.Type {
+			case "string":
 				if !strings.HasPrefix(value, "\"") {
 					value = fmt.Sprintf("\"%s\"", value)
 				}
 				fmt.Fprintf(&b, "char %s[256];\n", uniqueName)
 				fmt.Fprintf(&b, "void init_%s() { strcpy(%s, %s); }\n", uniqueName, uniqueName, value)
-			} else if varDecl.Type == "lstring" {
+			case "lstring":
 				if !strings.HasPrefix(value, "\"") {
 					value = fmt.Sprintf("\"%s\"", value)
 				}
 				fmt.Fprintf(&b, "char %s[10000];\n", uniqueName)
 				fmt.Fprintf(&b, "void init_%s() { strcpy(%s, %s); }\n", uniqueName, uniqueName, value)
-			} else {
+			default:
 				fmt.Fprintf(&b, "%s %s = %s;\n", cType, uniqueName, value)
 			}
 		}
