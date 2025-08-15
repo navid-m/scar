@@ -1,6 +1,6 @@
 import "std/math"
 
-pub fn readln() -> string:
+pub fn readln() -> lstring:
     $raw (
         char buffer[1024];
         if (fgets(buffer, sizeof(buffer), stdin) != NULL) {
@@ -14,11 +14,10 @@ pub fn readln() -> string:
         }
     )
 
-pub fn readln_with_prompt(string prompt) -> string:
+pub fn readln_with_prompt(string prompt) -> lstring:
     put "%s" | prompt
     return io::readln()
 
 pub fn read_int() -> i32:
-    lstring x = io::readln()
-    i32 y = math::to_int(x)
+    i32 y = math::to_int(io::readln())
     return y
