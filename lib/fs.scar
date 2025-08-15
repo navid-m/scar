@@ -1,9 +1,14 @@
 import "std/strings"
 
+platform (Posix):
+    external import "dirent.h"
+    external import "sys/types.h"
+
 pub fn make_dir(string path) -> bool:
-    $raw (
-        return mkdir(path) == 0;
-    )
+    platform (Windows):
+        $raw (
+            return mkdir(path) == 0;
+        )
 
 pub fn remove_dir(string path) -> bool:
     $raw (
@@ -126,6 +131,8 @@ pub fn list_dir(string path) -> list[string]:
             
             FindClose(handle);
         #else
+            #include <dirent.h>
+            #include <sys/types.h>
             DIR* dir = opendir(path);
             if (dir == NULL) {
                 for (int _i = 0; _i < entries_count && _i < _max_size; _i++) {

@@ -86,7 +86,9 @@ pub fn tcp_server_create(i32 port) -> net::TcpServer:
         
         struct sockaddr_in address;
         address.sin_family = AF_INET;
-        address.sin_addr.s_addr = INADDR_ANY;
+        #ifdef _WIN32
+            address.sin_addr.s_addr = INADDR_ANY;
+        #endif
         address.sin_port = htons(port);
         
         if (bind(sockfd, (struct sockaddr*)&address, sizeof(address)) < 0) {
@@ -360,6 +362,8 @@ pub fn url_encode(string input) -> char*:
 
 ## URL decode a string
 pub fn url_decode(char* str) -> char*:
+    platform (Posix):
+        external import "ctype.h"
     $raw (
         int d = 0;
         char *dStr = malloc(strlen(str) + 1);
@@ -371,7 +375,7 @@ pub fn url_decode(char* str) -> char*:
             for(i=0;i<strlen(dStr);++i) {
                 if(dStr[i] == '%') {
                     if(dStr[i+1] == 0)
-                        return dStr;  
+                        return dStr;
                     if(isxdigit(dStr[i+1]) && isxdigit(dStr[i+2])) {
                         d = 0;      
                         eStr[0] = dStr[i+1];

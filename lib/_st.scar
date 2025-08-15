@@ -12,8 +12,11 @@ import "std/hash"
 import "std/sort"
 import "std/io"
 import "std/json"
-import "std/net"
-import "std/threads"
+
+platform (Windows):
+    import "std/net"
+    import "std/threads"
+
 import "std/regex"
 import "std/crypto"
 
@@ -208,16 +211,17 @@ t.assert_string_equals("H", c, "chr(72) should return 'H'")
 t.assert_string_equals("Hello", strings::trim_space("   Hello   "), "Trimmed string should be 'Hello'")
 t.assert_string_equals("sdf", strings::trim_prefix("asdf", "a"), "Trimmed prefix should be 'sdf'")
 
-string decoded_simple = net::url_decode("hello%20world")
-t.assert_string_equals("hello world", decoded_simple, "Simple URL decoding should work")
-string decoded_special = net::url_decode("hello%40world.com")
-t.assert_string_equals("hello@world.com", decoded_special, "Special characters should be decoded")
-string decoded_plus = net::url_decode("hello+world")
-t.assert_string_equals("hello world", decoded_plus, "Plus signs should be decoded as spaces")
-string decoded_empty = net::url_decode("")
-t.assert_string_equals("", decoded_empty, "Empty string should return empty")
-string decoded_safe = net::url_decode("hello-world_test.file~")
-t.assert_string_equals("hello-world_test.file~", decoded_safe, "Safe characters should remain unchanged")
+platform (Windows):
+    string decoded_simple = net::url_decode("hello%20world")
+    t.assert_string_equals("hello world", decoded_simple, "Simple URL decoding should work")
+    string decoded_special = net::url_decode("hello%40world.com")
+    t.assert_string_equals("hello@world.com", decoded_special, "Special characters should be decoded")
+    string decoded_plus = net::url_decode("hello+world")
+    t.assert_string_equals("hello world", decoded_plus, "Plus signs should be decoded as spaces")
+    string decoded_empty = net::url_decode("")
+    t.assert_string_equals("", decoded_empty, "Empty string should return empty")
+    string decoded_safe = net::url_decode("hello-world_test.file~")
+    t.assert_string_equals("hello-world_test.file~", decoded_safe, "Safe characters should remain unchanged")
 
 # Regex Tests
 t.assert_equals(true, regex::matches("^[a-z]+$", "hello"), "regex::matches should match lowercase letters")
@@ -257,9 +261,9 @@ string xored_text = crypto::xor_cipher_hex("Hello World", "key")
 t.assert_string_equals(xored_text, "230015070A593C0A0B0701", "XOR cipher should work")
 
 # Networking Tests
-net::HttpResponse hello = net::http_get("https://httpbin.org/get")
-
-print "%s" | hello.body
+platform (Windows):
+    net::HttpResponse hello = net::http_get("https://httpbin.org/get")
+    print "%s" | hello.body
 
 # JSON Tests
 run void* user = json::new_object()

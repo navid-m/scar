@@ -192,6 +192,7 @@ func main() {
 			"-L/opt/homebrew/opt/libomp/lib",
 			"-L/opt/homebrew/lib",
 			"-o", "./" + outputName,
+			"-pthread",
 		}
 
 		if *opt {

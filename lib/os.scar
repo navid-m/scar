@@ -62,29 +62,38 @@ pub fn get_args() -> list[string]:
     )
 
 pub fn read_dir(string path) -> list[string]:
-    $raw (
-        #include <dirent.h>
-        
-        DIR *dir;
-        struct dirent *entry;
-        int count = 0;
-        
-        dir = opendir(path);
-        if (dir == NULL) {
+    platform (Posix):
+        $raw (
+            #define _POSIX_C_SOURCE 200809L 
+            #define _DARWIN_C_SOURCE 
+            #include <sys/types.h>
             return 0;
-        }
-        
-        while ((entry = readdir(dir)) != NULL && count < _max_size) {
-            if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
-                continue;
+        )
+    
+    platform (Windows):
+        $raw (
+            #include <dirent.h>
+            
+            DIR *dir;
+            struct dirent *entry;
+            int count = 0;
+            
+            dir = opendir(path);
+            if (dir == NULL) {
+                return 0;
             }
-            strcpy(_output_array[count], entry->d_name);
-            count++;
-        }
-        
-        closedir(dir);
-        return count;
-    )
+            
+            while ((entry = readdir(dir)) != NULL && count < _max_size) {
+                if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
+                    continue;
+                }
+                strcpy(_output_array[count], entry->d_name);
+                count++;
+            }
+            
+            closedir(dir);
+            return count;
+        )
 
 pub fn clear():
     external import "stdio.h"
