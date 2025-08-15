@@ -1,0 +1,337 @@
+import "std/math"
+import "std/collections"
+import "std/io"
+import "std/strings"
+import "std/os"
+import "std/regex"
+
+class FunctionDoc:
+    init:
+        string this.name = ""
+        string this.return_type = ""
+        ref list[string] this.parameters = []
+        ref list[string] this.comments = []
+        bool  this.is_public = false
+        string  this.visibility = ""
+
+class ClassDoc:
+    init:
+        string  this.name = ""
+        # list[string]  this.comments = []
+        # list[FunctionDoc]  this.methods = []
+        # list[string]  this.fields = []
+        bool  this.is_public = false
+
+class ModuleDoc:
+    init:
+        string  this.filename = ""
+        string  this.module_name = ""
+        # list[string]  this.imports = []
+        # list[FunctionDoc]  this.functions = []
+        # list[ClassDoc]  this.classes = []
+        # list[string]  this.global_vars = []
+        # list[string]  this.comments = []
+
+# # Parse a single line for documentation comments
+# fn parse_doc_comment(string line) -> string:
+#     string trimmed = strings::trim(line)
+#     if strings::starts_with(trimmed, "#"):
+#         return strings::trim(strings::substring(trimmed, 1, strings::length(trimmed)))
+#     return ""
+
+# # Extract function signature information
+# fn parse_function_signature(string line) -> FunctionDoc:
+#     ref FunctionDoc func_doc = new FunctionDoc()
+#     func_doc.parameters = []
+#     func_doc.comments = []
+    
+#     # Check if function is public
+#     if strings::contains(line, "pub fn"):
+#         func_doc.is_public = true
+#         func_doc.visibility = "public"
+#     else:
+#         func_doc.is_public = false
+#         func_doc.visibility = "private"
+    
+#     # Extract function name and parameters using regex
+#     list[string] matches = regex::find("fn\\s+(\\w+)\\s*\\(([^)]*)\\)\\s*->\\s*(\\w+|void)", line)
+#     if len(matches) >= 4:
+#         func_doc.name = matches[1]
+#         func_doc.return_type = matches[3]
+        
+#         # Parse parameters
+#         string params_str = matches[2]
+#         if strings::length(params_str) > 0:
+#             list[string] param_parts = strings::split(params_str, ",")
+#             for int i = 0; i < len(param_parts); i++:
+#                 string param = strings::trim(param_parts[i])
+#                 if strings::length(param) > 0:
+#                     func_doc.parameters = func_doc.parameters + [param]
+#     else:
+#         # Try simpler pattern without return type
+#         list[string] simple_matches = regex::find("fn\\s+(\\w+)\\s*\\(([^)]*)\\)", line)
+#         if len(simple_matches) >= 3:
+#             func_doc.name = simple_matches[1]
+#             func_doc.return_type = "void"
+            
+#             string params_str = simple_matches[2]
+#             if strings::length(params_str) > 0:
+#                 list[string] param_parts = strings::split(params_str, ",")
+#                 for int i = 0; i < len(param_parts); i++:
+#                     string param = strings::trim(param_parts[i])
+#                     if strings::length(param) > 0:
+#                         func_doc.parameters = func_doc.parameters + [param]
+    
+#     return func_doc
+
+# # Parse class definition
+# fn parse_class_signature(string line) -> ClassDoc:
+#     ref ClassDoc class_doc = new ClassDoc()
+#     class_doc.comments = []
+#     class_doc.methods = []
+#     class_doc.fields = []
+    
+#     list[string] matches = regex::find("class\\s+(\\w+)", line)
+#     if len(matches) >= 2:
+#         class_doc.name = matches[1]
+#         class_doc.is_public = true  # Assume classes are public by default
+    
+#     return class_doc
+
+# # Parse import statements
+# fn extract_imports(string line) -> string:
+#     list[string] matches = regex::find("import\\s+\"([^\"]+)\"", line)
+#     if len(matches) >= 2:
+#         return matches[1]
+#     return ""
+
+# # Parse global variable declarations
+# fn extract_global_var(string line) -> string:
+#     string trimmed = strings::trim(line)
+#     if strings::starts_with(trimmed, "pub ") || regex::matches("^(i32|i64|f32|f64|string|bool)\\s+\\w+", trimmed):
+#         return trimmed
+#     return ""
+
+# # Parse a single Scar source file
+# fn parse_file(string filepath) -> ModuleDoc:
+#     ref ModuleDoc doc = new ModuleDoc()
+#     doc.filename = filepath
+#     doc.imports = []
+#     doc.functions = []
+#     doc.classes = []
+#     doc.global_vars = []
+#     doc.comments = []
+    
+#     # Extract module name from filename
+#     list[string] path_parts = strings::split(filepath, "/")
+#     string filename = path_parts[len(path_parts) - 1]
+#     list[string] name_parts = strings::split(filename, ".")
+#     doc.module_name = name_parts[0]
+    
+#     list[string] lines = io::read_lines(filepath)
+#     list[string] current_comments = []
+#     ref ClassDoc current_class = new ClassDoc()
+#     bool in_class = false
+    
+#     for int i = 0; i < len(lines); i++:
+#         string line = lines[i]
+#         string trimmed = strings::trim(line)
+        
+#         # Skip empty lines
+#         if strings::length(trimmed) == 0:
+#             continue
+        
+#         # Parse documentation comments
+#         string comment = parse_doc_comment(line)
+#         if strings::length(comment) > 0:
+#             current_comments = current_comments + [comment]
+#             continue
+        
+#         # Parse import statements
+#         string import_path = extract_imports(line)
+#         if strings::length(import_path) > 0:
+#             doc.imports = doc.imports + [import_path]
+#             current_comments = []
+#             continue
+        
+#         # Parse class definitions
+#         if strings::contains(trimmed, "class "):
+#             if in_class:
+#                 doc.classes = doc.classes + [current_class]
+#             current_class = parse_class_signature(line)
+#             current_class.comments = current_comments
+#             in_class = true
+#             current_comments = []
+#             continue
+        
+#         # Parse function definitions
+#         if strings::contains(trimmed, "fn "):
+#             FunctionDoc func = parse_function_signature(line)
+#             func.comments = current_comments
+            
+#             if in_class:
+#                 current_class.methods = current_class.methods + [func]
+#             else:
+#                 doc.functions = doc.functions + [func]
+#             current_comments = []
+#             continue
+        
+#         # Parse global variables
+#         string global_var = extract_global_var(line)
+#         if strings::length(global_var) > 0:
+#             doc.global_vars = doc.global_vars + [global_var]
+#             current_comments = []
+#             continue
+        
+#         # Parse class fields (inside class context)
+#         if in_class && (strings::contains(trimmed, "int ") || strings::contains(trimmed, "string ") || strings::contains(trimmed, "bool ") || strings::contains(trimmed, "f32 ") ||  strings::contains(trimmed, "f64 ") || strings::contains(trimmed, "ref ")):
+#             current_class.fields = current_class.fields + [trimmed]
+#             current_comments = []
+#             continue
+        
+#         # Reset comments if no match found
+#         current_comments = []
+    
+#     # Add final class if we were in one
+#     if in_class:
+#         doc.classes = doc.classes + [current_class]
+    
+#     return doc
+
+# # Generate markdown documentation for a function
+# fn generate_function_markdown(FunctionDoc func) -> string:
+#     string markdown = ""
+    
+#     # Function header
+#     string visibility_badge = ""
+#     if func.is_public:
+#         visibility_badge = "**`public`** "
+#     else:
+#         visibility_badge = "**`private`** "
+    
+#     markdown = markdown + "### " + visibility_badge + "`" + func.name + "`\n\n"
+    
+#     # Comments
+#     if len(func.comments) > 0:
+#         for int i = 0; i < len(func.comments); i++:
+#             markdown = markdown + func.comments[i] + "\n"
+#         markdown = markdown + "\n"
+    
+#     # Signature
+#     markdown = markdown + "```scar\n"
+#     markdown = markdown + "fn " + func.name + "("
+    
+#     for int i = 0; i < len(func.parameters); i++:
+#         if i > 0:
+#             markdown = markdown + ", "
+#         markdown = markdown + func.parameters[i]
+    
+#     markdown = markdown + ")"
+#     if strings::length(func.return_type) > 0 && func.return_type != "void":
+#         markdown = markdown + " -> " + func.return_type
+#     markdown = markdown + "\n```\n\n"
+    
+#     return markdown
+
+# # Generate markdown documentation for a class
+# fn generate_class_markdown(ClassDoc class_doc) -> string:
+#     string markdown = ""
+    
+#     # Class header
+#     markdown = markdown + "## Class `" + class_doc.name + "`\n\n"
+    
+#     # Comments
+#     if len(class_doc.comments) > 0:
+#         for int i = 0; i < len(class_doc.comments); i++:
+#             markdown = markdown + class_doc.comments[i] + "\n"
+#         markdown = markdown + "\n"
+    
+#     # Fields
+#     if len(class_doc.fields) > 0:
+#         markdown = markdown + "### Fields\n\n"
+#         for int i = 0; i < len(class_doc.fields); i++:
+#             markdown = markdown + "- `" + class_doc.fields[i] + "`\n"
+#         markdown = markdown + "\n"
+    
+#     # Methods
+#     if len(class_doc.methods) > 0:
+#         markdown = markdown + "### Methods\n\n"
+#         for int i = 0; i < len(class_doc.methods); i++:
+#             markdown = markdown + generate_function_markdown(class_doc.methods[i])
+    
+#     return markdown
+
+# # Generate complete markdown documentation for a module
+# fn generate_module_markdown(ModuleDoc doc) -> string:
+#     string markdown = ""
+    
+#     # Module header
+#     markdown = markdown + "# " + doc.module_name + "\n\n"
+#     markdown = markdown + "*Source: `" + doc.filename + "`*\n\n"
+    
+#     # Imports
+#     if len(doc.imports) > 0:
+#         markdown = markdown + "## Imports\n\n"
+#         for int i = 0; i < len(doc.imports); i++:
+#             markdown = markdown + "- `" + doc.imports[i] + "`\n"
+#         markdown = markdown + "\n"
+    
+#     # Global variables
+#     if len(doc.global_vars) > 0:
+#         markdown = markdown + "## Global Variables\n\n"
+#         for int i = 0; i < len(doc.global_vars); i++:
+#             markdown = markdown + "```scar\n" + doc.global_vars[i] + "\n```\n\n"
+    
+#     # Classes
+#     if len(doc.classes) > 0:
+#         for int i = 0; i < len(doc.classes); i++:
+#             markdown = markdown + generate_class_markdown(doc.classes[i])
+    
+#     # Functions
+#     if len(doc.functions) > 0:
+#         markdown = markdown + "## Functions\n\n"
+#         for int i = 0; i < len(doc.functions); i++:
+#             markdown = markdown + generate_function_markdown(doc.functions[i])
+    
+#     return markdown
+
+# # Write documentation to file
+# fn write_documentation(string content, string output_path) -> bool:
+#     return io::write_file(output_path, content)
+
+# # Main documentation generation entry point
+# list[string] args = os::get_args()
+
+# if len(args) < 2:
+#     print "Usage: scar_doc_gen <source_file> [output_file]"
+#     print "Example: scar_doc_gen src/main.scar docs/main.md"
+#     return
+
+# string source_file = args[1]
+# string output_file = "documentation.md"
+
+# if len(args) >= 3:
+#     output_file = args[2]
+
+# # Check if source file exists
+# if !io::exists(source_file):
+#     print "Error: Source file '%s' not found" | source_file
+#     return
+
+# print "Generating documentation for: %s" | source_file
+
+# # Parse the source file
+# ModuleDoc doc = parse_file(source_file)
+
+# # Generate markdown
+# string markdown_content = generate_module_markdown(doc)
+
+# # Write to output file
+# if write_documentation(markdown_content, output_file):
+#     print "Documentation generated successfully: %s" | output_file
+#     print "Module: %s" | doc.module_name
+#     print "Functions: %d" | len(doc.functions)
+#     print "Classes: %d" | len(doc.classes)
+#     print "Imports: %d" | len(doc.imports)
+# else:
+#     print "Error: Failed to write documentation to %s" | output_file
