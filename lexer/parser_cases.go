@@ -857,7 +857,6 @@ func LoadModule(moduleName string, baseDir string) (*ModuleInfo, error) {
 		return nil, fmt.Errorf("failed to parse module '%s': %v", moduleName, err)
 	}
 
-	// Reorder function declarations to handle hoisting
 	hoistedStatements, err := HoistFunctions(program.Statements)
 	if err != nil {
 		return nil, fmt.Errorf("failed to hoist functions in module '%s': %v", moduleName, err)
