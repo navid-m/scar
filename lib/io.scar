@@ -25,3 +25,9 @@ pub fn read_int() -> i32:
 pub fn read_float() -> f32:
     f32 y = math::to_float(io::readln())
     return y
+
+pub fn read_bool() -> bool:
+    if strings::equal(io::readln(), "true"):
+        return true
+    else:
+        return false
