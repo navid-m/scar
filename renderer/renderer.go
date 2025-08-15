@@ -4521,6 +4521,24 @@ func areTypesCompatible(targetType, valueType string) bool {
 		(valueType == "i32" || valueType == "int") {
 		return true
 	}
+	if (targetType == "i32" || targetType == "int") &&
+		(valueType == "string" || valueType == "lstring") {
+		return true
+	}
+	if (targetType == "f32" || targetType == "float" || targetType == "f64" || targetType == "double") &&
+		(valueType == "string" || valueType == "lstring") {
+		return true
+	}
+	if (targetType == "string" || targetType == "lstring") &&
+		(valueType == "i32" || valueType == "int" || valueType == "f32" || valueType == "float" ||
+			valueType == "f64" || valueType == "double") {
+		return true
+	}
+	if (targetType == "char" && (valueType == "string" || valueType == "lstring")) ||
+		((targetType == "string" || targetType == "lstring") && valueType == "char") {
+		return true
+	}
+
 	return false
 }
 

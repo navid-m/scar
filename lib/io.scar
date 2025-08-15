@@ -1,3 +1,5 @@
+import "std/math"
+
 pub fn readln() -> string:
     $raw (
         char buffer[1024];
@@ -15,3 +17,8 @@ pub fn readln() -> string:
 pub fn readln_with_prompt(string prompt) -> string:
     put "%s" | prompt
     return io::readln()
+
+pub fn read_int() -> i32:
+    lstring x = io::readln()
+    i32 y = math::to_int(x)
+    return y
