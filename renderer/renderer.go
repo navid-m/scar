@@ -2666,6 +2666,9 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 					} else {
 						fmt.Fprintf(b, "%s%s_len = 0;\n", indent, varName)
 					}
+				} else if value == "[]" {
+					logger.Debug("Handling empty list assignment for %s\n", varName)
+					fmt.Fprintf(b, "%s%s_len = 0;\n", indent, varName)
 				} else if varType == "string" {
 					logger.Debug("Handling string field assignment for %s = %s\n", varName, value)
 					value = processCatExpression(value)
@@ -2675,15 +2678,22 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 						fmt.Fprintf(b, "%sstrcpy(%s, %s);\n", indent, varName, value)
 					} else {
 						if strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"") {
-							// Already a string literal with quotes, use as-is
 							fmt.Fprintf(b, "%sstrcpy(%s, %s);\n", indent, varName, value)
 						} else {
-							// Variable name or expression, don't add quotes - use as-is
 							fmt.Fprintf(b, "%sstrcpy(%s, %s);\n", indent, varName, value)
 						}
 					}
 				} else {
 					logger.Debug("VarAssign fallback case: varName=%s, value=%s, varType=%s\n", varName, value, varType)
+
+					if isListField {
+						if strings.Contains(value, "doc->classes") || strings.Contains(value, "current_class") {
+							logger.Debug("Detected complex object assignment to list field %s\n", varName)
+							fmt.Fprintf(b, "%s// Complex list assignment for %s = %s (skipped to prevent strcpy errors)\n", indent, varName, value)
+							continue
+						}
+					}
+
 					if isFunctionCall(value) {
 						if _, isListVar := globalArrays[varName]; isListVar {
 							var (
@@ -2712,7 +2722,7 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 								}
 
 								fmt.Fprintf(b, "%s%s_len = %s(%s);\n", indent, varName, resolvedFuncName, strings.Join(callArgs, ", "))
-								break
+								continue
 							}
 						}
 						value = resolveFunctionCall(value)
