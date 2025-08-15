@@ -31,3 +31,6 @@ pub fn read_bool() -> bool:
         return true
     else:
         return false
+
+pub fn read_char() -> char:
+    return io::readln()[0]
