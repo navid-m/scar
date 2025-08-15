@@ -1610,23 +1610,43 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			funcName := resolvedCall[:openParen]
 			existingArgs := strings.TrimSpace(resolvedCall[openParen+1 : closeParen])
 
-			// Build new function call with target array and size parameters
-			var newCall string
-			if existingArgs == "" {
-				newCall = fmt.Sprintf("%s(%s, 1000)", funcName, listName)
+			if funcName == "strings_split" {
+				if innerType == "string" {
+					fmt.Fprintf(b, "%schar %s[1000][256];\n", indent, listName)
+					fmt.Fprintf(b, "%sint %s_len;\n", indent, listName)
+					fmt.Fprintf(b, "%scollections_StringArrayList* %s_result = %s(%s);\n", indent, listName, funcName, existingArgs)
+					fmt.Fprintf(b, "%s%s_len = %s_result->size;\n", indent, listName, listName)
+					fmt.Fprintf(b, "%sfor (int __i = 0; __i < %s_len && __i < 1000; __i++) {\n", indent, listName)
+					fmt.Fprintf(b, "%s    strcpy(%s[__i], ((char**)%s_result->data)[__i]);\n", indent, listName, listName)
+					fmt.Fprintf(b, "%s}\n", indent)
+				} else {
+					cType := mapTypeToCType(innerType)
+					fmt.Fprintf(b, "%s%s %s[1000];\n", indent, cType, listName)
+					fmt.Fprintf(b, "%sint %s_len;\n", indent, listName)
+					fmt.Fprintf(b, "%scollections_StringArrayList* %s_result = %s(%s);\n", indent, listName, funcName, existingArgs)
+					fmt.Fprintf(b, "%s%s_len = %s_result->size;\n", indent, listName, listName)
+					fmt.Fprintf(b, "%sfor (int __i = 0; __i < %s_len && __i < 1000; __i++) {\n", indent, listName)
+					fmt.Fprintf(b, "%s    %s[__i] = ((char**)%s_result->data)[__i];\n", indent, listName, listName)
+					fmt.Fprintf(b, "%s}\n", indent)
+				}
 			} else {
-				newCall = fmt.Sprintf("%s(%s, 1000, %s)", funcName, listName, existingArgs)
-			}
+				var newCall string
+				if existingArgs == "" {
+					newCall = fmt.Sprintf("%s(%s, 1000)", funcName, listName)
+				} else {
+					newCall = fmt.Sprintf("%s(%s, 1000, %s)", funcName, listName, existingArgs)
+				}
 
-			if innerType == "string" {
-				fmt.Fprintf(b, "%schar %s[1000][256];\n", indent, listName)
-				fmt.Fprintf(b, "%sint %s_len;\n", indent, listName)
-				fmt.Fprintf(b, "%s%s_len = %s;\n", indent, listName, newCall)
-			} else {
-				cType := mapTypeToCType(innerType)
-				fmt.Fprintf(b, "%s%s %s[1000];\n", indent, cType, listName)
-				fmt.Fprintf(b, "%sint %s_len;\n", indent, listName)
-				fmt.Fprintf(b, "%s%s_len = %s;\n", indent, listName, newCall)
+				if innerType == "string" {
+					fmt.Fprintf(b, "%schar %s[1000][256];\n", indent, listName)
+					fmt.Fprintf(b, "%sint %s_len;\n", indent, listName)
+					fmt.Fprintf(b, "%s%s_len = %s;\n", indent, listName, newCall)
+				} else {
+					cType := mapTypeToCType(innerType)
+					fmt.Fprintf(b, "%s%s %s[1000];\n", indent, cType, listName)
+					fmt.Fprintf(b, "%sint %s_len;\n", indent, listName)
+					fmt.Fprintf(b, "%s%s_len = %s;\n", indent, listName, newCall)
+				}
 			}
 
 			globalArrays[listName] = innerType
@@ -1634,6 +1654,7 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			if stmt.CatList.Target != "" {
 				targetVar := lexer.ResolveSymbol(stmt.CatList.Target, currentModule)
 				listType := "int"
+
 				firstList := stmt.CatList.Lists[0]
 				if strings.HasPrefix(firstList, "list_of!(") && strings.HasSuffix(firstList, ")") {
 					strings.TrimSpace(firstList[9 : len(firstList)-1])
@@ -2388,6 +2409,7 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 
 			logger.Debug("VarAssign: varName=%s, value=%s\n", varName, value)
 
+			value = processListOfSyntax(value) // Handle list_of! syntax before other processing
 			value = lexer.ResolveSymbol(value, currentModule)
 			value = fixFloatCastGranular(value)
 			value = convertThisReferencesGranular(value)
@@ -2396,6 +2418,75 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			value = convertPropertyAccess(value)   // Convert property access from dot to arrow notation
 
 			logger.Debug("VarAssign after processing: varName=%s, value=%s\n", varName, value)
+
+			// Handle list_of! concatenation
+			if strings.HasPrefix(value, "__LIST_CONCAT__") {
+				parts := strings.Split(value, "__")
+				if len(parts) >= 5 {
+					listName := parts[2]
+					element := parts[3]
+					tempVar := parts[4]
+
+					resolvedVarName := varName
+					if strings.Contains(varName, ".") && !strings.Contains(varName, "->") {
+						resolvedVarName = convertPropertyAccess(varName)
+					}
+
+					listType := "string"
+					if arrayType, exists := globalArrays[listName]; exists {
+						listType = arrayType
+					}
+
+					sourceListName := resolvedVarName
+					sourceListLen := resolvedVarName + "_len"
+
+					if listType == "string" {
+						fmt.Fprintf(b, "%s// Create temporary list for concatenation\n", indent)
+						fmt.Fprintf(b, "%schar %s[1000][256];\n", indent, tempVar)
+						fmt.Fprintf(b, "%sint %s_len = 0;\n", indent, tempVar)
+						fmt.Fprintf(b, "%s// Copy existing list\n", indent)
+						fmt.Fprintf(b, "%sfor (int __i = 0; __i < %s && %s_len < 1000; __i++) {\n", indent, sourceListLen, tempVar)
+						fmt.Fprintf(b, "%s    strcpy(%s[%s_len], %s[__i]);\n", indent, tempVar, tempVar, sourceListName)
+						fmt.Fprintf(b, "%s    %s_len++;\n", indent, tempVar)
+						fmt.Fprintf(b, "%s}\n", indent)
+						fmt.Fprintf(b, "%s// Add new element\n", indent)
+						fmt.Fprintf(b, "%sif (%s_len < 1000) {\n", indent, tempVar)
+						if strings.HasPrefix(element, "\"") && strings.HasSuffix(element, "\"") {
+							fmt.Fprintf(b, "%s    strcpy(%s[%s_len], %s);\n", indent, tempVar, tempVar, element)
+						} else {
+							fmt.Fprintf(b, "%s    strcpy(%s[%s_len], %s);\n", indent, tempVar, tempVar, element)
+						}
+						fmt.Fprintf(b, "%s    %s_len++;\n", indent, tempVar)
+						fmt.Fprintf(b, "%s}\n", indent)
+						fmt.Fprintf(b, "%s// Copy back to original list\n", indent)
+						fmt.Fprintf(b, "%sfor (int __i = 0; __i < %s_len; __i++) {\n", indent, tempVar)
+						fmt.Fprintf(b, "%s    strcpy(%s[__i], %s[__i]);\n", indent, resolvedVarName, tempVar)
+						fmt.Fprintf(b, "%s}\n", indent)
+						fmt.Fprintf(b, "%s%s = %s_len;\n", indent, sourceListLen, tempVar)
+					} else {
+						cType := mapTypeToCType(listType)
+						fmt.Fprintf(b, "%s// Create temporary list for concatenation\n", indent)
+						fmt.Fprintf(b, "%s%s %s[1000];\n", indent, cType, tempVar)
+						fmt.Fprintf(b, "%sint %s_len = 0;\n", indent, tempVar)
+						fmt.Fprintf(b, "%s// Copy existing list\n", indent)
+						fmt.Fprintf(b, "%sfor (int __i = 0; __i < %s && %s_len < 1000; __i++) {\n", indent, sourceListLen, tempVar)
+						fmt.Fprintf(b, "%s    %s[%s_len] = %s[__i];\n", indent, tempVar, tempVar, sourceListName)
+						fmt.Fprintf(b, "%s    %s_len++;\n", indent, tempVar)
+						fmt.Fprintf(b, "%s}\n", indent)
+						fmt.Fprintf(b, "%s// Add new element\n", indent)
+						fmt.Fprintf(b, "%sif (%s_len < 1000) {\n", indent, tempVar)
+						fmt.Fprintf(b, "%s    %s[%s_len] = %s;\n", indent, tempVar, tempVar, element)
+						fmt.Fprintf(b, "%s    %s_len++;\n", indent, tempVar)
+						fmt.Fprintf(b, "%s}\n", indent)
+						fmt.Fprintf(b, "%s// Copy back to original list\n", indent)
+						fmt.Fprintf(b, "%sfor (int __i = 0; __i < %s_len; __i++) {\n", indent, tempVar)
+						fmt.Fprintf(b, "%s    %s[__i] = %s[__i];\n", indent, resolvedVarName, tempVar)
+						fmt.Fprintf(b, "%s}\n", indent)
+						fmt.Fprintf(b, "%s%s = %s_len;\n", indent, sourceListLen, tempVar)
+					}
+					continue
+				}
+			}
 
 			var varType string
 			if localType, exists := localVars[varName]; exists {
@@ -3561,8 +3652,31 @@ func reconstructMethodCalls(variables []string) []string {
 		}
 		i++
 	}
-
 	return result
+}
+
+func processListOfSyntax(value string) string {
+	if strings.Contains(value, "list_of!(") {
+		re := regexp.MustCompile(`([a-zA-Z_][a-zA-Z0-9_]*)\s*\+\s*list_of!\(([^)]+)\)`)
+		matches := re.FindStringSubmatch(value)
+		if len(matches) == 3 {
+			listName := matches[1]
+			element := strings.TrimSpace(matches[2])
+			tempVar := fmt.Sprintf("_temp_list_%d", len(value)*31%1000)
+			return fmt.Sprintf("__LIST_CONCAT__%s__%s__%s", listName, element, tempVar)
+		}
+	}
+	if strings.Contains(value, " + [") && strings.Contains(value, "]") {
+		re := regexp.MustCompile(`([a-zA-Z_][a-zA-Z0-9_]*)\s*\+\s*\[([^\]]+)\]`)
+		matches := re.FindStringSubmatch(value)
+		if len(matches) == 3 {
+			listName := matches[1]
+			element := strings.TrimSpace(matches[2])
+			tempVar := fmt.Sprintf("_temp_list_%d", len(value)*31%1000)
+			return fmt.Sprintf("__LIST_CONCAT__%s__%s__%s", listName, element, tempVar)
+		}
+	}
+	return value
 }
 
 func convertThisReferencesGranular(expr string) string {
@@ -3589,7 +3703,7 @@ func convertThisReferencesGranular(expr string) string {
 	expr = reThisMember.ReplaceAllString(expr, "${1}this->$2")
 
 	// Handle pointer member access for non-this objects
-	reObjMember := regexp.MustCompile(`\b([a-zA-Z_][a-zA-Z0-9]*)\s*\.\s*([a-zA-Z_][a-zA-Z0-9]*)\b`)
+	reObjMember := regexp.MustCompile(`\b([a-zA-Z_][a-zA-Z0-9]*)\s*\.\s*([a-zA-Z_][a-zA-Z0-9_]*)\b`)
 	expr = reObjMember.ReplaceAllStringFunc(expr, func(match string) string {
 		parts := strings.Split(match, ".")
 		if len(parts) == 2 {
@@ -3599,6 +3713,18 @@ func convertThisReferencesGranular(expr string) string {
 			for _, obj := range globalObjects {
 				if obj.Name == varName {
 					return fmt.Sprintf("%s->%s", varName, fieldName)
+				}
+			}
+
+			if localType, exists := localVars[varName]; exists {
+				if _, isClass := globalClasses[localType]; isClass {
+					return fmt.Sprintf("%s->%s", varName, fieldName)
+				}
+				if strings.HasPrefix(localType, "ref ") {
+					innerType := strings.TrimPrefix(localType, "ref ")
+					if _, isClass := globalClasses[innerType]; isClass {
+						return fmt.Sprintf("%s->%s", varName, fieldName)
+					}
 				}
 			}
 

@@ -270,6 +270,30 @@ pub fn split(string str, string delimiter) -> collections::StringArrayList:
     result.add_element(current_part)
     return result
 
+pub fn trim(string str) -> string:
+    $raw (
+        if (str == NULL) {
+            strcpy(_output_buffer, "");
+            return;
+        }
+        const char *start = str;
+        while (*start && (*start == ' ' || *start == '\t' || *start == '\n' || *start == '\r' || *start == '\v' || *start == '\f')) {
+            start++;
+        }
+        if (*start == '\0') {
+            strcpy(_output_buffer, "");
+            return;
+        }
+        const char *end = str + strlen(str) - 1;
+        while (end > start && (*end == ' ' || *end == '\t' || *end == '\n' || *end == '\r' || *end == '\v' || *end == '\f')) {
+            end--;
+        }
+        size_t len = end - start + 1;
+        if (len >= 256) len = 255;
+        memcpy(_output_buffer, start, len);
+        _output_buffer[len] = '\0';
+    )
+
 pub fn get_char_at(string str, int index) -> string:
     $raw (
         if (str == NULL || index < 0 || index >= strlen(str)) {

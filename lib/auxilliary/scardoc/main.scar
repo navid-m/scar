@@ -54,32 +54,31 @@ fn parse_function_signature(string line) -> FunctionDoc:
     
     # Extract function name and parameters using regex
     list[string] matches = regex::find("fn\\s+(\\w+)\\s*\\(([^)]*)\\)\\s*->\\s*(\\w+|void)", line)
-    # if len(matches) >= 4:
-    #     func_doc.name = matches[1]
-    #     func_doc.return_type = matches[3]
+    if len(matches) >= 4:
+        func_doc.name = matches[1]
+        func_doc.return_type = matches[3]
         
-    #     # Parse parameters
-    #     string params_str = matches[2]
-    #     if strings::length(params_str) > 0:
-    #         list[string] param_parts = strings::split(params_str, ",")
-    #         for int i = 0; i < len(param_parts); i++:
-    #             string param = strings::trim(param_parts[i])
-    #             if strings::length(param) > 0:
-    #                 func_doc.parameters = func_doc.parameters + [param]
-    # else:
-    #     # Try simpler pattern without return type
-    #     list[string] simple_matches = regex::find("fn\\s+(\\w+)\\s*\\(([^)]*)\\)", line)
-    #     if len(simple_matches) >= 3:
-    #         func_doc.name = simple_matches[1]
-    #         func_doc.return_type = "void"
+        # Parse parameters
+        lstring params_str = matches[2]
+        if strings::length(params_str) > 0:
+            list[string] param_parts = strings::split(params_str, ",")
+            for int i = 0; i < len(param_parts); i++:
+                string param = strings::trim(param_parts[i])
+                if strings::length(param) > 0:
+                    func_doc.parameters = func_doc.parameters + [param]
+    else:
+        list[string] simple_matches = regex::find("fn\\s+(\\w+)\\s*\\(([^)]*)\\)", line)
+        if len(simple_matches) >= 3:
+            func_doc.name = simple_matches[1]
+            func_doc.return_type = "void"
             
-    #         string params_str = simple_matches[2]
-    #         if strings::length(params_str) > 0:
-    #             list[string] param_parts = strings::split(params_str, ",")
-    #             for int i = 0; i < len(param_parts); i++:
-    #                 string param = strings::trim(param_parts[i])
-    #                 if strings::length(param) > 0:
-    #                     func_doc.parameters = func_doc.parameters + [param]
+            string params_str = simple_matches[2]
+            if strings::length(params_str) > 0:
+                list[string] param_parts = strings::split(params_str, ",")
+                for int i = 0; i < len(param_parts); i++:
+                    string param = strings::trim(param_parts[i])
+                    if strings::length(param) > 0:
+                        func_doc.parameters = catlist!(func_doc.parameters, list_of!(param))
     
     return func_doc
 
