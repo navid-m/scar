@@ -31,23 +31,30 @@ pub fn chr(int ascii_value) -> char*:
         return strdup(result);
     )
 
-pub fn trim_space(string str) -> string:
+pub fn trim_space(string str) -> lstring:
     $raw (
         if (str == NULL) {
-            strcpy(_output_buffer, "");
-            return;
+            return "";
         }
-        char *start = str;
-        char *end = str + strlen(str) - 1;
-        while (*start && (*start == ' ' || *start == '\t' || *start == '\n' || *start == '\r')) {
+        const char *start = str;
+        while (*start && (*start == ' ' || *start == '\t' || *start == '\n' || *start == '\r' || *start == '\v' || *start == '\f')) {
             start++;
         }
-        while (end > start && (*end == ' ' || *end == '\t' || *end == '\n' || *end == '\r')) {
+        if (*start == '\0') {
+            return "";
+        }
+        const char *end = str + strlen(str) - 1;
+        while (end > start && (*end == ' ' || *end == '\t' || *end == '\n' || *end == '\r' || *end == '\v' || *end == '\f')) {
             end--;
         }
         size_t len = end - start + 1;
-        strncpy(_output_buffer, start, len);
-        _output_buffer[len] = '\0';
+        char *result = (char*)malloc(len + 1);
+        if (!result) {
+            return "";
+        }
+        memcpy(result, start, len);
+        result[len] = '\0';
+        return result;
     )
 
 pub fn trim_prefix(string str, string prefix) -> string:
@@ -121,6 +128,32 @@ pub fn starts_with(string str, string prefix) -> bool:
         }
         
         return strncmp(str, prefix, prefix_len) == 0;
+    )
+
+pub fn substring(string str, int start, int end) -> char*:
+    $raw (
+        if (str == NULL) {
+            return strdup("");
+        }
+        
+        int str_len = strlen(str);
+        
+        if (start < 0) start = 0;
+        if (end > str_len) end = str_len;
+        if (start >= end || start >= str_len) {
+            return strdup("");
+        }
+        
+        int sub_len = end - start;
+        char *result = malloc(sub_len + 1);
+        if (result == NULL) {
+            return strdup("");
+        }
+        
+        strncpy(result, str + start, sub_len);
+        result[sub_len] = '\0';
+        
+        return result;
     )
 
 pub fn to_hex(int value) -> char*:
