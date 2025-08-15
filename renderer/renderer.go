@@ -271,8 +271,10 @@ bool __check_key_exists(int* keys, int size, int key) {
 	}
 	b.WriteString("\n")
 	for varName, varDecl := range globalVars {
-		cType := mapTypeToCType(varDecl.Type)
-		value := varDecl.Value
+		var (
+			cType = mapTypeToCType(varDecl.Type)
+			value = varDecl.Value
+		)
 
 		switch varDecl.Type {
 		case "string":
