@@ -1138,10 +1138,28 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 				if strings.HasPrefix(varName, "this.") {
 					fieldName := varName[5:]
 					if stmt.VarDecl.IsRef {
-						if value == "0" || value == "NULL" {
+						isListField := false
+						if classInfo, exists := globalClasses[className]; exists {
+							for _, field := range classInfo.Fields {
+								if field.Name == fieldName {
+									fieldType := field.Type
+									fieldType = strings.TrimPrefix(fieldType, "ref ")
+									if strings.HasPrefix(fieldType, "list[") && strings.HasSuffix(fieldType, "]") {
+										isListField = true
+									}
+									break
+								}
+							}
+						}
+
+						if isListField && value == "[]" {
+							fmt.Fprintf(b, "    this->%s_len = 0;\n", fieldName)
+						} else if value == "0" || value == "NULL" {
 							fmt.Fprintf(b, "    this->%s = NULL;\n", fieldName)
 						} else {
-							fmt.Fprintf(b, "    this->%s = %s;\n", fieldName, value)
+							if !isListField || value != "[]" {
+								fmt.Fprintf(b, "    this->%s = %s;\n", fieldName, value)
+							}
 						}
 					} else if stmt.VarDecl.Type == "string" {
 						isStringField := stmt.VarDecl.Type == "string"
@@ -1153,8 +1171,35 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 							fmt.Fprintf(b, "    strcpy(this->%s, %s);\n", fieldName, value)
 						}
 					} else {
-						value = strings.ReplaceAll(value, "this.", "this->")
-						fmt.Fprintf(b, "    this->%s = %s;\n", fieldName, value)
+						isListField := false
+						logger.Debug("VarDecl checking field %s for list type\n", fieldName)
+						if classInfo, exists := globalClasses[className]; exists {
+							logger.Debug("Found class %s with %d fields\n", className, len(classInfo.Fields))
+							for _, field := range classInfo.Fields {
+								logger.Debug("  Checking field: %s (type: %s)\n", field.Name, field.Type)
+								if field.Name == fieldName {
+									fieldType := field.Type
+									fieldType = strings.TrimPrefix(fieldType, "ref ")
+									logger.Debug("  Field %s has type %s (after ref removal)\n", fieldName, fieldType)
+									if strings.HasPrefix(fieldType, "list[") && strings.HasSuffix(fieldType, "]") {
+										isListField = true
+										logger.Debug("  Detected as list field!\n")
+									}
+									break
+								}
+							}
+						} else {
+							logger.Debug("Class %s not found in globalClasses\n", className)
+						}
+
+						if isListField && value == "[]" {
+							fmt.Fprintf(b, "    this->%s_len = 0;\n", fieldName)
+						} else {
+							value = strings.ReplaceAll(value, "this.", "this->")
+							if !isListField || value != "[]" {
+								fmt.Fprintf(b, "    this->%s = %s;\n", fieldName, value)
+							}
+						}
 					}
 				} else {
 					renderStatements(b, []*lexer.Statement{stmt}, "    ", className, program, "")
@@ -1182,12 +1227,24 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 
 				logger.Debug("VarAssign field %s, value %s, isStringField %v\n", fieldName, value, isStringField)
 
-				// Check if this is a list field
+				if classInfo, exists := globalClasses[className]; exists {
+					logger.Debug("Class %s has %d fields\n", className, len(classInfo.Fields))
+					for _, field := range classInfo.Fields {
+						logger.Debug("  Field: %s, Type: %s, IsRef: %v\n", field.Name, field.Type, field.IsRef)
+					}
+				} else {
+					logger.Debug("Class %s not found in globalClasses\n", className)
+				}
+
 				isListField := false
 				if classInfo, exists := globalClasses[className]; exists {
 					for _, field := range classInfo.Fields {
 						if field.Name == fieldName {
-							if strings.HasPrefix(field.Type, "list[") && strings.HasSuffix(field.Type, "]") {
+							fieldType := field.Type
+							if after, ok := strings.CutPrefix(fieldType, "ref "); ok {
+								fieldType = after
+							}
+							if strings.HasPrefix(fieldType, "list[") && strings.HasSuffix(fieldType, "]") {
 								isListField = true
 							}
 							break
@@ -1196,7 +1253,7 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 				}
 
 				if isListField && value == "[]" {
-					// Empty list initialization
+					logger.Debug("Detected list field %s with empty initialization, setting _len to 0\n", fieldName)
 					fmt.Fprintf(b, "    this->%s_len = 0;\n", fieldName)
 				} else if isStringField {
 					if !strings.HasPrefix(value, "\"") && !strings.HasSuffix(value, "\"") && isValidIdentifier(value) {
@@ -1205,9 +1262,11 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 					fmt.Fprintf(b, "    strcpy(this->%s, %s);\n", fieldName, value)
 				} else {
 					value = strings.ReplaceAll(value, "this.", "this->")
-					// Don't generate invalid C syntax for list assignments
 					if !isListField || value != "[]" {
+						logger.Debug("Generating assignment for field %s: this->%s = %s (isListField: %v)\n", fieldName, fieldName, value, isListField)
 						fmt.Fprintf(b, "    this->%s = %s;\n", fieldName, value)
+					} else {
+						logger.Debug("Skipping invalid list assignment for field %s\n", fieldName)
 					}
 				}
 
@@ -2691,9 +2750,10 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				}
 			}
 
-			if varType == "string" {
+			switch varType {
+			case "string":
 				fmt.Fprintf(b, "%s%s %s[256];\n", indent, cType, varName)
-			} else if varType == "lstring" {
+			case "lstring":
 				fmt.Fprintf(b, "%s%s %s[10000];\n", indent, cType, varName)
 			}
 
