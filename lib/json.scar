@@ -374,6 +374,7 @@ pub fn inc_ref(void* json_obj) -> void*:
         return NULL;
     )
 
+## This will also delete objects created with dump_to_file
 pub fn dec_ref(void* json_obj) -> void:
     $raw (
         if (json_obj) {
