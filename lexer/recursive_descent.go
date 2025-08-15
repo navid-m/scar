@@ -710,7 +710,8 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 			nextLine := lineNum + 1
 			if nextLine < len(lines) {
 				nextTrimmed := strings.TrimSpace(lines[nextLine])
-				if nextTrimmed != "" && getIndentation(lines[nextLine]) > 0 {
+				if nextTrimmed != "" && getIndentation(lines[nextLine]) > 0 &&
+					!strings.HasPrefix(nextTrimmed, "import ") && nextTrimmed != "import" {
 					return parseBulkImport(lines, lineNum)
 				}
 			}

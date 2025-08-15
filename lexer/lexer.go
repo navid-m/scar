@@ -509,9 +509,52 @@ func InnerParseWithIndentation(input string, sourceFile string) (*Program, error
 		imports             []*ImportStmt
 		nonImportStatements []*Statement
 	)
+
+	importSet := make(map[string]bool)
+	addImport := func(imp *ImportStmt) {
+		if imp == nil {
+			return
+		}
+		if !importSet[imp.Module] {
+			imports = append(imports, imp)
+			importSet[imp.Module] = true
+		}
+	}
+
+	isPlatformActive := func(platformName string) bool {
+		p := strings.ToLower(strings.TrimSpace(platformName))
+		switch p {
+		case "windows":
+			return runtime.GOOS == "windows"
+		case "posix":
+			return runtime.GOOS != "windows"
+		case "darwin", "linux":
+			return runtime.GOOS == p
+		default:
+			return runtime.GOOS == p
+		}
+	}
+
+	var collectImports func(stmts []*Statement)
+	collectImports = func(stmts []*Statement) {
+		for _, s := range stmts {
+			if s == nil {
+				continue
+			}
+			if s.Import != nil {
+				addImport(s.Import)
+			}
+			if s.Platform != nil {
+				if isPlatformActive(s.Platform.Platform) {
+					collectImports(s.Platform.Body)
+				}
+			}
+		}
+	}
+
 	for _, stmt := range statements {
 		if stmt.Import != nil {
-			imports = append(imports, stmt.Import)
+			addImport(stmt.Import)
 			if strings.Contains(input, "import") {
 				importLines := strings.Split(input, "\n")
 				for i, line := range importLines {
@@ -519,7 +562,9 @@ func InnerParseWithIndentation(input string, sourceFile string) (*Program, error
 					if strings.HasPrefix(trimmed, "import") {
 						bulkImports, err := parseAllImports(importLines, i)
 						if err == nil && len(bulkImports) > 1 {
-							imports = bulkImports
+							for _, bi := range bulkImports {
+								addImport(bi)
+							}
 							break
 						}
 					}
@@ -529,6 +574,8 @@ func InnerParseWithIndentation(input string, sourceFile string) (*Program, error
 			nonImportStatements = append(nonImportStatements, stmt)
 		}
 	}
+
+	collectImports(nonImportStatements)
 
 	return &Program{Imports: imports, Statements: nonImportStatements}, nil
 }
