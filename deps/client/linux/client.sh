@@ -20,3 +20,5 @@ if [ "$PKG_MANAGER" = "apt-get" ]; then
 elif [ "$PKG_MANAGER" = "yum" ] || [ "$PKG_MANAGER" = "dnf" ]; then
     sudo $PKG_MANAGER install -y gcc gcc-c++ make curl libcurl-devel pcre-devel jansson-devel
 fi
+
+echo "Done"

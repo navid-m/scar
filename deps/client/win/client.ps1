@@ -26,4 +26,4 @@ Write-Host "Installing MinGW64 toolchain and libraries..."
 & $msys2_shell -lc "pacman --noconfirm -S mingw-w64-x86_64-toolchain"
 & $msys2_shell -lc "pacman --noconfirm -S mingw-w64-x86_64-curl mingw-w64-x86_64-pcre mingw-w64-x86_64-jansson"
 
-Write-Host "All done! MinGW64, libcurl, PCRE, and jansson are installed."
+Write-Host "Done."

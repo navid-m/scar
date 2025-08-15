@@ -18,3 +18,5 @@ brew install gcc
 
 echo "Installing libraries: libcurl, pcre, jansson..."
 brew install curl pcre jansson
+
+echo "Done"
