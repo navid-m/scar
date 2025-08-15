@@ -157,6 +157,74 @@ func ContainsExternalJson(source string) bool {
 	return ContainsExternalJsonWithPath(source, "")
 }
 
+func ContainsExternalNet(source string) bool {
+	return ContainsExternalNetWithPath(source, "")
+}
+
+func ContainsExternalNetWithPath(source string, basePath string) bool {
+	visited := make(map[string]bool)
+	return containsExternalNetRecursive(source, basePath, visited)
+}
+
+func containsDirectNetImport(source string) bool {
+	target := `external import "winsock2.h"`
+	inString := false
+	escaped := false
+
+	for i := 0; i < len(source); i++ {
+		char := source[i]
+		if escaped {
+			escaped = false
+			continue
+		}
+
+		if char == '\\' {
+			escaped = true
+			continue
+		}
+		if char == '"' {
+			inString = !inString
+			continue
+		}
+		if !inString {
+			if i+len(target) <= len(source) {
+				if source[i:i+len(target)] == target {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+func containsExternalNetRecursive(source string, basePath string, visited map[string]bool) bool {
+	if containsDirectNetImport(source) {
+		return true
+	}
+
+	imports := extractImports(source)
+	for _, importPath := range imports {
+		filePath := resolveImportPath(importPath, basePath)
+		if filePath == "" {
+			continue
+		}
+
+		if visited[filePath] {
+			continue
+		}
+		visited[filePath] = true
+		importedSource, err := os.ReadFile(filePath)
+		if err != nil {
+			continue
+		}
+
+		if containsExternalNetRecursive(string(importedSource), filepath.Dir(filePath), visited) {
+			return true
+		}
+	}
+	return false
+}
+
 func ContainsExternalJsonWithPath(source string, basePath string) bool {
 	visited := make(map[string]bool)
 	return containsExternalJsonRecursive(source, basePath, visited)

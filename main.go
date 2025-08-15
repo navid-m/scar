@@ -78,6 +78,7 @@ func main() {
 		hasCurl     = preprocessor.ContainsExternalCurlWithPath(input, baseDir)
 		hasRegex    = preprocessor.ContainsExternalRegexWithPath(input, baseDir)
 		hasJson     = preprocessor.ContainsExternalJsonWithPath(input, baseDir)
+		hasNet      = preprocessor.ContainsExternalNetWithPath(input, baseDir)
 		cleanedName = strings.ReplaceAll(filepath.Base(ptf), ".scar", "")
 		outputName  = cleanedName
 	)
@@ -270,7 +271,10 @@ func main() {
 
 		compileArgs = append(compileArgs, tmpCPath)
 		compileArgs = append(compileArgs, "-o", outputBinary)
-		compileArgs = append(compileArgs, "-lws2_32")
+
+		if hasNet {
+			compileArgs = append(compileArgs, "-lws2_32")
+		}
 
 		if *linker != "" {
 			linkerOpts := strings.Fields(*linker)
