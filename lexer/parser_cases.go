@@ -803,9 +803,22 @@ func parseElseStatement(lines []string, lineNum, currentIndent int) (*ElseStmt, 
 }
 
 func LoadModule(moduleName string, baseDir string) (*ModuleInfo, error) {
+	return LoadModuleWithCycleDetection(moduleName, baseDir, make(map[string]bool))
+}
+
+func LoadModuleWithCycleDetection(moduleName string, baseDir string, loadingStack map[string]bool) (*ModuleInfo, error) {
 	if module, exists := LoadedModules[moduleName]; exists {
 		return module, nil
 	}
+
+	// Check for circular dependency
+	if loadingStack[moduleName] {
+		return nil, fmt.Errorf("circular dependency detected: module '%s' is already being loaded", moduleName)
+	}
+
+	// Add to loading stack to detect cycles
+	loadingStack[moduleName] = true
+	defer delete(loadingStack, moduleName)
 
 	var modulePath string
 	if strings.HasPrefix(moduleName, "std/") {
@@ -900,6 +913,19 @@ func LoadModule(moduleName string, baseDir string) (*ModuleInfo, error) {
 				Body:       stmt.PubTopLevelFuncDecl.Body,
 			}
 			module.PublicFuncs[stmt.PubTopLevelFuncDecl.Name] = funcDecl
+		}
+	}
+
+	for _, importStmt := range program.Imports {
+		if importStmt != nil && importStmt.Module != "" {
+			importBaseDir := filepath.Dir(modulePath)
+			if strings.HasPrefix(importStmt.Module, "std/") {
+				importBaseDir = baseDir
+			}
+			_, err := LoadModuleWithCycleDetection(importStmt.Module, importBaseDir, loadingStack)
+			if err != nil {
+				return nil, fmt.Errorf("failed to load dependency '%s' for module '%s': %v", importStmt.Module, moduleName, err)
+			}
 		}
 	}
 

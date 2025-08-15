@@ -1,4 +1,3 @@
-import "std/math"
 import "std/collections"
 import "std/io"
 import "std/strings"
