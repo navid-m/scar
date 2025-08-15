@@ -555,18 +555,16 @@ func InnerParseWithIndentation(input string, sourceFile string) (*Program, error
 	for _, stmt := range statements {
 		if stmt.Import != nil {
 			addImport(stmt.Import)
-			if strings.Contains(input, "import") {
-				importLines := strings.Split(input, "\n")
-				for i, line := range importLines {
-					trimmed := strings.TrimSpace(line)
-					if strings.HasPrefix(trimmed, "import") {
-						bulkImports, err := parseAllImports(importLines, i)
-						if err == nil && len(bulkImports) > 1 {
-							for _, bi := range bulkImports {
-								addImport(bi)
-							}
-							break
+			importLines := strings.Split(input, "\n")
+			for i, line := range importLines {
+				trimmed := strings.TrimSpace(line)
+				if strings.HasPrefix(trimmed, "import ") && !strings.HasPrefix(trimmed, "external import") {
+					bulkImports, err := parseAllImports(importLines, i)
+					if err == nil && len(bulkImports) > 1 {
+						for _, bi := range bulkImports {
+							addImport(bi)
 						}
+						break
 					}
 				}
 			}
