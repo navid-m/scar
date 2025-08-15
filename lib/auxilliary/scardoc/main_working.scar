@@ -1,0 +1,61 @@
+import "std/io"
+import "std/strings"
+import "std/fs"
+
+fn parse_file_simple(string filepath):
+    print "Parsing file"
+    
+    list[string] lines = fs::read_lines(filepath)
+    int import_count = 0
+    int function_count = 0
+    int class_count = 0
+    bool in_class = false
+    string current_class_name = ""
+    int method_count = 0
+    
+    for int i = 0; i < len(lines); i++:
+        string line = lines[i]
+        string trimmed = strings::trim(line)
+        
+        if strings::length(trimmed) == 0:
+            continue
+        
+        if strings::starts_with(trimmed, "#"):
+            continue
+        
+        if strings::starts_with(trimmed, "import"):
+            print "  Import found"
+            import_count = import_count + 1
+            continue
+        
+        if strings::contains(trimmed, "class "):
+            if in_class:
+                print "Class found with methods"
+                class_count = class_count + 1
+                method_count = 0
+            
+            current_class_name = "SomeClass"
+            print "Found class"
+            in_class = true
+            continue
+        
+        if strings::contains(trimmed, "fn "):
+            if in_class:
+                method_count = method_count + 1
+                print "Method found"
+            else:
+                function_count = function_count + 1
+                print "  Function found"
+            continue
+    
+    if in_class:
+        print "Final class found"
+        class_count = class_count + 1
+    
+    print ""
+    print "=== SUMMARY ==="
+    print "File processed"
+    print "Summary complete"
+    print "==============="
+
+parse_file_simple("lib/auxilliary/scardoc/main.scar")
