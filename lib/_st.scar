@@ -20,7 +20,6 @@ platform (Windows):
 import "std/regex"
 import "std/crypto"
 
-# Setup
 var list = new collections::ArrayList(4)
 
 list.add_element(10)
