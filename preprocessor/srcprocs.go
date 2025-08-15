@@ -192,9 +192,11 @@ func containsExternalJsonRecursive(source string, basePath string, visited map[s
 }
 
 func containsDirectJsonImport(source string) bool {
-	target := `external import "jansson.h"`
-	inString := false
-	escaped := false
+	var (
+		target   = `external import "jansson.h"`
+		inString = false
+		escaped  = false
+	)
 
 	for i := 0; i < len(source); i++ {
 		char := source[i]
