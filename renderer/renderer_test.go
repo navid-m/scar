@@ -1500,12 +1500,10 @@ func TestListOfInlineAndStandalone(t *testing.T) {
 		}
 	}
 	expectedInlineWithTarget := []string{
-		"char lines2[1000][256]; // Concatenated list",
-		"int lines2_len = 0;",
-		"// Add single element from list_of!(current_line)",
-		"if (lines2_len < 1000) {",
-		"strcpy(lines2[lines2_len], current_line);",
-		"lines2_len++;",
+		"char _temp_catlist_",
+		"current_line",
+		"strcpy(lines2[__i], _temp_catlist_",
+		"lines2_len = _temp_catlist_",
 	}
 	for _, expected := range expectedInlineWithTarget {
 		if !strings.Contains(result, expected) {
@@ -1525,11 +1523,10 @@ func TestListOfInlineAndStandalone(t *testing.T) {
 		}
 	}
 	expectedInlineNumeric := []string{
-		"int numbers[1000]; // Concatenated list",
-		"// Add single element from list_of!(99)",
-		"if (numbers_len < 1000) {",
-		"numbers[numbers_len] = 99;",
-		"numbers_len++;",
+		"int _temp_catlist_",
+		"_temp_catlist_217[_temp_catlist_217_len] = 99;",
+		"numbers[__i] = _temp_catlist_",
+		"numbers_len = _temp_catlist_",
 	}
 
 	for _, expected := range expectedInlineNumeric {
@@ -1576,8 +1573,10 @@ func TestListOfWithVariableResolution(t *testing.T) {
 	currentModule = "test_module"
 	result := RenderC(program, "", false)
 	expectedThisRef := []string{
-		"// Add single element from list_of!(this->current_line)",
-		"strcpy(result[result_len], this->current_line);",
+		"strcpy(_temp_catlist_",
+		"this->current_line",
+		"strcpy(result[__i], _temp_catlist_",
+		"result_len = _temp_catlist_",
 	}
 	for _, expected := range expectedThisRef {
 		if !strings.Contains(result, expected) {
@@ -1585,8 +1584,10 @@ func TestListOfWithVariableResolution(t *testing.T) {
 		}
 	}
 	expectedQuotedString := []string{
-		"// Add single element from list_of!(\"hello world\")",
-		"strcpy(messages[messages_len], \"hello world\");",
+		"strcpy(_temp_catlist_",
+		"\"hello world\"",
+		"strcpy(messages[__i], _temp_catlist_",
+		"messages_len = _temp_catlist_",
 	}
 	for _, expected := range expectedQuotedString {
 		if !strings.Contains(result, expected) {
