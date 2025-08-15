@@ -1653,8 +1653,8 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 		case stmt.CatList != nil:
 			if stmt.CatList.Target != "" {
 				targetVar := lexer.ResolveSymbol(stmt.CatList.Target, currentModule)
-				listType := "int"
-
+				targetVar = convertPropertyAccess(targetVar)
+				listType := "string"
 				firstList := stmt.CatList.Lists[0]
 				if strings.HasPrefix(firstList, "list_of!(") && strings.HasSuffix(firstList, ")") {
 					strings.TrimSpace(firstList[9 : len(firstList)-1])
@@ -1679,7 +1679,7 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 						continue
 					}
 
-					otherListType := "int"
+					otherListType := "string"
 					for listName, arrayType := range globalArrays {
 						if listName == otherList {
 							otherListType = arrayType
@@ -1699,13 +1699,16 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 					}
 				}
 
+				tempVarName := fmt.Sprintf("_temp_catlist_%d", len(targetVar)*31%1000)
+				targetVarLen := targetVar + "_len"
+
 				if listType == "string" {
-					fmt.Fprintf(b, "%schar %s[1000][256]; // Concatenated list\n", indent, targetVar)
-					fmt.Fprintf(b, "%sint %s_len = 0;\n", indent, targetVar)
+					fmt.Fprintf(b, "%schar %s[1000][256];\n", indent, tempVarName)
+					fmt.Fprintf(b, "%sint %s_len = 0;\n", indent, tempVarName)
 				} else {
 					cType := mapTypeToCType(listType)
-					fmt.Fprintf(b, "%s%s %s[1000]; // Concatenated list\n", indent, cType, targetVar)
-					fmt.Fprintf(b, "%sint %s_len = 0;\n", indent, targetVar)
+					fmt.Fprintf(b, "%s%s %s[1000];\n", indent, cType, tempVarName)
+					fmt.Fprintf(b, "%sint %s_len = 0;\n", indent, tempVarName)
 				}
 
 				for _, listName := range stmt.CatList.Lists {
@@ -1715,43 +1718,57 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 						value = convertThisReferencesGranular(value)
 
 						if listType == "string" {
-							fmt.Fprintf(b, "%s// Add single element from list_of!(%s)\n", indent, value)
-							fmt.Fprintf(b, "%sif (%s_len < 1000) {\n", indent, targetVar)
+							fmt.Fprintf(b, "%sif (%s_len < 1000) {\n", indent, tempVarName)
 							if strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"") {
-								fmt.Fprintf(b, "%s    strcpy(%s[%s_len], %s);\n", indent, targetVar, targetVar, value)
+								fmt.Fprintf(b, "%s    strcpy(%s[%s_len], %s);\n", indent, tempVarName, tempVarName, value)
 							} else {
-								fmt.Fprintf(b, "%s    strcpy(%s[%s_len], %s);\n", indent, targetVar, targetVar, value)
+								fmt.Fprintf(b, "%s    strcpy(%s[%s_len], %s);\n", indent, tempVarName, tempVarName, value)
 							}
-							fmt.Fprintf(b, "%s    %s_len++;\n", indent, targetVar)
+							fmt.Fprintf(b, "%s    %s_len++;\n", indent, tempVarName)
 							fmt.Fprintf(b, "%s}\n", indent)
 						} else {
-							fmt.Fprintf(b, "%s// Add single element from list_of!(%s)\n", indent, value)
-							fmt.Fprintf(b, "%sif (%s_len < 1000) {\n", indent, targetVar)
-							fmt.Fprintf(b, "%s    %s[%s_len] = %s;\n", indent, targetVar, targetVar, value)
-							fmt.Fprintf(b, "%s    %s_len++;\n", indent, targetVar)
+							fmt.Fprintf(b, "%sif (%s_len < 1000) {\n", indent, tempVarName)
+							fmt.Fprintf(b, "%s    %s[%s_len] = %s;\n", indent, tempVarName, tempVarName, value)
+							fmt.Fprintf(b, "%s    %s_len++;\n", indent, tempVarName)
 							fmt.Fprintf(b, "%s}\n", indent)
 						}
 					} else {
 						resolvedListName := lexer.ResolveSymbol(listName, currentModule)
+						resolvedListName = convertPropertyAccess(resolvedListName)
 
 						if listType == "string" {
 							fmt.Fprintf(b, "%s// Copy from %s\n", indent, resolvedListName)
 							fmt.Fprintf(b, "%sfor (int __i = 0; __i < %s_len && %s_len < 1000; __i++) {\n",
-								indent, resolvedListName, targetVar)
+								indent, resolvedListName, tempVarName)
 							fmt.Fprintf(b, "%s    strcpy(%s[%s_len], %s[__i]);\n",
-								indent, targetVar, targetVar, resolvedListName)
-							fmt.Fprintf(b, "%s    %s_len++;\n", indent, targetVar)
+								indent, tempVarName, tempVarName, resolvedListName)
+							fmt.Fprintf(b, "%s    %s_len++;\n", indent, tempVarName)
 							fmt.Fprintf(b, "%s}\n", indent)
 						} else {
 							fmt.Fprintf(b, "%s// Copy from %s\n", indent, resolvedListName)
 							fmt.Fprintf(b, "%sfor (int __i = 0; __i < %s_len && %s_len < 1000; __i++) {\n",
-								indent, resolvedListName, targetVar)
+								indent, resolvedListName, tempVarName)
 							fmt.Fprintf(b, "%s    %s[%s_len] = %s[__i];\n",
-								indent, targetVar, targetVar, resolvedListName)
-							fmt.Fprintf(b, "%s    %s_len++;\n", indent, targetVar)
+								indent, tempVarName, tempVarName, resolvedListName)
+							fmt.Fprintf(b, "%s    %s_len++;\n", indent, tempVarName)
 							fmt.Fprintf(b, "%s}\n", indent)
 						}
 					}
+				}
+
+				// Copy the temporary list back to the target
+				if listType == "string" {
+					fmt.Fprintf(b, "%s// Copy result back to target\n", indent)
+					fmt.Fprintf(b, "%sfor (int __i = 0; __i < %s_len; __i++) {\n", indent, tempVarName)
+					fmt.Fprintf(b, "%s    strcpy(%s[__i], %s[__i]);\n", indent, targetVar, tempVarName)
+					fmt.Fprintf(b, "%s}\n", indent)
+					fmt.Fprintf(b, "%s%s = %s_len;\n", indent, targetVarLen, tempVarName)
+				} else {
+					fmt.Fprintf(b, "%s// Copy result back to target\n", indent)
+					fmt.Fprintf(b, "%sfor (int __i = 0; __i < %s_len; __i++) {\n", indent, tempVarName)
+					fmt.Fprintf(b, "%s    %s[__i] = %s[__i];\n", indent, targetVar, tempVarName)
+					fmt.Fprintf(b, "%s}\n", indent)
+					fmt.Fprintf(b, "%s%s = %s_len;\n", indent, targetVarLen, tempVarName)
 				}
 				globalArrays[stmt.CatList.Target] = listType
 
@@ -5355,7 +5372,6 @@ func renderComplexListDecl(b *strings.Builder, listDecl *lexer.ListDeclStmt, ind
 			}
 		}
 	} else {
-		// TODO: Complex types support.
 		fmt.Fprintf(b, "%s// Complex type %s not fully implemented yet\n", indent, listType)
 		fmt.Fprintf(b, "%svoid* %s; // Placeholder\n", indent, listName)
 	}
