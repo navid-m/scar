@@ -256,20 +256,27 @@ func main() {
 		if !*dll {
 			outputBinary = "./" + outputName + ".exe"
 		}
+
 		compileArgs = []string{
 			"-fopenmp",
+			"-Wall",
+			"-Wextra",
 			"-w",
-			tmpCPath,
-			"-o",
-			outputBinary,
 		}
+
 		if *opt {
 			compileArgs = append([]string{"-O2", "-fno-fast-math"}, compileArgs...)
 		}
+
+		compileArgs = append(compileArgs, tmpCPath)
+		compileArgs = append(compileArgs, "-o", outputBinary)
+		compileArgs = append(compileArgs, "-lws2_32")
+
 		if *linker != "" {
 			linkerOpts := strings.Fields(*linker)
 			compileArgs = append(compileArgs, linkerOpts...)
 		}
+
 		if *dll {
 			compileArgs = append(compileArgs, "-shared")
 			outputBinary = "./" + outputName + ".dll"
@@ -280,6 +287,7 @@ func main() {
 				}
 			}
 		}
+
 		if hasCurl {
 			compileArgs = append(compileArgs, "-lcurl")
 		}

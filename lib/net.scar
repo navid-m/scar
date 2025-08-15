@@ -2,6 +2,340 @@ import "std/strings"
 
 external import "curl/curl.h"
 
+platform (Windows):
+    external import "winsock2.h"
+    external import "ws2tcpip.h"
+    external import "ws2_32.lib"
+
+platform (Posix):
+    external import "sys/socket.h"
+    external import "netinet/in.h"
+    external import "arpa/inet.h"
+    external import "unistd.h"
+    external import "fcntl.h"
+
+pub class TcpServer:
+    init:
+        i32 this.socket_fd = -1
+        i32 this.port = 0
+        bool this.is_listening = false
+
+pub class TcpConnection:
+    init:
+        i32 this.socket_fd = -1
+        string this.client_ip = ""
+        i32 this.client_port = 0
+
+pub class HttpRequest:
+    init:
+        string this.method = ""
+        string this.path = ""
+        string this.version = ""
+        string this.body = ""
+        string this.query_string = ""
+
+pub class HttpServer:
+    init:
+        i32 this.server_fd = -1
+        i32 this.port = 0
+
+pub fn socket_init() -> bool:
+    $raw (
+        #ifdef _WIN32
+            WSADATA wsaData;
+            int result = WSAStartup(MAKEWORD(2, 2), &wsaData);
+            return (result == 0);
+        #else
+            return 1;
+        #endif
+    )
+
+pub fn socket_cleanup() -> void:
+    $raw (
+        #ifdef _WIN32
+            WSACleanup();
+        #endif
+    )
+
+pub fn tcp_server_create(i32 port) -> net::TcpServer:
+    $raw (
+        net_TcpServer* server = net_TcpServer_new();
+        server->port = port;
+        server->is_listening = 0;
+        if (!net_socket_init()) {
+            server->socket_fd = -1;
+            return server;
+        }
+        
+        int sockfd = socket(AF_INET, SOCK_STREAM, 0);
+        if (sockfd < 0) {
+            server->socket_fd = -1;
+            return server;
+        }
+        
+        int opt = 1;
+        if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, (char*)&opt, sizeof(opt)) < 0) {
+            #ifdef _WIN32
+                closesocket(sockfd);
+            #else
+                close(sockfd);
+            #endif
+            server->socket_fd = -1;
+            return server;
+        }
+        
+        struct sockaddr_in address;
+        address.sin_family = AF_INET;
+        address.sin_addr.s_addr = INADDR_ANY;
+        address.sin_port = htons(port);
+        
+        if (bind(sockfd, (struct sockaddr*)&address, sizeof(address)) < 0) {
+            #ifdef _WIN32
+                closesocket(sockfd);
+            #else
+                close(sockfd);
+            #endif
+            server->socket_fd = -1;
+            return server;
+        }
+        
+        server->socket_fd = sockfd;
+        return server;
+    )
+
+pub fn tcp_server_listen(net::TcpServer server) -> bool:
+    $raw (
+        if (server->socket_fd < 0) return 0;
+        
+        if (listen(server->socket_fd, 10) < 0) {
+            return 0;
+        }
+        
+        server->is_listening = 1;
+        return 1;
+    )
+
+pub fn tcp_server_accept(net::TcpServer server) -> net::TcpConnection:
+    $raw (
+        #ifdef _WIN32
+            typedef int socklen_t;
+        #endif
+        
+        net_TcpConnection* conn = net_TcpConnection_new();
+        conn->socket_fd = -1;
+        
+        if (server->socket_fd < 0 || !server->is_listening) {
+            return conn;
+        }
+        
+        struct sockaddr_in client_addr;
+        socklen_t client_len = sizeof(client_addr);
+        
+        int client_fd = accept(server->socket_fd, (struct sockaddr*)&client_addr, &client_len);
+        if (client_fd < 0) {
+            return conn;
+        }
+        
+        conn->socket_fd = client_fd;
+        strcpy(conn->client_ip, inet_ntoa(client_addr.sin_addr));
+        conn->client_port = ntohs(client_addr.sin_port);
+        
+        return conn;
+    )
+
+pub fn tcp_send(net::TcpConnection conn, string data) -> i32:
+    $raw (
+        if (conn->socket_fd < 0) return -1;
+        
+        int bytes_sent = send(conn->socket_fd, data, strlen(data), 0);
+        return bytes_sent;
+    )
+
+pub fn tcp_receive(net::TcpConnection conn, i32 max_size) -> lstring:
+    $raw (
+        if (conn->socket_fd < 0) return "";
+        
+        char* buffer = (char*)malloc(max_size + 1);
+        if (!buffer) return "";
+        
+        int bytes_received = recv(conn->socket_fd, buffer, max_size, 0);
+        if (bytes_received <= 0) {
+            free(buffer);
+            return "";
+        }
+        
+        buffer[bytes_received] = '\0';
+        
+        char* result = (char*)malloc(bytes_received + 1);
+        strcpy(result, buffer);
+        free(buffer);
+        
+        return result;
+    )
+
+pub fn tcp_close(net::TcpConnection conn) -> void:
+    $raw (
+        if (conn->socket_fd >= 0) {
+            #ifdef _WIN32
+                closesocket(conn->socket_fd);
+            #else
+                close(conn->socket_fd);
+            #endif
+            conn->socket_fd = -1;
+        }
+    )
+
+pub fn tcp_server_close(net::TcpServer server) -> void:
+    $raw (
+        if (server->socket_fd >= 0) {
+            #ifdef _WIN32
+                closesocket(server->socket_fd);
+            #else
+                close(server->socket_fd);
+            #endif
+            server->socket_fd = -1;
+            server->is_listening = 0;
+        }
+    )
+
+pub fn http_parse_request(string raw_data) -> net::HttpRequest:
+    $raw (
+        net_HttpRequest* request = net_HttpRequest_new();
+        strcpy(request->method, "");
+        strcpy(request->path, "");
+        strcpy(request->version, "");
+        strcpy(request->body, "");
+        strcpy(request->query_string, "");
+        
+        if (!raw_data || strlen(raw_data) == 0) {
+            return request;
+        }
+        char* line_end = strstr(raw_data, "\r\n");
+        if (!line_end) line_end = strstr(raw_data, "\n");
+        if (!line_end) return request;
+        int line_len = line_end - raw_data;
+        char* first_line = (char*)malloc(line_len + 1);
+        strncpy(first_line, raw_data, line_len);
+        first_line[line_len] = '\0';
+        char* token = strtok(first_line, " ");
+        if (token) {
+            strncpy(request->method, token, 15);
+            request->method[15] = '\0';
+            
+            token = strtok(NULL, " ");
+            if (token) {
+                char* query_start = strchr(token, '?');
+                if (query_start) {
+                    *query_start = '\0';
+                    strncpy(request->path, token, 255);
+                    request->path[255] = '\0';
+                    
+                    query_start++;
+                    strncpy(request->query_string, query_start, 255);
+                    request->query_string[255] = '\0';
+                } else {
+                    strncpy(request->path, token, 255);
+                    request->path[255] = '\0';
+                }
+                
+                token = strtok(NULL, " ");
+                if (token) {
+                    strncpy(request->version, token, 15);
+                    request->version[15] = '\0';
+                }
+            }
+        }
+        
+        char* body_start = strstr(raw_data, "\r\n\r\n");
+        if (body_start) {
+            body_start += 4;
+            strncpy(request->body, body_start, 1023);
+            request->body[1023] = '\0';
+        } else {
+            body_start = strstr(raw_data, "\n\n");
+            if (body_start) {
+                body_start += 2;
+                strncpy(request->body, body_start, 1023);
+                request->body[1023] = '\0';
+            }
+        }
+        
+        free(first_line);
+        return request;
+    )
+
+pub fn http_server_create(i32 port) -> net::HttpServer:
+    $raw (
+        net_HttpServer* server = net_HttpServer_new();
+        server->port = port;
+        net_TcpServer* tcp_server = net_tcp_server_create(port);
+        server->server_fd = tcp_server->socket_fd;
+        return server;
+    )
+
+pub fn http_server_start(net::HttpServer server) -> bool:
+    $raw (
+        if (server->server_fd < 0) return 0;
+        
+        if (listen(server->server_fd, 10) < 0) {
+            return 0;
+        }
+        
+        return 1;
+    )
+
+pub fn http_server_handle_request(net::TcpConnection conn, string response_body) -> void:
+    $raw (
+        char response[2048];
+        int content_length = strlen(response_body);
+        
+        snprintf(response, sizeof(response),
+            "HTTP/1.1 200 OK\r\n"
+            "Content-Type: text/html\r\n"
+            "Content-Length: %d\r\n"
+            "Connection: close\r\n"
+            "\r\n"
+            "%s",
+            content_length, response_body);
+            
+        net_tcp_send(conn, response);
+    )
+
+pub fn http_json_response(net::TcpConnection conn, string json_body) -> void:
+    $raw (
+        char response[2048];
+        int content_length = strlen(json_body);
+        
+        snprintf(response, sizeof(response),
+            "HTTP/1.1 200 OK\r\n"
+            "Content-Type: application/json\r\n"
+            "Content-Length: %d\r\n"
+            "Connection: close\r\n"
+            "\r\n"
+            "%s",
+            content_length, json_body);
+            
+        net_tcp_send(conn, response);
+    )
+
+pub fn http_html_response(net::TcpConnection conn, string html_body) -> void:
+    $raw (
+        char response[2048];
+        int content_length = strlen(html_body);
+        
+        snprintf(response, sizeof(response),
+            "HTTP/1.1 200 OK\r\n"
+            "Content-Type: text/html\r\n"
+            "Content-Length: %d\r\n"
+            "Connection: close\r\n"
+            "\r\n"
+            "%s",
+            content_length, html_body);
+            
+        net_tcp_send(conn, response);
+    )
+
+
 ## URL encode a string
 pub fn url_encode(string input) -> char*:
     $raw (
