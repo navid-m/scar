@@ -993,6 +993,80 @@ func TestMethodCallOnThis(t *testing.T) {
 	}
 }
 
+func TestClassWithListFields(t *testing.T) {
+	input := `class FunctionDoc:
+    init:
+        string this.name = ""
+        string this.return_type = ""
+        ref list[string] this.parameters = []
+        ref list[string] this.comments = []
+        list[int] this.scores = []
+        bool this.is_public = false
+
+var doc = new FunctionDoc()
+print "Created FunctionDoc instance"`
+
+	program, err := lexer.ParseWithIndentation(input)
+	if err != nil {
+		t.Fatalf("Failed to parse input: %v", err)
+	}
+
+	result := RenderC(program, ".", false)
+
+	// Test that struct definition contains proper list field declarations
+	expectedStructPatterns := []string{
+		"typedef struct FunctionDoc {",
+		"char name[MAX_STRING_LENGTH];",
+		"char return_type[MAX_STRING_LENGTH];",
+		"char parameters[1000][MAX_STRING_LENGTH]; int parameters_len;", // ref list[string]
+		"char comments[1000][MAX_STRING_LENGTH]; int comments_len;",     // ref list[string]
+		"int scores[1000]; int scores_len;",                             // list[int]
+		"bool is_public;",
+	}
+
+	for _, pattern := range expectedStructPatterns {
+		if !strings.Contains(result, pattern) {
+			t.Errorf("Expected struct definition to contain '%s', but it didn't. Generated code:\n%s", pattern, result)
+		}
+	}
+
+	// Test that constructor properly initializes list fields
+	expectedConstructorPatterns := []string{
+		"FunctionDoc* FunctionDoc_new() {",
+		"this->parameters_len = 0;", // Empty list initialization
+		"this->comments_len = 0;",   // Empty list initialization
+		"this->scores_len = 0;",     // Empty list initialization
+		"strcpy(this->name, \"\");",
+		"strcpy(this->return_type, \"\");",
+		"this->is_public = false;",
+	}
+
+	for _, pattern := range expectedConstructorPatterns {
+		if !strings.Contains(result, pattern) {
+			t.Errorf("Expected constructor to contain '%s', but it didn't. Generated code:\n%s", pattern, result)
+		}
+	}
+
+	// Test that object creation works
+	expectedObjectCreation := "FunctionDoc* doc = FunctionDoc_new();"
+	if !strings.Contains(result, expectedObjectCreation) {
+		t.Errorf("Expected object creation '%s' not found", expectedObjectCreation)
+	}
+
+	// Ensure no invalid C syntax is generated
+	invalidPatterns := []string{
+		"list[string]*",
+		"list[int]*",
+		"char*[", // Should not have char*[] arrays
+	}
+
+	for _, pattern := range invalidPatterns {
+		if strings.Contains(result, pattern) {
+			t.Errorf("Found invalid C syntax '%s' in generated code", pattern)
+		}
+	}
+}
+
 // func TestClassMemberAndForLoop(t *testing.T) {
 // 	input := `pub class GameOfLife:
 //     init(int width, int height):

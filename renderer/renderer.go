@@ -468,7 +468,114 @@ func collectClassInfoWithModule(classDecl *lexer.ClassDeclStmt, moduleName strin
 				}
 				fieldInfo := FieldInfo{
 					Name:  param.Name,
-					Type:  mapTypeToCType(fieldType),
+					Type:  fieldType,
+					IsRef: param.IsRef,
+				}
+				classInfo.Fields = append(classInfo.Fields, fieldInfo)
+				fieldMap[param.Name] = true
+			}
+		}
+		for _, stmt := range classDecl.Constructor.Fields {
+			if stmt.VarDecl != nil {
+				fieldName := stmt.VarDecl.Name
+				fieldName = strings.TrimPrefix(fieldName, "this.")
+				if _, exists := fieldMap[fieldName]; !exists {
+					isRef := stmt.VarDecl.IsRef
+					fieldType := stmt.VarDecl.Type
+					if after, ok := strings.CutPrefix(fieldType, "ref "); ok {
+						fieldType = after
+					}
+					fieldInfo := FieldInfo{
+						Name:  fieldName,
+						Type:  fieldType,
+						IsRef: isRef,
+					}
+					classInfo.Fields = append(classInfo.Fields, fieldInfo)
+					fieldMap[fieldName] = true
+				}
+			}
+			if stmt.VarAssign != nil && strings.HasPrefix(stmt.VarAssign.Name, "this.") {
+				fieldName := stmt.VarAssign.Name[5:]
+				if _, exists := fieldMap[fieldName]; !exists {
+					fieldType := inferTypeFromValue(stmt.VarAssign.Value)
+					isRef := strings.HasPrefix(fieldType, "ref ")
+					if isRef {
+						fieldType = strings.TrimPrefix(fieldType, "ref ")
+					}
+					logger.Debug("Field %s, Value %s, Inferred Type: %s, IsRef: %v\n", fieldName, stmt.VarAssign.Value, fieldType, isRef)
+					fieldInfo := FieldInfo{
+						Name:  fieldName,
+						Type:  fieldType,
+						IsRef: isRef,
+					}
+					classInfo.Fields = append(classInfo.Fields, fieldInfo)
+					fieldMap[fieldName] = true
+				}
+			}
+			if stmt.MapDecl != nil && strings.HasPrefix(stmt.MapDecl.Name, "this.") {
+				fieldName := strings.TrimPrefix(stmt.MapDecl.Name, "this.")
+				if _, exists := fieldMap[fieldName]; !exists {
+					// For map fields, we need to store key/value arrays and size
+					keyFieldInfo := FieldInfo{
+						Name:  fieldName + "_keys",
+						Type:  stmt.MapDecl.KeyType,
+						IsRef: false,
+					}
+					valueFieldInfo := FieldInfo{
+						Name:  fieldName + "_values",
+						Type:  stmt.MapDecl.ValueType,
+						IsRef: false,
+					}
+					capacityFieldInfo := FieldInfo{
+						Name:  fieldName + "_capacity",
+						Type:  "int",
+						IsRef: false,
+					}
+					sizeFieldInfo := FieldInfo{
+						Name:  fieldName + "_size",
+						Type:  "int",
+						IsRef: false,
+					}
+					classInfo.Fields = append(classInfo.Fields, keyFieldInfo, valueFieldInfo, capacityFieldInfo, sizeFieldInfo)
+					fieldMap[fieldName] = true
+				}
+			}
+		}
+	}
+
+	for _, method := range classDecl.Methods {
+		methodInfo := MethodInfo{
+			Name:       method.Name,
+			Parameters: []string{},
+			ReturnType: method.ReturnType,
+		}
+		for _, param := range method.Parameters {
+			methodInfo.Parameters = append(methodInfo.Parameters, param.Name)
+		}
+		classInfo.Methods = append(classInfo.Methods, methodInfo)
+	}
+
+	globalClasses[className] = classInfo
+}
+
+func populateClassInfo(classDecl *lexer.ClassDeclStmt, className string) {
+	classInfo := &ClassInfo{
+		Name:    className,
+		Fields:  []FieldInfo{},
+		Methods: []MethodInfo{},
+	}
+
+	if classDecl.Constructor != nil {
+		fieldMap := make(map[string]bool)
+		for _, param := range classDecl.Constructor.Parameters {
+			if _, exists := fieldMap[param.Name]; !exists {
+				fieldType := param.Type
+				if after, ok := strings.CutPrefix(fieldType, "ref "); ok {
+					fieldType = after
+				}
+				fieldInfo := FieldInfo{
+					Name:  param.Name,
+					Type:  fieldType, // Store original type, not converted C type
 					IsRef: param.IsRef,
 				}
 				classInfo.Fields = append(classInfo.Fields, fieldInfo)
@@ -870,6 +977,15 @@ func generateStructDefinition(b *strings.Builder, classInfo *ClassInfo, structNa
 			}
 		} else if strings.HasSuffix(field.Name, "_size") || strings.HasSuffix(field.Name, "_capacity") {
 			fmt.Fprintf(b, "    int %s;\n", field.Name)
+		} else if strings.HasPrefix(field.Type, "list[") && strings.HasSuffix(field.Type, "]") {
+			// Handle list[T] field types (both ref and non-ref)
+			innerType := extractListInnerType(field.Type)
+			if innerType == "string" {
+				fmt.Fprintf(b, "    char %s[1000][MAX_STRING_LENGTH]; int %s_len;\n", field.Name, field.Name)
+			} else {
+				cType := mapTypeToCType(innerType)
+				fmt.Fprintf(b, "    %s %s[1000]; int %s_len;\n", cType, field.Name, field.Name)
+			}
 		} else if field.IsRef {
 			switch field.Type {
 			case "int", "float", "double", "bool", "char":
@@ -899,6 +1015,9 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 
 	currentClassName = className
 	defer func() { currentClassName = "" }()
+
+	// Populate class info before processing constructor so it's available for field type checks
+	populateClassInfo(classDecl, className)
 
 	if classDecl.Constructor != nil && len(classDecl.Constructor.Parameters) > 0 {
 		fmt.Fprintf(b, "%s* %s_new(", className, className)
@@ -1063,14 +1182,33 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 
 				logger.Debug("VarAssign field %s, value %s, isStringField %v\n", fieldName, value, isStringField)
 
-				if isStringField {
+				// Check if this is a list field
+				isListField := false
+				if classInfo, exists := globalClasses[className]; exists {
+					for _, field := range classInfo.Fields {
+						if field.Name == fieldName {
+							if strings.HasPrefix(field.Type, "list[") && strings.HasSuffix(field.Type, "]") {
+								isListField = true
+							}
+							break
+						}
+					}
+				}
+
+				if isListField && value == "[]" {
+					// Empty list initialization
+					fmt.Fprintf(b, "    this->%s_len = 0;\n", fieldName)
+				} else if isStringField {
 					if !strings.HasPrefix(value, "\"") && !strings.HasSuffix(value, "\"") && isValidIdentifier(value) {
 						value = fmt.Sprintf("\"%s\"", value)
 					}
 					fmt.Fprintf(b, "    strcpy(this->%s, %s);\n", fieldName, value)
 				} else {
 					value = strings.ReplaceAll(value, "this.", "this->")
-					fmt.Fprintf(b, "    this->%s = %s;\n", fieldName, value)
+					// Don't generate invalid C syntax for list assignments
+					if !isListField || value != "[]" {
+						fmt.Fprintf(b, "    this->%s = %s;\n", fieldName, value)
+					}
 				}
 
 			case stmt.Print != nil:
@@ -4739,8 +4877,8 @@ func mapTypeToCType(mapType string) string {
 	logger.Debug("mapTypeToCType called with: '%s'\n", mapType)
 
 	// Handle ref types by stripping "ref " prefix and making it a pointer
-	if strings.HasPrefix(mapType, "ref ") {
-		baseType := strings.TrimPrefix(mapType, "ref ")
+	if after, ok := strings.CutPrefix(mapType, "ref "); ok {
+		baseType := after
 		cType := mapTypeToCType(baseType)
 		// Don't double-add asterisk if already a pointer
 		if strings.HasSuffix(cType, "*") {
@@ -4792,9 +4930,9 @@ func mapTypeToCType(mapType string) string {
 			}
 			cInnerType := mapTypeToCType(innerType)
 			if innerType == "string" {
-				return "char"
+				return "char*"
 			}
-			return cInnerType
+			return cInnerType + "*"
 		}
 		if strings.HasPrefix(mapType, "map[") && strings.HasSuffix(mapType, "]") {
 			// Return void* to indicate complex map type
