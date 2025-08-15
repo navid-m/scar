@@ -121,7 +121,6 @@ fn parse_file(string filepath) -> ModuleDoc:
     doc.global_vars = []
     doc.comments = []
     
-    # Extract module name from filename
     list[string] path_parts = strings::split(filepath, "/")
     string filename = path_parts[len(path_parts) - 1]
     list[string] name_parts = strings::split(filename, ".")
@@ -135,25 +134,20 @@ fn parse_file(string filepath) -> ModuleDoc:
     for int i = 0; i < len(lines); i++:
         string line = lines[i]
         string trimmed = strings::trim(line)
-        
-        # Skip empty lines
         if strings::length(trimmed) == 0:
             continue
         
-        # Parse documentation comments
         string comment = parse_doc_comment(line)
         if strings::length(comment) > 0:
             current_comments = current_comments + [comment]
             continue
         
-        # Parse import statements
         string import_path = extract_imports(line)
         if strings::length(import_path) > 0:
             doc.imports = doc.imports + [import_path]
             current_comments = []
             continue
         
-        # Parse class definitions
         if strings::contains(trimmed, "class "):
             if in_class:
                 doc.classes = doc.classes + [current_class]
@@ -163,37 +157,32 @@ fn parse_file(string filepath) -> ModuleDoc:
             current_comments = []
             continue
         
-        # Parse function definitions
         if strings::contains(trimmed, "fn "):
             FunctionDoc func = parse_function_signature(line)
             func.comments = current_comments
             
             if in_class:
-                current_class.methods = current_class.methods + [func]
+                current_class.methods = catlist!(current_class.methods, list_of!(func))
             else:
-                doc.functions = doc.functions + [func]
+                doc.functions = catlist!(doc.functions, list_of!(func))
             current_comments = []
             continue
         
-        # Parse global variables
         string global_var = extract_global_var(line)
         if strings::length(global_var) > 0:
-            doc.global_vars = doc.global_vars + [global_var]
+            doc.global_vars = catlist!(doc.global_vars, list_of!(global_var))
             current_comments = []
             continue
         
-        # Parse class fields (inside class context)
         if in_class && (strings::contains(trimmed, "int ") || strings::contains(trimmed, "string ") || strings::contains(trimmed, "bool ") || strings::contains(trimmed, "f32 ") ||  strings::contains(trimmed, "f64 ") || strings::contains(trimmed, "ref ")):
-            current_class.fields = current_class.fields + [trimmed]
+            current_class.fields = catlist!(current_class.fields, list_of!(trimmed))
             current_comments = []
             continue
         
-        # Reset comments if no match found
         current_comments = []
     
-    # Add final class if we were in one
     if in_class:
-        doc.classes = doc.classes + [current_class]
+        doc.classes = catlist!(doc.classes, list_of!(current_class))
     
     return doc
 
