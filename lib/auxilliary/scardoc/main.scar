@@ -82,33 +82,33 @@ fn parse_function_signature(string line) -> FunctionDoc:
     
     return func_doc
 
-# # Parse class definition
-# fn parse_class_signature(string line) -> ClassDoc:
-#     ref ClassDoc class_doc = new ClassDoc()
-#     class_doc.comments = []
-#     class_doc.methods = []
-#     class_doc.fields = []
+# Parse class definition
+fn parse_class_signature(string line) -> ClassDoc:
+    ref ClassDoc class_doc = new ClassDoc()
+    class_doc.comments = []
+    class_doc.methods = []
+    class_doc.fields = []
     
-#     list[string] matches = regex::find("class\\s+(\\w+)", line)
-#     if len(matches) >= 2:
-#         class_doc.name = matches[1]
-#         class_doc.is_public = true  # Assume classes are public by default
+    list[string] matches = regex::find("class\\s+(\\w+)", line)
+    if len(matches) >= 2:
+        class_doc.name = matches[1]
+        class_doc.is_public = true  # Assume classes are public by default
     
-#     return class_doc
+    return class_doc
 
-# # Parse import statements
-# fn extract_imports(string line) -> string:
-#     list[string] matches = regex::find("import\\s+\"([^\"]+)\"", line)
-#     if len(matches) >= 2:
-#         return matches[1]
-#     return ""
+# Parse import statements
+fn extract_imports(string line) -> string:
+    list[string] matches = regex::find("import\\s+\"([^\"]+)\"", line)
+    if len(matches) >= 2:
+        return matches[1]
+    return ""
 
-# # Parse global variable declarations
-# fn extract_global_var(string line) -> string:
-#     string trimmed = strings::trim(line)
-#     if strings::starts_with(trimmed, "pub ") || regex::matches("^(i32|i64|f32|f64|string|bool)\\s+\\w+", trimmed):
-#         return trimmed
-#     return ""
+# Parse global variable declarations
+fn extract_global_var(string line) -> string:
+    string trimmed = strings::trim(line)
+    if strings::starts_with(trimmed, "pub ") || regex::matches("^(i32|i64|f32|f64|string|bool)\\s+\\w+", trimmed):
+        return trimmed
+    return ""
 
 # # Parse a single Scar source file
 # fn parse_file(string filepath) -> ModuleDoc:
