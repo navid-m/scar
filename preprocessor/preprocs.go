@@ -9,6 +9,7 @@ package preprocessor
 
 import (
 	"regexp"
+	"scar/lexer"
 	"strings"
 )
 
@@ -230,4 +231,20 @@ func isInsideStringLiteral(line string) bool {
 		}
 	}
 	return inString
+}
+
+func RemoveMacroFunctionCalls(cCode string) string {
+	lines := strings.Split(cCode, "\n")
+	var cleanLines []string
+	for _, line := range lines {
+		cleaned := line
+		for macroName := range lexer.RegisteredMacros {
+			pattern := regexp.MustCompile(`\s*` + regexp.QuoteMeta(macroName) + `\s*\([^)]*\)\s*;?\s*`)
+			cleaned = pattern.ReplaceAllString(cleaned, "")
+		}
+		if strings.TrimSpace(cleaned) != "" || strings.TrimSpace(line) == strings.TrimSpace(cleaned) {
+			cleanLines = append(cleanLines, cleaned)
+		}
+	}
+	return strings.Join(cleanLines, "\n")
 }

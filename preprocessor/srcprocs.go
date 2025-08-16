@@ -97,6 +97,11 @@ type Macro struct {
 
 func ProcessMacros(source string) string {
 	macros := collectMacroDefinitions(source)
+	importedMacros := loadImportedMacros(source)
+	for name, macro := range importedMacros {
+		macros[name] = macro
+	}
+
 	return expandMacros(source, macros)
 }
 
@@ -107,7 +112,7 @@ func collectMacroDefinitions(source string) map[string]*Macro {
 	for i := 0; i < len(lines); i++ {
 		line := strings.TrimSpace(lines[i])
 
-		if strings.HasPrefix(line, "macro ") && strings.HasSuffix(line, ":") {
+		if (strings.HasPrefix(line, "macro ") || strings.HasPrefix(line, "pub macro ")) && strings.HasSuffix(line, ":") {
 			macro, endLine := parseMacroDefinition(lines, i)
 			if macro != nil {
 				macros[macro.Name] = macro
@@ -129,7 +134,12 @@ func parseMacroDefinition(lines []string, startLine int) (*Macro, int) {
 		return nil, startLine + 1
 	}
 
-	macroName := strings.TrimSpace(signature[6:parenStart])
+	var macroName string
+	if strings.HasPrefix(signature, "pub macro ") {
+		macroName = strings.TrimSpace(signature[10:parenStart])
+	} else {
+		macroName = strings.TrimSpace(signature[6:parenStart])
+	}
 	paramsStr := strings.TrimSpace(signature[parenStart+1 : parenEnd])
 
 	var parameters []string
@@ -185,7 +195,7 @@ func expandMacros(source string, macros map[string]*Macro) string {
 		line := lines[i]
 		trimmed := strings.TrimSpace(line)
 
-		if strings.HasPrefix(trimmed, "macro ") && strings.HasSuffix(trimmed, ":") {
+		if (strings.HasPrefix(trimmed, "macro ") || strings.HasPrefix(trimmed, "pub macro ")) && strings.HasSuffix(trimmed, ":") {
 			currentLine := i + 1
 			macroIndent := -1
 
@@ -230,8 +240,89 @@ func expandMacros(source string, macros map[string]*Macro) string {
 	return strings.Join(result, "\n")
 }
 
+func loadImportedMacros(source string) map[string]*Macro {
+	macros := make(map[string]*Macro)
+	lines := strings.Split(source, "\n")
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "import ") {
+			moduleName := strings.Trim(strings.TrimPrefix(trimmed, "import "), "\"")
+			moduleMacros := loadMacrosFromModule(moduleName)
+			for name, macro := range moduleMacros {
+				macros[name] = macro
+			}
+		}
+	}
+
+	return macros
+}
+
+func loadMacrosFromModule(moduleName string) map[string]*Macro {
+	macros := make(map[string]*Macro)
+
+	moduleSource := findAndReadModule(moduleName)
+	if moduleSource == "" {
+		return macros
+	}
+
+	lines := strings.Split(moduleSource, "\n")
+
+	for i := 0; i < len(lines); i++ {
+		line := strings.TrimSpace(lines[i])
+
+		if strings.HasPrefix(line, "pub macro ") && strings.HasSuffix(line, ":") {
+			macro, endLine := parseMacroDefinition(lines, i)
+			if macro != nil {
+				qualifiedName := getModuleShortName(moduleName) + "_" + macro.Name
+				macros[qualifiedName] = macro
+				i = endLine - 1
+			}
+		}
+	}
+
+	return macros
+}
+
+func findAndReadModule(moduleName string) string {
+	var possiblePaths []string
+
+	if strings.HasPrefix(moduleName, "std/") {
+		return ""
+	} else {
+		possiblePaths = []string{
+			moduleName + ".scar",                       // Direct path
+			filepath.Join(".", moduleName+".scar"),     // Current dir
+			filepath.Join("tests", moduleName+".scar"), // In tests dir
+			filepath.Clean(moduleName + ".scar"),       // Clean relative path
+		}
+
+		if strings.Contains(moduleName, "/") || strings.Contains(moduleName, "..") {
+			possiblePaths = append(possiblePaths,
+				filepath.Clean(moduleName+".scar"),
+				filepath.Join("tests", "prims", moduleName+".scar"),
+			)
+		}
+	}
+
+	for _, path := range possiblePaths {
+		if data, err := os.ReadFile(path); err == nil {
+			return string(data)
+		}
+	}
+
+	return ""
+}
+
+func getModuleShortName(moduleName string) string {
+	parts := strings.Split(moduleName, "/")
+	return parts[len(parts)-1]
+}
+
 func expandMacroCallsInLine(line string, macros map[string]*Macro) string {
 	result := line
+
+	result = strings.ReplaceAll(result, "::", "_")
 
 	for macroName, macro := range macros {
 		pattern := macroName + "("

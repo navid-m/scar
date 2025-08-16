@@ -882,6 +882,7 @@ func LoadModuleWithCycleDetection(moduleName string, baseDir string, loadingStac
 		PublicVars:      make(map[string]*VarDeclStmt),
 		PublicClasses:   make(map[string]*ClassDeclStmt),
 		PublicFuncs:     make(map[string]*MethodDeclStmt),
+		PublicMacros:    make(map[string]*MacroDeclStmt),
 		ExternalImports: []string{},
 	}
 
@@ -913,6 +914,16 @@ func LoadModuleWithCycleDetection(moduleName string, baseDir string, loadingStac
 				Body:       stmt.PubTopLevelFuncDecl.Body,
 			}
 			module.PublicFuncs[stmt.PubTopLevelFuncDecl.Name] = funcDecl
+		}
+		if stmt.PubMacroDecl != nil {
+			macroDecl := &MacroDeclStmt{
+				Name:       stmt.PubMacroDecl.Name,
+				Parameters: stmt.PubMacroDecl.Parameters,
+				Body:       stmt.PubMacroDecl.Body,
+			}
+			module.PublicMacros[stmt.PubMacroDecl.Name] = macroDecl
+			qualifiedName := module.Name + "_" + stmt.PubMacroDecl.Name
+			RegisteredMacros[qualifiedName] = true
 		}
 	}
 

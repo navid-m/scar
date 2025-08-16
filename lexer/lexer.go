@@ -29,6 +29,7 @@ type ModuleInfo struct {
 	PublicVars      map[string]*VarDeclStmt
 	PublicClasses   map[string]*ClassDeclStmt
 	PublicFuncs     map[string]*MethodDeclStmt
+	PublicMacros    map[string]*MacroDeclStmt
 	ExternalImports []string
 }
 
@@ -95,6 +96,7 @@ type Statement struct {
 	NewExpr              *NewExprStmt
 	Platform             *PlatformStmt
 	MacroDecl            *MacroDeclStmt
+	PubMacroDecl         *PubMacroDeclStmt
 	MacroCall            *MacroCallStmt
 }
 
@@ -131,6 +133,12 @@ type PlatformStmt struct {
 }
 
 type MacroDeclStmt struct {
+	Name       string
+	Parameters []string
+	Body       []string
+}
+
+type PubMacroDeclStmt struct {
 	Name       string
 	Parameters []string
 	Body       []string
@@ -470,6 +478,7 @@ type VarDeclReadStmt struct {
 
 var LoadedModules = make(map[string]*ModuleInfo)
 var CurrentSourceFile string
+var RegisteredMacros = make(map[string]bool)
 
 func isStandardLibraryFile(filePath string) bool {
 	if filePath == "" {
