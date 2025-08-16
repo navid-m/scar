@@ -1,33 +1,33 @@
-pub macro define_array(className, fieldType, elemType, cType, defaultReturn, mallocExpr, freeExpr, copyExpr, getCheck):
-    pub class className:
+pub macro NewArray(class_name, field_type, elem_type, cType, d_return, alloc_expr, free_expr, copy_expr, get_check):
+    pub class class_name:
         init(i32 initial_capacity):
             this.size = 0
             this.capacity = initial_capacity
-            ref fieldType this.data = nil
+            ref field_type this.data = nil
             $raw (
                 this->data = malloc(this->capacity * sizeof(cType));
             )
 
-        fn add_element(elemType value) -> void:
+        fn add_element(elem_type value) -> void:
             if this.size >= this.capacity:
                 this.resize()
             $raw (
-                ((cType*)this->data)[this->size] = copyExpr;
+                ((cType*)this->data)[this->size] = copy_expr;
             )
             this.size = this.size + 1
 
-        fn get_element(i32 index) -> elemType:
+        fn get_element(i32 index) -> elem_type:
             if index < 0 || index >= this.size:
-                return defaultReturn
+                return d_return
             $raw (
-                getCheck;
+                get_check;
             )
 
-        fn set_element(i32 index, elemType value) -> void:
+        fn set_element(i32 index, elem_type value) -> void:
             if index >= 0 && index < this.size:
                 $raw (
-                    freeExpr
-                    ((cType*)this->data)[index] = copyExpr;
+                    free_expr
+                    ((cType*)this->data)[index] = copy_expr;
                 )
 
         fn get_size() -> i32:
@@ -40,8 +40,8 @@ pub macro define_array(className, fieldType, elemType, cType, defaultReturn, mal
             )
 
 
-define_array(ArrayList, i32, i32, int, -1,malloc(this->capacity * sizeof(int)), /* freeExpr */, value,  return ((i32*)this->data)[index];)
-define_array(FloatArrayList, f32, f32, float, 0.0, malloc(this->capacity * sizeof(float)), /* freeExpr */, value, return ((f32*)this->data)[index];)
-define_array(CharArrayList, char, char, char, '\0', malloc(this->capacity * sizeof(char)),  /* freeExpr */, value,return ((char*)this->data)[index];)
-define_array(BooleanArrayList, bool, bool, bool, false, malloc(this->capacity * sizeof(bool)), /* freeExpr */, value, return ((bool*)this->data)[index];)
-define_array(StringArrayList, char, string, char*, "",malloc(this->capacity * sizeof(char*)),free(((char**)this->data)[index]);,strdup(value),char* value = ((char**)this->data)[index];if (value == nil) {return ""; } return value;)
+NewArray(ArrayList, i32, i32, int, -1,malloc(this->capacity * sizeof(int)), /* free_expr */, value,  return ((i32*)this->data)[index];)
+NewArray(FloatArrayList, f32, f32, float, 0.0, malloc(this->capacity * sizeof(float)), /* free_expr */, value, return ((f32*)this->data)[index];)
+NewArray(CharArrayList, char, char, char, '\0', malloc(this->capacity * sizeof(char)),  /* free_expr */, value,return ((char*)this->data)[index];)
+NewArray(BooleanArrayList, bool, bool, bool, false, malloc(this->capacity * sizeof(bool)), /* free_expr */, value, return ((bool*)this->data)[index];)
+NewArray(StringArrayList, char, string, char*, "",malloc(this->capacity * sizeof(char*)),free(((char**)this->data)[index]);,strdup(value),char* value = ((char**)this->data)[index];if (value == nil) {return ""; } return value;)
