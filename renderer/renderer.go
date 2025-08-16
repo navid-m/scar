@@ -3369,20 +3369,55 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 					}
 				}
 				if resolvedClassName == "" {
-					for className, classInfo := range globalClasses {
-						for _, method := range classInfo.Methods {
-							if method.Name == methodName {
-								resolvedClassName = className
-								logger.Debug("Inferred object '%s' as type '%s' based on method '%s'\n", stmt.MethodCall.Object, className, methodName)
+					if currentClassName != "" {
+						if classInfo, exists := globalClasses[currentClassName]; exists {
+							if strings.Contains(stmt.MethodCall.Object, ".") {
+								parts := strings.Split(stmt.MethodCall.Object, ".")
+								if len(parts) == 2 && parts[0] == "this" {
+									fieldName := parts[1]
+									for _, field := range classInfo.Fields {
+										if field.Name == fieldName {
+											fieldType := field.Type
+											if strings.HasPrefix(fieldType, "ref ") {
+												fieldType = strings.TrimPrefix(fieldType, "ref ")
+											}
+											if strings.Contains(fieldType, "::") {
+												parts := strings.Split(fieldType, "::")
+												if len(parts) == 2 {
+													resolvedClassName = lexer.GenerateUniqueSymbol(parts[1], parts[0])
+													logger.Debug("Resolved field '%s' type '%s' to '%s' in class '%s'\n", fieldName, fieldType, resolvedClassName, currentClassName)
+													break
+												}
+											} else {
+												resolvedClassName = fieldType
+												logger.Debug("Resolved field '%s' type '%s' in class '%s'\n", fieldName, fieldType, currentClassName)
+												break
+											}
+										}
+									}
+									break
+								}
+							}
+						}
+					}
+
+					// If still not resolved, fall back to searching all classes (this should be avoided)
+					if resolvedClassName == "" {
+						for className, classInfo := range globalClasses {
+							for _, method := range classInfo.Methods {
+								if method.Name == methodName {
+									resolvedClassName = className
+									logger.Debug("Inferred object '%s' as type '%s' based on method '%s' (fallback search)\n", stmt.MethodCall.Object, className, methodName)
+									break
+								}
+							}
+							if resolvedClassName != "" {
 								break
 							}
 						}
-						if resolvedClassName != "" {
-							break
+						if resolvedClassName == "" {
+							resolvedClassName = "unknown"
 						}
-					}
-					if resolvedClassName == "" {
-						resolvedClassName = "unknown"
 					}
 				}
 				if argsStr == "" {
@@ -4687,20 +4722,47 @@ func convertSingleMethodCall(expr string) string {
 
 				if className == "" {
 					logger.Debug("Searching all classes for field '%s'\n", fieldName)
-					for classNameIter, classInfo := range globalClasses {
-						for _, field := range classInfo.Fields {
-							if field.Name == fieldName {
-								fieldType := field.Type
-								if after, ok := strings.CutPrefix(fieldType, "ref "); ok {
-									fieldType = after
+					if currentClassName != "" {
+						if classInfo, exists := globalClasses[currentClassName]; exists {
+							for _, field := range classInfo.Fields {
+								if field.Name == fieldName {
+									fieldType := field.Type
+									if after, ok := strings.CutPrefix(fieldType, "ref "); ok {
+										fieldType = after
+									}
+									if strings.Contains(fieldType, "::") {
+										parts := strings.Split(fieldType, "::")
+										if len(parts) == 2 {
+											className = lexer.GenerateUniqueSymbol(parts[1], parts[0])
+											logger.Debug("Found namespace-qualified field '%s' of type '%s' in class '%s'\n", fieldName, className, currentClassName)
+											break
+										}
+									} else {
+										className = fieldType
+										logger.Debug("Found field '%s' of type '%s' in class '%s'\n", fieldName, fieldType, currentClassName)
+										break
+									}
 								}
-								className = fieldType
-								logger.Debug("Found field '%s' of type '%s' in class '%s'\n", fieldName, fieldType, classNameIter)
-								break
 							}
 						}
-						if className != "" {
-							break
+					}
+
+					if className == "" {
+						for classNameIter, classInfo := range globalClasses {
+							for _, field := range classInfo.Fields {
+								if field.Name == fieldName {
+									fieldType := field.Type
+									if after, ok := strings.CutPrefix(fieldType, "ref "); ok {
+										fieldType = after
+									}
+									className = fieldType
+									logger.Debug("Found field '%s' of type '%s' in class '%s' (fallback search)\n", fieldName, fieldType, classNameIter)
+									break
+								}
+							}
+							if className != "" {
+								break
+							}
 						}
 					}
 				}
