@@ -308,8 +308,8 @@ t.assert_string_equals("c", parts[2], "Third part 'c'")
 # Crypto Tests
 string asdf = crypto::vigenere_encrypt("Hello World", "key")
 t.assert_string_equals("Hello World", crypto::vigenere_decrypt(asdf, "key"), "Vigenere encryption should work")
-# string xored_text = crypto::xor_cipher_hex("Hello World", "key")
-# t.assert_string_equals(xored_text, "230015070A593C0A0B0701", "XOR cipher should work")
+string xored_text = crypto::xor_cipher_hex("Hello World", "key")
+t.assert_string_equals(xored_text, "230015070A593C0A0B0701", "XOR cipher should work")
 
 # Networking Tests
 platform (Windows):

@@ -17,12 +17,12 @@ pub fn xor_cipher(string text, string key) -> string:
         out = cat!(out, ch)
     return out
 
-pub fn xor_cipher_hex(string text, string key) -> lstring:
+pub fn xor_cipher_hex(string text, string key) -> char*:
     if strings::length(key) == 0:
         return ""
     i32 n = strings::length(text)
     i32 k = strings::length(key)
-    lstring out = ""
+    char* out = ""
     for i = 0 to n - 1:
         i32 tv = strings::ord_char(text[i])
         i32 kv = strings::ord_char(key[i % k])
