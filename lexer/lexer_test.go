@@ -516,3 +516,89 @@ for i32 i = 0; i < 24; i += 2:
 		t.Errorf("expected increment 'i += 2', got '%s'", oldSchoolForStmt.Increment)
 	}
 }
+
+func TestModuleMacroExpansion(t *testing.T) {
+	input := `pub macro define_class(className, memberType):
+    pub class className:
+        init():
+            this.value = memberType()
+            
+        fn getValue() -> memberType:
+            return this.value
+            
+        fn setValue(memberType newValue) -> void:
+            this.value = newValue
+
+define_class(IntWrapper, i32)
+define_class(StringWrapper, string)`
+	expanded := processModuleMacros(input)
+	program, err := ParseWithIndentation(expanded)
+	if err != nil {
+		t.Fatalf("ParseWithIndentation failed after macro expansion: %v", err)
+	}
+	classCount := 0
+	var foundClasses []string
+
+	for _, stmt := range program.Statements {
+		if stmt.PubClassDecl != nil {
+			classCount++
+			foundClasses = append(foundClasses, stmt.PubClassDecl.Name)
+		}
+	}
+
+	if classCount != 2 {
+		t.Fatalf("expected 2 classes after macro expansion, got %d", classCount)
+	}
+
+	expectedClasses := map[string]bool{
+		"IntWrapper":    true,
+		"StringWrapper": true,
+	}
+
+	for _, className := range foundClasses {
+		if !expectedClasses[className] {
+			t.Errorf("unexpected class name: %s", className)
+		}
+		delete(expectedClasses, className)
+	}
+
+	for className := range expectedClasses {
+		t.Errorf("missing expected class: %s", className)
+	}
+
+	var intWrapperClass *PubClassDeclStmt
+	for _, stmt := range program.Statements {
+		if stmt.PubClassDecl != nil && stmt.PubClassDecl.Name == "IntWrapper" {
+			intWrapperClass = stmt.PubClassDecl
+			break
+		}
+	}
+
+	if intWrapperClass == nil {
+		t.Fatal("IntWrapper class not found")
+	}
+
+	if intWrapperClass.Constructor == nil {
+		t.Fatal("IntWrapper constructor not found")
+	}
+
+	if len(intWrapperClass.Methods) != 2 {
+		t.Fatalf("expected 2 methods in IntWrapper, got %d", len(intWrapperClass.Methods))
+	}
+
+	methodNames := make(map[string]bool)
+	for _, method := range intWrapperClass.Methods {
+		methodNames[method.Name] = true
+	}
+
+	expectedMethods := map[string]bool{
+		"getValue": true,
+		"setValue": true,
+	}
+
+	for methodName := range expectedMethods {
+		if !methodNames[methodName] {
+			t.Errorf("missing expected method in IntWrapper: %s", methodName)
+		}
+	}
+}
