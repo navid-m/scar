@@ -16,8 +16,8 @@ Hello(obj, MyClass)
 int a = 10
 int b = 20
 
-print "Before swap: a= %d b=%d" | a, b
+print "Before swap: a=%d b=%d" | a, b
 
 Swap(a, b, int)
 
-print "After swap: a= %d b=%d" | a, b
+print "After swap: a=%d b=%d" | a, b
