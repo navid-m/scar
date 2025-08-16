@@ -952,11 +952,13 @@ func processCatExpression(expr string) string {
 			break
 		}
 		processed[fullMatch] = true
-		arg1 := strings.TrimSpace(result[openParen+1 : comma])
-		arg2 := strings.TrimSpace(result[comma+1 : closeParen])
-		processedArg1 := processStringFunctionArg(arg1)
-		processedArg2 := processStringFunctionArg(arg2)
-		replacement := fmt.Sprintf("__CAT_PROCESSED__(%s, %s)", processedArg1, processedArg2)
+		var (
+			arg1          = strings.TrimSpace(result[openParen+1 : comma])
+			arg2          = strings.TrimSpace(result[comma+1 : closeParen])
+			processedArg1 = processStringFunctionArg(arg1)
+			processedArg2 = processStringFunctionArg(arg2)
+			replacement   = fmt.Sprintf("__CAT_PROCESSED__(%s, %s)", processedArg1, processedArg2)
+		)
 		result = result[:catIndex] + replacement + result[closeParen+1:]
 	}
 	result = strings.ReplaceAll(result, "__CAT_PROCESSED__", "cat!")
@@ -1040,8 +1042,6 @@ func generateStructDefinition(b *strings.Builder, classInfo *ClassInfo, structNa
 			case "string":
 				fmt.Fprintf(b, "    char* %s;\n", field.Name)
 			default:
-				// For custom types, use the type name directly (without 'struct')
-				// since we have a forward declaration with 'typedef struct X X;'
 				fmt.Fprintf(b, "    %s* %s;\n", field.Type, field.Name)
 			}
 		} else if field.Type == "string" {
@@ -1066,7 +1066,6 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 	// Populate class info before processing constructor so it's available for field type checks
 	populateClassInfo(classDecl, className)
 
-	// Debug: print populated class info
 	if classInfo, exists := globalClasses[className]; exists {
 		logger.Debug("Populated class %s with %d fields:\n", className, len(classInfo.Fields))
 		for _, field := range classInfo.Fields {
@@ -1114,7 +1113,6 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 						fmt.Fprintf(b, "    this->%s[0] = '\\0';\n", field.Name)
 					}
 				case "bool":
-					// Skip initialization for array fields like grid_values
 					if !strings.HasSuffix(field.Name, "_values") {
 						fmt.Fprintf(b, "    this->%s = 0;\n", field.Name)
 					}
