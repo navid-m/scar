@@ -330,13 +330,17 @@ pub fn trim(string str) -> string:
         _output_buffer[len] = '\0';
     )
 
-pub fn get_char_at(string str, int index) -> string:
-    $raw (
-        if (str == NULL || index < 0 || index >= strlen(str)) {
-            return "";
-        }
-        char result[2];
-        result[0] = str[index];
-        result[1] = '\0';
-    )
-    return result
+macro get_char_at_either(name, return_type):
+    pub fn name(string str, int index) -> return_type:
+        $raw (
+            if (str == NULL || index < 0 || index >= strlen(str)) {
+                return "";
+            }
+            char result[2];
+            result[0] = str[index];
+            result[1] = '\0';
+        )
+        return result
+
+get_char_at_either(get_char_at, string)
+get_char_at_either(get_char_at_lstr, lstring)
