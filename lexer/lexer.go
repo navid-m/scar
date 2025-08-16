@@ -57,6 +57,7 @@ type Statement struct {
 	ListDecl             *ListDeclStmt
 	ClassDecl            *ClassDeclStmt
 	StructDecl           *StructDeclStmt
+	PubStructDecl        *PubStructDeclStmt
 	EnumDecl             *EnumDeclStmt
 	MethodCall           *MethodCallStmt
 	StaticMethodCall     *StaticMethodCallStmt
@@ -401,6 +402,11 @@ type ClassDeclStmt struct {
 }
 
 type StructDeclStmt struct {
+	Name   string
+	Fields []*StructField
+}
+
+type PubStructDeclStmt struct {
 	Name   string
 	Fields []*StructField
 }

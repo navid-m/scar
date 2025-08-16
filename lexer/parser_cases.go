@@ -211,6 +211,8 @@ func parsePubStatement(lines []string, lineNum, currentIndent int) (*Statement, 
 	switch parts[1] {
 	case "class":
 		return parsePubClassStatement(lines, lineNum, currentIndent)
+	case "struct":
+		return parsePubStructStatement(lines, lineNum, currentIndent)
 	case "fn":
 		return parsePubFunctionStatement(lines, lineNum, currentIndent)
 	case "allocate":
@@ -383,6 +385,82 @@ func parsePubClassStatement(lines []string, lineNum, currentIndent int) (*Statem
 	}
 
 	return &Statement{PubClassDecl: pubClassStmt}, nextLine, nil
+}
+
+func parsePubStructStatement(lines []string, lineNum, currentIndent int) (*Statement, int, error) {
+	line := strings.TrimSpace(lines[lineNum])
+	parts := strings.Fields(line)
+
+	if len(parts) < 3 || !strings.HasSuffix(line, ":") {
+		return nil, lineNum + 1, fmt.Errorf("pub struct declaration format error at line %d", lineNum+1)
+	}
+
+	var (
+		structName         = strings.TrimSuffix(parts[2], ":")
+		expectedBodyIndent = currentIndent + 4
+	)
+	if currentIndent == 0 {
+		bodyStartLine := lineNum + 1
+		for bodyStartLine < len(lines) {
+			bodyLine := lines[bodyStartLine]
+			if strings.TrimSpace(bodyLine) != "" && !strings.HasPrefix(strings.TrimSpace(bodyLine), "#") {
+				expectedBodyIndent = getIndentation(bodyLine)
+				break
+			}
+			bodyStartLine++
+		}
+		if expectedBodyIndent <= currentIndent {
+			expectedBodyIndent = currentIndent + 4
+		}
+	}
+
+	var fields []*StructField
+	nextLine := lineNum + 1
+
+	for nextLine < len(lines) {
+		line := lines[nextLine]
+		trimmed := strings.TrimSpace(line)
+
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			nextLine++
+			continue
+		}
+
+		indent := getIndentation(line)
+		if indent < expectedBodyIndent {
+			break
+		}
+
+		if indent != expectedBodyIndent {
+			return nil, nextLine + 1, fmt.Errorf("unexpected indentation in struct body at line %d", nextLine+1)
+		}
+
+		fieldParts := strings.Fields(trimmed)
+		if len(fieldParts) != 2 {
+			return nil, nextLine + 1, fmt.Errorf("invalid field declaration format at line %d (expected: type field_name)", nextLine+1)
+		}
+
+		fieldType := fieldParts[0]
+		fieldName := fieldParts[1]
+
+		if !isValidType(fieldType) {
+			return nil, nextLine + 1, fmt.Errorf("invalid field type '%s' at line %d", fieldType, nextLine+1)
+		}
+
+		fields = append(fields, &StructField{
+			Type: fieldType,
+			Name: fieldName,
+		})
+
+		nextLine++
+	}
+
+	structStmt := &PubStructDeclStmt{
+		Name:   structName,
+		Fields: fields,
+	}
+
+	return &Statement{PubStructDecl: structStmt}, nextLine, nil
 }
 
 func parseClassStatement(lines []string, lineNum, currentIndent int) (*Statement, int, error) {

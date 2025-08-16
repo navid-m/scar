@@ -84,6 +84,13 @@ func RenderC(program *lexer.Program, baseDir string, gcFlag bool) string {
 		if stmt.StructDecl != nil {
 			collectStructInfo(stmt.StructDecl)
 		}
+		if stmt.PubStructDecl != nil {
+			structDecl := &lexer.StructDeclStmt{
+				Name:   stmt.PubStructDecl.Name,
+				Fields: stmt.PubStructDecl.Fields,
+			}
+			collectStructInfo(structDecl)
+		}
 		if stmt.PubVarDecl != nil {
 			globalVars[stmt.PubVarDecl.Name] = stmt.PubVarDecl
 		}
@@ -432,6 +439,13 @@ bool __check_key_exists(int* keys, int size, int key) {
 		if stmt.StructDecl != nil {
 			generateStructImplementation(&b, stmt.StructDecl, program)
 		}
+		if stmt.PubStructDecl != nil {
+			structDecl := &lexer.StructDeclStmt{
+				Name:   stmt.PubStructDecl.Name,
+				Fields: stmt.PubStructDecl.Fields,
+			}
+			generateStructImplementation(&b, structDecl, program)
+		}
 		if stmt.PubClassDecl != nil {
 			classDecl := &lexer.ClassDeclStmt{
 				Name:        stmt.PubClassDecl.Name,
@@ -478,7 +492,7 @@ bool __check_key_exists(int* keys, int size, int key) {
 
 	var mainStatements []*lexer.Statement
 	for _, stmt := range program.Statements {
-		if stmt.ClassDecl == nil && stmt.PubClassDecl == nil && stmt.PubVarDecl == nil && stmt.PubAllocate == nil && stmt.TopLevelFuncDecl == nil && stmt.PubTopLevelFuncDecl == nil {
+		if stmt.ClassDecl == nil && stmt.PubClassDecl == nil && stmt.StructDecl == nil && stmt.PubStructDecl == nil && stmt.PubVarDecl == nil && stmt.PubAllocate == nil && stmt.TopLevelFuncDecl == nil && stmt.PubTopLevelFuncDecl == nil {
 			mainStatements = append(mainStatements, stmt)
 		}
 	}
@@ -488,7 +502,7 @@ bool __check_key_exists(int* keys, int size, int key) {
 	b.WriteString("}\n")
 
 	for _, stmt := range program.Statements {
-		if stmt.PubTopLevelFuncDecl == nil && stmt.ClassDecl == nil && stmt.PubClassDecl == nil && stmt.PubVarDecl == nil && stmt.PubAllocate == nil && stmt.TopLevelFuncDecl == nil {
+		if stmt.PubTopLevelFuncDecl == nil && stmt.ClassDecl == nil && stmt.PubClassDecl == nil && stmt.StructDecl == nil && stmt.PubStructDecl == nil && stmt.PubVarDecl == nil && stmt.PubAllocate == nil && stmt.TopLevelFuncDecl == nil {
 			mainStatements = append(mainStatements, stmt)
 		}
 	}
