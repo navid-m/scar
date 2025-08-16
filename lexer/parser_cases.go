@@ -865,7 +865,8 @@ func LoadModuleWithCycleDetection(moduleName string, baseDir string, loadingStac
 	}
 
 	sourceWithoutComments := RemoveComments(string(data))
-	program, err := InnerParseWithIndentation(ReplaceDoubleColonsOutsideStrings(sourceWithoutComments), modulePath)
+	sourceWithMacros := processModuleMacros(sourceWithoutComments)
+	program, err := InnerParseWithIndentation(ReplaceDoubleColonsOutsideStrings(sourceWithMacros), modulePath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse module '%s': %v", moduleName, err)
 	}
@@ -1130,4 +1131,335 @@ func parseBulkImport(lines []string, lineNum int) (*Statement, int, error) {
 		return nil, lineNum + 1, fmt.Errorf("bulk import has no modules at line %d", lineNum+1)
 	}
 	return &Statement{Import: imports[0]}, currentLine, nil
+}
+
+func processModuleMacros(source string) string {
+	fmt.Println("=== DEBUG: Original source before macro expansion ===")
+	fmt.Println(source)
+	fmt.Println("=== END Original source ===")
+
+	macros := collectModuleMacroDefinitions(source)
+
+	fmt.Printf("=== DEBUG: Found %d macros ===\n", len(macros))
+	for name, macro := range macros {
+		fmt.Printf("Macro: %s(%s)\n", name, strings.Join(macro.Parameters, ", "))
+		for i, bodyLine := range macro.Body {
+			fmt.Printf("  [%d]: %s\n", i, bodyLine)
+		}
+	}
+	fmt.Println("=== END Macros ===")
+
+	expanded := expandModuleMacros(source, macros)
+
+	fmt.Println("=== DEBUG: Expanded source after macro expansion ===")
+	fmt.Println(expanded)
+	fmt.Println("=== END Expanded source ===")
+
+	return expanded
+}
+
+type ModuleMacro struct {
+	Name       string
+	Parameters []string
+	Body       []string
+}
+
+func collectModuleMacroDefinitions(source string) map[string]*ModuleMacro {
+	macros := make(map[string]*ModuleMacro)
+	lines := strings.Split(source, "\n")
+
+	for i := 0; i < len(lines); i++ {
+		line := strings.TrimSpace(lines[i])
+
+		if (strings.HasPrefix(line, "macro ") || strings.HasPrefix(line, "pub macro ")) && strings.HasSuffix(line, ":") {
+			macro, endLine := parseModuleMacroDefinition(lines, i)
+			if macro != nil {
+				macros[macro.Name] = macro
+				i = endLine - 1
+			}
+		}
+	}
+
+	return macros
+}
+
+func parseModuleMacroDefinition(lines []string, startLine int) (*ModuleMacro, int) {
+	line := strings.TrimSpace(lines[startLine])
+	signature := strings.TrimSpace(line[:len(line)-1])
+
+	var macroName string
+	var paramStr string
+
+	if strings.HasPrefix(signature, "pub macro ") {
+		signature = strings.TrimSpace(signature[10:]) // Remove "pub macro "
+	} else {
+		signature = strings.TrimSpace(signature[6:]) // Remove "macro "
+	}
+
+	parenStart := strings.Index(signature, "(")
+	if parenStart == -1 {
+		return nil, startLine + 1
+	}
+
+	macroName = strings.TrimSpace(signature[:parenStart])
+	parenEnd := strings.LastIndex(signature, ")")
+	if parenEnd == -1 || parenEnd <= parenStart {
+		return nil, startLine + 1
+	}
+
+	paramStr = strings.TrimSpace(signature[parenStart+1 : parenEnd])
+
+	var parameters []string
+	if paramStr != "" {
+		paramList := strings.Split(paramStr, ",")
+		for _, param := range paramList {
+			param = strings.TrimSpace(param)
+			if param != "" {
+				parameters = append(parameters, param)
+			}
+		}
+	}
+
+	var body []string
+	currentLine := startLine + 1
+	macroIndent := -1
+
+	for currentLine < len(lines) {
+		bodyLine := lines[currentLine]
+		bodyTrimmed := strings.TrimSpace(bodyLine)
+
+		if bodyTrimmed == "" || strings.HasPrefix(bodyTrimmed, "#") {
+			currentLine++
+			continue
+		}
+
+		indent := getModuleMacroIndentation(bodyLine)
+		if macroIndent == -1 {
+			macroIndent = indent
+		}
+
+		if indent < macroIndent {
+			break
+		}
+
+		relativeIndent := indent - macroIndent
+		relativeLine := strings.Repeat(" ", relativeIndent) + bodyTrimmed
+		body = append(body, relativeLine)
+		currentLine++
+	}
+
+	return &ModuleMacro{
+		Name:       macroName,
+		Parameters: parameters,
+		Body:       body,
+	}, currentLine
+}
+
+func getModuleMacroIndentation(line string) int {
+	indent := 0
+	for _, char := range line {
+		if char == ' ' {
+			indent++
+		} else if char == '\t' {
+			indent += 4
+		} else {
+			break
+		}
+	}
+	return indent
+}
+
+func expandModuleMacros(source string, macros map[string]*ModuleMacro) string {
+	lines := strings.Split(source, "\n")
+	var result []string
+
+	for i := 0; i < len(lines); i++ {
+		line := lines[i]
+		trimmed := strings.TrimSpace(line)
+
+		if (strings.HasPrefix(trimmed, "macro ") || strings.HasPrefix(trimmed, "pub macro ")) && strings.HasSuffix(trimmed, ":") {
+			currentLine := i + 1
+			macroIndent := -1
+
+			for currentLine < len(lines) {
+				bodyLine := lines[currentLine]
+				bodyTrimmed := strings.TrimSpace(bodyLine)
+
+				if bodyTrimmed == "" || strings.HasPrefix(bodyTrimmed, "#") {
+					currentLine++
+					continue
+				}
+
+				indent := getModuleMacroIndentation(bodyLine)
+				if macroIndent == -1 {
+					macroIndent = indent
+				}
+
+				if indent < macroIndent {
+					break
+				}
+
+				currentLine++
+			}
+
+			i = currentLine - 1
+			continue
+		}
+
+		expandedLine := expandModuleMacroCallsInLine(line, macros)
+		if expandedLine != line {
+			expandedLines := strings.Split(expandedLine, "\n")
+			for _, expLine := range expandedLines {
+				if strings.TrimSpace(expLine) != "" {
+					result = append(result, expLine)
+				}
+			}
+		} else {
+			result = append(result, line)
+		}
+	}
+
+	return strings.Join(result, "\n")
+}
+
+func expandModuleMacroCallsInLine(line string, macros map[string]*ModuleMacro) string {
+	result := line
+
+	for macroName, macro := range macros {
+		pattern := macroName + "("
+
+		for strings.Contains(result, pattern) {
+			start := strings.Index(result, pattern)
+			if start == -1 {
+				break
+			}
+			parenCount := 0
+			end := start + len(pattern) - 1
+
+			for end < len(result) {
+				if result[end] == '(' {
+					parenCount++
+				} else if result[end] == ')' {
+					parenCount--
+					if parenCount == 0 {
+						break
+					}
+				}
+				end++
+			}
+
+			if parenCount != 0 {
+				break
+			}
+
+			argsStr := result[start+len(pattern) : end]
+			args := parseModuleMacroArguments(argsStr)
+
+			expanded := expandModuleMacro(macro, args)
+
+			before := result[:start]
+			after := result[end+1:]
+
+			indent := getModuleMacroLineIndentation(result[:start])
+			indentedExpanded := addModuleMacroIndentationToExpansion(expanded, indent)
+
+			result = before + indentedExpanded + after
+		}
+	}
+
+	return result
+}
+
+func parseModuleMacroArguments(argsStr string) []string {
+	if strings.TrimSpace(argsStr) == "" {
+		return []string{}
+	}
+
+	var args []string
+	var current strings.Builder
+	parenCount := 0
+	inString := false
+
+	for i, char := range argsStr {
+		switch char {
+		case '"':
+			if i == 0 || argsStr[i-1] != '\\' {
+				inString = !inString
+			}
+			current.WriteRune(char)
+		case '(':
+			if !inString {
+				parenCount++
+			}
+			current.WriteRune(char)
+		case ')':
+			if !inString {
+				parenCount--
+			}
+			current.WriteRune(char)
+		case ',':
+			if !inString && parenCount == 0 {
+				args = append(args, strings.TrimSpace(current.String()))
+				current.Reset()
+			} else {
+				current.WriteRune(char)
+			}
+		default:
+			current.WriteRune(char)
+		}
+	}
+
+	if current.Len() > 0 {
+		args = append(args, strings.TrimSpace(current.String()))
+	}
+
+	return args
+}
+
+func expandModuleMacro(macro *ModuleMacro, args []string) string {
+	if len(args) != len(macro.Parameters) {
+		return ""
+	}
+
+	var expandedLines []string
+
+	for _, bodyLine := range macro.Body {
+		expanded := bodyLine
+
+		for i, param := range macro.Parameters {
+			arg := args[i]
+			expanded = strings.ReplaceAll(expanded, param, arg)
+		}
+
+		expandedLines = append(expandedLines, expanded)
+	}
+
+	return strings.Join(expandedLines, "\n")
+}
+
+func getModuleMacroLineIndentation(text string) string {
+	var indent strings.Builder
+	for _, char := range text {
+		if char == ' ' || char == '\t' {
+			indent.WriteRune(char)
+		} else {
+			break
+		}
+	}
+	return indent.String()
+}
+
+func addModuleMacroIndentationToExpansion(expanded, indent string) string {
+	lines := strings.Split(expanded, "\n")
+	var result []string
+
+	for i, line := range lines {
+		if i == 0 {
+			result = append(result, strings.TrimLeft(line, " \t"))
+		} else {
+			result = append(result, indent+line)
+		}
+	}
+
+	return strings.Join(result, "\n")
 }
