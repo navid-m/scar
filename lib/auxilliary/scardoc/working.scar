@@ -1,6 +1,7 @@
 import "std/io"
 import "std/strings" 
 import "std/fs"
+import "std/regex"
 
 class FunctionDoc:
     init:
@@ -35,82 +36,50 @@ fn parse_doc_comment(string line) -> string:
     return ""
 
 fn extract_function_name(string line) -> string:
-    int fn_pos = strings::index_of(line, "fn ")
-    if fn_pos == -1:
-        return ""
+    string pattern = "(?:pub\s+)?fn\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\("
     
-    int start = fn_pos + 3
-    while start < strings::length(line) && (strings::get_char_at_lstr(line, start) == ' ' || strings::get_char_at_lstr(line, start) == '\t'):
-        start = start + 1
+    list[string] matches = regex::find(pattern, line)
+    if len(matches) >= 2:
+        return matches[1]
     
-    int end = start
-    while end < strings::length(line) && strings::get_char_at_lstr(line, end) != '(' && strings::get_char_at_lstr(line, end) != ' ' && strings::get_char_at_lstr(line, end) != '\t':
-        end = end + 1
-    
-    if end > start:
-        return strings::substring(line, start, end)
     return ""
 
-# Extract return type from function signature
 fn extract_return_type(string line) -> string:
-    int arrow_pos = strings::index_of(line, "->")
-    if arrow_pos == -1:
-        return "void"
+    string pattern = "->\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*:"
     
-    int start = arrow_pos + 2
-    while start < strings::length(line) && (strings::get_char_at_lstr(line, start) == ' ' || strings::get_char_at_lstr(line, start) == '\t'):
-        start = start + 1
+    list[string] matches = regex::find(pattern, line)
+    if len(matches) >= 2:
+        return strings::trim_space(matches[1])
     
-    int end = start
-    while end < strings::length(line) && strings::get_char_at_lstr(line, end) != ':' && strings::get_char_at_lstr(line, end) != '\n':
-        end = end + 1
-    
-    if end > start:
-        return strings::trim_space(strings::substring(line, start, end))
     return "void"
 
-# Extract parameters from function signature
 fn extract_parameters(string line) -> string:
-    int paren_start = strings::index_of(line, "(")
-    int paren_end = strings::index_of(line, ")")
+    string pattern = "fn\s+[a-zA-Z_][a-zA-Z0-9_]*\s*\(([^)]*)\)"
     
-    if paren_start == -1 || paren_end == -1 || paren_end <= paren_start:
-        return ""
+    list[string] matches = regex::find(pattern, line)
+    if len(matches) >= 2:
+        return strings::trim_space(matches[1])
     
-    return strings::trim_space(strings::substring(line, paren_start + 1, paren_end))
+    return ""
 
-# Extract class name from class definition
 fn extract_class_name(string line) -> string:
-    int class_pos = strings::index_of(line, "class ")
-    if class_pos == -1:
-        return ""
+    string pattern = "class\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*:"
     
-    int start = class_pos + 6
-    while start < strings::length(line) && (strings::get_char_at_lstr(line, start) == ' ' || strings::get_char_at_lstr(line, start) == '\t'):
-        start = start + 1
+    list[string] matches = regex::find(pattern, line)
+    if len(matches) >= 2:
+        return matches[1]
     
-    int end = start
-    while end < strings::length(line) && strings::get_char_at_lstr(line, end) != ':' && strings::get_char_at_lstr(line, end) != ' ' && strings::get_char_at_lstr(line, end) != '\t':
-        end = end + 1
-    
-    if end > start:
-        return strings::substring(line, start, end)
     return ""
 
-# Extract import path from import statement
 fn extract_import(string line) -> string:
-    string trimmed = strings::trim_space(line)
-    if not strings::starts_with(trimmed, "import"):
-        return ""
+    string pattern = "import\s+\"([^\"]+)\""
     
-    int quote_start = strings::index_of(trimmed, "\"")
-    int quote_end = strings::last_index_of(trimmed, "\"")
+    list[string] matches = regex::find(pattern, line)
+    if len(matches) >= 2:
+        return matches[1]
     
-    if quote_start != -1 && quote_end != -1 && quote_end > quote_start:
-        return strings::substring(trimmed, quote_start + 1, quote_end)
     return ""
 
-# Parse a single Scar source file
 fn parse_file(string filepath) -> ref ModuleDoc:
     ref ModuleDoc doc = new ModuleDoc()
     doc.filename = filepath
@@ -146,8 +115,8 @@ fn parse_file(string filepath) -> ref ModuleDoc:
                 current_comments = comment
             continue
         
-        string import_path = extract_import(line)
-        if strings::length(import_path) > 0:
+        if regex::matches("import\s+\"[^\"]+\"", line):
+            string import_path = extract_import(line)
             if strings::length(doc.imports) > 0:
                 doc.imports = fmt!("%s %s %s", doc.imports, "\n", import_path)
             else:
@@ -155,7 +124,7 @@ fn parse_file(string filepath) -> ref ModuleDoc:
             current_comments = ""
             continue
         
-        if strings::contains(trimmed, "class "):
+        if regex::matches("class\s+[a-zA-Z_][a-zA-Z0-9_]*\s*:", line):
             if in_class:
                 if strings::length(doc.classes) > 0:
                     doc.classes = fmt!("%s\n---\n", doc.classes)
@@ -174,14 +143,14 @@ fn parse_file(string filepath) -> ref ModuleDoc:
             in_class = true
             current_comments = ""
             continue
-        
-        if strings::contains(trimmed, "fn "):
+                    
+        if regex::matches("(?:pub\s+)?fn\s+[a-zA-Z_][a-zA-Z0-9_]*\s*\(", line):
             ref FunctionDoc func = new FunctionDoc()
             func.name = extract_function_name(line)
             func.return_type = extract_return_type(line)
             func.parameters = extract_parameters(line)
             func.comments = current_comments
-            func.is_public = strings::contains(line, "pub fn")
+            func.is_public = regex::matches("pub\s+fn\s+", line)
             
             string func_str = fmt!("Function: %s", func.name)
             if strings::length(func.parameters) > 0:
