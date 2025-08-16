@@ -39,7 +39,6 @@ pub macro NewArray(class_name, field_type, elem_type, cType, d_return, alloc_exp
                 this->data = realloc(this->data, this->capacity * sizeof(cType));
             )
 
-
 NewArray(ArrayList, i32, i32, int, -1,malloc(this->capacity * sizeof(int)), /* free_expr */, value,  return ((i32*)this->data)[index];)
 NewArray(FloatArrayList, f32, f32, float, 0.0, malloc(this->capacity * sizeof(float)), /* free_expr */, value, return ((f32*)this->data)[index];)
 NewArray(CharArrayList, char, char, char, '\0', malloc(this->capacity * sizeof(char)),  /* free_expr */, value,return ((char*)this->data)[index];)
