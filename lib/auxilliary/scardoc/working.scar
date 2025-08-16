@@ -258,95 +258,95 @@ fn parse_file(string filepath) -> ref ModuleDoc:
     
     return doc
 
-# # Generate markdown documentation from parsed module
-# fn generate_markdown(ref ModuleDoc doc) -> string:
-#     string markdown = ""
+# Generate markdown documentation from parsed module
+fn generate_markdown(ref ModuleDoc doc) -> string:
+    string markdown = ""
     
-#     # Module header
-#     markdown = fmt!("%s# %s\n\n", markdown, doc.module_name)
-#     markdown = fmt!("%s*Source: `%s`*\n\n", markdown, doc.filename)
+    # Module header
+    markdown = fmt!("%s# %s\n\n", markdown, doc.module_name)
+    markdown = fmt!("%s*Source: `%s`*\n\n", markdown, doc.filename)
     
-#     # Imports section
-#     if strings::length(doc.imports) > 0:
-#         markdown = fmt!("%s## Imports\n\n", markdown)
-#         list[string] import_lines = strings::split(doc.imports, "\n")
-#         for int i = 0; i < len(import_lines); i++:
-#             if strings::length(import_lines[i]) > 0:
-#                 markdown = fmt!("%s- `%s`\n", markdown, import_lines[i])
-#         markdown = fmt!("%s\n", markdown)
+    # Imports section
+    if strings::length(doc.imports) > 0:
+        markdown = fmt!("%s## Imports\n\n", markdown)
+        list[string] import_lines = strings::split(doc.imports, "\n")
+        for int i = 0; i < len(import_lines); i++:
+            if strings::length(import_lines[i]) > 0:
+                markdown = fmt!("%s- `%s`\n", markdown, import_lines[i])
+        markdown = fmt!("%s\n", markdown)
     
-#     # Global variables section
-#     if strings::length(doc.global_vars) > 0:
-#         markdown = fmt!("%s## Global Variables\n\n", markdown)
-#         list[string] var_lines = strings::split(doc.global_vars, "\n")
-#         for int i = 0; i < len(var_lines); i++:
-#             if strings::length(var_lines[i]) > 0:
-#                 markdown = fmt!("%s```scar\n%s\n```\n\n", markdown, var_lines[i])
+    # Global variables section
+    if strings::length(doc.global_vars) > 0:
+        markdown = fmt!("%s## Global Variables\n\n", markdown)
+        list[string] var_lines = strings::split(doc.global_vars, "\n")
+        for int i = 0; i < len(var_lines); i++:
+            if strings::length(var_lines[i]) > 0:
+                markdown = fmt!("%s```scar\n%s\n```\n\n", markdown, var_lines[i])
     
-#     # Classes section
-#     if strings::length(doc.classes) > 0:
-#         markdown = fmt!("%s## Classes\n\n", markdown)
-#         list[string] class_sections = strings::split(doc.classes, "\n---\n")
-#         for int i = 0; i < len(class_sections); i++:
-#             if strings::length(class_sections[i]) > 0:
-#                 list[string] class_lines = strings::split(class_sections[i], "\n")
-#                 bool in_comments = false
-#                 bool in_fields = false
-#                 bool in_methods = false
+    # Classes section
+    if strings::length(doc.classes) > 0:
+        markdown = fmt!("%s## Classes\n\n", markdown)
+        list[string] class_sections = strings::split(doc.classes, "\n---\n")
+        for int i = 0; i < len(class_sections); i++:
+            if strings::length(class_sections[i]) > 0:
+                list[string] class_lines = strings::split(class_sections[i], "\n")
+                bool in_comments = false
+                bool in_fields = false
+                bool in_methods = false
                 
-#                 for int j = 0; j < len(class_lines); j++:
-#                     string class_line = class_lines[j]
-#                     if strings::starts_with(class_line, "Class: "):
-#                         string class_name = strings::substring(class_line, 7, strings::length(class_line))
-#                         markdown = fmt!("%s### %s\n\n", markdown, class_name)
-#                     elif strings::starts_with(class_line, "Comments: "):
-#                         string comments = strings::substring(class_line, 10, strings::length(class_line))
-#                         markdown = fmt!("%s%s\n\n", markdown, comments)
-#                     elif strings::starts_with(class_line, "Fields: "):
-#                         markdown = fmt!("%s#### Fields\n\n", markdown)
-#                         string fields = strings::substring(class_line, 8, strings::length(class_line))
-#                         list[string] field_lines = strings::split(fields, "\n")
-#                         for int k = 0; k < len(field_lines); k++:
-#                             if strings::length(field_lines[k]) > 0:
-#                                 markdown = fmt!("%s- `%s`\n", markdown, field_lines[k])
-#                         markdown = fmt!("%s\n", markdown)
-#                     elif strings::starts_with(class_line, "Methods: "):
-#                         markdown = fmt!("%s#### Methods\n\n", markdown)
-#                         string methods = strings::substring(class_line, 9, strings::length(class_line))
-#                         list[string] method_lines = strings::split(methods, "\n")
-#                         string current_method = ""
-#                         for int k = 0; k < len(method_lines); k++:
-#                             string method_line = method_lines[k]
-#                             if strings::starts_with(method_line, "Function: "):
-#                                 if strings::length(current_method) > 0:
-#                                     markdown = fmt!("%s%s\n\n", markdown, current_method)
-#                                 current_method = fmt!("**%s**\n", strings::substring(method_line, 10, strings::length(method_line)))
-#                             elif strings::starts_with(method_line, "Comments: "):
-#                                 current_method = fmt!("%s%s\n", current_method, strings::substring(method_line, 10, strings::length(method_line)))
-#                             elif strings::starts_with(method_line, "Visibility: "):
-#                                 current_method = fmt!("%s*%s*\n", current_method, strings::substring(method_line, 12, strings::length(method_line)))
-#                         if strings::length(current_method) > 0:
-#                             markdown = fmt!("%s%s\n\n", markdown, current_method)
+                for int j = 0; j < len(class_lines); j++:
+                    string class_line = class_lines[j]
+                    if strings::starts_with(class_line, "Class: "):
+                        string class_name = strings::substring(class_line, 7, strings::length(class_line))
+                        markdown = fmt!("%s### %s\n\n", markdown, class_name)
+                    elif strings::starts_with(class_line, "Comments: "):
+                        string comments = strings::substring(class_line, 10, strings::length(class_line))
+                        markdown = fmt!("%s%s\n\n", markdown, comments)
+                    elif strings::starts_with(class_line, "Fields: "):
+                        markdown = fmt!("%s#### Fields\n\n", markdown)
+                        string fields = strings::substring(class_line, 8, strings::length(class_line))
+                        list[string] field_lines = strings::split(fields, "\n")
+                        for int k = 0; k < len(field_lines); k++:
+                            if strings::length(field_lines[k]) > 0:
+                                markdown = fmt!("%s- `%s`\n", markdown, field_lines[k])
+                        markdown = fmt!("%s\n", markdown)
+                    elif strings::starts_with(class_line, "Methods: "):
+                        markdown = fmt!("%s#### Methods\n\n", markdown)
+                        string methods = strings::substring(class_line, 9, strings::length(class_line))
+                        list[string] method_lines = strings::split(methods, "\n")
+                        string current_method = ""
+                        for int k = 0; k < len(method_lines); k++:
+                            string method_line = method_lines[k]
+                            if strings::starts_with(method_line, "Function: "):
+                                if strings::length(current_method) > 0:
+                                    markdown = fmt!("%s%s\n\n", markdown, current_method)
+                                current_method = fmt!("**%s**\n", strings::substring(method_line, 10, strings::length(method_line)))
+                            elif strings::starts_with(method_line, "Comments: "):
+                                current_method = fmt!("%s%s\n", current_method, strings::substring(method_line, 10, strings::length(method_line)))
+                            elif strings::starts_with(method_line, "Visibility: "):
+                                current_method = fmt!("%s*%s*\n", current_method, strings::substring(method_line, 12, strings::length(method_line)))
+                        if strings::length(current_method) > 0:
+                            markdown = fmt!("%s%s\n\n", markdown, current_method)
     
-#     # Functions section
-#     if strings::length(doc.functions) > 0:
-#         markdown = fmt!("%s## Functions\n\n", markdown)
-#         list[string] func_sections = strings::split(doc.functions, "\n---\n")
-#         for int i = 0; i < len(func_sections); i++:
-#             if strings::length(func_sections[i]) > 0:
-#                 list[string] func_lines = strings::split(func_sections[i], "\n")
-#                 string current_function = ""
-#                 for int j = 0; j < len(func_lines); j++:
-#                     string func_line = func_lines[j]
-#                     if strings::starts_with(func_line, "Function: "):
-#                         current_function = fmt!("### %s\n\n", strings::substring(func_line, 10, strings::length(func_line)))
-#                     elif strings::starts_with(func_line, "Comments: "):
-#                         current_function = fmt!("%s%s\n\n", current_function, strings::substring(func_line, 10, strings::length(func_line)))
-#                     elif strings::starts_with(func_line, "Visibility: "):
-#                         current_function = fmt!("%s*%s*\n\n", current_function, strings::substring(func_line, 12, strings::length(func_line)))
-#                 markdown = fmt!("%s%s", markdown, current_function)
+    # Functions section
+    if strings::length(doc.functions) > 0:
+        markdown = fmt!("%s## Functions\n\n", markdown)
+        list[string] func_sections = strings::split(doc.functions, "\n---\n")
+        for int i = 0; i < len(func_sections); i++:
+            if strings::length(func_sections[i]) > 0:
+                list[string] func_lines = strings::split(func_sections[i], "\n")
+                string current_function = ""
+                for int j = 0; j < len(func_lines); j++:
+                    string func_line = func_lines[j]
+                    if strings::starts_with(func_line, "Function: "):
+                        current_function = fmt!("### %s\n\n", strings::substring(func_line, 10, strings::length(func_line)))
+                    elif strings::starts_with(func_line, "Comments: "):
+                        current_function = fmt!("%s%s\n\n", current_function, strings::substring(func_line, 10, strings::length(func_line)))
+                    elif strings::starts_with(func_line, "Visibility: "):
+                        current_function = fmt!("%s*%s*\n\n", current_function, strings::substring(func_line, 12, strings::length(func_line)))
+                markdown = fmt!("%s%s", markdown, current_function)
     
-#     return markdown
+    return markdown
 
 # fn write_documentation(string content, string output_path) -> void:
 #     io::write_file(output_path, content)

@@ -1680,6 +1680,7 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 
 			funcName := resolvedCall[:openParen]
 			existingArgs := strings.TrimSpace(resolvedCall[openParen+1 : closeParen])
+			existingArgs = processStringFunctionArg(existingArgs)
 
 			if funcName == "strings_split" {
 				if innerType == "string" {
@@ -3336,6 +3337,7 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				fmt.Fprintf(b, "%s    %s(temp_buffer", indent, funcName)
 				for _, arg := range stmt.FunctionCall.Args {
 					resolvedArg := lexer.ResolveSymbol(arg, currentModule)
+					resolvedArg = processStringFunctionArg(resolvedArg)
 					fmt.Fprintf(b, ", %s", resolvedArg)
 				}
 				fmt.Fprintf(b, ");\n")
@@ -3343,6 +3345,7 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			} else {
 				for _, arg := range stmt.FunctionCall.Args {
 					resolvedArg := lexer.ResolveSymbol(arg, currentModule)
+					resolvedArg = processStringFunctionArg(resolvedArg)
 					args = append(args, resolvedArg)
 					if _, exists := globalArrays[arg]; exists {
 						args = append(args, fmt.Sprintf("len(%s)", arg))
