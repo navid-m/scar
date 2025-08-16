@@ -828,8 +828,50 @@ func convertPropertyAccess(expr string) string {
 		return expr
 	}
 
-	if strings.Contains(expr, ".") && !strings.Contains(expr, "(") {
-		logger.Debug("convertPropertyAccess - passed dot and paren checks\n")
+	if strings.Contains(expr, ".") {
+		logger.Debug("convertPropertyAccess - found dot in expression\n")
+
+		if strings.Contains(expr, "(") {
+			logger.Debug("convertPropertyAccess - expression contains function call, processing arguments\n")
+			result := expr
+			parenIndex := strings.Index(result, "(")
+			for parenIndex != -1 {
+				parenCount := 1
+				closeIndex := parenIndex + 1
+				for closeIndex < len(result) && parenCount > 0 {
+					switch result[closeIndex] {
+					case '(':
+						parenCount++
+					case ')':
+						parenCount--
+					}
+					closeIndex++
+				}
+
+				if parenCount == 0 {
+					args := result[parenIndex+1 : closeIndex-1]
+					logger.Debug("convertPropertyAccess - processing function arguments: '%s'\n", args)
+					if strings.Contains(args, ".") {
+						argParts := strings.Split(args, ",")
+						for i, arg := range argParts {
+							arg = strings.TrimSpace(arg)
+							if strings.Contains(arg, ".") {
+								convertedArg := convertPropertyAccessSimple(arg)
+								argParts[i] = convertedArg
+								logger.Debug("convertPropertyAccess - converted argument '%s' to '%s'\n", arg, convertedArg)
+							}
+						}
+						newArgs := strings.Join(argParts, ", ")
+						result = result[:parenIndex+1] + newArgs + result[closeIndex-1:]
+					}
+				}
+				parenIndex = strings.Index(result[closeIndex:], "(")
+				if parenIndex != -1 {
+					parenIndex += closeIndex
+				}
+			}
+			return result
+		}
 		dotIndex := strings.Index(expr, ".")
 		logger.Debug("convertPropertyAccess - dotIndex: %d\n", dotIndex)
 		if dotIndex > 0 {
@@ -869,7 +911,30 @@ func convertPropertyAccess(expr string) string {
 			logger.Debug("convertPropertyAccess - failed dotIndex > 0 check\n")
 		}
 	} else {
-		logger.Debug("convertPropertyAccess - failed dot or paren checks\n")
+		logger.Debug("convertPropertyAccess - no dot found in expression\n")
+	}
+	return expr
+}
+
+func convertPropertyAccessSimple(expr string) string {
+	logger.Debug("convertPropertyAccessSimple called with: '%s'\n", expr)
+	if strings.Contains(expr, ".") {
+		dotIndex := strings.Index(expr, ".")
+		if dotIndex > 0 {
+			objectName := expr[:dotIndex]
+
+			if isNumericLiteral(objectName) {
+				return expr
+			}
+			if strings.Contains(objectName, "[") && strings.Contains(objectName, "]") {
+				return expr
+			}
+			if !strings.Contains(objectName, " ") && !strings.Contains(objectName, "\"") {
+				originalExpr := expr
+				expr = strings.Replace(expr, ".", "->", 1)
+				logger.Debug("convertPropertyAccessSimple converted '%s' to '%s'\n", originalExpr, expr)
+			}
+		}
 	}
 	return expr
 }
@@ -2064,8 +2129,10 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 		case stmt.While != nil:
 			condition := stmt.While.Condition
 			condition = processNotKeyword(condition)
+			condition = convertPropertyAccess(condition)
 			condition = lexer.ResolveSymbol(condition, currentModule)
 			condition = convertThisReferencesGranular(condition)
+			condition = convertPropertyAccess(condition)
 			fmt.Fprintf(b, "%swhile (%s) {\n", indent, condition)
 			renderStatements(b, stmt.While.Body, indent+"    ", className, program, currentFunctionReturnType)
 			fmt.Fprintf(b, "%s}\n", indent)
@@ -2196,7 +2263,9 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 
 			init = convertThisReferencesGranular(init)
 			condition = convertThisReferencesGranular(condition)
+			condition = convertPropertyAccess(condition)
 			condition = lexer.ResolveSymbol(condition, currentModule)
+			condition = convertPropertyAccess(condition)
 			increment = convertThisReferencesGranular(increment)
 			increment = lexer.ResolveSymbol(increment, currentModule)
 
@@ -2221,9 +2290,10 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				condition = lexer.ResolveSymbol(condition, currentModule)
 			}
 
-			// Convert this references after macro processing
 			condition = convertThisReferencesGranular(condition)
 			condition = resolveImportedSymbols(condition, program.Imports)
+			condition = convertPropertyAccess(condition)
+
 			fmt.Fprintf(b, "%sif (%s) {\n", indent, condition)
 			renderStatements(b, stmt.If.Body, indent+"    ", className, program, currentFunctionReturnType)
 			fmt.Fprintf(b, "%s}\n", indent)
@@ -2242,9 +2312,10 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 					elifCondition = lexer.ResolveSymbol(elifCondition, currentModule)
 				}
 
-				// Convert this references after macro processing
 				elifCondition = convertThisReferencesGranular(elifCondition)
 				elifCondition = resolveImportedSymbols(elifCondition, program.Imports)
+				elifCondition = convertPropertyAccess(elifCondition)
+
 				fmt.Fprintf(b, "%selse if (%s) {\n", indent, elifCondition)
 				renderStatements(b, elif.Body, indent+"    ", className, program, currentFunctionReturnType)
 				fmt.Fprintf(b, "%s}\n", indent)
@@ -3528,8 +3599,10 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 		case stmt.ParallelWhile != nil:
 			condition := stmt.ParallelWhile.Condition
 			condition = processNotKeyword(condition)
+			condition = convertPropertyAccess(condition)
 			condition = lexer.ResolveSymbol(condition, currentModule)
 			condition = convertThisReferencesGranular(condition)
+			condition = convertPropertyAccess(condition)
 			fmt.Fprintf(b, "%s#pragma omp parallel\n", indent)
 			fmt.Fprintf(b, "%s{\n", indent)
 			fmt.Fprintf(b, "%s    while (%s) {\n", indent, condition)
