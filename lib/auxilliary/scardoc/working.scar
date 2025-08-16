@@ -351,22 +351,17 @@ fn generate_markdown(ref ModuleDoc doc) -> string:
 fn write_documentation(string content, string output_path) -> void:
     io::write_file(output_path, content)
 
-# Main documentation generation function
 fn generate_documentation(string source_file, string output_file):
     print "Generating documentation for: %s" | source_file
     
-    # Check if source file exists
     if not fs::exists(source_file):
         print "Error: Source file %s not found." | source_file
         return
     
-    # Parse the source file
     ref ModuleDoc doc = parse_file(source_file)
     
-    # Generate markdown
     string markdown_content = generate_markdown(doc)
     
-    # Write to output file
     if write_documentation(markdown_content, output_file):
         print "Documentation generated successfully: %s " | output_file
         print "Module: %s" | doc.module_name
