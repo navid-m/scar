@@ -1217,14 +1217,20 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 							}
 						}
 					} else {
-						// Check if this is a list field by looking at the VarDecl type directly
 						isListField := strings.HasPrefix(stmt.VarDecl.Type, "list[") && strings.HasSuffix(stmt.VarDecl.Type, "]")
-
 						if isListField && value == "[]" {
-							// Empty list initialization
 							fmt.Fprintf(b, "    this->%s_len = 0;\n", fieldName)
 						} else if stmt.VarDecl.Type == "string" {
-							if !strings.HasPrefix(value, "\"") && !strings.HasSuffix(value, "\"") && isValidIdentifier(value) {
+							isConstructorParam := false
+							if classDecl.Constructor != nil {
+								for _, param := range classDecl.Constructor.Parameters {
+									if param.Name == value {
+										isConstructorParam = true
+										break
+									}
+								}
+							}
+							if !strings.HasPrefix(value, "\"") && !strings.HasSuffix(value, "\"") && isValidIdentifier(value) && !isConstructorParam {
 								value = fmt.Sprintf("\"%s\"", value)
 							}
 							fmt.Fprintf(b, "    strcpy(this->%s, %s);\n", fieldName, value)
