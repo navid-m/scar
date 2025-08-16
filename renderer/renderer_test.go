@@ -26,42 +26,42 @@ func TestRenderC(t *testing.T) {
 }
 
 func TestPlatformBlocks(t *testing.T) {
-    program := &lexer.Program{
-        Statements: []*lexer.Statement{
-            {
-                Platform: &lexer.PlatformStmt{
-                    Platform: "Windows",
-                    Body: []*lexer.Statement{
-                        {Print: &lexer.PrintStmt{Print: "Windows block"}},
-                    },
-                },
-            },
-            {
-                Platform: &lexer.PlatformStmt{
-                    Platform: "Posix",
-                    Body: []*lexer.Statement{
-                        {Print: &lexer.PrintStmt{Print: "Posix block"}},
-                    },
-                },
-            },
-        },
-    }
+	program := &lexer.Program{
+		Statements: []*lexer.Statement{
+			{
+				Platform: &lexer.PlatformStmt{
+					Platform: "Windows",
+					Body: []*lexer.Statement{
+						{Print: &lexer.PrintStmt{Print: "Windows block"}},
+					},
+				},
+			},
+			{
+				Platform: &lexer.PlatformStmt{
+					Platform: "Posix",
+					Body: []*lexer.Statement{
+						{Print: &lexer.PrintStmt{Print: "Posix block"}},
+					},
+				},
+			},
+		},
+	}
 
-    cCode := RenderC(program, "", false)
+	cCode := RenderC(program, "", false)
 
-    if !strings.Contains(cCode, "#ifdef _WIN32") {
-        t.Errorf("Expected C code to contain Windows guard '#ifdef _WIN32' but it didn't")
-    }
-    if !strings.Contains(cCode, "printf(\"Windows block\\n\");") {
-        t.Errorf("Expected C code to contain Windows printf line but it didn't")
-    }
+	if !strings.Contains(cCode, "#ifdef _WIN32") {
+		t.Errorf("Expected C code to contain Windows guard '#ifdef _WIN32' but it didn't")
+	}
+	if !strings.Contains(cCode, "printf(\"Windows block\\n\");") {
+		t.Errorf("Expected C code to contain Windows printf line but it didn't")
+	}
 
-    if !strings.Contains(cCode, "#ifndef _WIN32") {
-        t.Errorf("Expected C code to contain Posix guard '#ifndef _WIN32' but it didn't")
-    }
-    if !strings.Contains(cCode, "printf(\"Posix block\\n\");") {
-        t.Errorf("Expected C code to contain Posix printf line but it didn't")
-    }
+	if !strings.Contains(cCode, "#ifndef _WIN32") {
+		t.Errorf("Expected C code to contain Posix guard '#ifndef _WIN32' but it didn't")
+	}
+	if !strings.Contains(cCode, "printf(\"Posix block\\n\");") {
+		t.Errorf("Expected C code to contain Posix printf line but it didn't")
+	}
 }
 
 func TestRenderCWithForLoop(t *testing.T) {
@@ -2895,5 +2895,91 @@ func TestObjectInstantiation(t *testing.T) {
 	}
 	if !strings.Contains(normalizedCCode, normalizedListElement2) {
 		t.Errorf("Expected list element assignment '%s' not found in generated code", expectedListElement2)
+	}
+}
+
+func TestNamespaceQualifiedTypesInConstructor(t *testing.T) {
+	input := `
+class SomeClass:
+    init:
+        collections::StringArrayList this.sal = new collections::StringArrayList(100)
+
+    fn add_sal(string sal) -> void:
+        this.sal.add_element(sal)
+
+    fn get_sal() -> collections::StringArrayList:
+        return this.sal
+
+var obj = new SomeClass()
+obj.add_sal("test")`
+
+	program, err := lexer.ParseWithIndentation(input)
+	if err != nil {
+		t.Fatalf("Failed to parse input: %v", err)
+	}
+
+	result := RenderC(program, ".", false)
+	expectedStructPatterns := []string{
+		"typedef struct SomeClass {",
+		"collections_StringArrayList sal;",
+	}
+
+	for _, pattern := range expectedStructPatterns {
+		if !strings.Contains(result, pattern) {
+			t.Errorf("Expected struct definition to contain '%s', but it didn't. Generated code:\n%s", pattern, result)
+		}
+	}
+
+	expectedConstructorPatterns := []string{
+		"SomeClass* SomeClass_new() {",
+		"this->sal = collections_StringArrayList_new(100);",
+	}
+
+	for _, pattern := range expectedConstructorPatterns {
+		if !strings.Contains(result, pattern) {
+			t.Errorf("Expected constructor to contain '%s', but it didn't. Generated code:\n%s", pattern, result)
+		}
+	}
+
+	expectedMethodPatterns := []string{
+		"void SomeClass_add_sal(SomeClass* this, char* sal) {",
+	}
+
+	for _, pattern := range expectedMethodPatterns {
+		if !strings.Contains(result, pattern) {
+			t.Errorf("Expected method to contain '%s', but it didn't. Generated code:\n%s", pattern, result)
+		}
+	}
+
+	expectedReturnPatterns := []string{
+		"collections_StringArrayList SomeClass_get_sal(SomeClass* this) {",
+		"return this->sal;",
+	}
+
+	for _, pattern := range expectedReturnPatterns {
+		if !strings.Contains(result, pattern) {
+			t.Errorf("Expected return type handling to contain '%s', but it didn't. Generated code:\n%s", pattern, result)
+		}
+	}
+
+	expectedObjectCreation := "SomeClass* obj = SomeClass_new();"
+	if !strings.Contains(result, expectedObjectCreation) {
+		t.Errorf("Expected object creation '%s' not found", expectedObjectCreation)
+	}
+
+	expectedMethodCall := "SomeClass_add_sal(obj, \"test\");"
+	if !strings.Contains(result, expectedMethodCall) {
+		t.Errorf("Expected method call '%s' not found", expectedMethodCall)
+	}
+
+	invalidPatterns := []string{
+		"collections::StringArrayList",
+		"collections::StringArrayList*",
+	}
+
+	for _, pattern := range invalidPatterns {
+		if strings.Contains(result, pattern) {
+			t.Errorf("Found invalid C syntax '%s' in generated code", pattern)
+		}
 	}
 }
