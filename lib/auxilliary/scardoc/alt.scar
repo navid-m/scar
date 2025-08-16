@@ -1,0 +1,139 @@
+import "std/io"
+import "std/strings" 
+import "std/fs"
+import "std/collections"
+import "std/regex"
+
+class ParsedDoc:
+    init:
+        collections::StringArrayList this.imports = new collections::StringArrayList(100)
+        collections::StringArrayList this.functions = new collections::StringArrayList(100)
+        collections::StringArrayList this.classes = new collections::StringArrayList(100)
+        string this.filepath = ""
+        string this.module_name = ""
+
+fn extract_function_name(string line) -> string:
+    string pattern = "^(?:pub\\s+)?fn\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*\\("
+    
+    list[string] matches = regex::find(pattern, line)
+    if len(matches) >= 2:
+        print "Function found: %s" | matches[1]
+        return matches[1]
+    
+    return ""
+
+fn extract_class_name(string line) -> string:
+    string pattern = "^class\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*:"
+    
+    list[string] matches = regex::find(pattern, line)
+    if len(matches) >= 2:
+        print "Class found: %s" | matches[1]
+        return matches[1]
+    
+    return ""
+
+fn extract_import(string line) -> string:
+    string pattern = "^import\\s+\"([^\"]+)\""
+    
+    list[string] matches = regex::find(pattern, line)
+    if len(matches) >= 2:
+        print "Import found: %s" | matches[1]
+        return matches[1]
+    
+    return ""
+
+fn parse_file(string filepath, string module_name) -> ref ParsedDoc:
+    ref ParsedDoc doc = new ParsedDoc()
+    doc.filepath = filepath
+    doc.module_name = module_name
+
+    list[string] lines = fs::read_lines(filepath)
+
+    for int i = 0; i < len(lines); i++:
+        string line = lines[i]
+        string trimmed = strings::trim_space(line)
+        
+        if strings::length(trimmed) == 0:
+            continue
+        
+        # Check for imports
+        if regex::matches("^import\\s+\"[^\"]+\"", trimmed):
+            string import_path = extract_import(trimmed)
+            if strings::length(import_path) > 0:
+                doc.imports.add_element(import_path)
+            continue
+        
+        # Check for classes
+        if regex::matches("^class\\s+[a-zA-Z_][a-zA-Z0-9_]*\\s*:", trimmed):
+            string class_name = extract_class_name(trimmed)
+            if strings::length(class_name) > 0:
+                doc.classes.add_element(class_name)
+            continue
+                    
+        # Check for functions
+        if regex::matches("^(?:pub\\s+)?fn\\s+[a-zA-Z_][a-zA-Z0-9_]*\\s*\\(", trimmed):
+            string func_name = extract_function_name(trimmed)
+            if strings::length(func_name) > 0:
+                doc.functions.add_element(func_name)
+            continue
+    
+    return doc
+
+fn generate_markdown(ref ParsedDoc doc) -> void:
+    string markdown = ""
+    markdown = fmt!("%s# %s\n\n", markdown, doc.module_name)
+    markdown = fmt!("%s*Source: `%s`*\n\n", markdown, doc.filepath)
+    
+    # Generate imports section
+    if doc.imports.get_size() > 0:
+        markdown = fmt!("%s## Imports\n\n", markdown)
+        for int i = 0; i < doc.imports.get_size(); i++:
+            string import_name = doc.imports.get_element(i)
+            markdown = fmt!("%s- `%s`\n", markdown, import_name)
+        markdown = fmt!("%s\n", markdown)
+    
+    # Generate classes section
+    if doc.classes.get_size() > 0:
+        markdown = fmt!("%s## Classes\n\n", markdown)
+        for int i = 0; i < doc.classes.get_size(); i++:
+            string class_name = doc.classes.get_element(i)
+            markdown = fmt!("%s### %s\n\n", markdown, class_name)
+        markdown = fmt!("%s\n", markdown)
+    
+    # Generate functions section
+    if doc.functions.get_size() > 0:
+        markdown = fmt!("%s## Functions\n\n", markdown)
+        for int i = 0; i < doc.functions.get_size(); i++:
+            string func_name = doc.functions.get_element(i)
+            markdown = fmt!("%s### %s\n\n", markdown, func_name)
+    
+    print "Generated markdown:\n%s" | markdown
+    
+    string output_file = fmt!("%s_documentation.md", doc.module_name)
+    io::write_file(output_file, markdown)
+    print "Documentation written to: %s" | output_file
+
+fn generate_documentation(string source_file):
+    print "Generating documentation for: %s" | source_file
+    
+    if not fs::exists(source_file):
+        print "Error: Source file %s not found." | source_file
+        return
+    
+    # Extract module name from filepath
+    int last_slash = strings::last_index_of(source_file, "/")
+    string filename = source_file
+    if last_slash != -1:
+        filename = strings::substring(source_file, last_slash + 1, strings::length(source_file))
+    
+    int dot_pos = strings::index_of(filename, ".")
+    string module_name = filename
+    if dot_pos != -1:
+        module_name = strings::substring(filename, 0, dot_pos)
+    
+    ref ParsedDoc doc = parse_file(source_file, module_name)
+    generate_markdown(doc)
+    
+    print "Documentation generated successfully!"
+
+generate_documentation("lib/auxilliary/scardoc/main.scar")
