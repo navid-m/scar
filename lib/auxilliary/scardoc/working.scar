@@ -1,0 +1,378 @@
+import "std/io"
+import "std/strings" 
+import "std/fs"
+
+class FunctionDoc:
+    init:
+        string this.name = ""
+        string this.return_type = "void"
+        string this.parameters = ""
+        string this.comments = ""
+        bool this.is_public = false
+
+class ClassDoc:
+    init:
+        string this.name = ""
+        string this.comments = ""
+        string this.methods = ""
+        string this.fields = ""
+        bool this.is_public = false
+
+class ModuleDoc:
+    init:
+        string this.filename = ""
+        string this.module_name = ""
+        string this.imports = ""
+        string this.functions = ""
+        string this.classes = ""
+        string this.global_vars = ""
+        string this.comments = ""
+
+fn parse_doc_comment(string line) -> string:
+    string trimmed = strings::trim(line)
+    if strings::starts_with(trimmed, "#"):
+        return strings::substring(trimmed, 1, strings::length(trimmed))
+    return ""
+
+fn extract_function_name(string line) -> string:
+    # Look for "fn name(" pattern
+    int fn_pos = strings::index_of(line, "fn ")
+    if fn_pos == -1:
+        return ""
+    
+    int start = fn_pos + 3
+    # Skip whitespace
+    while start < strings::length(line) && (strings::char_at(line, start) == ' ' || strings::char_at(line, start) == '\t'):
+        start = start + 1
+    
+    int end = start
+    # Find end of function name (until '(' or whitespace)
+    while end < strings::length(line) && strings::char_at(line, end) != '(' && strings::char_at(line, end) != ' ' && strings::char_at(line, end) != '\t':
+        end = end + 1
+    
+    if end > start:
+        return strings::substring(line, start, end)
+    return ""
+
+# Extract return type from function signature
+fn extract_return_type(string line) -> string:
+    int arrow_pos = strings::index_of(line, "->")
+    if arrow_pos == -1:
+        return "void"
+    
+    int start = arrow_pos + 2
+    # Skip whitespace
+    while start < strings::length(line) && (strings::char_at(line, start) == ' ' || strings::char_at(line, start) == '\t'):
+        start = start + 1
+    
+    int end = start
+    # Find end of return type (until ':' or end of line)
+    while end < strings::length(line) && strings::char_at(line, end) != ':' && strings::char_at(line, end) != '\n':
+        end = end + 1
+    
+    if end > start:
+        return strings::trim(strings::substring(line, start, end))
+    return "void"
+
+# Extract parameters from function signature
+fn extract_parameters(string line) -> string:
+    int paren_start = strings::index_of(line, "(")
+    int paren_end = strings::index_of(line, ")")
+    
+    if paren_start == -1 || paren_end == -1 || paren_end <= paren_start:
+        return ""
+    
+    return strings::trim(strings::substring(line, paren_start + 1, paren_end))
+
+# Extract class name from class definition
+fn extract_class_name(string line) -> string:
+    int class_pos = strings::index_of(line, "class ")
+    if class_pos == -1:
+        return ""
+    
+    int start = class_pos + 6
+    # Skip whitespace
+    while start < strings::length(line) && (strings::char_at(line, start) == ' ' || strings::char_at(line, start) == '\t'):
+        start = start + 1
+    
+    int end = start
+    # Find end of class name (until ':' or whitespace)
+    while end < strings::length(line) && strings::char_at(line, end) != ':' && strings::char_at(line, end) != ' ' && strings::char_at(line, end) != '\t':
+        end = end + 1
+    
+    if end > start:
+        return strings::substring(line, start, end)
+    return ""
+
+# Extract import path from import statement
+fn extract_import(string line) -> string:
+    string trimmed = strings::trim(line)
+    if not strings::starts_with(trimmed, "import"):
+        return ""
+    
+    int quote_start = strings::index_of(trimmed, "\"")
+    int quote_end = strings::last_index_of(trimmed, "\"")
+    
+    if quote_start != -1 && quote_end != -1 && quote_end > quote_start:
+        return strings::substring(trimmed, quote_start + 1, quote_end)
+    return ""
+
+# Parse a single Scar source file
+fn parse_file(string filepath) -> ref ModuleDoc:
+    ref ModuleDoc doc = new ModuleDoc()
+    doc.filename = filepath
+    
+    # Extract module name from filepath
+    int last_slash = strings::last_index_of(filepath, "/")
+    string filename = filepath
+    if last_slash != -1:
+        filename = strings::substring(filepath, last_slash + 1, strings::length(filepath))
+    
+    int dot_pos = strings::index_of(filename, ".")
+    if dot_pos != -1:
+        doc.module_name = strings::substring(filename, 0, dot_pos)
+    else:
+        doc.module_name = filename
+    
+    list[string] lines = fs::read_lines(filepath)
+    string current_comments = ""
+    ref ClassDoc current_class = new ClassDoc()
+    bool in_class = false
+    
+    for int i = 0; i < len(lines); i++:
+        string line = lines[i]
+        string trimmed = strings::trim(line)
+        
+        if strings::length(trimmed) == 0:
+            continue
+        
+        # Parse documentation comments
+        string comment = parse_doc_comment(line)
+        if strings::length(comment) > 0:
+            if strings::length(current_comments) > 0:
+                current_comments = fmt!("%s %s %s", current_comments, "\n", comment)
+            else:
+                current_comments = comment
+            continue
+        
+        # Parse imports
+        string import_path = extract_import(line)
+        if strings::length(import_path) > 0:
+            if strings::length(doc.imports) > 0:
+                doc.imports = fmt!("%s %s %s", doc.imports, "\n", import_path)
+            else:
+                doc.imports = import_path
+            current_comments = ""
+            continue
+        
+        # Parse class definitions
+        if strings::contains(trimmed, "class "):
+            if in_class:
+                # Add previous class to documentation
+                if strings::length(doc.classes) > 0:
+                    doc.classes = fmt!("%s\n---\n", doc.classes)
+                doc.classes = fmt!("%sClass: %s", doc.classes, current_class.name)
+                if strings::length(current_class.comments) > 0:
+                    doc.classes = fmt!("%s\nComments: %s", doc.classes, current_class.comments)
+                if strings::length(current_class.fields) > 0:
+                    doc.classes = fmt!("%s\nFields: %s", doc.classes, current_class.fields)
+                if strings::length(current_class.methods) > 0:
+                    doc.classes = fmt!("%s\nMethods: %s", doc.classes, current_class.methods)
+            
+            current_class = new ClassDoc()
+            current_class.name = extract_class_name(line)
+            current_class.comments = current_comments
+            current_class.is_public = true
+            in_class = true
+            current_comments = ""
+            continue
+        
+        # Parse function definitions
+        if strings::contains(trimmed, "fn "):
+            ref FunctionDoc func = new FunctionDoc()
+            func.name = extract_function_name(line)
+            func.return_type = extract_return_type(line)
+            func.parameters = extract_parameters(line)
+            func.comments = current_comments
+            func.is_public = strings::contains(line, "pub fn")
+            
+            string func_str = fmt!("Function: %s", func.name)
+            if strings::length(func.parameters) > 0:
+                func_str = fmt!("%s(%s)", func_str, func.parameters)
+            else:
+                func_str = fmt!("%s()", func_str)
+            if func.return_type != "void":
+                func_str = fmt!("%s -> %s", func_str, func.return_type)
+            if strings::length(func.comments) > 0:
+                func_str = fmt!("%s\nComments: %s", func_str, func.comments)
+            if func.is_public:
+                func_str = fmt!("%s\nVisibility: public", func_str)
+            else:
+                func_str = fmt!("%s\nVisibility: private", func_str)
+            
+            if in_class:
+                if strings::length(current_class.methods) > 0:
+                    current_class.methods = fmt!("%s\n%s", current_class.methods, func_str)
+                else:
+                    current_class.methods = func_str
+            else:
+                if strings::length(doc.functions) > 0:
+                    doc.functions = fmt!("%s\n---\n%s", doc.functions, func_str)
+                else:
+                    doc.functions = func_str
+            
+            current_comments = ""
+            continue
+        
+        # Parse class fields
+        if in_class && (strings::contains(trimmed, "int ") || strings::contains(trimmed, "string ") || strings::contains(trimmed, "bool ") || strings::contains(trimmed, "f32 ") ||strings::contains(trimmed, "f64 ") || strings::contains(trimmed, "ref ")):
+            if strings::length(current_class.fields) > 0:
+                current_class.fields = fmt!("%s\n%s", current_class.fields, trimmed)
+            else:
+                current_class.fields = trimmed
+            current_comments = ""
+            continue
+        
+        # Parse global variables
+        if not in_class && (strings::starts_with(trimmed, "pub ") || strings::contains(trimmed, "int ") || strings::contains(trimmed, "string ") ||strings::contains(trimmed, "bool ") || strings::contains(trimmed, "f32 ") ||strings::contains(trimmed, "f64 ")):
+            if strings::length(doc.global_vars) > 0:
+                doc.global_vars = fmt!("%s\n%s", doc.global_vars, trimmed)
+            else:
+                doc.global_vars = trimmed
+            current_comments = ""
+            continue
+        
+        current_comments = ""
+    
+    # Add final class if we were in one
+    if in_class:
+        if strings::length(doc.classes) > 0:
+            doc.classes = fmt!("%s\n---\n", doc.classes)
+        doc.classes = fmt!("%sClass: %s", doc.classes, current_class.name)
+        if strings::length(current_class.comments) > 0:
+            doc.classes = fmt!("%s\nComments: %s", doc.classes, current_class.comments)
+        if strings::length(current_class.fields) > 0:
+            doc.classes = fmt!("%s\nFields: %s", doc.classes, current_class.fields)
+        if strings::length(current_class.methods) > 0:
+            doc.classes = fmt!("%s\nMethods: %s", doc.classes, current_class.methods)
+    
+    return doc
+
+# Generate markdown documentation from parsed module
+fn generate_markdown(ref ModuleDoc doc) -> string:
+    string markdown = ""
+    
+    # Module header
+    markdown = fmt!("%s# %s\n\n", markdown, doc.module_name)
+    markdown = fmt!("%s*Source: `%s`*\n\n", markdown, doc.filename)
+    
+    # Imports section
+    if strings::length(doc.imports) > 0:
+        markdown = fmt!("%s## Imports\n\n", markdown)
+        list[string] import_lines = strings::split(doc.imports, "\n")
+        for int i = 0; i < len(import_lines); i++:
+            if strings::length(import_lines[i]) > 0:
+                markdown = fmt!("%s- `%s`\n", markdown, import_lines[i])
+        markdown = fmt!("%s\n", markdown)
+    
+    # Global variables section
+    if strings::length(doc.global_vars) > 0:
+        markdown = fmt!("%s## Global Variables\n\n", markdown)
+        list[string] var_lines = strings::split(doc.global_vars, "\n")
+        for int i = 0; i < len(var_lines); i++:
+            if strings::length(var_lines[i]) > 0:
+                markdown = fmt!("%s```scar\n%s\n```\n\n", markdown, var_lines[i])
+    
+    # Classes section
+    if strings::length(doc.classes) > 0:
+        markdown = fmt!("%s## Classes\n\n", markdown)
+        list[string] class_sections = strings::split(doc.classes, "\n---\n")
+        for int i = 0; i < len(class_sections); i++:
+            if strings::length(class_sections[i]) > 0:
+                list[string] class_lines = strings::split(class_sections[i], "\n")
+                bool in_comments = false
+                bool in_fields = false
+                bool in_methods = false
+                
+                for int j = 0; j < len(class_lines); j++:
+                    string class_line = class_lines[j]
+                    if strings::starts_with(class_line, "Class: "):
+                        string class_name = strings::substring(class_line, 7, strings::length(class_line))
+                        markdown = fmt!("%s### %s\n\n", markdown, class_name)
+                    elif strings::starts_with(class_line, "Comments: "):
+                        string comments = strings::substring(class_line, 10, strings::length(class_line))
+                        markdown = fmt!("%s%s\n\n", markdown, comments)
+                    elif strings::starts_with(class_line, "Fields: "):
+                        markdown = fmt!("%s#### Fields\n\n", markdown)
+                        string fields = strings::substring(class_line, 8, strings::length(class_line))
+                        list[string] field_lines = strings::split(fields, "\n")
+                        for int k = 0; k < len(field_lines); k++:
+                            if strings::length(field_lines[k]) > 0:
+                                markdown = fmt!("%s- `%s`\n", markdown, field_lines[k])
+                        markdown = fmt!("%s\n", markdown)
+                    elif strings::starts_with(class_line, "Methods: "):
+                        markdown = fmt!("%s#### Methods\n\n", markdown)
+                        string methods = strings::substring(class_line, 9, strings::length(class_line))
+                        list[string] method_lines = strings::split(methods, "\n")
+                        string current_method = ""
+                        for int k = 0; k < len(method_lines); k++:
+                            string method_line = method_lines[k]
+                            if strings::starts_with(method_line, "Function: "):
+                                if strings::length(current_method) > 0:
+                                    markdown = fmt!("%s%s\n\n", markdown, current_method)
+                                current_method = fmt!("**%s**\n", strings::substring(method_line, 10, strings::length(method_line)))
+                            elif strings::starts_with(method_line, "Comments: "):
+                                current_method = fmt!("%s%s\n", current_method, strings::substring(method_line, 10, strings::length(method_line)))
+                            elif strings::starts_with(method_line, "Visibility: "):
+                                current_method = fmt!("%s*%s*\n", current_method, strings::substring(method_line, 12, strings::length(method_line)))
+                        if strings::length(current_method) > 0:
+                            markdown = fmt!("%s%s\n\n", markdown, current_method)
+    
+    # Functions section
+    if strings::length(doc.functions) > 0:
+        markdown = fmt!("%s## Functions\n\n", markdown)
+        list[string] func_sections = strings::split(doc.functions, "\n---\n")
+        for int i = 0; i < len(func_sections); i++:
+            if strings::length(func_sections[i]) > 0:
+                list[string] func_lines = strings::split(func_sections[i], "\n")
+                string current_function = ""
+                for int j = 0; j < len(func_lines); j++:
+                    string func_line = func_lines[j]
+                    if strings::starts_with(func_line, "Function: "):
+                        current_function = fmt!("### %s\n\n", strings::substring(func_line, 10, strings::length(func_line)))
+                    elif strings::starts_with(func_line, "Comments: "):
+                        current_function = fmt!("%s%s\n\n", current_function, strings::substring(func_line, 10, strings::length(func_line)))
+                    elif strings::starts_with(func_line, "Visibility: "):
+                        current_function = fmt!("%s*%s*\n\n", current_function, strings::substring(func_line, 12, strings::length(func_line)))
+                markdown = fmt!("%s%s", markdown, current_function)
+    
+    return markdown
+
+# Write documentation to file
+fn write_documentation(string content, string output_path) -> bool:
+    return io::write_file(output_path, content)
+
+# Main documentation generation function
+fn generate_documentation(string source_file, string output_file):
+    print "Generating documentation for: %s" | source_file
+    
+    # Check if source file exists
+    if not fs::exists(source_file):
+        print "Error: Source file %s not found." | source_file
+        return
+    
+    # Parse the source file
+    ref ModuleDoc doc = parse_file(source_file)
+    
+    # Generate markdown
+    string markdown_content = generate_markdown(doc)
+    
+    # Write to output file
+    if write_documentation(markdown_content, output_file):
+        print "Documentation generated successfully: %s " | output_file
+        print "Module: %s" | doc.module_name
+    else:
+        print "Error: Failed to write documentation to %s" | output_file
+
+# Generate documentation for the main.scar file
+generate_documentation("lib/auxilliary/scardoc/main.scar", "main_documentation.md")
