@@ -15,6 +15,7 @@ import (
 
 func InsertMacros(output string) string {
 	outp := output
+
 	if strings.Contains(output, "nil") {
 		outp = insertNilMacro(outp)
 	}
@@ -34,8 +35,11 @@ func InsertMacros(output string) string {
 	if strings.Contains(output, "cat") {
 		outp = insertCat(outp)
 	}
+
 	outp = fixCustomClassReturnTypes(outp)
 	outp = fixMethodCalls(outp)
+	outp = fixPropertyAccess(outp)
+
 	if strings.Contains(output, "this.") {
 		outp = replaceOutsideStringLiterals(outp, "this.", "this->")
 	}
@@ -61,6 +65,104 @@ func InsertMacros(output string) string {
 			"typedef double f64;\ntypedef float f32;\n" + outp
 	}
 	return outp
+}
+
+func fixPropertyAccess(outp string) string {
+	lines := strings.Split(outp, "\n")
+	objectVars := make(map[string]bool)
+	declRe := regexp.MustCompile(`\b(\w+)\*\s+(\w+)\s*(?:[=;,,\)])`)
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || isInsideStringLiteral(trimmed) || strings.HasPrefix(trimmed, "#include") {
+			continue
+		}
+		matches := declRe.FindAllStringSubmatch(trimmed, -1)
+		for _, m := range matches {
+			if len(m) > 2 {
+				objectVars[m[2]] = true
+			}
+		}
+	}
+
+	if len(objectVars) == 0 {
+		return outp
+	}
+
+	var b strings.Builder
+	inString := false
+	escaped := false
+	i := 0
+	for i < len(outp) {
+		ch := outp[i]
+		if inString {
+			b.WriteByte(ch)
+			if ch == '\\' && !escaped {
+				escaped = true
+			} else {
+				if ch == '"' && !escaped {
+					inString = false
+				}
+				escaped = false
+			}
+			i++
+			continue
+		}
+
+		if ch == '"' {
+			inString = true
+			b.WriteByte(ch)
+			i++
+			continue
+		}
+		if i+5 <= len(outp) && outp[i:i+5] == "fmt!(" {
+			b.WriteString("fmt!(")
+			i += 5
+			startArgs := i
+			paren := 1
+			innerInString := false
+			innerEsc := false
+			for i < len(outp) && paren > 0 {
+				c := outp[i]
+				if innerInString {
+					if c == '\\' && !innerEsc {
+						innerEsc = true
+					} else {
+						if c == '"' && !innerEsc {
+							innerInString = false
+						}
+						innerEsc = false
+					}
+				} else {
+					if c == '"' {
+						innerInString = true
+					} else if c == '(' {
+						paren++
+					} else if c == ')' {
+						paren--
+						if paren == 0 {
+							break
+						}
+					}
+				}
+				i++
+			}
+			args := outp[startArgs:i]
+			for obj := range objectVars {
+				args = replaceOutsideStringLiterals(args, obj+".", obj+"->")
+			}
+			b.WriteString(args)
+			if i < len(outp) && outp[i] == ')' {
+				b.WriteByte(')')
+				i++
+			}
+			continue
+		}
+
+		b.WriteByte(ch)
+		i++
+	}
+
+	return b.String()
 }
 
 func insertCstring(output string) string {
