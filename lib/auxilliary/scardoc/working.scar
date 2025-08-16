@@ -35,18 +35,15 @@ fn parse_doc_comment(string line) -> string:
     return ""
 
 fn extract_function_name(string line) -> string:
-    # Look for "fn name(" pattern
     int fn_pos = strings::index_of(line, "fn ")
     if fn_pos == -1:
         return ""
     
     int start = fn_pos + 3
-    # Skip whitespace
     while start < strings::length(line) && (strings::get_char_at_lstr(line, start) == ' ' || strings::get_char_at_lstr(line, start) == '\t'):
         start = start + 1
     
     int end = start
-    # Find end of function name (until '(' or whitespace)
     while end < strings::length(line) && strings::get_char_at_lstr(line, end) != '(' && strings::get_char_at_lstr(line, end) != ' ' && strings::get_char_at_lstr(line, end) != '\t':
         end = end + 1
     
@@ -61,12 +58,10 @@ fn extract_return_type(string line) -> string:
         return "void"
     
     int start = arrow_pos + 2
-    # Skip whitespace
     while start < strings::length(line) && (strings::get_char_at_lstr(line, start) == ' ' || strings::get_char_at_lstr(line, start) == '\t'):
         start = start + 1
     
     int end = start
-    # Find end of return type (until ':' or end of line)
     while end < strings::length(line) && strings::get_char_at_lstr(line, end) != ':' && strings::get_char_at_lstr(line, end) != '\n':
         end = end + 1
     
@@ -91,12 +86,10 @@ fn extract_class_name(string line) -> string:
         return ""
     
     int start = class_pos + 6
-    # Skip whitespace
     while start < strings::length(line) && (strings::get_char_at_lstr(line, start) == ' ' || strings::get_char_at_lstr(line, start) == '\t'):
         start = start + 1
     
     int end = start
-    # Find end of class name (until ':' or whitespace)
     while end < strings::length(line) && strings::get_char_at_lstr(line, end) != ':' && strings::get_char_at_lstr(line, end) != ' ' && strings::get_char_at_lstr(line, end) != '\t':
         end = end + 1
     
@@ -122,7 +115,6 @@ fn parse_file(string filepath) -> ref ModuleDoc:
     ref ModuleDoc doc = new ModuleDoc()
     doc.filename = filepath
     
-    # Extract module name from filepath
     int last_slash = strings::last_index_of(filepath, "/")
     string filename = filepath
     if last_slash != -1:
@@ -146,7 +138,6 @@ fn parse_file(string filepath) -> ref ModuleDoc:
         if strings::length(trimmed) == 0:
             continue
         
-        # Parse documentation comments
         string comment = parse_doc_comment(line)
         if strings::length(comment) > 0:
             if strings::length(current_comments) > 0:
@@ -155,7 +146,6 @@ fn parse_file(string filepath) -> ref ModuleDoc:
                 current_comments = comment
             continue
         
-        # Parse imports
         string import_path = extract_import(line)
         if strings::length(import_path) > 0:
             if strings::length(doc.imports) > 0:
@@ -165,10 +155,8 @@ fn parse_file(string filepath) -> ref ModuleDoc:
             current_comments = ""
             continue
         
-        # Parse class definitions
         if strings::contains(trimmed, "class "):
             if in_class:
-                # Add previous class to documentation
                 if strings::length(doc.classes) > 0:
                     doc.classes = fmt!("%s\n---\n", doc.classes)
                 doc.classes = fmt!("%sClass: %s", doc.classes, current_class.name)
@@ -187,7 +175,6 @@ fn parse_file(string filepath) -> ref ModuleDoc:
             current_comments = ""
             continue
         
-        # Parse function definitions
         if strings::contains(trimmed, "fn "):
             ref FunctionDoc func = new FunctionDoc()
             func.name = extract_function_name(line)
@@ -224,7 +211,6 @@ fn parse_file(string filepath) -> ref ModuleDoc:
             current_comments = ""
             continue
         
-        # Parse class fields
         if in_class && (strings::contains(trimmed, "int ") || strings::contains(trimmed, "string ") || strings::contains(trimmed, "bool ") || strings::contains(trimmed, "f32 ") ||strings::contains(trimmed, "f64 ") || strings::contains(trimmed, "ref ")):
             if strings::length(current_class.fields) > 0:
                 current_class.fields = fmt!("%s\n%s", current_class.fields, trimmed)
@@ -233,7 +219,6 @@ fn parse_file(string filepath) -> ref ModuleDoc:
             current_comments = ""
             continue
         
-        # Parse global variables
         if not in_class && (strings::starts_with(trimmed, "pub ") || strings::contains(trimmed, "int ") || strings::contains(trimmed, "string ") ||strings::contains(trimmed, "bool ") || strings::contains(trimmed, "f32 ") ||strings::contains(trimmed, "f64 ")):
             if strings::length(doc.global_vars) > 0:
                 doc.global_vars = fmt!("%s\n%s", doc.global_vars, trimmed)
@@ -244,7 +229,6 @@ fn parse_file(string filepath) -> ref ModuleDoc:
         
         current_comments = ""
     
-    # Add final class if we were in one
     if in_class:
         if strings::length(doc.classes) > 0:
             doc.classes = fmt!("%s\n---\n", doc.classes)
@@ -258,15 +242,10 @@ fn parse_file(string filepath) -> ref ModuleDoc:
     
     return doc
 
-# Generate markdown documentation from parsed module
 fn generate_markdown(ref ModuleDoc doc) -> string:
     string markdown = ""
-    
-    # Module header
     markdown = fmt!("%s# %s\n\n", markdown, doc.module_name)
     markdown = fmt!("%s*Source: `%s`*\n\n", markdown, doc.filename)
-    
-    # Imports section
     if strings::length(doc.imports) > 0:
         markdown = fmt!("%s## Imports\n\n", markdown)
         list[string] import_lines = strings::split(doc.imports, "\n")
@@ -275,7 +254,6 @@ fn generate_markdown(ref ModuleDoc doc) -> string:
                 markdown = fmt!("%s- `%s`\n", markdown, import_lines[i])
         markdown = fmt!("%s\n", markdown)
     
-    # Global variables section
     if strings::length(doc.global_vars) > 0:
         markdown = fmt!("%s## Global Variables\n\n", markdown)
         list[string] var_lines = strings::split(doc.global_vars, "\n")
@@ -283,7 +261,6 @@ fn generate_markdown(ref ModuleDoc doc) -> string:
             if strings::length(var_lines[i]) > 0:
                 markdown = fmt!("%s```scar\n%s\n```\n\n", markdown, var_lines[i])
     
-    # Classes section
     if strings::length(doc.classes) > 0:
         markdown = fmt!("%s## Classes\n\n", markdown)
         list[string] class_sections = strings::split(doc.classes, "\n---\n")
@@ -328,7 +305,6 @@ fn generate_markdown(ref ModuleDoc doc) -> string:
                         if strings::length(current_method) > 0:
                             markdown = fmt!("%s%s\n\n", markdown, current_method)
     
-    # Functions section
     if strings::length(doc.functions) > 0:
         markdown = fmt!("%s## Functions\n\n", markdown)
         list[string] func_sections = strings::split(doc.functions, "\n---\n")
@@ -348,24 +324,23 @@ fn generate_markdown(ref ModuleDoc doc) -> string:
     
     return markdown
 
-# fn write_documentation(string content, string output_path) -> void:
-#     io::write_file(output_path, content)
+fn write_documentation(string content, string output_path) -> void:
+    io::write_file(output_path, content)
 
-# fn generate_documentation(string source_file, string output_file):
-#     print "Generating documentation for: %s" | source_file
+fn generate_documentation(string source_file, string output_file):
+    print "Generating documentation for: %s" | source_file
     
-#     if not fs::exists(source_file):
-#         print "Error: Source file %s not found." | source_file
-#         return
+    if not fs::exists(source_file):
+        print "Error: Source file %s not found." | source_file
+        return
     
-#     ref ModuleDoc doc = parse_file(source_file)
+    ref ModuleDoc doc = parse_file(source_file)
     
-#     string markdown_content = generate_markdown(doc)
+    string markdown_content = generate_markdown(doc)
     
-#     write_documentation(markdown_content, output_file)
+    write_documentation(markdown_content, output_file)
 
-#     print "Documentation generated successfully: %s " | output_file
-#     print "Module: %s" | doc.module_name
+    print "Documentation generated successfully: %s " | output_file
+    print "Module: %s" | doc.module_name
 
-# # Generate documentation for the main.scar file
-# generate_documentation("lib/auxilliary/scardoc/main.scar", "main_documentation.md")
+generate_documentation("lib/auxilliary/scardoc/main.scar", "main_documentation.md")
