@@ -13,8 +13,10 @@ import (
 )
 
 func parseStatements(lines []string, startLine, expectedIndent int) ([]*Statement, error) {
-	var statements []*Statement
-	i := startLine
+	var (
+		statements []*Statement
+		i          = startLine
+	)
 
 	for i < len(lines) {
 		line := lines[i]
