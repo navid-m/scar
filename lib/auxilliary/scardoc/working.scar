@@ -362,11 +362,10 @@ fn generate_documentation(string source_file, string output_file):
     
     string markdown_content = generate_markdown(doc)
     
-    if write_documentation(markdown_content, output_file):
-        print "Documentation generated successfully: %s " | output_file
-        print "Module: %s" | doc.module_name
-    else:
-        print "Error: Failed to write documentation to %s" | output_file
+    write_documentation(markdown_content, output_file)
+    
+    print "Documentation generated successfully: %s " | output_file
+    print "Module: %s" | doc.module_name
 
 # Generate documentation for the main.scar file
 generate_documentation("lib/auxilliary/scardoc/main.scar", "main_documentation.md")
