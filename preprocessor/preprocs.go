@@ -40,9 +40,9 @@ func InsertMacros(output string) string {
 	outp = fixMethodCalls(outp)
 	outp = fixPropertyAccess(outp)
 
-	if strings.Contains(output, "this.") {
-		outp = replaceOutsideStringLiterals(outp, "this.", "this->")
-	}
+	// Don't convert this. to this-> for struct constructors since structs use value semantics
+	// The conversion will be handled by the renderer based on context
+
 	if strings.Contains(output, " and ") {
 		outp = replaceOutsideStringLiterals(outp, " and ", " && ")
 	}

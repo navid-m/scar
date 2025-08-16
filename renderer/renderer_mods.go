@@ -29,6 +29,11 @@ type ClassInfo struct {
 	Methods []MethodInfo
 }
 
+type StructInfo struct {
+	Name   string
+	Fields []FieldInfo
+}
+
 type ObjectInfo struct {
 	Name string
 	Type string

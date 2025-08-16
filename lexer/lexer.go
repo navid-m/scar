@@ -56,6 +56,7 @@ type Statement struct {
 	IndexAssign          *IndexAssignStmt
 	ListDecl             *ListDeclStmt
 	ClassDecl            *ClassDeclStmt
+	StructDecl           *StructDeclStmt
 	EnumDecl             *EnumDeclStmt
 	MethodCall           *MethodCallStmt
 	StaticMethodCall     *StaticMethodCallStmt
@@ -397,6 +398,16 @@ type ClassDeclStmt struct {
 	Name        string
 	Constructor *ConstructorStmt
 	Methods     []*MethodDeclStmt
+}
+
+type StructDeclStmt struct {
+	Name   string
+	Fields []*StructField
+}
+
+type StructField struct {
+	Type string
+	Name string
 }
 
 type ConstructorStmt struct {

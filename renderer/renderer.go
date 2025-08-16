@@ -22,6 +22,7 @@ import (
 
 var (
 	globalClasses     = make(map[string]*ClassInfo)
+	globalStructs     = make(map[string]*StructInfo)
 	globalEnums       = make(map[string]*EnumInfo)
 	globalObjects     = make(map[string]*ObjectInfo)
 	globalFunctions   = make(map[string]*lexer.TopLevelFuncDeclStmt)
@@ -79,6 +80,9 @@ func RenderC(program *lexer.Program, baseDir string, gcFlag bool) string {
 	for _, stmt := range program.Statements {
 		if stmt.ClassDecl != nil {
 			collectClassInfo(stmt.ClassDecl)
+		}
+		if stmt.StructDecl != nil {
+			collectStructInfo(stmt.StructDecl)
 		}
 		if stmt.PubVarDecl != nil {
 			globalVars[stmt.PubVarDecl.Name] = stmt.PubVarDecl
@@ -221,6 +225,42 @@ bool __check_key_exists(int* keys, int size, int key) {
 		fmt.Fprintf(&b, "typedef struct %s %s;\n", className, className)
 	}
 	b.WriteString("\n")
+
+	generatedStructs := make(map[string]bool)
+	for len(generatedStructs) < len(globalStructs) {
+		progress := false
+		for structName, structInfo := range globalStructs {
+			if generatedStructs[structName] {
+				continue
+			}
+			canGenerate := true
+			for _, field := range structInfo.Fields {
+				if _, isStruct := globalStructs[field.Type]; isStruct && !generatedStructs[field.Type] {
+					canGenerate = false
+					break
+				}
+			}
+
+			if canGenerate {
+				generateStructStructDefinition(&b, structInfo, structName)
+				b.WriteString("\n")
+				generatedStructs[structName] = true
+				progress = true
+			}
+		}
+
+		if !progress {
+			for structName, structInfo := range globalStructs {
+				if !generatedStructs[structName] {
+					generateStructStructDefinition(&b, structInfo, structName)
+					b.WriteString("\n")
+					generatedStructs[structName] = true
+				}
+			}
+			break
+		}
+	}
+
 	for className, classInfo := range globalClasses {
 		generateStructDefinition(&b, classInfo, className)
 		b.WriteString("\n")
@@ -273,6 +313,12 @@ bool __check_key_exists(int* keys, int size, int key) {
 
 		b.WriteString("\n")
 	}
+
+	for structName := range globalStructs {
+		fmt.Fprintf(&b, "%s %s_new();\n", structName, structName)
+		b.WriteString("\n")
+	}
+
 	for _, module := range lexer.LoadedModules {
 		for funcName, funcDecl := range module.PublicFuncs {
 			topLevelFunc := &lexer.TopLevelFuncDeclStmt{
@@ -383,6 +429,9 @@ bool __check_key_exists(int* keys, int size, int key) {
 		if stmt.ClassDecl != nil {
 			generateClassImplementation(&b, stmt.ClassDecl, "", program)
 		}
+		if stmt.StructDecl != nil {
+			generateStructImplementation(&b, stmt.StructDecl, program)
+		}
 		if stmt.PubClassDecl != nil {
 			classDecl := &lexer.ClassDeclStmt{
 				Name:        stmt.PubClassDecl.Name,
@@ -468,6 +517,24 @@ func resolveLenFunctionCalls(expression string) string {
 
 func collectClassInfo(classDecl *lexer.ClassDeclStmt) {
 	collectClassInfoWithModule(classDecl, "")
+}
+
+func collectStructInfo(structDecl *lexer.StructDeclStmt) {
+	structInfo := &StructInfo{
+		Name:   structDecl.Name,
+		Fields: []FieldInfo{},
+	}
+
+	for _, field := range structDecl.Fields {
+		fieldInfo := FieldInfo{
+			Name:  field.Name,
+			Type:  field.Type,
+			IsRef: false,
+		}
+		structInfo.Fields = append(structInfo.Fields, fieldInfo)
+	}
+
+	globalStructs[structDecl.Name] = structInfo
 }
 
 func collectClassInfoWithModule(classDecl *lexer.ClassDeclStmt, moduleName string) {
@@ -758,6 +825,11 @@ func resolveFunctionCall(value string) string {
 		argsWithParens   = value[parenIndex:]
 		resolvedFuncName = lexer.ResolveSymbol(funcName, currentModule)
 	)
+
+	if _, isStruct := globalStructs[resolvedFuncName]; isStruct {
+		return resolvedFuncName + "_new" + argsWithParens
+	}
+
 	if functionReturnsString(resolvedFuncName) {
 		tempBufferName := fmt.Sprintf("temp_str_buffer_%d", len(value)*31%1000) // Simple hash for uniqueness
 
@@ -931,8 +1003,22 @@ func convertPropertyAccess(expr string) string {
 			if !strings.Contains(objectName, " ") && !strings.Contains(objectName, "\"") {
 				logger.Debug("convertPropertyAccess - passed objectName checks\n")
 				originalExpr := expr
-				expr = strings.Replace(expr, ".", "->", 1)
-				logger.Debug("convertPropertyAccess converted '%s' to '%s'\n", originalExpr, expr)
+
+				varType := ""
+				if localType, exists := localVars[objectName]; exists {
+					varType = localType
+					logger.Debug("convertPropertyAccess - found local variable '%s' of type '%s'\n", objectName, varType)
+				} else if _, isStruct := globalStructs[objectName]; isStruct {
+					varType = objectName
+					logger.Debug("convertPropertyAccess - found struct type '%s'\n", objectName)
+				}
+
+				if _, isStruct := globalStructs[varType]; isStruct {
+					logger.Debug("convertPropertyAccess - detected struct field access, keeping dot notation\n")
+				} else {
+					expr = strings.Replace(expr, ".", "->", 1)
+					logger.Debug("convertPropertyAccess converted '%s' to '%s'\n", originalExpr, expr)
+				}
 			} else {
 				logger.Debug("convertPropertyAccess - failed objectName checks\n")
 			}
@@ -960,8 +1046,21 @@ func convertPropertyAccessSimple(expr string) string {
 			}
 			if !strings.Contains(objectName, " ") && !strings.Contains(objectName, "\"") {
 				originalExpr := expr
-				expr = strings.Replace(expr, ".", "->", 1)
-				logger.Debug("convertPropertyAccessSimple converted '%s' to '%s'\n", originalExpr, expr)
+				varType := ""
+				if localType, exists := localVars[objectName]; exists {
+					varType = localType
+					logger.Debug("convertPropertyAccessSimple - found local variable '%s' of type '%s'\n", objectName, varType)
+				} else if _, isStruct := globalStructs[objectName]; isStruct {
+					varType = objectName
+					logger.Debug("convertPropertyAccessSimple - found struct type '%s'\n", objectName)
+				}
+
+				if _, isStruct := globalStructs[varType]; isStruct {
+					logger.Debug("convertPropertyAccessSimple - detected struct field access, keeping dot notation\n")
+				} else {
+					expr = strings.Replace(expr, ".", "->", 1)
+					logger.Debug("convertPropertyAccessSimple converted '%s' to '%s'\n", originalExpr, expr)
+				}
 			}
 		}
 	}
@@ -1141,6 +1240,24 @@ func generateStructDefinition(b *strings.Builder, classInfo *ClassInfo, structNa
 			}
 		} else if field.Type == "string" {
 			fmt.Fprintf(b, "    char %s[MAX_STRING_LENGTH];\n", field.Name)
+		} else {
+			cType := mapTypeToCType(field.Type)
+			fmt.Fprintf(b, "    %s %s;\n", cType, field.Name)
+		}
+	}
+	fmt.Fprintf(b, "} %s;\n", structName)
+}
+
+func generateStructStructDefinition(b *strings.Builder, structInfo *StructInfo, structName string) {
+	fmt.Fprintf(b, "#define MAX_STRING_LENGTH 256\n")
+	fmt.Fprintf(b, "#define MAX_LSTRING_LENGTH 10000\n")
+	fmt.Fprintf(b, "typedef struct %s {\n", structName)
+
+	for _, field := range structInfo.Fields {
+		if field.Type == "string" {
+			fmt.Fprintf(b, "    char %s[MAX_STRING_LENGTH];\n", field.Name)
+		} else if field.Type == "lstring" {
+			fmt.Fprintf(b, "    char %s[MAX_LSTRING_LENGTH];\n", field.Name)
 		} else {
 			cType := mapTypeToCType(field.Type)
 			fmt.Fprintf(b, "    %s %s;\n", cType, field.Name)
@@ -1614,6 +1731,39 @@ func generateInstanceMapPutHelper(b *strings.Builder, className, fieldName, keyT
 
 	fmt.Fprintf(b, "        this->%s_size++;\n", fieldName)
 	fmt.Fprintf(b, "    }\n")
+	fmt.Fprintf(b, "}\n\n")
+}
+
+func generateStructImplementation(b *strings.Builder, structDecl *lexer.StructDeclStmt, program *lexer.Program) {
+	structName := structDecl.Name
+
+	fmt.Fprintf(b, "%s %s_new() {\n", structName, structName)
+	fmt.Fprintf(b, "    %s this;\n", structName)
+
+	for _, field := range structDecl.Fields {
+		switch field.Type {
+		case "string":
+			fmt.Fprintf(b, "    strcpy(this.%s, \"\");\n", field.Name)
+		case "lstring":
+			fmt.Fprintf(b, "    strcpy(this.%s, \"\");\n", field.Name)
+		case "int", "i16", "i32", "i64":
+			fmt.Fprintf(b, "    this.%s = 0;\n", field.Name)
+		case "float", "double", "f32", "f64":
+			fmt.Fprintf(b, "    this.%s = 0.0;\n", field.Name)
+		case "bool":
+			fmt.Fprintf(b, "    this.%s = false;\n", field.Name)
+		case "char":
+			fmt.Fprintf(b, "    this.%s = '\\0';\n", field.Name)
+		default:
+			if _, isStruct := globalStructs[field.Type]; isStruct {
+				fmt.Fprintf(b, "    this.%s = %s_new();\n", field.Name, field.Type)
+			} else {
+				fmt.Fprintf(b, "    this.%s = 0;\n", field.Name)
+			}
+		}
+	}
+
+	fmt.Fprintf(b, "    return this;\n")
 	fmt.Fprintf(b, "}\n\n")
 }
 
@@ -2692,7 +2842,33 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				if re.MatchString(varName) {
 				} else {
 					re := regexp.MustCompile(`([a-zA-Z_][a-zA-Z0-9_]*)\.([a-zA-Z_][a-zA-Z0-9_]*)`)
-					varName = re.ReplaceAllString(varName, "$1->$2")
+					matches := re.FindStringSubmatch(varName)
+					if len(matches) == 3 {
+						objName := matches[1]
+						fieldName := matches[2]
+						varType := ""
+						if localType, exists := localVars[objName]; exists {
+							varType = localType
+						} else if _, isStruct := globalStructs[objName]; isStruct {
+							varType = objName
+						}
+
+						if _, isStruct := globalStructs[varType]; isStruct {
+							if structInfo, ok := globalStructs[varType]; ok {
+								for _, f := range structInfo.Fields {
+									if f.Name == fieldName {
+										localVars[varName] = f.Type
+										logger.Debug("VarAssign - struct field '%s' of type '%s' recorded in localVars\n", varName, f.Type)
+										break
+									}
+								}
+							}
+							logger.Debug("VarAssign - detected struct field access, keeping dot notation for '%s'\n", varName)
+						} else {
+							varName = re.ReplaceAllString(varName, "$1->$2")
+							logger.Debug("VarAssign - converted '%s' to arrow notation\n", varName)
+						}
+					}
 				}
 			}
 
@@ -2809,7 +2985,7 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				} else if value == "[]" {
 					logger.Debug("Handling empty list assignment for %s\n", varName)
 					fmt.Fprintf(b, "%s%s_len = 0;\n", indent, varName)
-				} else if varType == "string" {
+				} else if varType == "string" || varType == "lstring" {
 					logger.Debug("Handling string field assignment for %s = %s\n", varName, value)
 					value = processCatExpression(value)
 
@@ -3155,6 +3331,9 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				if functionReturnsString(resolvedFuncName) {
 					varType = "string"
 					cType = "char"
+				} else if _, isStruct := globalStructs[resolvedFuncName]; isStruct {
+					varType = resolvedFuncName
+					cType = resolvedFuncName
 				}
 			}
 
@@ -3195,7 +3374,13 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				if isFunctionCall(value) {
 					value = resolveFunctionCall(value)
 				}
-				fmt.Fprintf(b, "%s%s %s = %s;\n", indent, cType, varName, value)
+				if _, isStruct := globalStructs[varType]; isStruct {
+					fmt.Fprintf(b, "%s%s %s = %s;\n", indent, cType, varName, value)
+					localVars[varName] = varType
+					logger.Debug("Added struct variable '%s' of type '%s' to localVars map\n", varName, varType)
+				} else {
+					fmt.Fprintf(b, "%s%s %s = %s;\n", indent, cType, varName, value)
+				}
 			}
 		case stmt.VarDeclRead != nil:
 			var (
@@ -3462,7 +3647,9 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			funcName = convertNewToConstructor(funcName)
 			args := make([]string, 0)
 
-			if functionReturnsString(funcName) {
+			if _, isStruct := globalStructs[funcName]; isStruct {
+				fmt.Fprintf(b, "%s%s_new();\n", indent, funcName)
+			} else if functionReturnsString(funcName) {
 				fmt.Fprintf(b, "%s{\n", indent)
 				fmt.Fprintf(b, "%s    char temp_buffer[256];\n", indent)
 				fmt.Fprintf(b, "%s    %s(temp_buffer", indent, funcName)
@@ -3944,8 +4131,7 @@ func convertThisReferencesGranular(expr string) string {
 	reThisMember := regexp.MustCompile(`(^|\s|\(|\[|,|\+|-|\*|/|%|&|\||\^|!|~|\?|:|=|\{|\}|;|,|\s)this\s*\.\s*([a-zA-Z_][a-zA-Z0-9]*)`)
 	expr = reThisMember.ReplaceAllString(expr, "${1}this->$2")
 
-	// Handle pointer member access for non-this objects
-	reObjMember := regexp.MustCompile(`\b([a-zA-Z_][a-zA-Z0-9]*)\s*\.\s*([a-zA-Z_][a-zA-Z0-9_]*)\b`)
+	reObjMember := regexp.MustCompile(`\b([a-zA-Z_][a-zA-Z0-9_]*)\s*\.\s*([a-zA-Z_][a-zA-Z0-9_]*)\b`)
 	expr = reObjMember.ReplaceAllStringFunc(expr, func(match string) string {
 		parts := strings.Split(match, ".")
 		if len(parts) == 2 {
@@ -3959,18 +4145,21 @@ func convertThisReferencesGranular(expr string) string {
 			}
 
 			if localType, exists := localVars[varName]; exists {
+				if _, isStruct := globalStructs[localType]; isStruct {
+					return fmt.Sprintf("%s.%s", varName, fieldName)
+				}
 				if _, isClass := globalClasses[localType]; isClass {
 					return fmt.Sprintf("%s->%s", varName, fieldName)
 				}
-				if strings.HasPrefix(localType, "ref ") {
-					innerType := strings.TrimPrefix(localType, "ref ")
+				if after, ok := strings.CutPrefix(localType, "ref "); ok {
+					innerType := after
 					if _, isClass := globalClasses[innerType]; isClass {
 						return fmt.Sprintf("%s->%s", varName, fieldName)
 					}
 				}
+				return fmt.Sprintf("%s.%s", varName, fieldName)
 			}
-
-			return fmt.Sprintf("%s->%s", varName, fieldName)
+			return fmt.Sprintf("%s.%s", varName, fieldName)
 		}
 		return match
 	})

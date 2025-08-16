@@ -1038,6 +1038,9 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 	case "class":
 		return parseClassStatement(lines, lineNum, currentIndent)
 
+	case "struct":
+		return parseStructStatement(lines, lineNum, currentIndent)
+
 	case "fn":
 		return parseTopLevelFunctionStatement(lines, lineNum, currentIndent)
 
