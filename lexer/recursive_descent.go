@@ -1970,6 +1970,47 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 			varType := parts[0]
 			varName := parts[1]
 			value := strings.Join(parts[3:], " ")
+			if strings.HasPrefix(value, "new ") {
+				newPart := strings.TrimSpace(value[4:]) // Remove "new "
+				parenStart := strings.Index(newPart, "(")
+				if parenStart == -1 {
+					return nil, lineNum + 1, fmt.Errorf("object declaration missing parentheses at line %d", lineNum+1)
+				}
+
+				className := strings.TrimSpace(newPart[:parenStart])
+
+				var constructorArgs []string
+				argsStart := strings.Index(value, "(")
+				argsEnd := strings.LastIndex(value, ")")
+				if argsStart != -1 && argsEnd != -1 && argsEnd > argsStart+1 {
+					constructorArgsStr := strings.TrimSpace(value[argsStart+1 : argsEnd])
+					if constructorArgsStr != "" {
+						constructorArgsList := strings.Split(constructorArgsStr, ",")
+						for _, arg := range constructorArgsList {
+							constructorArgs = append(constructorArgs, strings.TrimSpace(arg))
+						}
+					}
+				}
+
+				// Handle module-qualified types
+				typeName := className
+				var args []string
+				if strings.Contains(className, "::") {
+					parts := strings.Split(className, "::")
+					if len(parts) == 2 {
+						args = append(args, parts[0]) // module name
+						args = append(args, parts[1]) // class name
+						typeName = className          // Keep full qualified name as type
+					} else {
+						return nil, lineNum + 1, fmt.Errorf("invalid module-qualified class name at line %d", lineNum+1)
+					}
+				} else {
+					args = append(args, className)
+				}
+				args = append(args, constructorArgs...)
+
+				return &Statement{ObjectDecl: &ObjectDeclStmt{Type: typeName, Name: varName, Args: args}}, lineNum + 1, nil
+			}
 			if strings.Contains(value, ".") && strings.Contains(value, "(") && strings.Contains(value, ")") && !strings.HasPrefix(value, "new ") {
 				dotIndex := strings.Index(value, ".")
 				parenIndex := strings.Index(value, "(")

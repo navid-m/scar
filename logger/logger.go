@@ -11,7 +11,7 @@ import (
 	"os"
 )
 
-var Loud = false
+var Loud = true
 
 func Debug(msg string, args ...any) {
 	if Loud {

@@ -751,6 +751,29 @@ func isValidType(s string) bool {
 		mapTypeContent := strings.TrimPrefix(strings.TrimSuffix(s, "]"), "map[")
 		return isValidMapType(mapTypeContent)
 	}
+	if strings.Contains(s, "::") {
+		parts := strings.Split(s, "::")
+		if len(parts) == 2 {
+			namespace := parts[0]
+			typeName := parts[1]
+			if len(namespace) > 0 && len(typeName) > 0 {
+				for _, r := range namespace {
+					if !((r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '_') {
+						return false
+					}
+				}
+				if len(typeName) > 0 && typeName[0] >= 'A' && typeName[0] <= 'Z' {
+					for _, r := range typeName {
+						if !((r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '_') {
+							return false
+						}
+					}
+					return true
+				}
+			}
+		}
+		return false
+	}
 	if len(s) > 0 && s[0] >= 'A' && s[0] <= 'Z' {
 		for _, r := range s {
 			if !((r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '_') {

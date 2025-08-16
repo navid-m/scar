@@ -191,6 +191,28 @@ bool __check_key_exists(int* keys, int size, int key) {
 }
 
 `)
+	// Populate class information for all classes before generating struct definitions
+	for _, stmt := range program.Statements {
+		if stmt.ClassDecl != nil {
+			populateClassInfo(stmt.ClassDecl, stmt.ClassDecl.Name)
+		}
+		if stmt.PubClassDecl != nil {
+			classDecl := &lexer.ClassDeclStmt{
+				Name:        stmt.PubClassDecl.Name,
+				Constructor: stmt.PubClassDecl.Constructor,
+				Methods:     stmt.PubClassDecl.Methods,
+			}
+			populateClassInfo(classDecl, stmt.PubClassDecl.Name)
+		}
+	}
+
+	for _, module := range lexer.LoadedModules {
+		for _, classDecl := range module.PublicClasses {
+			moduleClassName := lexer.GenerateUniqueSymbol(classDecl.Name, module.Name)
+			populateClassInfo(classDecl, moduleClassName)
+		}
+	}
+
 	for className := range globalClasses {
 		fmt.Fprintf(&b, "struct %s;\n", className)
 	}
@@ -599,6 +621,9 @@ func populateClassInfo(classDecl *lexer.ClassDeclStmt, className string) {
 		logger.Debug("Processing %d constructor field statements\n", len(classDecl.Constructor.Fields))
 		for _, stmt := range classDecl.Constructor.Fields {
 			logger.Debug("Statement type: VarDecl=%v, VarAssign=%v, MapDecl=%v\n", stmt.VarDecl != nil, stmt.VarAssign != nil, stmt.MapDecl != nil)
+			if stmt.VarDecl != nil {
+				logger.Debug("VarDecl: Name=%s, Type=%s, Value=%s, IsRef=%v\n", stmt.VarDecl.Name, stmt.VarDecl.Type, stmt.VarDecl.Value, stmt.VarDecl.IsRef)
+			}
 			if stmt.VarDecl == nil && stmt.VarAssign == nil && stmt.MapDecl == nil {
 				logger.Debug("Unhandled statement type - checking other fields\n")
 				logger.Debug("  ListDecl=%v, Print=%v, If=%v, For=%v\n", stmt.ListDecl != nil, stmt.Print != nil, stmt.If != nil, stmt.For != nil)
@@ -657,6 +682,24 @@ func populateClassInfo(classDecl *lexer.ClassDeclStmt, className string) {
 						fieldType = strings.TrimPrefix(fieldType, "ref ")
 					}
 					logger.Debug("Field %s, Value %s, Inferred Type: %s, IsRef: %v\n", fieldName, stmt.VarAssign.Value, fieldType, isRef)
+					fieldInfo := FieldInfo{
+						Name:  fieldName,
+						Type:  fieldType,
+						IsRef: isRef,
+					}
+					classInfo.Fields = append(classInfo.Fields, fieldInfo)
+					fieldMap[fieldName] = true
+				}
+			}
+			if stmt.ObjectDecl != nil && strings.HasPrefix(stmt.ObjectDecl.Name, "this.") {
+				fieldName := strings.TrimPrefix(stmt.ObjectDecl.Name, "this.")
+				if _, exists := fieldMap[fieldName]; !exists {
+					fieldType := stmt.ObjectDecl.Type
+					isRef := strings.HasPrefix(fieldType, "ref ")
+					if isRef {
+						fieldType = strings.TrimPrefix(fieldType, "ref ")
+					}
+					logger.Debug("ObjectDecl field: %s, Type: %s, IsRef: %v\n", fieldName, fieldType, isRef)
 					fieldInfo := FieldInfo{
 						Name:  fieldName,
 						Type:  fieldType,
@@ -1107,7 +1150,7 @@ func generateStructDefinition(b *strings.Builder, classInfo *ClassInfo, structNa
 			case "string":
 				fmt.Fprintf(b, "    char* %s;\n", field.Name)
 			default:
-				fmt.Fprintf(b, "    %s* %s;\n", field.Type, field.Name)
+				fmt.Fprintf(b, "    %s* %s;\n", mapTypeToCType(field.Type), field.Name)
 			}
 		} else if field.Type == "string" {
 			fmt.Fprintf(b, "    char %s[MAX_STRING_LENGTH];\n", field.Name)
@@ -1248,68 +1291,67 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 				varName := stmt.VarDecl.Name
 				value := stmt.VarDecl.Value
 
+				logger.Debug("VarDecl in constructor: varName=%s, value=%s, IsRef=%v, Type=%s\n", varName, value, stmt.VarDecl.IsRef, stmt.VarDecl.Type)
+
 				if varName == "this" {
 					continue
 				}
 
 				if strings.HasPrefix(varName, "this.") {
 					fieldName := varName[5:]
-					if stmt.VarDecl.IsRef {
-						isListField := false
-						if classInfo, exists := globalClasses[className]; exists {
-							for _, field := range classInfo.Fields {
-								if field.Name == fieldName {
-									fieldType := field.Type
-									fieldType = strings.TrimPrefix(fieldType, "ref ")
-									if strings.HasPrefix(fieldType, "list[") && strings.HasSuffix(fieldType, "]") {
-										isListField = true
-									}
-									break
-								}
-							}
-						}
+					logger.Debug("Processing field assignment: fieldName=%s, type=%s, value=%s\n", fieldName, stmt.VarDecl.Type, value)
 
-						if isListField && value == "[]" {
-							fmt.Fprintf(b, "    this->%s_len = 0;\n", fieldName)
-						} else if value == "0" || value == "NULL" {
-							fmt.Fprintf(b, "    this->%s = NULL;\n", fieldName)
-						} else {
-							if !isListField || value != "[]" {
-								fmt.Fprintf(b, "    this->%s = %s;\n", fieldName, value)
-							}
-						}
-					} else {
-						isListField := strings.HasPrefix(stmt.VarDecl.Type, "list[") && strings.HasSuffix(stmt.VarDecl.Type, "]")
-						if isListField && value == "[]" {
-							fmt.Fprintf(b, "    this->%s_len = 0;\n", fieldName)
-						} else if stmt.VarDecl.Type == "string" {
-							isConstructorParam := false
-							if classDecl.Constructor != nil {
-								for _, param := range classDecl.Constructor.Parameters {
-									if param.Name == value {
-										isConstructorParam = true
-										break
-									}
-								}
-							}
-							if !strings.HasPrefix(value, "\"") && !strings.HasSuffix(value, "\"") && isValidIdentifier(value) && !isConstructorParam {
-								value = fmt.Sprintf("\"%s\"", value)
-							}
-							fmt.Fprintf(b, "    strcpy(this->%s, %s);\n", fieldName, value)
-						} else {
-							value = strings.ReplaceAll(value, "this.", "this->")
-							if !isListField || value != "[]" {
-								fmt.Fprintf(b, "    this->%s = %s;\n", fieldName, value)
-							}
-						}
-					}
+					// This is a field assignment, not a variable declaration
+					// Convert new expressions to constructor calls
+					convertedValue := convertNewToConstructor(value)
+					// Convert this.field to this->field for C syntax
+					convertedValue = strings.ReplaceAll(convertedValue, "this.", "this->")
+					logger.Debug("Generated field assignment: this->%s = %s\n", fieldName, convertedValue)
+					fmt.Fprintf(b, "    this->%s = %s;\n", fieldName, convertedValue)
 				} else {
+					logger.Debug("Falling back to renderStatements for varName=%s, varName=%s\n", varName, varName)
 					renderStatements(b, []*lexer.Statement{stmt}, "    ", className, program, "")
 				}
 
 			case stmt.ListDecl != nil && strings.HasPrefix(stmt.ListDecl.Name, "this."):
 				fieldName := strings.TrimPrefix(stmt.ListDecl.Name, "this.")
 				fmt.Fprintf(b, "    this->%s_len = 0;\n", fieldName)
+
+			case stmt.ObjectDecl != nil && strings.HasPrefix(stmt.ObjectDecl.Name, "this."):
+				fieldName := strings.TrimPrefix(stmt.ObjectDecl.Name, "this.")
+				typeName := stmt.ObjectDecl.Type
+				args := stmt.ObjectDecl.Args
+				resolvedType := typeName
+
+				// Handle namespace-qualified types
+				if strings.Contains(typeName, "::") {
+					parts := strings.Split(typeName, "::")
+					if len(parts) == 2 {
+						resolvedType = lexer.GenerateUniqueSymbol(parts[1], parts[0])
+					}
+				}
+
+				// Build constructor arguments
+				constructorArgs := make([]string, 0)
+				for _, arg := range args {
+					if strings.Contains(typeName, "::") {
+						parts := strings.Split(typeName, "::")
+						if arg == parts[0] || arg == parts[1] {
+							continue
+						}
+					}
+					if arg != typeName && arg != resolvedType {
+						if strings.HasPrefix(arg, "\"") && strings.HasSuffix(arg, "\"") {
+							constructorArgs = append(constructorArgs, arg)
+						} else {
+							constructorArgs = append(constructorArgs, lexer.ResolveSymbol(arg, currentModule))
+						}
+					}
+				}
+
+				argsStr := strings.Join(constructorArgs, ", ")
+				logger.Debug("ObjectDecl in constructor: fieldName=%s, type=%s, args=%s\n", fieldName, resolvedType, argsStr)
+				fmt.Fprintf(b, "    this->%s = %s_new(%s);\n", fieldName, resolvedType, argsStr)
 
 			case stmt.VarAssign != nil:
 				fieldName := stmt.VarAssign.Name
@@ -1367,10 +1409,12 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 					}
 					fmt.Fprintf(b, "    strcpy(this->%s, %s);\n", fieldName, value)
 				} else {
-					value = strings.ReplaceAll(value, "this.", "this->")
+					// Convert new expressions to constructor calls
+					convertedValue := convertNewToConstructor(value)
+					convertedValue = strings.ReplaceAll(convertedValue, "this.", "this->")
 					if !isListField || value != "[]" {
-						logger.Debug("Generating assignment for field %s: this->%s = %s (isListField: %v)\n", fieldName, fieldName, value, isListField)
-						fmt.Fprintf(b, "    this->%s = %s;\n", fieldName, value)
+						logger.Debug("Generating assignment for field %s: this->%s = %s (isListField: %v)\n", fieldName, fieldName, convertedValue, isListField)
+						fmt.Fprintf(b, "    this->%s = %s;\n", fieldName, convertedValue)
 					} else {
 						logger.Debug("Skipping invalid list assignment for field %s\n", fieldName)
 					}
@@ -2337,6 +2381,7 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			logger.Debug("VarDecl: varType=%s, varName=%s, value=%s\n", varType, varName, value)
 
 			localVars[varName] = varType
+			logger.Debug("Added local variable '%s' of type '%s' to localVars map\n", varName, varType)
 
 			var classNames []string
 			for className := range globalClasses {
@@ -2942,23 +2987,62 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				resolvedClassName string
 			)
 
-			if stmt.VarDeclMethodCall.Object == "this" {
-				if className == "" {
-					fmt.Println("\033[91mError: 'this' used outside of class context\033[0m")
-					os.Exit(1)
-				}
-				resolvedClassName = className
-			} else {
-				for _, obj := range globalObjects {
-					if obj.Name == stmt.VarDeclMethodCall.Object {
-						resolvedClassName = obj.Type
-						if strings.Contains(resolvedClassName, ".") {
-							parts := strings.Split(resolvedClassName, ".")
-							resolvedClassName = lexer.GenerateUniqueSymbol(parts[1], parts[0])
-						} else if moduleName, exists := isImportedType(resolvedClassName, program.Imports); exists {
-							resolvedClassName = lexer.GenerateUniqueSymbol(resolvedClassName, moduleName)
+			// Check if method name contains field access (e.g., "imports.get_element")
+			if strings.Contains(methodName, ".") {
+				// Split method name to get field and actual method
+				methodParts := strings.Split(methodName, ".")
+				if len(methodParts) == 2 {
+					fieldName := methodParts[0]
+					actualMethod := methodParts[1]
+
+					// Update object name to include field access
+					objectName = fmt.Sprintf("%s->%s", objectName, fieldName)
+
+					// Try to resolve the class name from the field type
+					if classInfo, exists := globalClasses[className]; exists {
+						for _, field := range classInfo.Fields {
+							if field.Name == fieldName {
+								fieldType := field.Type
+								if strings.HasPrefix(fieldType, "ref ") {
+									fieldType = strings.TrimPrefix(fieldType, "ref ")
+								}
+								if strings.Contains(fieldType, "::") {
+									parts := strings.Split(fieldType, "::")
+									if len(parts) == 2 {
+										resolvedClassName = lexer.GenerateUniqueSymbol(parts[1], parts[0])
+									}
+								} else {
+									resolvedClassName = fieldType
+								}
+								break
+							}
 						}
-						break
+					}
+
+					// Update method name to use the actual method
+					methodName = actualMethod
+				}
+			}
+
+			if resolvedClassName == "" {
+				if stmt.VarDeclMethodCall.Object == "this" {
+					if className == "" {
+						fmt.Println("\033[91mError: 'this' used outside of class context\033[0m")
+						os.Exit(1)
+					}
+					resolvedClassName = className
+				} else {
+					for _, obj := range globalObjects {
+						if obj.Name == stmt.VarDeclMethodCall.Object {
+							resolvedClassName = obj.Type
+							if strings.Contains(resolvedClassName, ".") {
+								parts := strings.Split(resolvedClassName, ".")
+								resolvedClassName = lexer.GenerateUniqueSymbol(parts[1], parts[0])
+							} else if moduleName, exists := isImportedType(resolvedClassName, program.Imports); exists {
+								resolvedClassName = lexer.GenerateUniqueSymbol(resolvedClassName, moduleName)
+							}
+							break
+						}
 					}
 				}
 			}
@@ -3726,6 +3810,8 @@ func convertNewToConstructor(expr string) string {
 	}
 
 	className := strings.TrimSpace(src[:parenPos])
+	// Handle namespace-qualified class names (e.g., collections::StringArrayList -> collections_StringArrayList)
+	className = strings.ReplaceAll(className, "::", "_")
 	closeParen := findMatchingParen(src, parenPos)
 	if closeParen == -1 {
 		return expr
@@ -4583,7 +4669,9 @@ func convertSingleMethodCall(expr string) string {
 
 				if currentClassName != "" {
 					if classInfo, exists := globalClasses[currentClassName]; exists {
+						logger.Debug("Looking for field '%s' in class '%s' with %d fields\n", fieldName, currentClassName, len(classInfo.Fields))
 						for _, field := range classInfo.Fields {
+							logger.Debug("  Checking field: %s, Type: %s, IsRef: %v\n", field.Name, field.Type, field.IsRef)
 							if field.Name == fieldName {
 								fieldType := field.Type
 								if after, ok := strings.CutPrefix(fieldType, "ref "); ok {
@@ -4779,16 +4867,38 @@ func convertSingleMethodCall(expr string) string {
 			}
 		}
 		if resolvedClassName == "" && currentFunction != nil {
+			logger.Debug("Checking parameters for function '%s' with %d parameters\n", currentFunction.Name, len(currentFunction.Parameters))
 			for _, param := range currentFunction.Parameters {
+				logger.Debug("Parameter: '%s' of type '%s' (IsRef=%v)\n", param.Name, param.Type, param.IsRef)
 				if param.Name == objectName {
 					paramType := param.Type
 					if param.IsRef && strings.HasPrefix(paramType, "ref ") {
 						paramType = strings.TrimPrefix(paramType, "ref ")
 					}
 					resolvedClassName = paramType
+					logger.Debug("Found parameter '%s' of type '%s'\n", objectName, paramType)
 					break
 				}
 			}
+		} else if currentFunction == nil {
+			logger.Debug("currentFunction is nil\n")
+		}
+
+		// Check if it's a local variable
+		if resolvedClassName == "" {
+			if varType, exists := localVars[objectName]; exists {
+				resolvedClassName = varType
+				logger.Debug("Found local variable '%s' of type '%s'\n", objectName, varType)
+			}
+		}
+
+		// Debug: print all local variables
+		if resolvedClassName == "" {
+			logger.Debug("Local variables in scope: ")
+			for k, v := range localVars {
+				logger.Debug("'%s': '%s' ", k, v)
+			}
+			logger.Debug("\n")
 		}
 
 		if resolvedClassName == "" {
@@ -4809,6 +4919,11 @@ func convertSingleMethodCall(expr string) string {
 func generateTopLevelFunctionImplementation(b *strings.Builder, funcDecl *lexer.TopLevelFuncDeclStmt, program *lexer.Program) {
 	currentFunction = funcDecl
 	defer func() { currentFunction = nil }()
+
+	// Clear local variables map for this function
+	for k := range localVars {
+		delete(localVars, k)
+	}
 
 	// This means return array length.
 	returnType := "int"
@@ -5316,6 +5431,18 @@ func mapTypeToCType(mapType string) string {
 		result := cType + "*"
 		logger.Debug("ref type '%s' -> '%s'\n", mapType, result)
 		return result
+	}
+
+	// Handle module-qualified types (e.g., collections::StringArrayList)
+	if strings.Contains(mapType, "::") {
+		parts := strings.Split(mapType, "::")
+		if len(parts) == 2 {
+			moduleName := parts[0]
+			typeName := parts[1]
+			result := lexer.GenerateUniqueSymbol(typeName, moduleName)
+			logger.Debug("module-qualified type '%s' -> '%s'\n", mapType, result)
+			return result
+		}
 	}
 
 	if isEnumType(mapType) {
