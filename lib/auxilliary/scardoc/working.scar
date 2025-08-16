@@ -29,7 +29,7 @@ class ModuleDoc:
         string this.comments = ""
 
 fn parse_doc_comment(string line) -> string:
-    string trimmed = strings::trim(line)
+    string trimmed = strings::trim_space(line)
     if strings::starts_with(trimmed, "#"):
         return strings::substring(trimmed, 1, strings::length(trimmed))
     return ""
@@ -71,7 +71,7 @@ fn extract_return_type(string line) -> string:
         end = end + 1
     
     if end > start:
-        return strings::trim(strings::substring(line, start, end))
+        return strings::trim_space(strings::substring(line, start, end))
     return "void"
 
 # Extract parameters from function signature
@@ -82,7 +82,7 @@ fn extract_parameters(string line) -> string:
     if paren_start == -1 || paren_end == -1 || paren_end <= paren_start:
         return ""
     
-    return strings::trim(strings::substring(line, paren_start + 1, paren_end))
+    return strings::trim_space(strings::substring(line, paren_start + 1, paren_end))
 
 # Extract class name from class definition
 fn extract_class_name(string line) -> string:
@@ -106,7 +106,7 @@ fn extract_class_name(string line) -> string:
 
 # Extract import path from import statement
 fn extract_import(string line) -> string:
-    string trimmed = strings::trim(line)
+    string trimmed = strings::trim_space(line)
     if not strings::starts_with(trimmed, "import"):
         return ""
     
@@ -141,7 +141,7 @@ fn parse_file(string filepath) -> ref ModuleDoc:
     
     for int i = 0; i < len(lines); i++:
         string line = lines[i]
-        string trimmed = strings::trim(line)
+        string trimmed = strings::trim_space(line)
         
         if strings::length(trimmed) == 0:
             continue
@@ -348,9 +348,8 @@ fn generate_markdown(ref ModuleDoc doc) -> string:
     
     return markdown
 
-# Write documentation to file
-fn write_documentation(string content, string output_path) -> bool:
-    return io::write_file(output_path, content)
+fn write_documentation(string content, string output_path) -> void:
+    io::write_file(output_path, content)
 
 # Main documentation generation function
 fn generate_documentation(string source_file, string output_file):

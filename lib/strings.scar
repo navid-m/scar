@@ -114,6 +114,42 @@ pub fn contains(string str, string substring) -> bool:
         return strstr(str, substring) != NULL;
     )
 
+pub fn index_of(lstring str, lstring substring) -> int:
+    $raw (
+        if (str == NULL || substring == NULL) {
+            return -1;
+        }
+        char *found = strstr(str, substring);
+        if (found == NULL) {
+            return -1;
+        }
+        return (int)(found - str);
+    )
+
+pub fn last_index_of(lstring str, lstring substring) -> int:
+    $raw (
+        if (str == NULL || substring == NULL) {
+            return -1;
+        }
+        char *last_found = NULL;
+        char *current = str;
+        size_t substring_len = strlen(substring);
+        
+        if (substring_len == 0) {
+            return strlen(str);
+        }
+        
+        while ((current = strstr(current, substring)) != NULL) {
+            last_found = current;
+            current += 1;
+        }
+        
+        if (last_found == NULL) {
+            return -1;
+        }
+        return (int)(last_found - str);
+    )
+
 pub fn starts_with(string str, string prefix) -> bool:
     $raw (
         if (str == NULL || prefix == NULL) {

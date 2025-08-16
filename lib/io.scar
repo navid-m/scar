@@ -39,3 +39,86 @@ pub fn read_char() -> char:
 
 pub fn read_split(char* delimiter) -> collections::StringArrayList:
     return strings::split(io::readln(), delimiter)
+
+pub fn write_file(string filepath, string content) -> bool:
+    $raw (
+        if (filepath == NULL || content == NULL) {
+            return false;
+        }
+        
+        FILE* file = fopen(filepath, "w");
+        if (file == NULL) {
+            return false;
+        }
+        
+        size_t content_len = strlen(content);
+        size_t written = fwrite(content, 1, content_len, file);
+        fclose(file);
+        
+        return written == content_len;
+    )
+
+pub fn append_file(string filepath, string content) -> bool:
+    $raw (
+        if (filepath == NULL || content == NULL) {
+            return false;
+        }
+        
+        FILE* file = fopen(filepath, "a");
+        if (file == NULL) {
+            return false;
+        }
+        
+        size_t content_len = strlen(content);
+        size_t written = fwrite(content, 1, content_len, file);
+        fclose(file);
+        
+        return written == content_len;
+    )
+
+pub fn read_file(string filepath) -> lstring:
+    $raw (
+        if (filepath == NULL) {
+            return "";
+        }
+        
+        FILE* file = fopen(filepath, "r");
+        if (file == NULL) {
+            return "";
+        }
+        
+        fseek(file, 0, SEEK_END);
+        long file_size = ftell(file);
+        fseek(file, 0, SEEK_SET);
+        
+        if (file_size <= 0) {
+            fclose(file);
+            return "";
+        }
+        
+        char* buffer = (char*)malloc(file_size + 1);
+        if (buffer == NULL) {
+            fclose(file);
+            return "";
+        }
+        
+        size_t bytes_read = fread(buffer, 1, file_size, file);
+        fclose(file);
+        
+        buffer[bytes_read] = '\0';
+        return buffer;
+    )
+
+pub fn exists(string filepath) -> bool:
+    $raw (
+        if (filepath == NULL) {
+            return false;
+        }
+        
+        FILE* file = fopen(filepath, "r");
+        if (file == NULL) {
+            return false;
+        }
+        fclose(file);
+        return true;
+    )
