@@ -330,7 +330,7 @@ pub fn trim(string str) -> string:
         _output_buffer[len] = '\0';
     )
 
-pub fn get_char_at(string str, int index) -> string:
+pub fn get_char_at(string str, int index) -> lstring:
     $raw (
         if (str == NULL || index < 0 || index >= strlen(str)) {
             return "";

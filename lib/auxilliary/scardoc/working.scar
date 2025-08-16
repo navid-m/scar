@@ -42,12 +42,12 @@ fn extract_function_name(string line) -> string:
     
     int start = fn_pos + 3
     # Skip whitespace
-    while start < strings::length(line) && (strings::char_at(line, start) == ' ' || strings::char_at(line, start) == '\t'):
+    while start < strings::length(line) && (strings::get_char_at(line, start) == ' ' || strings::get_char_at(line, start) == '\t'):
         start = start + 1
     
     int end = start
     # Find end of function name (until '(' or whitespace)
-    while end < strings::length(line) && strings::char_at(line, end) != '(' && strings::char_at(line, end) != ' ' && strings::char_at(line, end) != '\t':
+    while end < strings::length(line) && strings::get_char_at(line, end) != '(' && strings::get_char_at(line, end) != ' ' && strings::get_char_at(line, end) != '\t':
         end = end + 1
     
     if end > start:
@@ -62,12 +62,12 @@ fn extract_return_type(string line) -> string:
     
     int start = arrow_pos + 2
     # Skip whitespace
-    while start < strings::length(line) && (strings::char_at(line, start) == ' ' || strings::char_at(line, start) == '\t'):
+    while start < strings::length(line) && (strings::get_char_at(line, start) == ' ' || strings::get_char_at(line, start) == '\t'):
         start = start + 1
     
     int end = start
     # Find end of return type (until ':' or end of line)
-    while end < strings::length(line) && strings::char_at(line, end) != ':' && strings::char_at(line, end) != '\n':
+    while end < strings::length(line) && strings::get_char_at(line, end) != ':' && strings::get_char_at(line, end) != '\n':
         end = end + 1
     
     if end > start:
@@ -92,12 +92,12 @@ fn extract_class_name(string line) -> string:
     
     int start = class_pos + 6
     # Skip whitespace
-    while start < strings::length(line) && (strings::char_at(line, start) == ' ' || strings::char_at(line, start) == '\t'):
+    while start < strings::length(line) && (strings::get_char_at(line, start) == ' ' || strings::get_char_at(line, start) == '\t'):
         start = start + 1
     
     int end = start
     # Find end of class name (until ':' or whitespace)
-    while end < strings::length(line) && strings::char_at(line, end) != ':' && strings::char_at(line, end) != ' ' && strings::char_at(line, end) != '\t':
+    while end < strings::length(line) && strings::get_char_at(line, end) != ':' && strings::get_char_at(line, end) != ' ' && strings::get_char_at(line, end) != '\t':
         end = end + 1
     
     if end > start:
@@ -363,7 +363,7 @@ fn generate_documentation(string source_file, string output_file):
     string markdown_content = generate_markdown(doc)
     
     write_documentation(markdown_content, output_file)
-    
+
     print "Documentation generated successfully: %s " | output_file
     print "Module: %s" | doc.module_name
 
