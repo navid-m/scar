@@ -3015,8 +3015,8 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 						for _, field := range classInfo.Fields {
 							if field.Name == fieldName {
 								fieldType := field.Type
-								if strings.HasPrefix(fieldType, "ref ") {
-									fieldType = strings.TrimPrefix(fieldType, "ref ")
+								if after, ok := strings.CutPrefix(fieldType, "ref "); ok {
+									fieldType = after
 								}
 								if strings.Contains(fieldType, "::") {
 									parts := strings.Split(fieldType, "::")
