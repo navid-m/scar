@@ -1147,7 +1147,6 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 					mapSize   = len(stmt.MapDecl.Pairs)
 				)
 
-				// Set initial capacity - use a reasonable default for empty maps
 				initialCapacity := 10
 				if mapSize > 0 {
 					initialCapacity = mapSize * 2 // Allow for growth

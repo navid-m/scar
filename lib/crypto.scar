@@ -30,27 +30,6 @@ pub fn xor_cipher_hex(string text, string key) -> lstring:
         out = cat!(out, fmt!("%02X", xv))
     return out
 
-pub fn caesar_encrypt(string text, i32 shift) -> string:
-    $raw (
-        if (!text) { strcpy(_output_buffer, ""); return; }
-        int s = shift % 26; if (s < 0) s += 26;
-        size_t n = strlen(text);
-        char *out = (char*)malloc(n + 1); if (!out) { strcpy(_output_buffer, ""); return; }
-        for (size_t i = 0; i < n; i++) {
-            char c = text[i];
-            if (c >= 'a' && c <= 'z') out[i] = (char)('a' + ((c - 'a' + s) % 26));
-            else if (c >= 'A' && c <= 'Z') out[i] = (char)('A' + ((c - 'A' + s) % 26));
-            else out[i] = c;
-        }
-        out[n] = '\0';
-        strncpy(_output_buffer, out, 25402 - 1);
-        _output_buffer[25402 - 1] = '\0';
-        free(out);
-    )
-
-pub fn caesar_decrypt(string text, i32 shift) -> string:
-    return crypto::caesar_encrypt(text, -shift)
-
 pub fn vigenere_encrypt(string text, string key) -> string:
     $raw (
         if (!text || !key || key[0] == '\0') { strcpy(_output_buffer, ""); return; }
