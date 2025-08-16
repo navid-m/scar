@@ -94,6 +94,8 @@ type Statement struct {
 	Pass                 *PassStmt
 	NewExpr              *NewExprStmt
 	Platform             *PlatformStmt
+	MacroDecl            *MacroDeclStmt
+	MacroCall            *MacroCallStmt
 }
 
 type ListOfDeclStmt struct {
@@ -126,6 +128,17 @@ type NewExprStmt struct {
 type PlatformStmt struct {
 	Platform string
 	Body     []*Statement
+}
+
+type MacroDeclStmt struct {
+	Name       string
+	Parameters []string
+	Body       []string
+}
+
+type MacroCallStmt struct {
+	Name string
+	Args []string
 }
 
 type CatListStmt struct {

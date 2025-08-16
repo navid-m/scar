@@ -18,6 +18,7 @@ import (
 
 func ProcessSourceLevelMacros(source string) string {
 	source = lexer.RemoveComments(source)
+	source = ProcessMacros(source)
 	source = ProcessAppendExpressions(source)
 	source = ProcessDeleteExpressions(source)
 	source = lexer.ReplaceDoubleColonsOutsideStrings(source)
@@ -86,6 +87,309 @@ func ProcessAppendExpressions(source string) string {
 	}
 
 	return result.String()
+}
+
+type Macro struct {
+	Name       string
+	Parameters []string
+	Body       []string
+}
+
+func ProcessMacros(source string) string {
+	macros := collectMacroDefinitions(source)
+	return expandMacros(source, macros)
+}
+
+func collectMacroDefinitions(source string) map[string]*Macro {
+	macros := make(map[string]*Macro)
+	lines := strings.Split(source, "\n")
+
+	for i := 0; i < len(lines); i++ {
+		line := strings.TrimSpace(lines[i])
+
+		if strings.HasPrefix(line, "macro ") && strings.HasSuffix(line, ":") {
+			macro, endLine := parseMacroDefinition(lines, i)
+			if macro != nil {
+				macros[macro.Name] = macro
+				i = endLine - 1
+			}
+		}
+	}
+
+	return macros
+}
+
+func parseMacroDefinition(lines []string, startLine int) (*Macro, int) {
+	line := strings.TrimSpace(lines[startLine])
+	signature := strings.TrimSpace(line[:len(line)-1])
+	parenStart := strings.Index(signature, "(")
+	parenEnd := strings.LastIndex(signature, ")")
+
+	if parenStart == -1 || parenEnd == -1 {
+		return nil, startLine + 1
+	}
+
+	macroName := strings.TrimSpace(signature[6:parenStart])
+	paramsStr := strings.TrimSpace(signature[parenStart+1 : parenEnd])
+
+	var parameters []string
+	if paramsStr != "" {
+		paramList := strings.Split(paramsStr, ",")
+		for _, param := range paramList {
+			param = strings.TrimSpace(param)
+			if param != "" {
+				parameters = append(parameters, param)
+			}
+		}
+	}
+
+	var body []string
+	currentLine := startLine + 1
+	macroIndent := -1
+
+	for currentLine < len(lines) {
+		bodyLine := lines[currentLine]
+		trimmed := strings.TrimSpace(bodyLine)
+
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			currentLine++
+			continue
+		}
+
+		indent := getIndentation(bodyLine)
+
+		if macroIndent == -1 {
+			macroIndent = indent
+		}
+
+		if indent < macroIndent {
+			break
+		}
+
+		body = append(body, trimmed)
+		currentLine++
+	}
+
+	return &Macro{
+		Name:       macroName,
+		Parameters: parameters,
+		Body:       body,
+	}, currentLine
+}
+
+func expandMacros(source string, macros map[string]*Macro) string {
+	lines := strings.Split(source, "\n")
+	var result []string
+
+	for i := 0; i < len(lines); i++ {
+		line := lines[i]
+		trimmed := strings.TrimSpace(line)
+
+		if strings.HasPrefix(trimmed, "macro ") && strings.HasSuffix(trimmed, ":") {
+			currentLine := i + 1
+			macroIndent := -1
+
+			for currentLine < len(lines) {
+				bodyLine := lines[currentLine]
+				bodyTrimmed := strings.TrimSpace(bodyLine)
+
+				if bodyTrimmed == "" || strings.HasPrefix(bodyTrimmed, "#") {
+					currentLine++
+					continue
+				}
+
+				indent := getIndentation(bodyLine)
+				if macroIndent == -1 {
+					macroIndent = indent
+				}
+
+				if indent < macroIndent {
+					break
+				}
+
+				currentLine++
+			}
+
+			i = currentLine - 1
+			continue
+		}
+
+		expandedLine := expandMacroCallsInLine(line, macros)
+		if expandedLine != line {
+			expandedLines := strings.Split(expandedLine, "\n")
+			for _, expLine := range expandedLines {
+				if strings.TrimSpace(expLine) != "" {
+					result = append(result, expLine)
+				}
+			}
+		} else {
+			result = append(result, line)
+		}
+	}
+
+	return strings.Join(result, "\n")
+}
+
+func expandMacroCallsInLine(line string, macros map[string]*Macro) string {
+	result := line
+
+	for macroName, macro := range macros {
+		pattern := macroName + "("
+
+		for strings.Contains(result, pattern) {
+			start := strings.Index(result, pattern)
+			if start == -1 {
+				break
+			}
+			parenCount := 0
+			end := start + len(pattern) - 1
+
+			for end < len(result) {
+				if result[end] == '(' {
+					parenCount++
+				} else if result[end] == ')' {
+					parenCount--
+					if parenCount == 0 {
+						break
+					}
+				}
+				end++
+			}
+
+			if parenCount != 0 {
+				break
+			}
+
+			argsStr := result[start+len(pattern) : end]
+			args := parseArguments(argsStr)
+
+			expanded := expandMacro(macro, args)
+
+			before := result[:start]
+			after := result[end+1:]
+
+			indent := getLineIndentation(result[:start])
+			indentedExpanded := addIndentationToExpansion(expanded, indent)
+
+			result = before + indentedExpanded + after
+		}
+	}
+
+	return result
+}
+
+func parseArguments(argsStr string) []string {
+	if strings.TrimSpace(argsStr) == "" {
+		return []string{}
+	}
+
+	var args []string
+	var current strings.Builder
+	parenCount := 0
+	inString := false
+
+	for i, char := range argsStr {
+		switch char {
+		case '"':
+			if i == 0 || argsStr[i-1] != '\\' {
+				inString = !inString
+			}
+			current.WriteRune(char)
+		case '(':
+			if !inString {
+				parenCount++
+			}
+			current.WriteRune(char)
+		case ')':
+			if !inString {
+				parenCount--
+			}
+			current.WriteRune(char)
+		case ',':
+			if !inString && parenCount == 0 {
+				args = append(args, strings.TrimSpace(current.String()))
+				current.Reset()
+			} else {
+				current.WriteRune(char)
+			}
+		default:
+			current.WriteRune(char)
+		}
+	}
+
+	if current.Len() > 0 {
+		args = append(args, strings.TrimSpace(current.String()))
+	}
+
+	return args
+}
+
+func expandMacro(macro *Macro, args []string) string {
+	if len(args) != len(macro.Parameters) {
+		return ""
+	}
+
+	var expandedLines []string
+
+	for _, bodyLine := range macro.Body {
+		expanded := bodyLine
+
+		for i, param := range macro.Parameters {
+			arg := args[i]
+			expanded = replaceParameter(expanded, param, arg)
+		}
+
+		expandedLines = append(expandedLines, expanded)
+	}
+
+	return strings.Join(expandedLines, "\n")
+}
+
+func replaceParameter(text, param, arg string) string {
+	pattern := `\b` + regexp.QuoteMeta(param) + `\b`
+	re := regexp.MustCompile(pattern)
+	return re.ReplaceAllString(text, arg)
+}
+
+func getIndentation(line string) int {
+	indent := 0
+	for _, char := range line {
+		if char == ' ' {
+			indent++
+		} else if char == '\t' {
+			indent += 4
+		} else {
+			break
+		}
+	}
+	return indent
+}
+
+func getLineIndentation(text string) string {
+	var indent strings.Builder
+	for _, char := range text {
+		if char == ' ' || char == '\t' {
+			indent.WriteRune(char)
+		} else {
+			break
+		}
+	}
+	return indent.String()
+}
+
+func addIndentationToExpansion(expanded, indent string) string {
+	lines := strings.Split(expanded, "\n")
+	var result []string
+
+	for i, line := range lines {
+		if i == 0 {
+			result = append(result, line)
+		} else {
+			result = append(result, indent+line)
+		}
+	}
+
+	return strings.Join(result, "\n")
 }
 
 // Replaces delete!(mapName, key) with mapName after removing the key

@@ -86,6 +86,96 @@ func splitRespectingQuotes(input string) []string {
 	return result
 }
 
+func parseMacroDeclaration(lines []string, lineNum, currentIndent int) (*Statement, int, error) {
+	line := strings.TrimSpace(lines[lineNum])
+
+	if !strings.HasSuffix(line, ":") {
+		return nil, lineNum + 1, fmt.Errorf("macro declaration must end with ':' at line %d", lineNum+1)
+	}
+
+	signature := strings.TrimSpace(line[:len(line)-1])
+
+	parenStart := strings.Index(signature, "(")
+	if parenStart == -1 {
+		return nil, lineNum + 1, fmt.Errorf("macro declaration missing parameters at line %d", lineNum+1)
+	}
+
+	macroName := strings.TrimSpace(signature[6:parenStart])
+	if macroName == "" {
+		return nil, lineNum + 1, fmt.Errorf("macro declaration missing name at line %d", lineNum+1)
+	}
+
+	parenEnd := strings.LastIndex(signature, ")")
+	if parenEnd == -1 || parenEnd <= parenStart {
+		return nil, lineNum + 1, fmt.Errorf("macro declaration missing closing parenthesis at line %d", lineNum+1)
+	}
+
+	paramsStr := strings.TrimSpace(signature[parenStart+1 : parenEnd])
+	var parameters []string
+	if paramsStr != "" {
+		paramList := splitRespectingQuotes(paramsStr)
+		for _, param := range paramList {
+			param = strings.TrimSpace(param)
+			if param != "" {
+				parameters = append(parameters, param)
+			}
+		}
+	}
+
+	expectedBodyIndent := currentIndent + 4
+	if currentIndent == 0 {
+		bodyStartLine := lineNum + 1
+		for bodyStartLine < len(lines) {
+			bodyLine := lines[bodyStartLine]
+			if strings.TrimSpace(bodyLine) != "" && !strings.HasPrefix(strings.TrimSpace(bodyLine), "#") {
+				expectedBodyIndent = getIndentation(bodyLine)
+				break
+			}
+			bodyStartLine++
+		}
+		if expectedBodyIndent <= currentIndent {
+			expectedBodyIndent = currentIndent + 4
+		}
+	}
+
+	var body []string
+	nextLine := lineNum + 1
+
+	for nextLine < len(lines) {
+		bodyLine := lines[nextLine]
+		trimmed := strings.TrimSpace(bodyLine)
+
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			nextLine++
+			continue
+		}
+
+		indent := getIndentation(bodyLine)
+		if indent < expectedBodyIndent {
+			break
+		}
+
+		if indent != expectedBodyIndent {
+			return nil, nextLine + 1, fmt.Errorf("unexpected indentation in macro body at line %d", nextLine+1)
+		}
+
+		body = append(body, trimmed)
+		nextLine++
+	}
+
+	if len(body) == 0 {
+		return nil, lineNum + 1, fmt.Errorf("macro body cannot be empty at line %d", lineNum+1)
+	}
+
+	macroStmt := &MacroDeclStmt{
+		Name:       macroName,
+		Parameters: parameters,
+		Body:       body,
+	}
+
+	return &Statement{MacroDecl: macroStmt}, nextLine, nil
+}
+
 func parseEnumDeclaration(lines []string, startLine, indentLevel int) (*Statement, int, error) {
 	var (
 		line     = strings.TrimSpace(lines[startLine])
@@ -163,6 +253,10 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 
 	if strings.HasPrefix(line, "pub enum ") || strings.HasPrefix(line, "enum ") {
 		return parseEnumDeclaration(lines, lineNum, currentIndent)
+	}
+
+	if strings.HasPrefix(line, "macro ") {
+		return parseMacroDeclaration(lines, lineNum, currentIndent)
 	}
 
 	if strings.HasPrefix(line, "new ") {
