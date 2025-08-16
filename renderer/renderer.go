@@ -1015,9 +1015,13 @@ func convertPropertyAccess(expr string) string {
 
 				if _, isStruct := globalStructs[varType]; isStruct {
 					logger.Debug("convertPropertyAccess - detected struct field access, keeping dot notation\n")
-				} else {
+				} else if _, isClass := globalClasses[varType]; isClass {
+					logger.Debug("convertPropertyAccess - detected class field access, using arrow notation\n")
 					expr = strings.Replace(expr, ".", "->", 1)
 					logger.Debug("convertPropertyAccess converted '%s' to '%s'\n", originalExpr, expr)
+				} else {
+					expr = strings.Replace(expr, ".", "->", 1)
+					logger.Debug("convertPropertyAccess converted '%s' to '%s' (default)\n", originalExpr, expr)
 				}
 			} else {
 				logger.Debug("convertPropertyAccess - failed objectName checks\n")
@@ -1057,9 +1061,13 @@ func convertPropertyAccessSimple(expr string) string {
 
 				if _, isStruct := globalStructs[varType]; isStruct {
 					logger.Debug("convertPropertyAccessSimple - detected struct field access, keeping dot notation\n")
-				} else {
+				} else if _, isClass := globalClasses[varType]; isClass {
+					logger.Debug("convertPropertyAccessSimple - detected class field access, using arrow notation\n")
 					expr = strings.Replace(expr, ".", "->", 1)
 					logger.Debug("convertPropertyAccessSimple converted '%s' to '%s'\n", originalExpr, expr)
+				} else {
+					expr = strings.Replace(expr, ".", "->", 1)
+					logger.Debug("convertPropertyAccessSimple converted '%s' to '%s' (default)\n", originalExpr, expr)
 				}
 			}
 		}
@@ -1634,7 +1642,22 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 		}
 
 		b.WriteString(") {\n")
+
+		for _, param := range method.Parameters {
+			paramType := param.Type
+			if param.IsRef && strings.HasPrefix(paramType, "ref ") {
+				paramType = strings.TrimPrefix(paramType, "ref ")
+			}
+			localVars[param.Name] = paramType
+			logger.Debug("Added method parameter '%s' of type '%s' to localVars map\n", param.Name, paramType)
+		}
+
 		renderStatements(b, method.Body, "    ", className, program, method.ReturnType)
+
+		for _, param := range method.Parameters {
+			delete(localVars, param.Name)
+		}
+
 		b.WriteString("}\n\n")
 	}
 }
