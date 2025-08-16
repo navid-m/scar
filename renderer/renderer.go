@@ -1794,6 +1794,18 @@ func generateStructImplementation(b *strings.Builder, structDecl *lexer.StructDe
 		default:
 			if _, isStruct := globalStructs[field.Type]; isStruct {
 				fmt.Fprintf(b, "    this.%s = %s_new();\n", field.Name, field.Type)
+			} else if strings.Contains(field.Type, "_") {
+				parts := strings.Split(field.Type, "_")
+				if len(parts) >= 2 {
+					lastPart := parts[len(parts)-1]
+					if len(lastPart) > 0 && lastPart[0] >= 'A' && lastPart[0] <= 'Z' {
+						fmt.Fprintf(b, "    this.%s = %s_new(10);\n", field.Name, field.Type)
+					} else {
+						fmt.Fprintf(b, "    this.%s = 0;\n", field.Name)
+					}
+				} else {
+					fmt.Fprintf(b, "    this.%s = 0;\n", field.Name)
+				}
 			} else {
 				fmt.Fprintf(b, "    this.%s = 0;\n", field.Name)
 			}
@@ -5156,14 +5168,63 @@ func convertSingleMethodCall(expr string) string {
 			}
 		}
 	} else {
-		for objName, obj := range globalObjects {
-			if objName == objectName {
-				resolvedClassName = obj.Type
-				if strings.Contains(resolvedClassName, ".") {
-					parts := strings.Split(resolvedClassName, ".")
-					resolvedClassName = lexer.GenerateUniqueSymbol(parts[1], parts[0])
+		if strings.Contains(objectName, ".") {
+			parts := strings.Split(objectName, ".")
+			if len(parts) == 2 {
+				structVarName := parts[0]
+				fieldName := parts[1]
+
+				var structType string
+				if varType, exists := localVars[structVarName]; exists {
+					structType = varType
+				} else if currentFunction != nil {
+					for _, param := range currentFunction.Parameters {
+						if param.Name == structVarName {
+							paramType := param.Type
+							if param.IsRef && strings.HasPrefix(paramType, "ref ") {
+								paramType = strings.TrimPrefix(paramType, "ref ")
+							}
+							structType = paramType
+							break
+						}
+					}
 				}
-				break
+
+				if structType != "" {
+					if structInfo, exists := globalStructs[structType]; exists {
+						for _, field := range structInfo.Fields {
+							if field.Name == fieldName {
+								fieldType := field.Type
+								if strings.Contains(fieldType, "::") {
+									namespaceParts := strings.Split(fieldType, "::")
+									if len(namespaceParts) == 2 {
+										resolvedClassName = lexer.GenerateUniqueSymbol(namespaceParts[1], namespaceParts[0])
+									} else {
+										resolvedClassName = fieldType
+									}
+								} else {
+									resolvedClassName = fieldType
+								}
+								resolvedObjectName = objectName
+								logger.Debug("Found struct field '%s.%s' of type '%s' -> resolved to '%s'\n", structVarName, fieldName, fieldType, resolvedClassName)
+								break
+							}
+						}
+					}
+				}
+			}
+		}
+
+		if resolvedClassName == "" {
+			for objName, obj := range globalObjects {
+				if objName == objectName {
+					resolvedClassName = obj.Type
+					if strings.Contains(resolvedClassName, ".") {
+						parts := strings.Split(resolvedClassName, ".")
+						resolvedClassName = lexer.GenerateUniqueSymbol(parts[1], parts[0])
+					}
+					break
+				}
 			}
 		}
 		if resolvedClassName == "" && currentFunction != nil {
@@ -5184,7 +5245,6 @@ func convertSingleMethodCall(expr string) string {
 			logger.Debug("currentFunction is nil\n")
 		}
 
-		// Check if it's a local variable
 		if resolvedClassName == "" {
 			if varType, exists := localVars[objectName]; exists {
 				resolvedClassName = varType
@@ -5192,7 +5252,6 @@ func convertSingleMethodCall(expr string) string {
 			}
 		}
 
-		// Debug: print all local variables
 		if resolvedClassName == "" {
 			logger.Debug("Local variables in scope: ")
 			for k, v := range localVars {
@@ -5205,7 +5264,9 @@ func convertSingleMethodCall(expr string) string {
 			return expr
 		}
 
-		resolvedObjectName = lexer.ResolveSymbol(objectName, currentModule)
+		if resolvedObjectName == "" {
+			resolvedObjectName = lexer.ResolveSymbol(objectName, currentModule)
+		}
 	}
 
 	if args == "" {
@@ -5768,6 +5829,18 @@ func mapTypeToCType(mapType string) string {
 			result := lexer.GenerateUniqueSymbol(typeName, moduleName)
 			logger.Debug("module-qualified type '%s' -> '%s'\n", mapType, result)
 			return result
+		}
+	}
+
+	if strings.Contains(mapType, "_") {
+		parts := strings.Split(mapType, "_")
+		if len(parts) >= 2 {
+			lastPart := parts[len(parts)-1]
+			if len(lastPart) > 0 && lastPart[0] >= 'A' && lastPart[0] <= 'Z' {
+				result := mapType + "*"
+				logger.Debug("transformed module-qualified type '%s' -> '%s'\n", mapType, result)
+				return result
+			}
 		}
 	}
 
