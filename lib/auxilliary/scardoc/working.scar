@@ -36,16 +36,17 @@ fn parse_doc_comment(string line) -> string:
     return ""
 
 fn extract_function_name(string line) -> string:
-    string pattern = "(?:pub\s+)?fn\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\("
+    string pattern = "^(?:pub\\s+)?fn\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*\\("
     
     list[string] matches = regex::find(pattern, line)
     if len(matches) >= 2:
+        print "Function found: %s" | matches[1]
         return matches[1]
     
     return ""
 
 fn extract_return_type(string line) -> string:
-    string pattern = "->\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*:"
+    string pattern = "->\\s*([a-zA-Z_][a-zA-Z0-9_]*)\\s*:$"
     
     list[string] matches = regex::find(pattern, line)
     if len(matches) >= 2:
@@ -54,7 +55,7 @@ fn extract_return_type(string line) -> string:
     return "void"
 
 fn extract_parameters(string line) -> string:
-    string pattern = "fn\s+[a-zA-Z_][a-zA-Z0-9_]*\s*\(([^)]*)\)"
+    string pattern = "^(?:pub\\s+)?fn\\s+[a-zA-Z_][a-zA-Z0-9_]*\\s*\\(([^)]*)\\)"
     
     list[string] matches = regex::find(pattern, line)
     if len(matches) >= 2:
@@ -63,7 +64,7 @@ fn extract_parameters(string line) -> string:
     return ""
 
 fn extract_class_name(string line) -> string:
-    string pattern = "class\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*:"
+    string pattern = "^class\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*:$"
     
     list[string] matches = regex::find(pattern, line)
     if len(matches) >= 2:
@@ -72,10 +73,11 @@ fn extract_class_name(string line) -> string:
     return ""
 
 fn extract_import(string line) -> string:
-    string pattern = "import\s+\"([^\"]+)\""
+    string pattern = "^import\\s+\"([^\"]+)\"$"
     
     list[string] matches = regex::find(pattern, line)
     if len(matches) >= 2:
+        print "Import found: %s" | matches[1]
         return matches[1]
     
     return ""
@@ -115,7 +117,7 @@ fn parse_file(string filepath) -> ref ModuleDoc:
                 current_comments = comment
             continue
         
-        if regex::matches("import\s+\"[^\"]+\"", line):
+        if regex::matches("^import\\s+\"[^\"]+\"$", line):
             string import_path = extract_import(line)
             if strings::length(doc.imports) > 0:
                 doc.imports = fmt!("%s %s %s", doc.imports, "\n", import_path)
@@ -124,7 +126,7 @@ fn parse_file(string filepath) -> ref ModuleDoc:
             current_comments = ""
             continue
         
-        if regex::matches("class\s+[a-zA-Z_][a-zA-Z0-9_]*\s*:", line):
+        if regex::matches("^class\\s+[a-zA-Z_][a-zA-Z0-9_]*\\s*:$", line):
             if in_class:
                 if strings::length(doc.classes) > 0:
                     doc.classes = fmt!("%s\n---\n", doc.classes)
@@ -144,13 +146,13 @@ fn parse_file(string filepath) -> ref ModuleDoc:
             current_comments = ""
             continue
                     
-        if regex::matches("(?:pub\s+)?fn\s+[a-zA-Z_][a-zA-Z0-9_]*\s*\(", line):
+        if regex::matches("^(?:pub\\s+)?fn\\s+[a-zA-Z_][a-zA-Z0-9_]*\\s*\\(", line):
             ref FunctionDoc func = new FunctionDoc()
             func.name = extract_function_name(line)
             func.return_type = extract_return_type(line)
             func.parameters = extract_parameters(line)
             func.comments = current_comments
-            func.is_public = regex::matches("pub\s+fn\s+", line)
+            func.is_public = regex::matches("^pub\\s+fn\\s+", line)
             
             string func_str = fmt!("Function: %s", func.name)
             if strings::length(func.parameters) > 0:
@@ -172,10 +174,7 @@ fn parse_file(string filepath) -> ref ModuleDoc:
                 else:
                     current_class.methods = func_str
             else:
-                if strings::length(doc.functions) > 0:
-                    doc.functions = fmt!("%s\n---\n%s", doc.functions, func_str)
-                else:
-                    doc.functions = func_str
+                doc.functions = fmt!("%s\n---\n%s", doc.functions, func_str)
             
             current_comments = ""
             continue
@@ -307,8 +306,9 @@ fn generate_documentation(string source_file, string output_file):
     
     string markdown_content = generate_markdown(doc)
     
+    print "got this markdown: %s" | markdown_content
     write_documentation(markdown_content, output_file)
-
+    
     print "Documentation generated successfully: %s " | output_file
     print "Module: %s" | doc.module_name
 
