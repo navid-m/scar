@@ -1,0 +1,23 @@
+pub struct Hello:
+    string some_value
+    int some_number
+
+pub struct ComplexStruct:
+    string name
+    int age
+    bool is_active
+    Hello greeting
+
+var hello = Hello()
+hello.some_value = "Hello, World!"
+hello.some_number = 42
+
+var complex = ComplexStruct()
+complex.name = "Test User"
+complex.age = 25
+complex.is_active = true
+complex.greeting = hello
+
+print "Hello struct: %s, %d" | hello.some_value, hello.some_number
+print "Complex struct: %s, %d, %d" | complex.name, complex.age, complex.is_active
+print "Complex greeting: %s, %d" | complex.greeting.some_value, complex.greeting.some_number
