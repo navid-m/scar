@@ -1301,13 +1301,27 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 					fieldName := varName[5:]
 					logger.Debug("Processing field assignment: fieldName=%s, type=%s, value=%s\n", fieldName, stmt.VarDecl.Type, value)
 
-					// This is a field assignment, not a variable declaration
-					// Convert new expressions to constructor calls
-					convertedValue := convertNewToConstructor(value)
-					// Convert this.field to this->field for C syntax
-					convertedValue = strings.ReplaceAll(convertedValue, "this.", "this->")
-					logger.Debug("Generated field assignment: this->%s = %s\n", fieldName, convertedValue)
-					fmt.Fprintf(b, "    this->%s = %s;\n", fieldName, convertedValue)
+					isStringField := false
+					if classInfo, exists := globalClasses[className]; exists {
+						for _, field := range classInfo.Fields {
+							if field.Name == fieldName && field.Type == "string" {
+								isStringField = true
+								break
+							}
+						}
+					}
+
+					if isStringField {
+						if !strings.HasPrefix(value, "\"") && !strings.HasSuffix(value, "\"") && isValidIdentifier(value) {
+							value = fmt.Sprintf("\"%s\"", value)
+						}
+						fmt.Fprintf(b, "    strcpy(this->%s, %s);\n", fieldName, value)
+					} else {
+						convertedValue := convertNewToConstructor(value)
+						convertedValue = strings.ReplaceAll(convertedValue, "this.", "this->")
+						logger.Debug("Generated field assignment: this->%s = %s\n", fieldName, convertedValue)
+						fmt.Fprintf(b, "    this->%s = %s;\n", fieldName, convertedValue)
+					}
 				} else {
 					logger.Debug("Falling back to renderStatements for varName=%s, varName=%s\n", varName, varName)
 					renderStatements(b, []*lexer.Statement{stmt}, "    ", className, program, "")
