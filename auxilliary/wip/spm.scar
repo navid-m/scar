@@ -1,0 +1,415 @@
+# Scar Package Manager
+#
+# Date: 2025
+# Author: Navid M
+# License: GPL3
+
+import "std/io"
+import "std/strings"
+import "std/fs"
+import "std/collections"
+import "std/json"
+import "std/os"
+import "std/path"
+import "std/log"
+
+unsafe alias add_elem = collections::StringArrayList::add_element
+unsafe alias get_size = collections::StringArrayList::get_size
+unsafe alias get_element = collections::StringArrayList::get_element
+
+class Dependency:
+    init:
+        string this.name = ""
+        string this.git_url = ""
+        string this.version = ""
+        string this.branch = "main"
+
+class ScarMod:
+    init:
+        string this.name = ""
+        string this.version = "1.0.0"
+        string this.description = ""
+        string this.author = ""
+        collections::StringArrayList this.dependencies = new collections::StringArrayList(50)
+        collections::StringArrayList this.dep_urls = new collections::StringArrayList(50)
+        collections::StringArrayList this.dep_versions = new collections::StringArrayList(50)
+
+class PackageManager:
+    init:
+        string this.project_dir = ""
+        string this.pkgs_dir = ""
+        string this.mod_file = ""
+        ref ScarMod this.current_mod = new ScarMod()
+
+fn create_scar_mod_file(string project_name, string author, string description) -> void:
+    if fs::exists("scar.mod"):
+        log::error("scar.mod already exists in current directory")
+        return
+    
+    run void* mod_obj = json::new_object()
+    json::obj_set_new(mod_obj, "name", json::new_string(project_name))
+    json::obj_set_new(mod_obj, "version", json::new_string("1.0.0"))
+    json::obj_set_new(mod_obj, "description", json::new_string(description))
+    json::obj_set_new(mod_obj, "author", json::new_string(author))
+    
+    run void* deps = json::new_object()
+    json::obj_set_new(mod_obj, "dependencies", deps)
+    
+    json::save_to_file(mod_obj, "scar.mod")
+    json::dec_ref(mod_obj)
+    
+    log::success(fmt!("Created scar.mod for project '%s'", project_name))
+
+fn load_scar_mod(string mod_file_path) -> ref ScarMod:
+    ref ScarMod mod = new ScarMod()
+    
+    if not fs::exists(mod_file_path):
+        log::error(fmt!("scar.mod not found at: %s", mod_file_path))
+        return mod
+    
+    run void* mod_obj = json::loadup_file(mod_file_path)
+    if mod_obj == null:
+        log::error("Failed to parse scar.mod file")
+        return mod
+    
+    mod.name = json::get_object_string(mod_obj, "name")
+    mod.version = json::get_object_string(mod_obj, "version")
+    mod.description = json::get_object_string(mod_obj, "description")
+    mod.author = json::get_object_string(mod_obj, "author")
+    
+    run void* deps = json::obj_get(mod_obj, "dependencies")
+    if deps != null and json::check_is_object(deps):
+        i32 dep_count = json::obj_size(deps)
+        log::info(fmt!("Found %d dependencies", dep_count))
+        # TODO: Iterate over object keys.
+    
+    json::dec_ref(mod_obj)
+    return mod
+
+fn save_scar_mod(ref ScarMod mod, string mod_file_path) -> bool:
+    run void* mod_obj = json::new_object()
+    json::obj_set_new(mod_obj, "name", json::new_string(mod.name))
+    json::obj_set_new(mod_obj, "version", json::new_string(mod.version))
+    json::obj_set_new(mod_obj, "description", json::new_string(mod.description))
+    json::obj_set_new(mod_obj, "author", json::new_string(mod.author))
+    
+    run void* deps = json::new_object()
+    
+    for int i = 0; i < get_size(mod.dependencies); i++:
+        string dep_name = get_element(mod.dependencies, i)
+        string dep_url = get_element(mod.dep_urls, i)
+        string dep_version = get_element(mod.dep_versions, i)
+        
+        run void* dep_info = json::new_object()
+        json::obj_set_new(dep_info, "url", json::new_string(dep_url))
+        json::obj_set_new(dep_info, "version", json::new_string(dep_version))
+        
+        json::obj_set_new(deps, dep_name, dep_info)
+    
+    json::obj_set_new(mod_obj, "dependencies", deps)
+    
+    bool success = json::save_to_file(mod_obj, mod_file_path)
+    json::dec_ref(mod_obj)
+    
+    return success
+
+fn execute_git_command(string command, string working_dir) -> bool:
+    string full_command = ""
+    if strings::length(working_dir) > 0:
+        full_command = fmt!("cd \"%s\" && %s", working_dir, command)
+    else:
+        full_command = command
+    
+    log::info(fmt!("Executing: %s", full_command))
+    run os::system(full_command)
+    return true
+
+fn clone_dependency(string name, string git_url, string version, string target_dir) -> bool:
+    log::info(fmt!("Cloning %s from %s (version: %s)", name, git_url, version))
+    
+    string clone_cmd = fmt!("git clone \"%s\" \"%s\"", git_url, target_dir)
+    if not execute_git_command(clone_cmd, ""):
+        log::error(fmt!("Failed to clone %s", name))
+        return false
+    
+    if strings::length(version) > 0 and not strings::equal(version, "latest"):
+        string checkout_cmd = fmt!("git checkout %s", version)
+        if not execute_git_command(checkout_cmd, target_dir):
+            log::warning(fmt!("Failed to checkout version %s for %s, using default branch", version, name))
+        else:
+            log::success(fmt!("Checked out version %s for %s", version, name))
+    
+    return true
+
+fn update_dependency(string target_dir, string version) -> bool:
+    log::info(fmt!("Updating dependency in %s", target_dir))
+    
+    if not execute_git_command("git fetch --all", target_dir):
+        log::error("Failed to fetch updates")
+        return false
+    
+    if strings::length(version) > 0 and not strings::equal(version, "latest"):
+        string checkout_cmd = fmt!("git checkout %s", version)
+        if not execute_git_command(checkout_cmd, target_dir):
+            log::error(fmt!("Failed to checkout version %s", version))
+            return false
+    else:
+        if not execute_git_command("git pull", target_dir):
+            log::error("Failed to pull latest changes")
+            return false
+    
+    return true
+
+fn install_dependencies(ref PackageManager pm) -> bool:
+    log::info("Installing dependencies...")
+    
+    if not fs::exists(pm.pkgs_dir):
+        fs::make_dir(pm.pkgs_dir)
+        log::info(fmt!("Created packages directory: %s", pm.pkgs_dir))
+    
+    bool all_success = true
+    
+    for int i = 0; i < get_size(pm.current_mod.dependencies); i++:
+        string dep_name = get_element(pm.current_mod.dependencies, i)
+        string dep_url = get_element(pm.current_mod.dep_urls, i)
+        string dep_version = get_element(pm.current_mod.dep_versions, i)
+        
+        string dep_dir = path::join(pm.pkgs_dir, dep_name)
+        
+        if fs::exists(dep_dir):
+            log::info(fmt!("Dependency %s already exists, updating...", dep_name))
+            if not update_dependency(dep_dir, dep_version):
+                all_success = false
+                continue
+        else:
+            if not clone_dependency(dep_name, dep_url, dep_version, dep_dir):
+                all_success = false
+                continue
+        string nested_mod = path::join(dep_dir, "scar.mod")
+        if fs::exists(nested_mod):
+            log::info(fmt!("Found nested scar.mod in %s, processing...", dep_name))
+            ref ScarMod nested = load_scar_mod(nested_mod)
+            
+            ref PackageManager nested_pm = new PackageManager()
+            nested_pm.project_dir = dep_dir
+            nested_pm.pkgs_dir = path::join(dep_dir, "pkgs")
+            nested_pm.current_mod = nested
+            
+            if not install_dependencies(nested_pm):
+                log::warning(fmt!("Some nested dependencies for %s failed to install", dep_name))
+        
+        log::success(fmt!("Successfully installed %s", dep_name))
+    
+    return all_success
+
+fn add_dependency(ref PackageManager pm, string name, string git_url, string version) -> bool:
+    log::info(fmt!("Adding dependency: %s", name))
+    
+    for int i = 0; i < get_size(pm.current_mod.dependencies); i++:
+        string existing_name = get_element(pm.current_mod.dependencies, i)
+        if strings::equal(existing_name, name):
+            log::warning(fmt!("Dependency %s already exists, updating...", name))
+            
+            pm.current_mod.dep_urls.set_element(i, git_url)
+            pm.current_mod.dep_versions.set_element(i, version)
+            
+            if save_scar_mod(pm.current_mod, pm.mod_file):
+                log::success(fmt!("Updated dependency %s", name))
+                return install_dependencies(pm)
+            else:
+                log::error("Failed to save scar.mod")
+                return false
+    
+    add_elem(pm.current_mod.dependencies, name)
+    add_elem(pm.current_mod.dep_urls, git_url)
+    add_elem(pm.current_mod.dep_versions, version)
+    
+    if not save_scar_mod(pm.current_mod, pm.mod_file):
+        log::error("Failed to save scar.mod")
+        return false
+    
+    log::success(fmt!("Added dependency %s to scar.mod", name))
+    return install_dependencies(pm)
+
+fn remove_dependency(ref PackageManager pm, string name) -> bool:
+    log::info(fmt!("Removing dependency: %s", name))
+    
+    int found_index = -1
+    for int i = 0; i < get_size(pm.current_mod.dependencies); i++:
+        string existing_name = get_element(pm.current_mod.dependencies, i)
+        if strings::equal(existing_name, name):
+            found_index = i
+            break
+    
+    if found_index == -1:
+        log::error(fmt!("Dependency %s not found", name))
+        return false
+    
+    collections::StringArrayList new_deps = new collections::StringArrayList(50)
+    collections::StringArrayList new_urls = new collections::StringArrayList(50)
+    collections::StringArrayList new_versions = new collections::StringArrayList(50)
+    
+    for int i = 0; i < get_size(pm.current_mod.dependencies); i++:
+        if i != found_index:
+            add_elem(new_deps, get_element(pm.current_mod.dependencies, i))
+            add_elem(new_urls, get_element(pm.current_mod.dep_urls, i))
+            add_elem(new_versions, get_element(pm.current_mod.dep_versions, i))
+    
+    pm.current_mod.dependencies = new_deps
+    pm.current_mod.dep_urls = new_urls
+    pm.current_mod.dep_versions = new_versions
+    
+    if not save_scar_mod(pm.current_mod, pm.mod_file):
+        log::error("Failed to save scar.mod")
+        return false
+    
+    string dep_dir = path::join(pm.pkgs_dir, name)
+    if fs::exists(dep_dir):
+        string remove_cmd = fmt!("rm -rf \"%s\"", dep_dir)
+        if os::system(remove_cmd) == 0:
+            log::success(fmt!("Removed dependency directory: %s", dep_dir))
+        else:
+            log::warning(fmt!("Failed to remove dependency directory: %s", dep_dir))
+    
+    log::success(fmt!("Removed dependency %s", name))
+    return true
+
+fn list_dependencies(ref PackageManager pm) -> void:
+    log::info("Project Dependencies:")
+    log::info(fmt!("Project: %s (v%s)", pm.current_mod.name, pm.current_mod.version))
+    log::info(fmt!("Author: %s", pm.current_mod.author))
+    log::info(fmt!("Description: %s", pm.current_mod.description))
+    print ""
+    
+    if get_size(pm.current_mod.dependencies) == 0:
+        log::info("No dependencies found.")
+        return
+    
+    for int i = 0; i < get_size(pm.current_mod.dependencies); i++:
+        string dep_name = get_element(pm.current_mod.dependencies, i)
+        string dep_url = get_element(pm.current_mod.dep_urls, i)
+        string dep_version = get_element(pm.current_mod.dep_versions, i)
+        
+        string status = "Not installed"
+        string dep_dir = path::join(pm.pkgs_dir, dep_name)
+        if fs::exists(dep_dir):
+            status = "Installed"
+        
+        log::info(fmt!("  [%s] %s (%s) - %s", status, dep_name, dep_version, dep_url))
+    
+    print ""
+
+fn clean_packages(ref PackageManager pm) -> bool:
+    log::info("Cleaning packages directory...")
+    
+    if not fs::exists(pm.pkgs_dir):
+        log::info("No packages directory to clean")
+        return true
+    
+    string remove_cmd = fmt!("rm -rf \"%s\"", pm.pkgs_dir)
+    if os::system(remove_cmd) == 0:
+        log::success("Cleaned packages directory")
+        return true
+    else:
+        log::error("Failed to clean packages directory")
+        return false
+
+fn show_help() -> void:
+    print "Scar Package Manager v1.0.0"
+    print ""
+    print "Usage: spm <command> [args]"
+    print ""
+    print "Commands:"
+    print "  init <name> <author> <description>  Initialize a new scar.mod file"
+    print "  install                             Install all dependencies"
+    print "  add <name> <git_url> [version]      Add a new dependency"
+    print "  remove <name>                       Remove a dependency"
+    print "  list                                List all dependencies"
+    print "  clean                               Clean packages directory"
+    print "  help                                Show this help message"
+    print ""
+    print "Examples:"
+    print "  scarpm init myproject \"Alice\" \"My awesome project\""
+    print "  scarpm add json https://github.com/example/scar-json.git v1.2.0"
+    print "  scarpm install"
+    print "  scarpm remove json"
+    print ""
+
+list[string] args = os::get_args()
+
+if len(args) < 2:
+    show_help()
+    return
+
+string command = args[1]
+
+if strings::equal(command, "help"):
+    show_help()
+    return
+
+if strings::equal(command, "init"):
+    if len(args) < 5:
+        log::error("Usage: scarpm init <name> <author> <description>")
+        return
+    
+    create_scar_mod_file(args[2], args[3], args[4])
+    return
+
+string current_dir = os::cwd()
+string mod_file = path::join(current_dir, "scar.mod")
+
+if not fs::exists(mod_file):
+    log::error("No scar.mod found in current directory. Run 'scarpm init' first.")
+    return
+
+ref PackageManager pm = new PackageManager()
+pm.project_dir = current_dir
+pm.pkgs_dir = path::join(current_dir, "pkgs")
+pm.mod_file = mod_file
+pm.current_mod = load_scar_mod(mod_file)
+
+if strings::equal(command, "install"):
+    if install_dependencies(pm):
+        log::success("All dependencies installed successfully")
+    else:
+        log::error("Some dependencies failed to install")
+
+elif strings::equal(command, "add"):
+    if len(args) < 4:
+        log::error("Usage: scarpm add <name> <git_url> [version]")
+        return
+    
+    string name = args[2]
+    string git_url = args[3]
+    string version = "latest"
+    
+    if len(args) >= 5:
+        version = args[4]
+    
+    if add_dependency(pm, name, git_url, version):
+        log::success(fmt!("Successfully added dependency %s", name))
+    else:
+        log::error(fmt!("Failed to add dependency %s", name))
+
+elif strings::equal(command, "remove"):
+    if len(args) < 3:
+        log::error("Usage: scarpm remove <name>")
+        return
+    
+    if remove_dependency(pm, args[2]):
+        log::success(fmt!("Successfully removed dependency %s", args[2]))
+    else:
+        log::error(fmt!("Failed to remove dependency %s", args[2]))
+
+elif strings::equal(command, "list"):
+    list_dependencies(pm)
+
+elif strings::equal(command, "clean"):
+    if clean_packages(pm):
+        log::success("Packages cleaned successfully")
+    else:
+        log::error("Failed to clean packages")
+
+else:
+    log::error(fmt!("Unknown command: %s", command))
+    show_help()

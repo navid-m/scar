@@ -3,15 +3,17 @@ $ErrorActionPreference = "Stop"
 if (-not (Get-Command scoop -ErrorAction SilentlyContinue)) {
     Write-Host "Scoop not found — installing..."
     Set-ExecutionPolicy RemoteSigned -Scope CurrentUser -Force
-    irm get.scoop.sh | iex
-} else {
+    Invoke-RestMethod get.scoop.sh | Invoke-Expression
+}
+else {
     Write-Host "Scoop already installed."
 }
 
 if (-not (Test-Path "$env:SCOOP\apps\msys2")) {
     Write-Host "Installing MSYS2 (with MinGW64) via Scoop..."
     scoop install msys2
-} else {
+}
+else {
     Write-Host "MSYS2 already installed."
 }
 
