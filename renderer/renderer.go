@@ -584,8 +584,10 @@ func collectClassInfoWithModule(classDecl *lexer.ClassDeclStmt, moduleName strin
 				fieldName := stmt.VarDecl.Name
 				fieldName = strings.TrimPrefix(fieldName, "this.")
 				if _, exists := fieldMap[fieldName]; !exists {
-					isRef := stmt.VarDecl.IsRef
-					fieldType := stmt.VarDecl.Type
+					var (
+						isRef     = stmt.VarDecl.IsRef
+						fieldType = stmt.VarDecl.Type
+					)
 					if after, ok := strings.CutPrefix(fieldType, "ref "); ok {
 						fieldType = after
 					}
