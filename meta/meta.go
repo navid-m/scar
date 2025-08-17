@@ -11,7 +11,7 @@ import (
 	"fmt"
 )
 
-const Version = "v0.0.1"
+const Version = "v0.0.1-alpha.1"
 
 func ShowUsage() {
 	fmt.Println("Usage: scar [options] [program] | -v")
