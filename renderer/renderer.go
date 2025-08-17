@@ -3756,11 +3756,13 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				}
 			}
 		case stmt.StaticMethodCall != nil:
-			className := stmt.StaticMethodCall.Class
-			methodName := stmt.StaticMethodCall.Method
-			rawArgs := stmt.StaticMethodCall.Args
+			var (
+				className  = stmt.StaticMethodCall.Class
+				methodName = stmt.StaticMethodCall.Method
+				rawArgs    = stmt.StaticMethodCall.Args
+				fullCall   = className + "::" + methodName
+			)
 
-			fullCall := className + "::" + methodName
 			if target, exists := lexer.Aliases[fullCall]; exists {
 				if strings.Contains(target, "::") {
 					targetParts := strings.SplitN(target, "::", 2)
@@ -3771,7 +3773,6 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				}
 			}
 
-			// Resolve class name if it's an imported type
 			if moduleName, exists := isImportedType(className, program.Imports); exists {
 				className = lexer.GenerateUniqueSymbol(className, moduleName)
 			}
