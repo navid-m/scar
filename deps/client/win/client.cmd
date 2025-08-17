@@ -23,7 +23,6 @@ if not exist "%SCOOP%\apps\msys2" (
 )
 
 echo Updating MSYS2...
-scoop update msys2
 set "MSYS2_SHELL=%SCOOP%\apps\msys2\current\usr\bin\bash.exe"
 if not exist "%MSYS2_SHELL%" (
     echo Error: MSYS2 bash not found at %MSYS2_SHELL%
