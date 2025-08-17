@@ -83,7 +83,7 @@ fn parse_file(string filepath, string module_name) -> ref ParsedDoc:
     return doc
 
 fn generate_markdown(ref ParsedDoc doc) -> void:
-    string markdown = ""
+    char* markdown = ""
     markdown = fmt!("%s# %s\n\n", markdown, doc.module_name)
     markdown = fmt!("%s*Source: `%s`*\n\n", markdown, doc.filepath)
     

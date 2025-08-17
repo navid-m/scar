@@ -29,9 +29,7 @@ func InsertMacros(output string) string {
 		outp = replaceRandCalls(outp)
 		outp = insertRand(outp)
 	}
-	if strings.Contains(output, "lstring") {
-		outp = insertLstring(outp)
-	}
+
 	if strings.Contains(output, "cat") {
 		outp = insertCat(outp)
 	}
@@ -52,6 +50,9 @@ func InsertMacros(output string) string {
 	if strings.Contains(output, "fmt!") {
 		outp = strings.ReplaceAll(outp, "fmt!", "fmt")
 		outp = insertSprintf(outp)
+	}
+	if strings.Contains(output, "lstring") {
+		outp = insertLstring(outp)
 	}
 	if strings.Contains(output, "cstring") {
 		outp = insertCstring(outp)
@@ -174,7 +175,7 @@ func insertLstring(output string) string {
 }
 
 func insertSprintf(output string) string {
-	return "#define fmt(...) ({ static char __fmt_buf[2560]; snprintf(__fmt_buf, 2560, __VA_ARGS__); __fmt_buf; })\n" + output
+	return "#define fmt(...) ({ int __len = snprintf(NULL, 0, __VA_ARGS__) + 1; char* __buf = malloc(__len); if(__buf) snprintf(__buf, __len, __VA_ARGS__); __buf; })\n" + output
 }
 
 func insertCat(output string) string {
