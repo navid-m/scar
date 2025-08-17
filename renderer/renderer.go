@@ -967,7 +967,7 @@ func convertPropertyAccess(expr string) string {
 					args := result[parenIndex+1 : closeIndex-1]
 					logger.Debug("convertPropertyAccess - processing function arguments: '%s'\n", args)
 					if strings.Contains(args, ".") {
-						argParts := strings.Split(args, ",")
+						argParts := parseFunctionArguments(args)
 						for i, arg := range argParts {
 							arg = strings.TrimSpace(arg)
 							if strings.Contains(arg, ".") {
@@ -1000,12 +1000,16 @@ func convertPropertyAccess(expr string) string {
 				for numberEnd < len(expr) && unicode.IsDigit(rune(expr[numberEnd])) {
 					numberEnd++
 				}
-				if numberEnd < len(expr) && (expr[numberEnd] == ' ' || expr[numberEnd] == '*' || expr[numberEnd] == '/' || expr[numberEnd] == '+' || expr[numberEnd] == '-') {
+				if numberEnd > dotIndex+1 {
 					potentialNumber := expr[:numberEnd]
 					if isNumericLiteral(potentialNumber) {
 						logger.Debug("convertPropertyAccess - detected floating point number '%s' in expression, skipping conversion\n", potentialNumber)
 						return expr
 					}
+				}
+				if isNumericLiteral(expr) {
+					logger.Debug("convertPropertyAccess - entire expression '%s' is a numeric literal, skipping conversion\n", expr)
+					return expr
 				}
 			}
 
@@ -1060,6 +1064,34 @@ func convertPropertyAccess(expr string) string {
 	return expr
 }
 
+func parseFunctionArguments(args string) []string {
+	var result []string
+	var currentArg strings.Builder
+	parenCount := 0
+
+	for i := 0; i < len(args); i++ {
+		char := args[i]
+
+		if char == '(' {
+			parenCount++
+		} else if char == ')' {
+			parenCount--
+		} else if char == ',' && parenCount == 0 {
+			result = append(result, strings.TrimSpace(currentArg.String()))
+			currentArg.Reset()
+			continue
+		}
+
+		currentArg.WriteByte(char)
+	}
+
+	if currentArg.Len() > 0 {
+		result = append(result, strings.TrimSpace(currentArg.String()))
+	}
+
+	return result
+}
+
 func convertPropertyAccessSimple(expr string) string {
 	logger.Debug("convertPropertyAccessSimple called with: '%s'\n", expr)
 	if strings.Contains(expr, ".") {
@@ -1068,7 +1100,21 @@ func convertPropertyAccessSimple(expr string) string {
 			objectName := expr[:dotIndex]
 
 			if isNumericLiteral(objectName) {
-				return expr
+				numberEnd := dotIndex + 1
+				for numberEnd < len(expr) && unicode.IsDigit(rune(expr[numberEnd])) {
+					numberEnd++
+				}
+				if numberEnd > dotIndex+1 {
+					potentialNumber := expr[:numberEnd]
+					if isNumericLiteral(potentialNumber) {
+						logger.Debug("convertPropertyAccessSimple - detected floating point number '%s', skipping conversion\n", potentialNumber)
+						return expr
+					}
+				}
+				if isNumericLiteral(expr) {
+					logger.Debug("convertPropertyAccessSimple - entire expression '%s' is a numeric literal, skipping conversion\n", expr)
+					return expr
+				}
 			}
 			if strings.Contains(objectName, "[") && strings.Contains(objectName, "]") {
 				return expr
