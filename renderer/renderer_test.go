@@ -2983,3 +2983,75 @@ obj.add_sal("test")`
 		}
 	}
 }
+
+func TestRefNodeFieldPointerType(t *testing.T) {
+	program := &lexer.Program{
+		Statements: []*lexer.Statement{
+			{
+				ClassDecl: &lexer.ClassDeclStmt{
+					Name: "Node",
+					Constructor: &lexer.ConstructorStmt{
+						Parameters: []*lexer.MethodParameter{
+							{Name: "val", Type: "int"},
+						},
+						Fields: []*lexer.Statement{
+							{
+								VarDecl: &lexer.VarDeclStmt{
+									Name:  "this.val",
+									Type:  "int",
+									Value: "val",
+								},
+							},
+							{
+								VarDecl: &lexer.VarDeclStmt{
+									Name:  "this.left",
+									Type:  "Node",
+									Value: "nil",
+									IsRef: true,
+								},
+							},
+							{
+								VarDecl: &lexer.VarDeclStmt{
+									Name:  "this.right",
+									Type:  "Node",
+									Value: "nil",
+									IsRef: true,
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	cCode := RenderC(program, "", false)
+	normalizedCCode := strings.Join(strings.Fields(cCode), " ")
+
+	if !strings.Contains(normalizedCCode, "Node* left") {
+		t.Errorf("Expected struct to contain 'Node* left' (single pointer), but it didn't. Generated code:\n%s", cCode)
+	}
+
+	if !strings.Contains(normalizedCCode, "Node* right") {
+		t.Errorf("Expected struct to contain 'Node* right' (single pointer), but it didn't. Generated code:\n%s", cCode)
+	}
+
+	invalidPatterns := []string{
+		"Node** left",
+		"Node** right",
+	}
+
+	for _, pattern := range invalidPatterns {
+		if strings.Contains(cCode, pattern) {
+			t.Errorf("Found invalid double pointer pattern '%s' in generated code. Should be single pointer (Node*). Generated code:\n%s", pattern, cCode)
+		}
+	}
+
+	if !strings.Contains(cCode, "this->left = nil") {
+		t.Errorf("Expected constructor to initialize left field with NULL. Generated code:\n%s", cCode)
+	}
+
+	if !strings.Contains(cCode, "this->right = nil") {
+		t.Errorf("Expected constructor to initialize right field with NULL. Generated code:\n%s", cCode)
+	}
+}
