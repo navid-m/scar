@@ -1025,12 +1025,23 @@ func convertPropertyAccess(expr string) string {
 				} else if _, isStruct := globalStructs[objectName]; isStruct {
 					varType = objectName
 					logger.Debug("convertPropertyAccess - found struct type '%s'\n", objectName)
+				} else {
+					logger.Debug("convertPropertyAccess - object '%s' not found in localVars or globalStructs\n", objectName)
 				}
 
-				if _, isStruct := globalStructs[varType]; isStruct {
+				isRefType := strings.HasPrefix(varType, "ref ")
+				baseType := strings.TrimPrefix(varType, "ref ")
+
+				logger.Debug("convertPropertyAccess - varType='%s', isRefType=%t, baseType='%s'\n", varType, isRefType, baseType)
+
+				if _, isStruct := globalStructs[baseType]; isStruct {
 					logger.Debug("convertPropertyAccess - detected struct field access, keeping dot notation\n")
-				} else if _, isClass := globalClasses[varType]; isClass {
+				} else if _, isClass := globalClasses[baseType]; isClass {
 					logger.Debug("convertPropertyAccess - detected class field access, using arrow notation\n")
+					expr = strings.Replace(expr, ".", "->", 1)
+					logger.Debug("convertPropertyAccess converted '%s' to '%s'\n", originalExpr, expr)
+				} else if isRefType {
+					logger.Debug("convertPropertyAccess - detected reference type, using arrow notation\n")
 					expr = strings.Replace(expr, ".", "->", 1)
 					logger.Debug("convertPropertyAccess converted '%s' to '%s'\n", originalExpr, expr)
 				} else {
@@ -1073,10 +1084,17 @@ func convertPropertyAccessSimple(expr string) string {
 					logger.Debug("convertPropertyAccessSimple - found struct type '%s'\n", objectName)
 				}
 
-				if _, isStruct := globalStructs[varType]; isStruct {
+				isRefType := strings.HasPrefix(varType, "ref ")
+				baseType := strings.TrimPrefix(varType, "ref ")
+
+				if _, isStruct := globalStructs[baseType]; isStruct {
 					logger.Debug("convertPropertyAccessSimple - detected struct field access, keeping dot notation\n")
-				} else if _, isClass := globalClasses[varType]; isClass {
+				} else if _, isClass := globalClasses[baseType]; isClass {
 					logger.Debug("convertPropertyAccessSimple - detected class field access, using arrow notation\n")
+					expr = strings.Replace(expr, ".", "->", 1)
+					logger.Debug("convertPropertyAccessSimple converted '%s' to '%s'\n", originalExpr, expr)
+				} else if isRefType {
+					logger.Debug("convertPropertyAccessSimple - detected reference type, using arrow notation\n")
 					expr = strings.Replace(expr, ".", "->", 1)
 					logger.Debug("convertPropertyAccessSimple converted '%s' to '%s'\n", originalExpr, expr)
 				} else {
@@ -2294,6 +2312,7 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			fmt.Fprintf(b, "%scontinue;\n", indent)
 		case stmt.Run != nil:
 			funcCall := stmt.Run.FunctionCall
+			funcCall = convertPropertyAccess(funcCall)
 			fmt.Fprintf(b, "%s%s;\n", indent, funcCall)
 
 		case stmt.Return != nil:
@@ -2595,8 +2614,14 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 
 			logger.Debug("VarDecl: varType=%s, varName=%s, value=%s\n", varType, varName, value)
 
-			localVars[varName] = varType
-			logger.Debug("Added local variable '%s' of type '%s' to localVars map\n", varName, varType)
+			// Store the full type in localVars, including "ref " prefix for reference types
+			if stmt.VarDecl.IsRef {
+				localVars[varName] = "ref " + varType
+				logger.Debug("Added local variable '%s' of type 'ref %s' to localVars map\n", varName, varType)
+			} else {
+				localVars[varName] = varType
+				logger.Debug("Added local variable '%s' of type '%s' to localVars map\n", varName, varType)
+			}
 
 			var classNames []string
 			for className := range globalClasses {
@@ -2992,7 +3017,9 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 							fieldName := parts[1]
 
 							if objType, exists := localVars[objName]; exists {
-								if classInfo, exists := globalClasses[objType]; exists {
+								// Strip "ref " prefix if present for globalClasses lookup
+								baseObjType := strings.TrimPrefix(objType, "ref ")
+								if classInfo, exists := globalClasses[baseObjType]; exists {
 									for _, field := range classInfo.Fields {
 										if field.Name == fieldName {
 											varType = field.Type
@@ -3683,8 +3710,13 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 
 			var args []string
 			for _, arg := range rawArgs {
+				logger.Debug("StaticMethodCall processing argument: '%s'\n", arg)
 				resolvedArg := lexer.ResolveSymbol(arg, currentModule)
+				logger.Debug("StaticMethodCall resolved argument: '%s' -> '%s'\n", arg, resolvedArg)
 				resolvedArg = convertThisReferencesGranular(resolvedArg)
+				logger.Debug("StaticMethodCall after convertThisReferencesGranular: '%s'\n", resolvedArg)
+				resolvedArg = convertPropertyAccess(resolvedArg)
+				logger.Debug("StaticMethodCall after convertPropertyAccess: '%s'\n", resolvedArg)
 				args = append(args, resolvedArg)
 			}
 			argsStr := strings.Join(args, ", ")
@@ -5098,6 +5130,30 @@ func convertSingleMethodCall(expr string) string {
 
 	objectName := strings.TrimSpace(expr[:dotIndex])
 	methodName := strings.TrimSpace(expr[dotIndex+1 : parenIndex])
+
+	if strings.Contains(methodName, ".") {
+		fieldDotIndex := strings.Index(methodName, ".")
+		fieldName := methodName[:fieldDotIndex]
+		actualMethodName := methodName[fieldDotIndex+1:]
+		fieldAccess := objectName + "." + fieldName
+		convertedFieldAccess := convertPropertyAccess(fieldAccess)
+		closeParen := findMatchingParen(expr, parenIndex)
+		if closeParen == -1 {
+			return expr
+		}
+
+		args := ""
+		if closeParen > parenIndex+1 {
+			args = expr[parenIndex+1 : closeParen]
+		}
+
+		// Now construct the method call: doc->imports.get_size()
+		if args == "" {
+			return convertedFieldAccess + "." + actualMethodName + "()"
+		} else {
+			return convertedFieldAccess + "." + actualMethodName + "(" + args + ")"
+		}
+	}
 
 	closeParen := findMatchingParen(expr, parenIndex)
 	if closeParen == -1 {
