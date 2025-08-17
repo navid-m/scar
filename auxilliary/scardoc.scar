@@ -1,3 +1,9 @@
+# Documentation generator for Scar.
+#
+# Date: 2025
+# Author: Navid M
+# License: GPL3
+
 import "std/io"
 import "std/strings" 
 import "std/fs"
