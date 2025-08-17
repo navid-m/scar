@@ -174,7 +174,7 @@ func insertLstring(output string) string {
 }
 
 func insertSprintf(output string) string {
-	return "#define fmt(...) ({ static char __fmt_buf[256]; snprintf(__fmt_buf, 256, __VA_ARGS__); __fmt_buf; })\n" + output
+	return "#define fmt(...) ({ static char __fmt_buf[2560]; snprintf(__fmt_buf, 2560, __VA_ARGS__); __fmt_buf; })\n" + output
 }
 
 func insertCat(output string) string {

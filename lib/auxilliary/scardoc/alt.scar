@@ -60,19 +60,25 @@ fn parse_file(string filepath, string module_name) -> ref ParsedDoc:
             string import_path = extract_import(trimmed)
             if strings::length(import_path) > 0:
                 collections::StringArrayList::add_element(doc.imports, import_path)
-            continue
         
         if regex::matches("^class\\s+[a-zA-Z_][a-zA-Z0-9_]*\\s*:", trimmed):
             string class_name = extract_class_name(trimmed)
             if strings::length(class_name) > 0:
                 collections::StringArrayList::add_element(doc.classes, class_name)
-            continue
-                    
-        if regex::matches("^(?:pub\\s+)?fn\\s+[a-zA-Z_][a-zA-Z0-9_]*\\s*\\(", trimmed):
+        
+        if strings::starts_with(trimmed, "fn ") or strings::starts_with(trimmed, "pub fn "):
+            print "Function line detected: '%s'" | trimmed
             string func_name = extract_function_name(trimmed)
             if strings::length(func_name) > 0:
                 collections::StringArrayList::add_element(doc.functions, func_name)
-            continue
+                print "Added function to collection: %s (total: %d)" | func_name, collections::StringArrayList::get_size(doc.functions)
+            else:
+                print "Function name extraction failed for: '%s'" | trimmed
+    
+    print "Final function count: %d" | collections::StringArrayList::get_size(doc.functions)
+    for int j = 0; j < collections::StringArrayList::get_size(doc.functions); j++:
+        string debug_func = collections::StringArrayList::get_element(doc.functions, j)
+        print "Function %d: %s" | j, debug_func
     
     return doc
 
@@ -97,8 +103,10 @@ fn generate_markdown(ref ParsedDoc doc) -> void:
     
     if collections::StringArrayList::get_size(doc.functions) > 0:
         markdown = fmt!("%s## Functions\n\n", markdown)
+        print "Generating markdown for %d functions" | collections::StringArrayList::get_size(doc.functions)
         for int i = 0; i < collections::StringArrayList::get_size(doc.functions); i++:
             string func_name = collections::StringArrayList::get_element(doc.functions, i)
+            print "Processing function %d: %s" | i, func_name
             markdown = fmt!("%s### %s\n\n", markdown, func_name)
     
     print "Generated markdown:\n%s" | markdown
