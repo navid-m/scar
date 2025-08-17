@@ -50,8 +50,6 @@ if %errorlevel% neq 0 (
     )
     reg add "HKCU\Environment" /v PATH /t REG_EXPAND_SZ /d "!NEW_PATH!" /f >nul
     echo You may need to restart your command prompt or IDE to see the changes.
-) else (
-    echo GCC already in PATH.
 )
 
 echo Done.
