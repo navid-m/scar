@@ -100,6 +100,7 @@ type Statement struct {
 	MacroDecl            *MacroDeclStmt
 	PubMacroDecl         *PubMacroDeclStmt
 	MacroCall            *MacroCallStmt
+	Alias                *AliasStmt
 }
 
 type ListOfDeclStmt struct {
@@ -149,6 +150,11 @@ type PubMacroDeclStmt struct {
 type MacroCallStmt struct {
 	Name string
 	Args []string
+}
+
+type AliasStmt struct {
+	AliasName string
+	Target    string
 }
 
 type CatListStmt struct {
@@ -496,6 +502,7 @@ type VarDeclReadStmt struct {
 var LoadedModules = make(map[string]*ModuleInfo)
 var CurrentSourceFile string
 var RegisteredMacros = make(map[string]bool)
+var Aliases = make(map[string]string)
 
 func isStandardLibraryFile(filePath string) bool {
 	if filePath == "" {
@@ -699,6 +706,10 @@ func handleTypeCasting(symbolName string) string {
 // Uses regex and careful parsing to find module.symbol patterns
 // without destroying the expression structure
 func ResolveSymbol(symbolName string, currentModule string) string {
+	if target, exists := Aliases[symbolName]; exists {
+		symbolName = target
+	}
+
 	result := handleTypeCasting(symbolName)
 	if strings.Contains(result, ".") {
 		for moduleName, module := range LoadedModules {

@@ -355,6 +355,10 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 		return parsePubMacroDeclaration(lines, lineNum, currentIndent)
 	}
 
+	if strings.HasPrefix(line, "alias ") {
+		return parseAliasDeclaration(line, lineNum)
+	}
+
 	if strings.HasPrefix(line, "new ") {
 		return parseNewExprStatement(line, lineNum)
 	}
@@ -1794,6 +1798,11 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 
 			if parenStart > 0 {
 				funcName := strings.TrimSpace(line[:parenStart])
+
+				if target, exists := Aliases[funcName]; exists {
+					funcName = target
+				}
+
 				var args []string
 
 				if parenEnd > parenStart+1 {
@@ -1825,6 +1834,17 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 					argsStart  = strings.Index(line, "(")
 					argsEnd    = strings.LastIndex(line, ")")
 				)
+
+				fullCall := strings.TrimSpace(line[:parenIndex])
+				if target, exists := Aliases[fullCall]; exists {
+					if strings.Contains(target, "::") {
+						targetParts := strings.SplitN(target, "::", 2)
+						if len(targetParts) == 2 {
+							className = strings.TrimSpace(targetParts[0])
+							methodName = strings.TrimSpace(targetParts[1])
+						}
+					}
+				}
 
 				var args []string
 				if argsEnd > argsStart+1 {
@@ -1867,6 +1887,17 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 					argsStart  = strings.Index(line, "(")
 					argsEnd    = strings.LastIndex(line, ")")
 				)
+
+				fullCall := strings.TrimSpace(line[:parenIndex])
+				if target, exists := Aliases[fullCall]; exists {
+					if strings.Contains(target, ".") {
+						targetParts := strings.SplitN(target, ".", 2)
+						if len(targetParts) == 2 {
+							objectName = strings.TrimSpace(targetParts[0])
+							methodName = strings.TrimSpace(targetParts[1])
+						}
+					}
+				}
 
 				var args []string
 				if argsEnd > argsStart+1 {
@@ -2456,4 +2487,27 @@ func findMatchingClosingBracket(str string, openPos int) int {
 	}
 
 	return -1
+}
+
+func parseAliasDeclaration(line string, lineNum int) (*Statement, int, error) {
+	aliasPart := strings.TrimSpace(line[6:])
+
+	parts := strings.SplitN(aliasPart, "=", 2)
+	if len(parts) != 2 {
+		return nil, lineNum + 1, fmt.Errorf("invalid alias syntax at line %d: expected 'alias name = target'", lineNum+1)
+	}
+
+	aliasName := strings.TrimSpace(parts[0])
+	target := strings.TrimSpace(parts[1])
+
+	if aliasName == "" || target == "" {
+		return nil, lineNum + 1, fmt.Errorf("alias name and target cannot be empty at line %d", lineNum+1)
+	}
+
+	Aliases[aliasName] = target
+
+	return &Statement{Alias: &AliasStmt{
+		AliasName: aliasName,
+		Target:    target,
+	}}, lineNum + 1, nil
 }

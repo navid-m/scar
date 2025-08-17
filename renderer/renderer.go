@@ -3560,6 +3560,17 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				i                 = 0
 			)
 
+			fullCall := objectName + "." + methodName
+			if target, exists := lexer.Aliases[fullCall]; exists {
+				if strings.Contains(target, ".") {
+					targetParts := strings.SplitN(target, ".", 2)
+					if len(targetParts) == 2 {
+						objectName = strings.TrimSpace(targetParts[0])
+						methodName = strings.TrimSpace(targetParts[1])
+					}
+				}
+			}
+
 			for i < len(rawArgs) {
 				arg := rawArgs[i]
 
@@ -3748,6 +3759,17 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			className := stmt.StaticMethodCall.Class
 			methodName := stmt.StaticMethodCall.Method
 			rawArgs := stmt.StaticMethodCall.Args
+
+			fullCall := className + "::" + methodName
+			if target, exists := lexer.Aliases[fullCall]; exists {
+				if strings.Contains(target, "::") {
+					targetParts := strings.SplitN(target, "::", 2)
+					if len(targetParts) == 2 {
+						className = strings.TrimSpace(targetParts[0])
+						methodName = strings.TrimSpace(targetParts[1])
+					}
+				}
+			}
 
 			// Resolve class name if it's an imported type
 			if moduleName, exists := isImportedType(className, program.Imports); exists {
