@@ -1611,6 +1611,7 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 		returnType := "void"
 		if method.ReturnType != "" && method.ReturnType != "void" {
 			returnType = mapTypeToCType(method.ReturnType)
+			logger.Debug("Method %s.%s return type: '%s' -> '%s'\n", className, method.Name, method.ReturnType, returnType)
 		}
 		prototype := generateMethodPrototype(className, method.Name, returnType, method.Parameters, method.IsStatic)
 		b.WriteString(prototype)
@@ -1634,13 +1635,11 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 			paramType := mapTypeToCType(param.Type)
 			// For ref parameters, don't add extra * since they should be handled as single pointers
 			if param.IsRef {
-				// For ref parameters, ensure they are treated as single pointers
 				if !strings.HasSuffix(paramType, "*") {
 					paramType = paramType + "*"
 				}
 			} else {
-				// For non-ref parameters, apply the normal rules
-				if _, isPrimitive := primitiveTypes[param.Type]; !isPrimitive && param.Type != "string" {
+				if _, isPrimitive := primitiveTypes[param.Type]; !isPrimitive && param.Type != "string" && !strings.HasSuffix(paramType, "*") {
 					paramType = paramType + "*"
 				} else if param.Type == "string" {
 					paramType = "char*"
@@ -5670,7 +5669,8 @@ func containsValidExpressionElements(value string) bool {
 func generateMethodPrototype(className, methodName, returnType string, parameters []*lexer.MethodParameter, isStatic bool) string {
 	cReturnType := "void"
 	if returnType != "" && returnType != "void" {
-		cReturnType = mapTypeToCType(returnType)
+		cReturnType = returnType
+		logger.Debug("generateMethodPrototype: method %s.%s, returnType='%s' -> cReturnType='%s'\n", className, methodName, returnType, cReturnType)
 	}
 
 	var paramList []string
@@ -5690,7 +5690,7 @@ func generateMethodPrototype(className, methodName, returnType string, parameter
 			}
 		} else {
 			// For non-ref parameters, apply the normal rules
-			if _, isPrimitive := primitiveTypes[param.Type]; !isPrimitive && param.Type != "string" {
+			if _, isPrimitive := primitiveTypes[param.Type]; !isPrimitive && param.Type != "string" && !strings.HasSuffix(paramType, "*") {
 				paramType = paramType + "*"
 			} else if param.Type == "string" {
 				paramType = "char*"
@@ -5827,7 +5827,12 @@ func mapTypeToCType(mapType string) string {
 			moduleName := parts[0]
 			typeName := parts[1]
 			result := lexer.GenerateUniqueSymbol(typeName, moduleName)
-			logger.Debug("module-qualified type '%s' -> '%s'\n", mapType, result)
+			if isCustomClassType(result) {
+				result = result + "*"
+				logger.Debug("module-qualified class type '%s' -> '%s'\n", mapType, result)
+			} else {
+				logger.Debug("module-qualified type '%s' -> '%s'\n", mapType, result)
+			}
 			return result
 		}
 	}
