@@ -18,11 +18,43 @@ import (
 
 func ProcessSourceLevelMacros(source string) string {
 	source = lexer.RemoveComments(source)
+	source = ProcessUnsafeAliases(source)
 	source = ProcessMacros(source)
 	source = ProcessAppendExpressions(source)
 	source = ProcessDeleteExpressions(source)
 	source = lexer.ReplaceDoubleColonsOutsideStrings(source)
 	return source
+}
+
+func ProcessUnsafeAliases(source string) string {
+	lines := strings.Split(source, "\n")
+	var result []string
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "unsafe alias ") {
+			aliasPart := strings.TrimSpace(trimmed[13:])
+			parts := strings.SplitN(aliasPart, "=", 2)
+			if len(parts) == 2 {
+				aliasName := strings.TrimSpace(parts[0])
+				target := strings.TrimSpace(parts[1])
+				if strings.Contains(target, "::") {
+					lexer.UnsafeAliases[aliasName] = target
+					continue
+				}
+			}
+		}
+		result = append(result, line)
+	}
+
+	output := strings.Join(result, "\n")
+	for aliasName, target := range lexer.UnsafeAliases {
+		pattern := aliasName + "("
+		replacement := target + "("
+		output = strings.ReplaceAll(output, pattern, replacement)
+	}
+
+	return output
 }
 
 func ProcessAppendExpressions(source string) string {

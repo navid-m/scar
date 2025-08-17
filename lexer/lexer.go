@@ -503,6 +503,7 @@ var LoadedModules = make(map[string]*ModuleInfo)
 var CurrentSourceFile string
 var RegisteredMacros = make(map[string]bool)
 var Aliases = make(map[string]string)
+var UnsafeAliases = make(map[string]string)
 
 func isStandardLibraryFile(filePath string) bool {
 	if filePath == "" {
