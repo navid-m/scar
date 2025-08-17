@@ -513,10 +513,12 @@ func parseClassStatement(lines []string, lineNum, currentIndent int) (*Statement
 		}
 
 		if strings.HasPrefix(trimmed, "init") {
-			var parameters []*MethodParameter
-			var initBody []*Statement
-			var initBodyIndent int
-			var initStartLine int
+			var (
+				parameters     []*MethodParameter
+				initBody       []*Statement
+				initBodyIndent int
+				initStartLine  int
+			)
 
 			if strings.Contains(trimmed, "(") && strings.Contains(trimmed, ")") {
 				parenStart := strings.Index(trimmed, "(")
