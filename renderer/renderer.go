@@ -42,6 +42,7 @@ var (
 		"bool":    "bool",
 		"char":    "char",
 		"string":  "char*",
+		"cstring": "char*",
 		"lstring": "char*",
 		"u16":     "uint16_t",
 		"u32":     "uint32_t",
