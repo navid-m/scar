@@ -10,6 +10,10 @@ import "std/fs"
 import "std/collections"
 import "std/regex"
 
+unsafe alias add_elem = collections::StringArrayList::add_element
+unsafe alias get_size = collections::StringArrayList::get_size
+unsafe alias get_element = collections::StringArrayList::get_element
+
 class ParsedDoc:
     init:
         collections::StringArrayList this.imports = new collections::StringArrayList(100)
@@ -65,25 +69,25 @@ fn parse_file(string filepath, string module_name) -> ref ParsedDoc:
         if regex::matches("^import\\s+\"[^\"]+\"", trimmed):
             string import_path = extract_import(trimmed)
             if strings::length(import_path) > 0:
-                collections::StringArrayList::add_element(doc.imports, import_path)
+                add_elem(doc.imports, import_path)
         
         if regex::matches("^class\\s+[a-zA-Z_][a-zA-Z0-9_]*\\s*:", trimmed):
             string class_name = extract_class_name(trimmed)
             if strings::length(class_name) > 0:
-                collections::StringArrayList::add_element(doc.classes, class_name)
+                add_elem(doc.classes, class_name)
         
         if strings::starts_with(trimmed, "fn ") or strings::starts_with(trimmed, "pub fn "):
             print "Function line detected: '%s'" | trimmed
             string func_name = extract_function_name(trimmed)
             if strings::length(func_name) > 0:
-                collections::StringArrayList::add_element(doc.functions, func_name)
-                print "Added function to collection: %s (total: %d)" | func_name, collections::StringArrayList::get_size(doc.functions)
+                add_elem(doc.functions, func_name)
+                print "Added function to collection: %s (total: %d)" | func_name, get_size(doc.functions)
             else:
                 print "Function name extraction failed for: '%s'" | trimmed
     
-    print "Final function count: %d" | collections::StringArrayList::get_size(doc.functions)
-    for int j = 0; j < collections::StringArrayList::get_size(doc.functions); j++:
-        string debug_func = collections::StringArrayList::get_element(doc.functions, j)
+    print "Final function count: %d" | get_size(doc.functions)
+    for int j = 0; j < get_size(doc.functions); j++:
+        string debug_func = get_element(doc.functions, j)
         print "Function %d: %s" | j, debug_func
     
     return doc
@@ -93,25 +97,25 @@ fn generate_markdown(ref ParsedDoc doc) -> void:
     markdown = fmt!("%s# %s\n\n", markdown, doc.module_name)
     markdown = fmt!("%s*Source: `%s`*\n\n", markdown, doc.filepath)
     
-    if collections::StringArrayList::get_size(doc.imports) > 0:
+    if get_size(doc.imports) > 0:
         markdown = fmt!("%s## Imports\n\n", markdown)
-        for int i = 0; i < collections::StringArrayList::get_size(doc.imports); i++:
-            string import_name = collections::StringArrayList::get_element(doc.imports, i)
+        for int i = 0; i < get_size(doc.imports); i++:
+            string import_name = get_element(doc.imports, i)
             markdown = fmt!("%s- `%s`\n", markdown, import_name)
         markdown = fmt!("%s\n", markdown)
     
-    if collections::StringArrayList::get_size(doc.classes) > 0:
+    if get_size(doc.classes) > 0:
         markdown = fmt!("%s## Classes\n\n", markdown)
-        for int i = 0; i < collections::StringArrayList::get_size(doc.classes); i++:
-            string class_name = collections::StringArrayList::get_element(doc.classes, i)
+        for int i = 0; i < get_size(doc.classes); i++:
+            string class_name = get_element(doc.classes, i)
             markdown = fmt!("%s### %s\n\n", markdown, class_name)
         markdown = fmt!("%s\n", markdown)
     
-    if collections::StringArrayList::get_size(doc.functions) > 0:
+    if get_size(doc.functions) > 0:
         markdown = fmt!("%s## Functions\n\n", markdown)
-        print "Generating markdown for %d functions" | collections::StringArrayList::get_size(doc.functions)
-        for int i = 0; i < collections::StringArrayList::get_size(doc.functions); i++:
-            string func_name = collections::StringArrayList::get_element(doc.functions, i)
+        print "Generating markdown for %d functions" | get_size(doc.functions)
+        for int i = 0; i < get_size(doc.functions); i++:
+            string func_name = get_element(doc.functions, i)
             print "Processing function %d: %s" | i, func_name
             markdown = fmt!("%s### %s\n\n", markdown, func_name)
     
