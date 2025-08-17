@@ -2,7 +2,7 @@
 
 In-development general purpose systems programming language with abstracted concurrency constructs builtin.
 
-No macros or convoluted compile-time metaprogramming.
+No convoluted compile-time metaprogramming.
 
 Optional garbage collection. The standard library will work with or without the GC.
 
@@ -12,12 +12,6 @@ Prioritizes:
 -  minimalism
 -  readability
 -  easy parallelism
-
-#### Resources
-
-Documentation is available [here](https://scarlang-docs.pages.dev).
-
-The VSCode extension is available [here](https://marketplace.visualstudio.com/items?itemName=NavidM.scar).
 
 #### Example
 
@@ -30,6 +24,32 @@ pub fn do_thing() -> void:
 
 do_thing()
 ```
+
+#### Getting Started
+
+##### Windows
+
+-  Unzip `scar.zip` to some folder, then add that folder to system PATH.
+-  Run the `setup.cmd` script
+
+##### Linux (experimental)
+
+-  Get prebuilt version from releases.
+-  Extract zip.
+-  Add `scar` binary location to env.
+
+##### MacOS (experimental)
+
+-  Install the go toolchain
+-  Clone the repository
+-  Run `go build`
+-  Add the folder with the executable to zsh profile (`.zprofile`).
+
+#### Resources
+
+Documentation is available [here](https://scarlang-docs.pages.dev).
+
+The VSCode extension is available [here](https://marketplace.visualstudio.com/items?itemName=NavidM.scar).
 
 ---
 
