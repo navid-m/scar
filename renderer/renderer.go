@@ -202,7 +202,6 @@ bool __check_key_exists(int* keys, int size, int key) {
 }
 
 `)
-	// Populate class information for all classes before generating struct definitions
 	for _, stmt := range program.Statements {
 		if stmt.ClassDecl != nil {
 			populateClassInfo(stmt.ClassDecl, stmt.ClassDecl.Name)
@@ -5597,7 +5596,6 @@ func inferArithmeticExpressionType(value string) string {
 		}
 	}
 
-	// Handle binary operators
 	operators := []string{" + ", " - ", " * ", " / ", " % "}
 
 	for _, op := range operators {
@@ -5725,7 +5723,6 @@ func checkTypeCompatibility(varName, varType, value string) error {
 			}
 		}
 
-		// This handles cases like complex arithmetic, method calls, array access, etc.
 		if containsValidExpressionElements(value) {
 			return nil
 		}
@@ -5808,7 +5805,6 @@ func generateMethodPrototype(className, methodName, returnType string, parameter
 		paramType := mapTypeToCType(param.Type)
 		// For ref parameters, don't add extra * since they should be handled as single pointers
 		if param.IsRef {
-			// For ref parameters, ensure they are treated as single pointers
 			if !strings.HasSuffix(paramType, "*") {
 				paramType = paramType + "*"
 			}
