@@ -5944,7 +5944,6 @@ func mapTypeToCType(mapType string) string {
 		return result
 	}
 
-	// Handle module-qualified types (e.g., collections::StringArrayList)
 	if strings.Contains(mapType, "::") {
 		parts := strings.Split(mapType, "::")
 		if len(parts) == 2 {
@@ -6031,8 +6030,11 @@ func extractListInnerType(listType string) string {
 		return ""
 	}
 
-	bracketDepth := 0
-	start := strings.Index(listType, "[")
+	var (
+		bracketDepth = 0
+		start        = strings.Index(listType, "[")
+	)
+
 	if start == -1 {
 		return ""
 	}
