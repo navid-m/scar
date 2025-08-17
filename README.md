@@ -1,6 +1,6 @@
 ## Scar
 
-In-development general purpose systems programming language with abstracted concurrency constructs builtin.
+General purpose systems programming language with abstracted concurrency and parallelism constructs builtin.
 
 No convoluted compile-time metaprogramming.
 
