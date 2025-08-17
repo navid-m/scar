@@ -1323,7 +1323,11 @@ func generateStructDefinition(b *strings.Builder, classInfo *ClassInfo, structNa
 			case "string":
 				fmt.Fprintf(b, "    char* %s;\n", field.Name)
 			default:
-				fmt.Fprintf(b, "    %s* %s;\n", mapTypeToCType(field.Type), field.Name)
+				if isCustomClassType(field.Type) {
+					fmt.Fprintf(b, "    %s %s;\n", mapTypeToCType(field.Type), field.Name)
+				} else {
+					fmt.Fprintf(b, "    %s* %s;\n", mapTypeToCType(field.Type), field.Name)
+				}
 			}
 		} else if field.Type == "string" {
 			fmt.Fprintf(b, "    char %s[MAX_STRING_LENGTH];\n", field.Name)
