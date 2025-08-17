@@ -615,12 +615,16 @@ func parseStructStatement(lines []string, lineNum, currentIndent int) (*Statemen
 		}
 	}
 
-	var fields []*StructField
-	nextLine := lineNum + 1
+	var (
+		fields   []*StructField
+		nextLine = lineNum + 1
+	)
 
 	for nextLine < len(lines) {
-		line := lines[nextLine]
-		trimmed := strings.TrimSpace(line)
+		var (
+			line    = lines[nextLine]
+			trimmed = strings.TrimSpace(line)
+		)
 
 		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
 			nextLine++
