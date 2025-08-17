@@ -4134,7 +4134,6 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				fmt.Fprintf(b, "%s%s = NULL;\n", indent, variable)
 			} else {
 				fmt.Fprintf(b, "%sfree(%s);\n", indent, variable)
-				fmt.Fprintf(b, "%s%s = NULL;\n", indent, variable)
 			}
 		case stmt.NewExpr != nil:
 			className := stmt.NewExpr.ClassName
