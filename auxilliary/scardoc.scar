@@ -89,7 +89,7 @@ fn parse_file(string filepath, string module_name) -> ref ParsedDoc:
     return doc
 
 fn generate_markdown(ref ParsedDoc doc) -> void:
-    char* markdown = ""
+    cstring markdown = ""
     markdown = fmt!("%s# %s\n\n", markdown, doc.module_name)
     markdown = fmt!("%s*Source: `%s`*\n\n", markdown, doc.filepath)
     
@@ -140,4 +140,4 @@ fn generate_documentation(string source_file):
     
     print "Documentation generated successfully."
 
-generate_documentation("lib/auxilliary/scardoc/alt.scar")
+generate_documentation("auxilliary/scardoc.scar")
