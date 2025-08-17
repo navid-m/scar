@@ -27,8 +27,5 @@ if %errorlevel% neq 0 (
     set "PATH=%PATH%;%MINGW64_BIN%"
 )
 
-echo GCC should now be available:
-gcc --version
-
 echo Done.
 pause
