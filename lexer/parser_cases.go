@@ -641,8 +641,10 @@ func parseStructStatement(lines []string, lineNum, currentIndent int) (*Statemen
 			return nil, nextLine + 1, fmt.Errorf("invalid field declaration format at line %d (expected: type field_name)", nextLine+1)
 		}
 
-		fieldType := fieldParts[0]
-		fieldName := fieldParts[1]
+		var (
+			fieldType = fieldParts[0]
+			fieldName = fieldParts[1]
+		)
 
 		if !isValidType(fieldType) {
 			return nil, nextLine + 1, fmt.Errorf("invalid field type '%s' at line %d", fieldType, nextLine+1)
