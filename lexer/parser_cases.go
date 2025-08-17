@@ -490,9 +490,11 @@ func parseClassStatement(lines []string, lineNum, currentIndent int) (*Statement
 		}
 	}
 
-	var constructor *ConstructorStmt
-	var methods []*MethodDeclStmt
-	nextLine := lineNum + 1
+	var (
+		constructor *ConstructorStmt
+		methods     []*MethodDeclStmt
+		nextLine    = lineNum + 1
+	)
 
 	for nextLine < len(lines) {
 		line := lines[nextLine]
