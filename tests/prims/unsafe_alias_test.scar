@@ -1,0 +1,30 @@
+# Test file for the unsafe alias system
+
+import "std/strings"
+import "std/collections"
+
+alias add_elem = collections::StringArrayList::add_element
+alias get_size = collections::StringArrayList::get_size
+
+unsafe alias x = collections::StringArrayList::add_element
+unsafe alias y = collections::StringArrayList::get_size
+unsafe alias z = strings::length
+
+string test_str = "hello world"
+int len = z(test_str)
+print "Length of '%s' is %d" | test_str, len
+
+collections::StringArrayList list = new collections::StringArrayList(10)
+x(list, "first")
+x(list, "second")
+x(list, "third")
+int size = y(list)
+print "List size: %d" | size
+
+collections::StringArrayList::add_element(list, "fourth")
+int new_size = collections::StringArrayList::get_size(list)
+print "New list size: %d" | new_size
+
+add_elem(list, "fifth")
+int final_size = get_size(list)
+print "Final list size: %d" | final_size
