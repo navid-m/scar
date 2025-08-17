@@ -1,0 +1,17 @@
+struct Greeting:
+    string message
+    string sender
+
+struct HappyGreeting:
+    bool truly_happy
+    Greeting actual_greeting
+
+var greeting = Greeting()
+greeting.message = "Hello, World!"
+greeting.sender = "Me"
+
+var hg = HappyGreeting()
+hg.truly_happy = true
+hg.actual_greeting = greeting
+
+print "Greeting: %s" | hg.actual_greeting.message
