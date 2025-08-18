@@ -1311,7 +1311,7 @@ func processModuleMacros(source string) string {
 		// fmt.Printf("  [%d]: %s\n", i, bodyLine)
 		// }
 	}
-	fmt.Println("=== END Macros ===")
+	// fmt.Println("=== END Macros ===")
 
 	expanded := expandModuleMacros(source, macros)
 
