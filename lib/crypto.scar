@@ -1,8 +1,8 @@
 import "std/strings"
 import "std/random"
 
-## Applies XOR cipher to a given text using the provided key.
-## Returns the raw string result of XOR between text and key characters.
+## Apply XOR cipher to a given text using the provided key.
+## Return the raw string result of XOR between text and key characters.
 pub fn xor_cipher(string text, string key) -> string:
     if strings::length(key) == 0:
         return ""
@@ -19,8 +19,8 @@ pub fn xor_cipher(string text, string key) -> string:
         out = cat!(out, ch)
     return out
 
-## Applies XOR cipher to a given text using the provided key.
-## Returns the result as a hexadecimal string.
+## Apply XOR cipher to a given text using the provided key.
+## Return the result as a hexadecimal string.
 pub fn xor_cipher_hex(string text, string key) -> char*:
     if strings::length(key) == 0:
         return ""
@@ -34,8 +34,8 @@ pub fn xor_cipher_hex(string text, string key) -> char*:
         out = cat!(out, fmt!("%02X", xv))
     return out
 
-## Encrypts a given text using the Vigenère cipher with the provided key.
-## Returns the encrypted text as a string.
+## Encrypt a given text using the Vigenère cipher with the provided key.
+## Return the encrypted text as a string.
 pub fn vigenere_encrypt(string text, string key) -> string:
     $raw (
         if (!text || !key || key[0] == '\0') { strcpy(_output_buffer, ""); return; }
@@ -63,8 +63,8 @@ pub fn vigenere_encrypt(string text, string key) -> string:
         free(out);
     )
 
-## Decrypts a given text using the Vigenère cipher with the provided key.
-## Returns the decrypted text as a string.
+## Decrypt a given text using the Vigenère cipher with the provided key.
+## Return the decrypted text as a string.
 pub fn vigenere_decrypt(string text, string key) -> string:
     $raw (
         if (!text || !key || key[0] == '\0') { strcpy(_output_buffer, ""); return; }
@@ -92,8 +92,8 @@ pub fn vigenere_decrypt(string text, string key) -> string:
         free(out);
     )
 
-## Generates a random salt of the specified length.
-## Returns the generated salt as a string.
+## Generate a random salt of the specified length.
+## Return the generated salt as a string.
 pub fn random_salt(i32 length) -> string:
     $raw (
         static const char *alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
@@ -110,8 +110,8 @@ pub fn random_salt(i32 length) -> string:
         free(out);
     )
 
-## Computes the SHA-256 hash of the given input string.
-## Returns the hash as a hexadecimal string.
+## Compute the SHA-256 hash of the given input string.
+## Return the hash as a hexadecimal string.
 pub fn sha256(string input) -> string:
     $raw (
         typedef unsigned int u32;
