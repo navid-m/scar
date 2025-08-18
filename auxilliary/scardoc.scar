@@ -25,6 +25,9 @@ class ParsedDoc:
         var this.methods        = new collections::StringArrayList(200)
         var this.method_docs    = new collections::StringArrayList(200)
         var this.method_parents = new collections::StringArrayList(200)
+        var this.structs        = new collections::StringArrayList(100)
+        var this.struct_docs    = new collections::StringArrayList(100)
+        var this.struct_fields  = new collections::StringArrayList(100)
         string this.filepath    = ""
         string this.module_name = ""
 
@@ -34,6 +37,16 @@ fn extract_function_name(string line) -> string:
     list[string] matches = regex::find(pattern, line)
     if len(matches) >= 2:
         print "Function found: %s" | matches[1]
+        return matches[1]
+    
+    return ""
+
+fn extract_struct_name(string line) -> string:
+    string pattern = "^(?:pub\\s+)?struct\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*:"
+    
+    list[string] matches = regex::find(pattern, line)
+    if len(matches) >= 2:
+        print "Struct found: %s" | matches[1]
         return matches[1]
     
     return ""
@@ -65,6 +78,8 @@ fn parse_file(string fpath, string module_name) -> ref ParsedDoc:
     list[string] lines = fs::read_lines(fpath)
     string current_class = ""
     int class_indent = -1
+    string current_struct = ""
+    int struct_indent = -1
     for int i = 0; i < len(lines); i++:
         string line = lines[i]
         string trimmed = strings::trim_space(line)
@@ -82,6 +97,9 @@ fn parse_file(string fpath, string module_name) -> ref ParsedDoc:
         if strings::length(current_class) > 0 and indent <= class_indent and !regex::matches("^(?:pub\\s+)?class\\s+", trimmed):
             current_class = ""
             class_indent = -1
+        if strings::length(current_struct) > 0 and indent <= struct_indent and !regex::matches("^(?:pub\\s+)?struct\\s+", trimmed):
+            current_struct = ""
+            struct_indent = -1
         if regex::matches("^import\\s+\"[^\"]+\"", trimmed):
             string import_path = extract_import(trimmed)
             if strings::length(import_path) > 0:
@@ -112,6 +130,58 @@ fn parse_file(string fpath, string module_name) -> ref ParsedDoc:
                     cbuild.append("\n")
                     k = k + 1
                 add_elem(doc.class_docs, cbuild.buffer)
+        if regex::matches("^(?:pub\\s+)?struct\\s+[a-zA-Z_][a-zA-Z0-9_]*\\s*:", trimmed):
+            string struct_name = extract_struct_name(trimmed)
+            if strings::length(struct_name) > 0:
+                add_elem(doc.structs, struct_name)
+                current_struct = struct_name
+                struct_indent = indent
+                # preceding docs for struct
+                int js = i - 1
+                int starts = js
+                while starts >= 0:
+                    string ts = strings::trim(lines[starts])
+                    if strings::starts_with(ts, "##"):
+                        starts = starts - 1
+                        continue
+                    break
+                starts = starts + 1
+                var sbuild = new strings::Builder()
+                int ks = starts
+                while ks <= js:
+                    string t2s = strings::trim(lines[ks])
+                    string contents = strings::trim_prefix(t2s, "##")
+                    if strings::starts_with(contents, " "):
+                        contents = strings::trim_prefix(contents, " ")
+                    sbuild.append(contents)
+                    sbuild.append("\n")
+                    ks = ks + 1
+                add_elem(doc.struct_docs, sbuild.buffer)
+                # collect fields indented under struct
+                var fbuild = new strings::Builder()
+                int kf = i + 1
+                while kf < len(lines):
+                    string l2 = lines[kf]
+                    string t2 = strings::trim_space(l2)
+                    int ind2 = 0
+                    string lleft = l2
+                    while strings::starts_with(lleft, " ") or strings::starts_with(lleft, "\t"):
+                        if strings::starts_with(lleft, " "):
+                            lleft = strings::trim_prefix(lleft, " ")
+                            ind2 = ind2 + 1
+                        else:
+                            lleft = strings::trim_prefix(lleft, "\t")
+                            ind2 = ind2 + 1
+                    if ind2 <= struct_indent:
+                        break
+                    if strings::length(t2) == 0 or strings::starts_with(t2, "##"):
+                        kf = kf + 1
+                        continue
+                    fbuild.append(t2)
+                    fbuild.append("\n")
+                    kf = kf + 1
+                add_elem(doc.struct_fields, fbuild.buffer)
+                i = kf - 1
         if strings::length(current_class) > 0:
             bool is_method_sig = strings::starts_with(trimmed, "fn ") or strings::starts_with(trimmed, "pub fn ") or regex::matches("^(?:pub\\s+)?init\\s*\\(", trimmed)
             if is_method_sig:
@@ -233,6 +303,33 @@ fn generate_markdown(ref ParsedDoc doc) -> void:
                             builder.append(mdoc)
                             builder.append("\n")
         builder.append("\n")
+    if get_size(doc.structs) > 0:
+        builder.append("## Structs\n\n")
+        for int si = 0; si < get_size(doc.structs); si++:
+            string sname = get_element(doc.structs, si)
+            builder.append(fmt!("### %s\n\n", sname))
+            if si < get_size(doc.struct_docs):
+                string sdoc = get_element(doc.struct_docs, si)
+                if strings::length(sdoc) > 0:
+                    builder.append(sdoc)
+                    builder.append("\n")
+            if si < get_size(doc.struct_fields):
+                string fields_blob = get_element(doc.struct_fields, si)
+                if strings::length(fields_blob) > 0:
+                    builder.append("#### Fields\n\n")
+                    ref collections::StringArrayList flines = strings::split(fields_blob, "\n")
+                    for int fi = 0; fi < get_size(flines); fi++:
+                        string ln = strings::trim_space(get_element(flines, fi))
+                        if strings::length(ln) == 0:
+                            continue
+                        ref collections::StringArrayList toks = strings::split(ln, " ")
+                        if get_size(toks) >= 2:
+                            string ftype = get_element(toks, 0)
+                            string fname = get_element(toks, 1)
+                            builder.append(fmt!("- `%s`: `%s`\n", fname, ftype))
+                        else:
+                            builder.append(fmt!("- %s\n", ln))
+            builder.append("\n")
     if get_size(doc.functions) > 0:
         builder.append("## Functions\n\n")
         print "Generating markdown for %d functions" | get_size(doc.functions)
