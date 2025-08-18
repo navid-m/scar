@@ -5894,9 +5894,12 @@ func mapTypeToCType(mapType string) string {
 	if strings.Contains(mapType, "::") {
 		parts := strings.Split(mapType, "::")
 		if len(parts) == 2 {
-			moduleName := parts[0]
-			typeName := parts[1]
-			result := lexer.GenerateUniqueSymbol(typeName, moduleName)
+			var (
+				moduleName = parts[0]
+				typeName   = parts[1]
+				result     = lexer.GenerateUniqueSymbol(typeName, moduleName)
+			)
+
 			if isCustomClassType(result) {
 				result = result + "*"
 				logger.Debug("module-qualified class type '%s' -> '%s'\n", mapType, result)
