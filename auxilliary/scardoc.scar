@@ -121,21 +121,17 @@ fn generate_markdown(ref ParsedDoc doc) -> void:
 fn generate_documentation(string source_file):
     print "Generating documentation for: %s" | source_file
     
-    print "Checking if it exists..."
     if not fs::exists(source_file):
         print "Error: Source file %s not found." | source_file
         return
     
-    print "Extracting module name..."
     int last_slash = strings::last_index_of(source_file, "/")
     string filename = source_file
     if last_slash != -1:
         filename = strings::substring(source_file, last_slash + 1, strings::length(source_file))
     
-    print "Extracting module name 2..."
     int dot_pos = strings::index_of(filename, ".")
     string module_name = filename
-    print "Extracting module name 3..."
     ref ParsedDoc doc = parse_file(source_file, module_name)
     print "DONE"
     generate_markdown(doc)
