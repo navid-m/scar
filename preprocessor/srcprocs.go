@@ -260,8 +260,8 @@ func expandMacros(source string, macros map[string]*Macro) string {
 
 		expandedLine := expandMacroCallsInLine(line, macros)
 		if expandedLine != line {
-			expandedLines := strings.Split(expandedLine, "\n")
-			for _, expLine := range expandedLines {
+			expandedLines := strings.SplitSeq(expandedLine, "\n")
+			for expLine := range expandedLines {
 				if strings.TrimSpace(expLine) != "" {
 					result = append(result, expLine)
 				}
@@ -276,12 +276,12 @@ func expandMacros(source string, macros map[string]*Macro) string {
 
 func loadImportedMacros(source string) map[string]*Macro {
 	macros := make(map[string]*Macro)
-	lines := strings.Split(source, "\n")
+	lines := strings.SplitSeq(source, "\n")
 
-	for _, line := range lines {
+	for line := range lines {
 		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "import ") {
-			moduleName := strings.Trim(strings.TrimPrefix(trimmed, "import "), "\"")
+		if after, ok := strings.CutPrefix(trimmed, "import "); ok {
+			moduleName := strings.Trim(after, "\"")
 			moduleMacros := loadMacrosFromModule(moduleName)
 			for name, macro := range moduleMacros {
 				macros[name] = macro
