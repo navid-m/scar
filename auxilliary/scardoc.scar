@@ -133,7 +133,7 @@ fn generate_documentation(string source_file):
     int dot_pos = strings::index_of(filename, ".")
     string module_name = filename
     ref ParsedDoc doc = parse_file(source_file, module_name)
-    print "DONE"
+
     generate_markdown(doc)
     
     print "Documentation generated successfully."
