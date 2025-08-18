@@ -506,7 +506,9 @@ bool __check_key_exists(int* keys, int size, int key) {
 			mainStatements = append(mainStatements, stmt)
 		}
 	}
-	return b.String()
+	output := b.String()
+	output = postProcessC(output)
+	return output
 }
 
 func resolveLenFunctionCalls(expression string) string {
@@ -2835,23 +2837,24 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			}
 		case stmt.VarAssign != nil:
 			var (
-				varName = lexer.ResolveSymbol(stmt.VarAssign.Name, currentModule)
+				varName = stmt.VarAssign.Name
 				value   = stmt.VarAssign.Value
 			)
 
 			logger.Debug("VarAssign: varName=%s, value=%s\n", varName, value)
 
-			value = processListOfSyntax(value) // Handle list_of! syntax before other processing
-			value = lexer.ResolveSymbol(value, currentModule)
+			value = processListOfSyntax(value)
 			value = fixFloatCastGranular(value)
+			value = resolveImportedSymbols(value, program.Imports)
 			value = convertThisReferencesGranular(value)
-			value = convertNewToConstructor(value) // Convert 'new ClassName(args)' to 'ClassName_new(args)'
-			value = convertMethodCallToC(value)    // Convert method calls like 'obj.method()' to 'Class_method(obj)'
-			value = convertPropertyAccess(value)   // Convert property access from dot to arrow notation
+			value = convertNewToConstructor(value)
+			value = convertMethodCallToC(value)
+			value = sanitizeModuleCalls(value)
+			value = convertPropertyAccess(value)
+			value = sanitizeModuleCalls(value)
 
 			logger.Debug("VarAssign after processing: varName=%s, value=%s\n", varName, value)
 
-			// Handle list_of! concatenation
 			if strings.HasPrefix(value, "__LIST_CONCAT__") {
 				parts := strings.Split(value, "__")
 				if len(parts) >= 5 {
@@ -2942,7 +2945,6 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 						}
 					}
 				} else {
-					// Check for this-> fields
 					for _, classInfo := range globalClasses {
 						for _, field := range classInfo.Fields {
 							if field.Name == varName || ("this->"+field.Name) == varName {
@@ -4361,6 +4363,30 @@ func convertThisReferencesGranular(expr string) string {
 	return expr
 }
 
+func sanitizeModuleCalls(expr string) string {
+	if expr == "" {
+		return expr
+	}
+	if len(lexer.LoadedModules) > 0 {
+		var funcNames []string
+		for _, mod := range lexer.LoadedModules {
+			for fname := range mod.PublicFuncs {
+				funcNames = append(funcNames, regexp.QuoteMeta(lexer.GenerateUniqueSymbol(fname, mod.Name)))
+			}
+		}
+		if len(funcNames) > 0 {
+			pattern := regexp.MustCompile(`\b(` + strings.Join(funcNames, "|") + `)\s*\(\s*this\s*,`)
+			before := expr
+			expr = pattern.ReplaceAllString(expr, `${1}(`)
+			if expr != before {
+				logger.Debug("sanitizeModuleCalls (exact): '%s' -> '%s'\n", before, expr)
+			}
+		}
+	}
+
+	return expr
+}
+
 // Processes all get! expressions in a string and replaces them with the C code
 func processGetExpressions(expr string, program *lexer.Program) string {
 	logger.Debug("processGetExpressions called with: '%s'\n", expr)
@@ -4718,8 +4744,14 @@ func convertMethodCallToC(expr string) string {
 		}
 	}
 
-	result = convertSingleMethodCall(expr)
+	fullMethodPattern := regexp.MustCompile(`^\s*(?:\bthis\.\w+|\b\w+)\.[a-zA-Z_]\w*\([^)]*\)\s*$`)
+	if fullMethodPattern.MatchString(expr) {
+		result = convertSingleMethodCall(expr)
+	} else {
+		result = expr
+	}
 	result = strings.ReplaceAll(result, "__ARROW__", "->")
+	result = sanitizeModuleCalls(result)
 
 	return result
 }
@@ -5204,6 +5236,27 @@ func convertSingleMethodCall(expr string) string {
 
 	objectName := strings.TrimSpace(expr[:dotIndex])
 	methodName := strings.TrimSpace(expr[dotIndex+1 : parenIndex])
+
+	{
+		if mod, ok := lexer.LoadedModules[objectName]; ok {
+			closeParen := findMatchingParen(expr, parenIndex)
+			if closeParen == -1 {
+				return expr
+			}
+			args := ""
+			if closeParen > parenIndex+1 {
+				args = expr[parenIndex+1 : closeParen]
+			}
+			if _, exists := mod.PublicFuncs[methodName]; exists {
+				processedArgs := processMethodArguments(args)
+				resolved := lexer.GenerateUniqueSymbol(methodName, mod.Name)
+				if strings.TrimSpace(processedArgs) == "" {
+					return resolved + "()"
+				}
+				return resolved + "(" + processedArgs + ")"
+			}
+		}
+	}
 
 	if strings.Contains(methodName, ".") {
 		fieldDotIndex := strings.Index(methodName, ".")
@@ -6175,4 +6228,18 @@ func parseListElements(elementsStr string) []string {
 	}
 
 	return elements
+}
+
+func postProcessC(csrc string) string {
+	if csrc == "" {
+		return csrc
+	}
+	before := csrc
+	csrc = sanitizeModuleCalls(csrc)
+	if csrc != before {
+		logger.Debug("postProcessC: sanitizeModuleCalls modified output\n")
+	}
+	re := regexp.MustCompile(`(?m)^(\s*)this\.([A-Za-z_][A-Za-z0-9_]*)\s*=`)
+	csrc = re.ReplaceAllString(csrc, `${1}this->${2} =`)
+	return csrc
 }

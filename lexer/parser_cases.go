@@ -1298,26 +1298,26 @@ func parseBulkImport(lines []string, lineNum int) (*Statement, int, error) {
 }
 
 func processModuleMacros(source string) string {
-	fmt.Println("=== DEBUG: Original source before macro expansion ===")
-	fmt.Println(source)
-	fmt.Println("=== END Original source ===")
+	// fmt.Println("=== DEBUG: Original source before macro expansion ===")
+	// fmt.Println(source)
+	// fmt.Println("=== END Original source ===")
 
 	macros := collectModuleMacroDefinitions(source)
 
-	fmt.Printf("=== DEBUG: Found %d macros ===\n", len(macros))
+	// fmt.Printf("=== DEBUG: Found %d macros ===\n", len(macros))
 	for name, macro := range macros {
 		fmt.Printf("Macro: %s(%s)\n", name, strings.Join(macro.Parameters, ", "))
-		for i, bodyLine := range macro.Body {
-			fmt.Printf("  [%d]: %s\n", i, bodyLine)
-		}
+		// for i, bodyLine := range macro.Body {
+		// fmt.Printf("  [%d]: %s\n", i, bodyLine)
+		// }
 	}
 	fmt.Println("=== END Macros ===")
 
 	expanded := expandModuleMacros(source, macros)
 
-	fmt.Println("=== DEBUG: Expanded source after macro expansion ===")
-	fmt.Println(expanded)
-	fmt.Println("=== END Expanded source ===")
+	// fmt.Println("=== DEBUG: Expanded source after macro expansion ===")
+	// fmt.Println(expanded)
+	// fmt.Println("=== END Expanded source ===")
 
 	return expanded
 }

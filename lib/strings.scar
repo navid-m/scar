@@ -6,8 +6,7 @@ pub class Builder:
     
     fn append(cstring str) -> void:
         this.buffer = cat!(this.buffer, str)
-        int length = length + strings::length(str)
-        this.length = length
+        this.length = this.length + strings::length(str)
 
 pub fn length(string str) -> int:
     $raw (
