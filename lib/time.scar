@@ -8,6 +8,7 @@ pub class Date:
         int this.second = 0 
         int this.millisecond = 0
 
+## Current UNIX timestamp in seconds.
 pub fn timestamp() -> int:
     int result = 0
     $raw (
@@ -15,6 +16,7 @@ pub fn timestamp() -> int:
     )
     return result
 
+## Current local date/time components.
 pub fn now() -> time::Date:
     $raw (
         #include <time.h>

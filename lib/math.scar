@@ -11,24 +11,28 @@ pub class Vector2:
         f32 this.x = x
         f32 this.y = y
     
+    ## Add two 2D vectors.
     fn add(ref math::Vector2 other) -> math::Vector2:
         ref math::Vector2 result = new math::Vector2(this.x, this.y)
         result.x = this.x + other.x
         result.y = this.y + other.y
         return result
     
+    ## Subtract two 2D vectors.
     fn sub(ref math::Vector2 other) -> math::Vector2:
         ref math::Vector2 result = new math::Vector2(this.x, this.y)
         result.x = this.x - other.x
         result.y = this.y - other.y
         return result
     
+    ## Multiply two 2D vectors.
     fn mul(ref math::Vector2 other) -> math::Vector2:
         ref math::Vector2 result = new math::Vector2(this.x, this.y)
         result.x = this.x * other.x
         result.y = this.y * other.y
         return result
     
+    ## Divide two 2D vectors.
     fn div(ref math::Vector2 other) -> math::Vector2:
         ref math::Vector2 result = new math::Vector2(this.x, this.y)
         result.x = this.x / other.x
@@ -42,6 +46,7 @@ pub class Vector3:
         f32 this.y = y
         f32 this.z = z
     
+    ## Add two 3D vectors.
     fn add(ref math::Vector3 other) -> math::Vector3:
         ref math::Vector3 result = new math::Vector3(this.x, this.y, this.z)
         result.x = this.x + other.x
@@ -49,6 +54,7 @@ pub class Vector3:
         result.z = this.z + other.z
         return result
     
+    ## Subtract two 3D vectors.
     fn sub(ref math::Vector3 other) -> math::Vector3:
         ref math::Vector3 result = new math::Vector3(this.x, this.y, this.z)
         result.x = this.x - other.x
@@ -56,6 +62,7 @@ pub class Vector3:
         result.z = this.z - other.z
         return result
     
+    ## Multiply two 3D vectors.
     fn mul(ref math::Vector3 other) -> math::Vector3:
         ref math::Vector3 result = new math::Vector3(this.x, this.y, this.z)
         result.x = this.x * other.x
@@ -63,6 +70,7 @@ pub class Vector3:
         result.z = this.z * other.z
         return result
     
+    ## Divide two 3D vectors.
     fn div(ref math::Vector3 other) -> math::Vector3:
         ref math::Vector3 result = new math::Vector3(this.x, this.y, this.z)
         result.x = this.x / other.x
@@ -70,6 +78,7 @@ pub class Vector3:
         result.z = this.z / other.z
         return result
 
+## Convert string to 32-bit integer (supports optional +/-).
 pub fn to_int(string value) -> i32:
     i32 i = 0
     i32 result = 0
@@ -89,6 +98,7 @@ pub fn to_int(string value) -> i32:
 
     return result * sign
 
+## Convert string to 32-bit float (supports optional +/- and decimals).
 pub fn to_float(string value) -> f32:
     i32 i = 0
     f32 result = 0.0
@@ -118,21 +128,25 @@ pub fn to_float(string value) -> f32:
 
     return float(sign) * (result + fraction)
 
+## Minimum of two 32-bit integers.
 pub fn min(i32 a, i32 b) -> i32:
     if a < b:
         return a
     return b
 
+## Maximum of two 32-bit integers.
 pub fn max(i32 a, i32 b) -> i32:
     if a > b:
         return a
     return b
 
+## Absolute value of a float.
 pub fn absolute(f32 value) -> f32:
     if value < 0.0:
         return -value
     return value
 
+## Power with integer exponent.
 pub fn pow(f32 base, i32 exp) -> f32:
     f32 result = 1.0
     i32 i = 0
@@ -142,6 +156,7 @@ pub fn pow(f32 base, i32 exp) -> f32:
         result = result * base
     return result
 
+## Factorial of n; returns -1 for negative n.
 pub fn factorial(i32 n) -> i32:
     if n < 0:
         return -1
@@ -150,6 +165,7 @@ pub fn factorial(i32 n) -> i32:
         result = result * i
     return result
 
+## Clamp value to the inclusive range [min_value, max_value].
 pub fn clamp(f32 value, f32 min_value, f32 max_value) -> f32:
     if value < min_value:
         return min_value
@@ -157,6 +173,7 @@ pub fn clamp(f32 value, f32 min_value, f32 max_value) -> f32:
         return max_value
     return value
 
+## Normalize angle in radians to (-PI, PI].
 pub fn normalize(f32 x) -> f32:
     while x > math::PI:
         x = x - 2.0 * math::PI
@@ -164,6 +181,7 @@ pub fn normalize(f32 x) -> f32:
         x = x + 2.0 * math::PI
     return x
 
+## Sine using a truncated Taylor series.
 pub fn sin(f32 x) -> f32:
     x = math::normalize(x)
     f32 term = x
@@ -178,6 +196,7 @@ pub fn sin(f32 x) -> f32:
         i = i + 1
     return result
 
+## Cosine using a truncated Taylor series.
 pub fn cos(f32 x) -> f32:
     x = math::normalize(x)
     f32 term = 1.0
@@ -199,6 +218,7 @@ pub fn tan(f32 x) -> f32:
         return 0.0
     return math::sin(x) / cos_x
 
+## Exponential e^x using a series expansion.
 pub fn exp(f32 x) -> f32:
     f32 sum = 1.0
     f32 term = 1.0
@@ -209,7 +229,7 @@ pub fn exp(f32 x) -> f32:
         i = i + 1
     return sum
 
-## Will return -1.0 if x <= 0.0
+## Natural logarithm; returns -1.0 for x <= 0.
 pub fn ln(f32 x) -> f32:
     if x <= 0.0:
         return -1.0
@@ -224,7 +244,7 @@ pub fn ln(f32 x) -> f32:
         i = i + 1
     return 2.0 * sum
 
-## Will return 0.0 if x < -1.0 || x > 1.0
+## Arc sine; returns 0.0 if x is out of [-1, 1].
 pub fn asin(f32 x) -> f32:
     if x < -1.0 || x > 1.0:
         return 0.0
@@ -240,6 +260,7 @@ pub fn asin(f32 x) -> f32:
         i = i + 1
     return result
 
+## Arc cosine. Returns 0.0 if x is out of [-1, 1].
 pub fn acos(float x) -> float:
     if x < -1.0 or x > 1.0:
         return 0.0
@@ -249,6 +270,7 @@ pub fn acos(float x) -> float:
         return math::PI
     return math::PI / 2 - math::asin(x)
 
+## Arc tangent.
 pub fn atan(float x) -> float:
     if x == 0.0:
         return 0.0
@@ -269,6 +291,7 @@ pub fn atan(float x) -> float:
         i = i + 1
     return result
 
+## Arc tangent of y/x using the signs of both to determine the quadrant.
 pub fn atan2(float y, float x) -> float:
     if x == 0.0:
         if y > 0.0:
@@ -316,6 +339,7 @@ pub fn sqrt(f64 x) -> f64:
     
     return guess
 
+## Round to given decimal places (half up).
 pub fn round(float value, int decimalPlaces) -> float:
     float factor = math::pow(10.0, float(decimalPlaces))
     return (float)((int)(value * factor + 0.5)) / factor
@@ -325,43 +349,51 @@ pub fn round(float value, int decimalPlaces) -> float:
 pub fn print_float(float value, int decimalPlaces) -> void:
     put "%.*f" | decimalPlaces, math::round(value, decimalPlaces)
 
+## Floating-point remainder a mod b.
 pub fn mod(float a, float b) -> float:
     if b == 0.0:
         return 0.0 
     float result = a - b * math::floor(a / b)
     return result
 
+## Largest integer <= x.
 pub fn floor(float x) -> float:
     int i = (int)x
     if float(i) > x:
         return float(i - 1)
     return float(i)
 
+## Smallest integer >= x.
 pub fn ceil(float x) -> float:
     int i = (int)x
     if float(i) < x:
         return float(i + 1)
     return float(i)
 
+## Logarithm with arbitrary positive base; returns -1.0 on invalid input.
 pub fn log_base(float x, float base) -> float:
     if x <= 0.0 or base <= 0.0 or base == 1.0:
         return -1.0
     return math::ln(x) / math::ln(base)
 
+## Convert degrees to radians.
 pub fn radians(float degrees) -> float:
     float factor = math::PI / 180.0
     return degrees * factor
 
+## Convert radians to degrees.
 pub fn degrees(float radians) -> float:
     float factor = 180.0 / math::PI
     return radians * factor
 
+## Base-10 logarithm; returns -1.0 for x <= 0.
 pub fn log10(float x) -> float:
     float ln10 = math::ln(10.0)
     if x <= 0.0:
         return -1.0
     return math::ln(x) / ln10
 
+## Base-2 logarithm; returns -1.0 for x <= 0.
 pub fn log2(float x) -> float:
     float ln2 = math::ln(2.0)
     if x <= 0.0:
@@ -402,11 +434,13 @@ pub fn trunc(float x) -> float:
     int i = (int)x
     return (float)i
 
+## Fractional part of x (x - floor(x)).
 pub fn fract(float x) -> float:
     float fx = math::floor(x)
     float r = x - fx
     return r
 
+## Sign of x: 1 for >0, -1 for <0, 0 otherwise.
 pub fn sign(float x) -> int:
     if x > 0.0:
         return 1
@@ -414,16 +448,19 @@ pub fn sign(float x) -> int:
         return -1
     return 0
 
+## Minimum of two floats.
 pub fn minf(float a, float b) -> float:
     if a < b:
         return a
     return b
 
+## Maximum of two floats.
 pub fn maxf(float a, float b) -> float:
     if a > b:
         return a
     return b
 
+## Clamp float to the inclusive range [min_value, max_value].
 pub fn clampf(float value, float min_value, float max_value) -> float:
     if value < min_value:
         return min_value
@@ -431,17 +468,20 @@ pub fn clampf(float value, float min_value, float max_value) -> float:
         return max_value
     return value
 
+## Linear interpolation between a and b by t in [0,1].
 pub fn lerp(float a, float b, float t) -> float:
     float diff = b - a
     float prod = t * diff
     return a + prod
 
+## Hypotenuse sqrt(x*x + y*y).
 pub fn hypot(float x, float y) -> float:
     float xsq = x * x
     float ysq = y * y
     float sum = xsq + ysq
     return math::sqrtf(sum)
 
+## Cube root using Newton's method.
 pub fn cbrt(float x) -> float:
     if x == 0.0:
         return 0.0
@@ -464,23 +504,27 @@ pub fn cbrt(float x) -> float:
         i = i + 1
     return guess
 
+## 2^x computed via e^(x*ln 2).
 pub fn exp2(float x) -> float:
     float ln2 = math::ln(2.0)
     float prod = x * ln2
     return math::exp(prod)
 
+## Hyperbolic sine.
 pub fn sinh(float x) -> float:
     float ex = math::exp(x)
     float enx = math::exp(-x)
     float num = ex - enx
     return num / 2.0
 
+## Hyperbolic cosine.
 pub fn cosh(float x) -> float:
     float ex = math::exp(x)
     float enx = math::exp(-x)
     float num = ex + enx
     return num / 2.0
 
+## Hyperbolic tangent.
 pub fn tanh(float x) -> float:
     float s = math::sinh(x)
     float c = math::cosh(x)

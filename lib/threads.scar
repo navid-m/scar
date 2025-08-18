@@ -1,5 +1,5 @@
 ## Cross-platform threading primitives for Scar
-## Provides: Thread spawn/join/detach, Mutex, sleep/yield, CPU count, current thread id
+## Provides: Thread spawn/join/detach, Mutex, sleep/yield, CPU count, current thread ID
 
 pub class Thread:
     init:
@@ -12,8 +12,11 @@ pub class Mutex:
 ## Spawn a native thread to run a C function pointer with an argument pointer.
 ##
 ## WARNING: func_ptr must be a native function pointer compatible with the platform:
+##
 ## - Windows: DWORD WINAPI fn(void* arg)
+##
 ## - Unix:    void* fn(void* arg)
+##
 pub fn spawn(i64 func_ptr, i64 arg_ptr) -> threads::Thread:
     platform (Windows):
         $raw (
@@ -118,6 +121,7 @@ pub fn mutex_create() -> threads::Mutex:
             return m;
         )
 
+## Lock a mutex. Blocks until the lock is acquired.
 pub fn mutex_lock(threads::Mutex m):
     platform (Windows):
         $raw (
@@ -132,6 +136,7 @@ pub fn mutex_lock(threads::Mutex m):
             if (pm) pthread_mutex_lock(pm);
         )
 
+## Unlock a mutex.
 pub fn mutex_unlock(threads::Mutex m):
     platform (Windows):
         $raw (
@@ -146,6 +151,7 @@ pub fn mutex_unlock(threads::Mutex m):
             if (pm) pthread_mutex_unlock(pm);
         )
 
+## Destroy a mutex and free its underlying resources.
 pub fn mutex_destroy(threads::Mutex m):
     platform (Windows):
         $raw (

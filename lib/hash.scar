@@ -26,6 +26,7 @@ pub fn fnv1a_64(ref string data) -> void:
         sprintf(result, "%llu", (unsigned long long)hash);
     )
 
+## DJB2 hash algorithm
 pub fn djb2(string data) -> i32:
     i32 hash = 5381
     i32 len = len(data)
@@ -175,6 +176,7 @@ pub fn murmur3(string data, i32 seed) -> i32:
         return (int32_t)hash;
     )
 
+## Base64-encode a string and return the encoded text.
 pub fn base64_encode(string data) -> string:
     $raw (
         static const char *enc = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -205,6 +207,7 @@ pub fn base64_encode(string data) -> string:
         free(out);
     )
 
+## Decode a Base64-encoded string and return the decoded text.
 pub fn base64_decode(string b64) -> string:
     $raw (
         if (!b64) { strcpy(_output_buffer, ""); return; }

@@ -4,17 +4,20 @@ platform (Posix):
     external import "dirent.h"
     external import "sys/types.h"
 
+## Create a directory at the given path. Returns true on success.
 pub fn make_dir(string path) -> bool:
     platform (Windows):
         $raw (
             return mkdir(path) == 0;
         )
 
+## Remove an empty directory. Returns true on success.
 pub fn remove_dir(string path) -> bool:
     $raw (
         return rmdir(path) == 0;
     )
     
+## Read entire file as bytes. Returns list of byte values (0-255).
 pub fn read_bytes(string filename) -> list[int]:
     $raw (
         FILE* file = fopen(filename, "rb");
@@ -42,6 +45,7 @@ pub fn read_bytes(string filename) -> list[int]:
         return (int)bytes_read;
     )
 
+## Write bytes to a file. Overwrites existing file. Returns true on success.
 pub fn write_bytes(string filename, list[int] data) -> bool:
     $raw (
         FILE* file = fopen(filename, "wb");
@@ -61,16 +65,19 @@ pub fn write_bytes(string filename, list[int] data) -> bool:
         return 1;
     )
 
+## Check if a file or directory exists at path.
 pub fn exists(string path) -> bool:
     $raw (
         return access(path, F_OK) == 0;
     )
 
+## Remove a file at the given path. Returns true on success.
 pub fn remove(string path) -> bool:
     $raw (
         return unlink(path) == 0;
     )
 
+## Read a text file into a list of lines (without trailing newlines).
 pub fn read_lines(string filename) -> list[string]:
     $raw (
         char** lines_temp = malloc(1000 * sizeof(char*));
@@ -102,6 +109,7 @@ pub fn read_lines(string filename) -> list[string]:
         return lines_count;
     )
 
+## List directory entries (files and subdirectories). Excludes . and ..
 pub fn list_dir(string path) -> list[string]:
     $raw (
         char** entries_temp = malloc(1000 * sizeof(char*));

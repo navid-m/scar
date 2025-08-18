@@ -2,6 +2,7 @@ import "std/math"
 import "std/collections"
 import "std/strings"
 
+## Read a line from stdin without the trailing newline.
 pub fn readln() -> lstring:
     $raw (
         char buffer[1024];
@@ -16,30 +17,37 @@ pub fn readln() -> lstring:
         }
     )
 
+## Print a prompt then read a line from stdin.
 pub fn readln_with_prompt(string prompt) -> lstring:
     put "%s" | prompt
     return io::readln()
 
+## Read a line from stdin and parse it as 32-bit integer.
 pub fn read_int() -> i32:
     i32 y = math::to_int(io::readln())
     return y
 
+## Read a line from stdin and parse it as 32-bit float.
 pub fn read_float() -> f32:
     f32 y = math::to_float(io::readln())
     return y
 
+## Read a line from stdin and parse it as boolean ("true" => true).
 pub fn read_bool() -> bool:
     if strings::equal(io::readln(), "true"):
         return true
     else:
         return false
 
+## Read a line and return its first character.
 pub fn read_char() -> char:
     return io::readln()[0]
 
+## Read a line and split it by the given delimiter.
 pub fn read_split(char* delimiter) -> collections::StringArrayList:
     return strings::split(io::readln(), delimiter)
 
+## Write (overwrite) text content to a file. Returns true on success.
 pub fn write_file(string filepath, string content) -> bool:
     $raw (
         if (filepath == NULL || content == NULL) {
@@ -58,6 +66,7 @@ pub fn write_file(string filepath, string content) -> bool:
         return written == content_len;
     )
 
+## Append text content to a file. Returns true on success.
 pub fn append_file(string filepath, string content) -> bool:
     $raw (
         if (filepath == NULL || content == NULL) {
@@ -76,6 +85,7 @@ pub fn append_file(string filepath, string content) -> bool:
         return written == content_len;
     )
 
+## Read entire file content as a string.
 pub fn read_file(string filepath) -> lstring:
     $raw (
         if (filepath == NULL) {
@@ -109,6 +119,7 @@ pub fn read_file(string filepath) -> lstring:
         return buffer;
     )
 
+## Check if a file at the given path exists (readable).
 pub fn exists(string filepath) -> bool:
     $raw (
         if (filepath == NULL) {
