@@ -173,7 +173,7 @@ func RenderC(program *lexer.Program, baseDir string, gcFlag bool) string {
 #include <stdbool.h>
 #include <stdint.h>
 `)
-	if runtime.GOOS == "windows" {
+	if runtime.GOOS == "windows" && comptime.WinEnabled {
 		b.WriteString(`#include <windows.h>
 `)
 	}

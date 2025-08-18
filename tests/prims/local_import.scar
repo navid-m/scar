@@ -1,3 +1,32 @@
 local import "raylib.h"
 
-print "Hello raylib."
+int WIDTH = 800
+int HEIGHT = 600
+int DROPS = 400
+
+InitWindow(WIDTH, HEIGHT, "Raylib Rain")
+SetTargetFPS(60)
+
+int t = 0
+
+while not WindowShouldClose():
+    BeginDrawing()
+    ClearBackground(BLACK)
+
+    for i = 0 to DROPS - 1:
+        int xi = (i * 37) % WIDTH
+        int sp = 4 + ((i * 13) % 8)
+        int yi0 = (i * 97) % HEIGHT
+        int y = (yi0 + t * sp) % HEIGHT
+
+        int y2 = y + 12
+        if y2 >= HEIGHT:
+            y2 = HEIGHT
+
+        DrawLine(xi, y, xi, y2, BLUE)
+
+    DrawText("Rainfall", 10, 10, 20, RAYWHITE)
+    EndDrawing()
+    t = t + 1
+
+#./scar -nowin -l=-lraylib tests/prims/local_import

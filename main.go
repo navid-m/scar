@@ -42,7 +42,6 @@ func main() {
 	var nowin *bool
 	if runtime.GOOS == "windows" {
 		nowin = flag.Bool("nowin", false, "disable native windows headers")
-
 	}
 
 	flag.Parse()
