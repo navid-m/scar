@@ -54,23 +54,23 @@ fn extract_struct_name(string line) -> string:
     
     return ""
 
-class MacroParts:
-    init:
-        string this.part_one = ""
-        string this.part_two = ""
+struct MacroParts:
+    string part_one
+    string part_two
 
-fn extract_macro_parts(string line) -> ref MacroParts:
+fn extract_macro_parts(string line) -> MacroParts:
     string pattern = "^(?:pub\\s+)?macro\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*\\(([^)]*)\\)\\s*:"
     list[string] matches = regex::find(pattern, line)
     if len(matches) >= 3:
         string name = matches[1]
         string args = matches[2]
         print "Macro found: %s(%s)" | name, args
-        ref MacroParts mp = new MacroParts()
+        MacroParts mp = MacroParts()
         mp.part_one = name
         mp.part_two = args
         return mp
-    return nil
+    var empty = MacroParts()
+    return empty
 
 fn format_return_for_doc(string ret) -> string:
     string r = strings::trim_space(ret)
@@ -210,7 +210,7 @@ fn parse_file(string fpath, string module_name) -> ref ParsedDoc:
                 i = kf - 1
         # top-level macros
         if regex::matches("^(?:pub\\s+)?macro\\s+[a-zA-Z_][a-zA-Z0-9_]*\\s*\\(", trimmed):
-            ref MacroParts mp = extract_macro_parts(trimmed)
+            MacroParts mp = extract_macro_parts(trimmed)
             if strings::length(mp.part_one) > 0:
                 add_elem(doc.macros, mp.part_one)
                 add_elem(doc.macro_sigs, fmt!("%s(%s)", mp.part_one, mp.part_two))
