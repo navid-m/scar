@@ -2842,7 +2842,12 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 						}
 					} else {
 						if !strings.HasPrefix(value, "\"") && !strings.HasSuffix(value, "\"") {
-							if _, isLocal := localVars[value]; isLocal {
+							if strings.Contains(value, "->") || strings.Contains(value, ".") {
+								if strings.Contains(value, ".") && !strings.Contains(value, "->") {
+									value = convertPropertyAccess(value)
+								}
+								fmt.Fprintf(b, "%sstrcpy(%s, %s);\n", indent, varName, value)
+							} else if _, isLocal := localVars[value]; isLocal {
 								fmt.Fprintf(b, "%sstrcpy(%s, %s);\n", indent, varName, value)
 							} else if _, isGlobal := globalVars[value]; isGlobal {
 								fmt.Fprintf(b, "%sstrcpy(%s, %s);\n", indent, varName, value)
