@@ -4,7 +4,7 @@ int WIDTH = 800
 int HEIGHT = 600
 int DROPS = 400
 
-InitWindow(WIDTH, HEIGHT, "Raylib Rain")
+InitWindow(WIDTH, HEIGHT, "Rain")
 SetTargetFPS(60)
 
 int t = 0
