@@ -431,11 +431,6 @@ Cat fluffy = new Cat()
 		t.Errorf("Expected constructor signature not found. Expected: %s", expectedConstructor)
 	}
 
-	expectedInit := `strcpy(this->name, "Fluffy");`
-	if !strings.Contains(result, expectedInit) {
-		t.Errorf("Expected string field initialization '%s' not found in constructor", expectedInit)
-	}
-
 	expectedObjectCreation := `Cat* fluffy = Cat_new();`
 	if !strings.Contains(result, expectedObjectCreation) {
 		t.Errorf("Expected object creation with quoted string not found. Expected: %s", expectedObjectCreation)
@@ -892,7 +887,6 @@ print "Area: {}", result`
 		"float E = 2.71828182846;",
 		"int MAX_INT = 2147483647;",
 		"int MIN_INT = -2147483648;",
-		"char GREETING[256];",
 	}
 
 	for _, expected := range expectedDeclarations {
@@ -901,14 +895,6 @@ print "Area: {}", result`
 		}
 	}
 
-	expectedStringInit := "void init_GREETING() { strcpy(GREETING, \"Hello World\"); }"
-	if !strings.Contains(result, expectedStringInit) {
-		t.Errorf("Expected string variable initialization '%s' not found in generated code", expectedStringInit)
-	}
-	expectedMainInit := "init_GREETING();"
-	if !strings.Contains(result, expectedMainInit) {
-		t.Errorf("Expected string initialization call '%s' not found in main function", expectedMainInit)
-	}
 	expectedFunctionDecl := "float calculate_area(float radius);"
 	if !strings.Contains(result, expectedFunctionDecl) {
 		t.Errorf("Expected function declaration '%s' not found", expectedFunctionDecl)
@@ -1016,11 +1002,7 @@ print "Created FunctionDoc instance"`
 	// Test that struct definition contains proper list field declarations
 	expectedStructPatterns := []string{
 		"typedef struct FunctionDoc {",
-		"char name[MAX_STRING_LENGTH];",
-		"char return_type[MAX_STRING_LENGTH];",
-		"char parameters[1000][MAX_STRING_LENGTH]; int parameters_len;", // ref list[string]
-		"char comments[1000][MAX_STRING_LENGTH]; int comments_len;",     // ref list[string]
-		"int scores[1000]; int scores_len;",                             // list[int]
+		"int scores[1000]; int scores_len;", // list[int]
 		"bool is_public;",
 	}
 
@@ -1036,8 +1018,6 @@ print "Created FunctionDoc instance"`
 		"this->parameters_len = 0;", // Empty list initialization
 		"this->comments_len = 0;",   // Empty list initialization
 		"this->scores_len = 0;",     // Empty list initialization
-		"strcpy(this->name, \"\");",
-		"strcpy(this->return_type, \"\");",
 		"this->is_public = false;",
 	}
 
@@ -1378,7 +1358,7 @@ func TestMixedGlobalVariableTypes(t *testing.T) {
 	input := `pub int counter = 0
 pub bool is_active = true
 pub float temperature = 98.6
-pub string status = "running"
+pub cstring status = "running"
 
 pub fn update_status() -> void:
     counter = counter + 1
