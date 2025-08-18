@@ -1,25 +1,25 @@
 local import "raylib.h"
 
-int WIDTH = 800
-int HEIGHT = 600
-int DROPS = 400
+i32 WIDTH = 800
+i32 HEIGHT = 600
+i32 DROPS = 400
 
 InitWindow(WIDTH, HEIGHT, "Rain")
 SetTargetFPS(60)
 
-int t = 0
+i32 t = 0
 
 while not WindowShouldClose():
     BeginDrawing()
     ClearBackground(BLACK)
 
     for i = 0 to DROPS - 1:
-        int xi = (i * 37) % WIDTH
-        int sp = 4 + ((i * 13) % 8)
-        int yi0 = (i * 97) % HEIGHT
-        int y = (yi0 + t * sp) % HEIGHT
+        i32 xi = (i * 37) % WIDTH
+        i32 sp = 4 + ((i * 13) % 8)
+        i32 yi0 = (i * 97) % HEIGHT
+        i32 y = (yi0 + t * sp) % HEIGHT
 
-        int y2 = y + 12
+        i32 y2 = y + 12
         if y2 >= HEIGHT:
             y2 = HEIGHT
 
