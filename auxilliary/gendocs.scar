@@ -1,0 +1,11 @@
+import "std/strings"
+import "std/fs"
+import "std/os"
+
+string path = "."
+list[string] entries = fs::list_dir(path)
+for int i = 0; i < len(entries); i++:
+    string name = entries[i]
+    if strings::ends_with(name, ".scar"):
+        print "Running scardoc on %s" | name
+        os::exec(fmt!("scardoc %s", name))

@@ -1,0 +1,14 @@
+import "std/io"
+import "std/os"
+import "std/math"
+
+struct Point:
+    i32 x
+    i32 y
+
+var point = Point()
+
+point.x = 10
+point.y = 20
+
+print "%d %d" | point.x, point.y

@@ -923,7 +923,7 @@ var reservedC = []string{
 	"printf", "fprintf", "sprintf", "snprintf",
 	"strcpy", "strncpy", "strcat", "strncat",
 	"gets", "scanf", "fscanf", "sscanf",
-	"system", "exec", "popen",
+	"system", "popen",
 	"malloc", "calloc", "realloc", "free",
 	"memcpy", "memmove", "memset",
 	"fopen", "fclose", "fread", "fwrite",
