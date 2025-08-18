@@ -4314,8 +4314,15 @@ func convertThisReferencesGranular(expr string) string {
 
 	reModuleMember := regexp.MustCompile(`\b([a-zA-Z_][a-zA-Z0-9]*)\.([A-Z_][A-Z0-9_]*)\b`)
 	expr = reModuleMember.ReplaceAllString(expr, "${1}_$2")
-	reThisMember := regexp.MustCompile(`(^|\s|\(|\[|,|\+|-|\*|/|%|&|\||\^|!|~|\?|:|=|\{|\}|;|,|\s)this\s*\.\s*([a-zA-Z_][a-zA-Z0-9]*)`)
-	expr = reThisMember.ReplaceAllString(expr, "${1}this->$2")
+	reThisMember := regexp.MustCompile(`(^|\s|\(|\[|,|\+|-|\*|/|%|&|\||\^|!|~|\?|:|=|\{|\}|;|,|\s)this\s*\.\s*([a-zA-Z_][a-zA-Z0-9_]*)`)
+
+	if currentClassName != "" {
+		// In class context:
+		expr = reThisMember.ReplaceAllString(expr, "${1}this->$2")
+	} else {
+		// In struct/non-class context:
+		expr = reThisMember.ReplaceAllString(expr, "${1}this.$2")
+	}
 
 	reObjMember := regexp.MustCompile(`\b([a-zA-Z_][a-zA-Z0-9_]*)\s*\.\s*([a-zA-Z_][a-zA-Z0-9_]*)\b`)
 	expr = reObjMember.ReplaceAllStringFunc(expr, func(match string) string {
@@ -6163,9 +6170,6 @@ func intermediatePostProcessC(csrc string) string {
 	if csrc != before {
 		logger.Debug("postProcessC: sanitizeModuleCalls modified output\n")
 	}
-	reAssign := regexp.MustCompile(`(?m)^(\s*)this\.([A-Za-z_][A-Za-z0-9_]*)\s*=`)
-	csrc = reAssign.ReplaceAllString(csrc, `${1}this->${2} =`)
-
 	reThisField := regexp.MustCompile(`\bthis\.([A-Za-z_][A-Za-z0-9_]*)\b`)
 	if locs := reThisField.FindAllStringSubmatchIndex(csrc, -1); len(locs) > 0 {
 		var b strings.Builder
@@ -6174,17 +6178,41 @@ func intermediatePostProcessC(csrc string) string {
 		for _, idx := range locs {
 			start, end := idx[0], idx[1]
 			fieldStart, fieldEnd := idx[2], idx[3]
-			j := end
-			for j < len(csrc) {
-				ch := csrc[j]
-				if ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r' {
-					j++
-					continue
+			structCtx := false
+			pointerParamCtx := false
+			{
+				priorAll := csrc[:start]
+				funcOpen := strings.LastIndex(priorAll, "{")
+				if funcOpen != -1 {
+					headerEnd := funcOpen
+					beforeBrace := priorAll[:headerEnd]
+					closeParen := strings.LastIndex(beforeBrace, ")")
+					if closeParen != -1 {
+						openParen := strings.LastIndex(beforeBrace[:closeParen], "(")
+						if openParen != -1 {
+							params := beforeBrace[openParen+1 : closeParen]
+							if strings.Contains(params, "* this") || strings.Contains(params, "this*") ||
+								regexp.MustCompile(`\b[A-Za-z_][A-Za-z0-9_]*\s*\*\s*this\b`).FindStringIndex(params) != nil {
+								pointerParamCtx = true
+							}
+						}
+					}
+					bodyStart := funcOpen + 1
+					if bodyStart < start {
+						bodyPrior := csrc[bodyStart:start]
+						reLocalThis := regexp.MustCompile(`(?m)(^|[;\n\r])\s*[A-Za-z_][A-Za-z0-9_]*\s+this\s*;`)
+						if loc := reLocalThis.FindStringIndex(bodyPrior); loc != nil {
+							lineStart := strings.LastIndexAny(bodyPrior[:loc[0]], "\n\r") + 1
+							lineEnd := loc[1]
+							line := bodyPrior[lineStart:lineEnd]
+							if !strings.Contains(line, "*") {
+								structCtx = true
+							}
+						}
+					}
 				}
-				break
 			}
-			isCall := j < len(csrc) && csrc[j] == '('
-			if isCall {
+			if structCtx && !pointerParamCtx {
 				b.WriteString(csrc[last:end])
 				last = end
 			} else {
@@ -6197,7 +6225,7 @@ func intermediatePostProcessC(csrc string) string {
 		}
 		b.WriteString(csrc[last:])
 		if modified {
-			logger.Debug("postProcessC: normalized non-call this.field occurrences to this->field\n")
+			logger.Debug("postProcessC: normalized this.field occurrences to this->field where appropriate\n")
 			csrc = b.String()
 		}
 	}
@@ -6207,6 +6235,50 @@ func intermediatePostProcessC(csrc string) string {
 		csrc = strings.ReplaceAll(csrc, "strings_Builder_length", "this->length")
 		if csrc != beforeFix {
 			logger.Debug("postProcessC: replaced stray 'strings_Builder_length' with 'this->length'\n")
+		}
+	}
+	{
+		reFunc := regexp.MustCompile(`(?m)([A-Za-z_][A-Za-z0-9_\s\*]*?)\(([^)]*?\b\*\s*this\b[^)]*)\)\s*\{`)
+		matches := reFunc.FindAllStringSubmatchIndex(csrc, -1)
+		if len(matches) > 0 {
+			var out strings.Builder
+			last := 0
+			for _, m := range matches {
+				start := m[0]
+				bracePos := strings.Index(csrc[start:m[1]], "{")
+				if bracePos == -1 {
+					continue
+				}
+				bracePos += start
+				out.WriteString(csrc[last : bracePos+1])
+				depth := 1
+				i := bracePos + 1
+				for i < len(csrc) && depth > 0 {
+					switch csrc[i] {
+					case '{':
+						depth++
+					case '}':
+						depth--
+					}
+					i++
+				}
+				bodyEnd := i - 1
+				if bodyEnd <= bracePos {
+					out.WriteString(csrc[bracePos+1:])
+					last = len(csrc)
+					break
+				}
+				body := csrc[bracePos+1 : bodyEnd]
+				body = strings.ReplaceAll(body, "this.", "this->")
+				out.WriteString(body)
+				out.WriteByte('}')
+				last = bodyEnd + 1
+			}
+			if last > 0 {
+				out.WriteString(csrc[last:])
+				csrc = out.String()
+				logger.Debug("postProcessC: enforced 'this->' within pointer-this functions\n")
+			}
 		}
 	}
 	return csrc
