@@ -185,9 +185,11 @@ func parseMacroDefinition(lines []string, startLine int) (*Macro, int) {
 		}
 	}
 
-	var body []string
-	currentLine := startLine + 1
-	macroIndent := -1
+	var (
+		body        []string
+		currentLine = startLine + 1
+		macroIndent = -1
+	)
 
 	for currentLine < len(lines) {
 		bodyLine := lines[currentLine]
