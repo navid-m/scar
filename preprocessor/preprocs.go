@@ -193,21 +193,21 @@ func insertSprintf(output string) string {
 }
 
 func insertCat(output string) string {
-    return "#include <string.h>\n#include <stdlib.h>\n" +
-        "static inline char* __scar_cat_alloc(const char* x, const char* y) {\n" +
-        "    if (!x) x = \"\";\n" +
-        "    if (!y) y = \"\";\n" +
-        "    size_t lx = strlen(x);\n" +
-        "    size_t ly = strlen(y);\n" +
-        "    size_t len = lx + ly + 1;\n" +
-        "    char* buf = (char*)malloc(len);\n" +
-        "    if (!buf) return NULL;\n" +
-        "    memcpy(buf, x, lx);\n" +
-        "    memcpy(buf + lx, y, ly);\n" +
-        "    buf[len - 1] = '\\0';\n" +
-        "    return buf;\n" +
-        "}\n" +
-        "#define cat(x, y) __scar_cat_alloc((x), (y))\n" + strings.ReplaceAll(output, "cat!(", "cat(")
+	return "#include <string.h>\n#include <stdlib.h>\n" +
+		"static inline char* __scar_cat_alloc(const char* x, const char* y) {\n" +
+		"    if (!x) x = \"\";\n" +
+		"    if (!y) y = \"\";\n" +
+		"    size_t lx = strlen(x);\n" +
+		"    size_t ly = strlen(y);\n" +
+		"    size_t len = lx + ly + 1;\n" +
+		"    char* buf = (char*)malloc(len);\n" +
+		"    if (!buf) return NULL;\n" +
+		"    memcpy(buf, x, lx);\n" +
+		"    memcpy(buf + lx, y, ly);\n" +
+		"    buf[len - 1] = '\\0';\n" +
+		"    return buf;\n" +
+		"}\n" +
+		"#define cat(x, y) __scar_cat_alloc((x), (y))\n" + strings.ReplaceAll(output, "cat!(", "cat(")
 }
 
 func insertNilMacro(output string) string {
