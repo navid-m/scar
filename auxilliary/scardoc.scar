@@ -28,6 +28,9 @@ class ParsedDoc:
         var this.structs        = new collections::StringArrayList(100)
         var this.struct_docs    = new collections::StringArrayList(100)
         var this.struct_fields  = new collections::StringArrayList(100)
+        var this.macros         = new collections::StringArrayList(100)
+        var this.macro_docs     = new collections::StringArrayList(100)
+        var this.macro_sigs     = new collections::StringArrayList(100)
         string this.filepath    = ""
         string this.module_name = ""
 
@@ -50,6 +53,32 @@ fn extract_struct_name(string line) -> string:
         return matches[1]
     
     return ""
+
+class MacroParts:
+    init:
+        string this.part_one = ""
+        string this.part_two = ""
+
+fn extract_macro_parts(string line) -> ref MacroParts:
+    # Capture name and arg list for macros like: (pub )?macro Name(arg1, arg2):
+    string pattern = "^(?:pub\\s+)?macro\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*\\(([^)]*)\\)\\s*:"
+    list[string] matches = regex::find(pattern, line)
+    if len(matches) >= 3:
+        string name = matches[1]
+        string args = matches[2]
+        print "Macro found: %s(%s)" | name, args
+        ref MacroParts mp = new MacroParts()
+        mp.part_one = name
+        mp.part_two = args
+        return mp
+    return nil
+
+fn format_return_for_doc(string ret) -> string:
+    string r = strings::trim_space(ret)
+    # Map (string, string) to an object-like description
+    if regex::matches("^\(\s*string\s*,\s*string\s*\)$", r):
+        return "{ a: string, b: string }"
+    return r
 
 fn extract_class_name(string line) -> string:
     string pattern = "^(?:pub\\s+)?class\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*:"
@@ -182,6 +211,32 @@ fn parse_file(string fpath, string module_name) -> ref ParsedDoc:
                     kf = kf + 1
                 add_elem(doc.struct_fields, fbuild.buffer)
                 i = kf - 1
+        # top-level macros
+        if regex::matches("^(?:pub\\s+)?macro\\s+[a-zA-Z_][a-zA-Z0-9_]*\\s*\\(", trimmed):
+            ref MacroParts mp = extract_macro_parts(trimmed)
+            if strings::length(mp.part_one) > 0:
+                add_elem(doc.macros, mp.part_one)
+                add_elem(doc.macro_sigs, fmt!("%s(%s)", mp.part_one, mp.part_two))
+                int mj = i - 1
+                int mstart = mj
+                while mstart >= 0:
+                    string t = strings::trim(lines[mstart])
+                    if strings::starts_with(t, "##"):
+                        mstart = mstart - 1
+                        continue
+                    break
+                mstart = mstart + 1
+                var mb = new strings::Builder()
+                int mk = mstart
+                while mk <= mj:
+                    string t3 = strings::trim(lines[mk])
+                    string content2 = strings::trim_prefix(t3, "##")
+                    if strings::starts_with(content2, " "):
+                        content2 = strings::trim_prefix(content2, " ")
+                    mb.append(content2)
+                    mb.append("\n")
+                    mk = mk + 1
+                add_elem(doc.macro_docs, mb.buffer)
         if strings::length(current_class) > 0:
             bool is_method_sig = strings::starts_with(trimmed, "fn ") or strings::starts_with(trimmed, "pub fn ") or regex::matches("^(?:pub\\s+)?init\\s*\\(", trimmed)
             if is_method_sig:
@@ -247,6 +302,7 @@ fn parse_file(string fpath, string module_name) -> ref ParsedDoc:
     
     print "Final function count: %d" | get_size(doc.functions)
     for int j = 0; j < get_size(doc.functions); j++:
+        print "ok"
         string debug_func = get_element(doc.functions, j)
         print "Function %d: %s" | j, debug_func
     
@@ -266,7 +322,6 @@ fn generate_markdown(ref ParsedDoc doc) -> void:
     int dp0 = strings::index_of(modname, ".")
     if dp0 != -1:
         modname = strings::substring(modname, 0, dp0)
-
     var builder = new strings::Builder()
     builder.append(fmt!("# %s\n\n", modname))
     if strings::starts_with(display_path, cwd):
@@ -288,20 +343,36 @@ fn generate_markdown(ref ParsedDoc doc) -> void:
                 if strings::length(cdoc) > 0:
                     builder.append(cdoc)
                     builder.append("\n")
-            bool has_methods = false
+            # Render methods for this class as subheadings
+            bool any_methods = false
             for int mi = 0; mi < get_size(doc.methods); mi++:
                 string parent = get_element(doc.method_parents, mi)
                 if strings::length(parent) > 0 and strings::compare(parent, class_name) == 0:
-                    if not has_methods:
+                    if not any_methods:
                         builder.append("#### Methods\n\n")
-                        has_methods = true
+                        any_methods = true
                     string mname = get_element(doc.methods, mi)
-                    builder.append(fmt!("- `%s`\n", mname))
+                    builder.append(fmt!("##### %s\n\n", mname))
                     if mi < get_size(doc.method_docs):
                         string mdoc = get_element(doc.method_docs, mi)
                         if strings::length(mdoc) > 0:
                             builder.append(mdoc)
                             builder.append("\n")
+        builder.append("\n")
+    if get_size(doc.macros) > 0:
+        builder.append("## Macros\n\n")
+        for int i = 0; i < get_size(doc.macros); i++:
+            string name = get_element(doc.macros, i)
+            builder.append(fmt!("### %s\n\n", name))
+            if i < get_size(doc.macro_sigs):
+                string sig = get_element(doc.macro_sigs, i)
+                if strings::length(sig) > 0:
+                    builder.append(fmt!("Signature: `%s`\n\n", sig))
+            if i < get_size(doc.macro_docs):
+                string mdoc = get_element(doc.macro_docs, i)
+                if strings::length(mdoc) > 0:
+                    builder.append(mdoc)
+                    builder.append("\n")
         builder.append("\n")
     if get_size(doc.structs) > 0:
         builder.append("## Structs\n\n")
@@ -330,13 +401,43 @@ fn generate_markdown(ref ParsedDoc doc) -> void:
                         else:
                             builder.append(fmt!("- %s\n", ln))
             builder.append("\n")
-    if get_size(doc.functions) > 0:
+    int __functions_count = 0
+    if doc.functions != nil:
+        __functions_count = get_size(doc.functions)
+    if __functions_count > 0:
+        # Preload source for function signature extraction (for display only)
+        string __src = io::read_file(doc.filepath)
+        ref collections::StringArrayList __src_lines = strings::split(__src, "\n")
         builder.append("## Functions\n\n")
-        print "Generating markdown for %d functions" | get_size(doc.functions)
-        for int i = 0; i < get_size(doc.functions); i++:
+        print "Generating markdown for %d functions" | __functions_count
+        for int i = 0; i < __functions_count; i++:
             string func_name = get_element(doc.functions, i)
             print "Processing function %d: %s" | i, func_name
             builder.append(fmt!("### %s\n\n", func_name))
+            # Try to discover signature from source (column 0 only)
+            string found_sig = ""
+            for int li = 0; li < get_size(__src_lines); li++:
+                string raw = get_element(__src_lines, li)
+                if strings::starts_with(raw, " ") or strings::starts_with(raw, "\t"):
+                    continue
+                string line = strings::trim_space(raw)
+                string pat = fmt!("^(?:pub\\s+)?fn\\s+%s\\s*\\(([^)]*)\\)\\s*(?:->\\s*(.+))?$", func_name)
+                list[string] mm = regex::find(pat, line)
+                if len(mm) >= 1:
+                    string args = ""
+                    string ret  = ""
+                    if len(mm) >= 2:
+                        args = mm[1]
+                    if len(mm) >= 3:
+                        ret = mm[2]
+                    if strings::length(ret) > 0:
+                        ret = format_return_for_doc(ret)
+                        found_sig = fmt!("%s(%s) -> %s", func_name, args, ret)
+                    else:
+                        found_sig = fmt!("%s(%s)", func_name, args)
+                    break
+            if strings::length(found_sig) > 0:
+                builder.append(fmt!("Signature: `%s`\n\n", found_sig))
             if i < get_size(doc.function_docs):
                 string fdoc = get_element(doc.function_docs, i)
                 if strings::length(fdoc) > 0:
