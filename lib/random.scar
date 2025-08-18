@@ -49,7 +49,7 @@ pub fn boolean() -> bool:
 
 ## Random float between 0.0 and 1.0
 pub fn floatb() -> float:
-    return float(random::num(0, 32767)) / 32767.0
+    return (float)(random::num(0, 32767)) / 32767.0
 
 ## Random float between x and y
 pub fn float_range(float x, float y) -> float:

@@ -838,8 +838,28 @@ func isFunctionCall(value string) bool {
 	return strings.Contains(value, "(") && strings.Contains(value, ")")
 }
 
+func isStandaloneFunctionCall(expr string) bool {
+	s := strings.TrimSpace(expr)
+	if len(s) == 0 {
+		return false
+	}
+	open := strings.Index(s, "(")
+	if open <= 0 {
+		return false
+	}
+	name := strings.TrimSpace(s[:open])
+	if ok, _ := regexp.MatchString(`^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$`, name); !ok {
+		return false
+	}
+	close := findMatchingParen(s, open)
+	if close != len(s)-1 {
+		return false
+	}
+	return true
+}
+
 func resolveFunctionCall(value string) string {
-	if !isFunctionCall(value) {
+	if !isStandaloneFunctionCall(value) {
 		return value
 	}
 	parenIndex := strings.Index(value, "(")
@@ -922,9 +942,10 @@ func convertPropertyAccess(expr string) string {
 		logger.Debug("convertPropertyAccess: DETECTED GET EXPRESSION: '%s'\n", expr)
 	}
 	if strings.Contains(expr, "- >") {
-		logger.Debug("MANGLED ARROW DETECTED! Stack trace:\n")
+		logger.Debug("MANGLED ARROW DETECTED. Stack trace:\n")
 		debug.PrintStack()
 	}
+	expr = processLogicalOperators(expr)
 	bitwiseOps := map[string]string{
 		"b_or":     "|",
 		"b_and":    "&",
@@ -1176,6 +1197,16 @@ func processNotKeyword(condition string) string {
 	}
 	logger.Debug("processNotKeyword - no 'not' prefix found\n")
 	return condition
+}
+
+// Converts Scar logical operators 'or' and 'and' to C logical operators.
+// Uses word boundaries to avoid altering identifiers (e.g., 'origin', 'candy').
+func processLogicalOperators(expr string) string {
+	reOr := regexp.MustCompile(`\bor\b`)
+	expr = reOr.ReplaceAllString(expr, "||")
+	reAnd := regexp.MustCompile(`\band\b`)
+	expr = reAnd.ReplaceAllString(expr, "&&")
+	return expr
 }
 
 func processStringFunctionArg(arg string) string {
@@ -2435,6 +2466,10 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 
 				if isMethodCall(value) {
 					value = convertMethodCallToC(value)
+				} else if isFunctionCall(value) {
+					// Handle plain function/constructor-style calls, including StructName(...)
+					// This maps struct constructor syntax to the generated C factory (StructName_new(...)).
+					value = resolveFunctionCall(value)
 				} else if strings.HasPrefix(value, "this.") {
 					value = "this->" + value[5:]
 				} else {

@@ -69,8 +69,7 @@ fn extract_macro_parts(string line) -> MacroParts:
         mp.part_one = name
         mp.part_two = args
         return mp
-    var empty = MacroParts()
-    return empty
+    return MacroParts()
 
 fn format_return_for_doc(string ret) -> string:
     string r = strings::trim_space(ret)
