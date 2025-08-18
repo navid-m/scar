@@ -507,7 +507,7 @@ bool __check_key_exists(int* keys, int size, int key) {
 		}
 	}
 	output := b.String()
-	output = postProcessC(output)
+	output = intermediatePostProcessC(output)
 	return output
 }
 
@@ -4565,17 +4565,8 @@ func resolveImportedSymbols(value string, imports []*lexer.ImportStmt) string {
 
 // Determines if the given expression is a method call
 func isMethodCall(expr string) bool {
-	dotIndex := strings.Index(expr, ".")
-	if dotIndex == -1 {
-		return false
-	}
-
-	parenIndex := strings.Index(expr[dotIndex:], "(")
-	if parenIndex == -1 {
-		return false
-	}
-
-	return strings.Contains(expr, ")")
+	re := regexp.MustCompile(`\.[A-Za-z_][A-Za-z0-9_]*\s*\(`)
+	return re.FindStringIndex(expr) != nil && strings.Contains(expr, ")")
 }
 
 // Finds the position of the matching closing parenthesis
@@ -5061,129 +5052,29 @@ func convertSingleMethodCall(expr string) string {
 			return expr
 		}
 
-		restOfExpr := expr[dotIndex+1:]
-
-		nextDotIndex := strings.Index(restOfExpr, ".")
-		if nextDotIndex != -1 {
-			fieldName := restOfExpr[:nextDotIndex]
-			methodPart := restOfExpr[nextDotIndex+1:]
-
-			parenIndex := strings.Index(methodPart, "(")
-			if parenIndex != -1 {
-				methodName := methodPart[:parenIndex]
-				closeParen := findMatchingParen(methodPart, parenIndex)
-				if closeParen == -1 {
-					return expr
-				}
-
-				args := ""
-				if closeParen > parenIndex+1 {
-					args = methodPart[parenIndex+1 : closeParen]
-				}
-
-				suffix := ""
-				if closeParen+1 < len(methodPart) {
-					suffix = methodPart[closeParen+1:]
-				}
-
-				className := ""
-				logger.Debug("Looking up field type for '%s', currentClassName='%s'\n", fieldName, currentClassName)
-
-				if currentClassName != "" {
-					if classInfo, exists := globalClasses[currentClassName]; exists {
-						logger.Debug("Looking for field '%s' in class '%s' with %d fields\n", fieldName, currentClassName, len(classInfo.Fields))
-						for _, field := range classInfo.Fields {
-							logger.Debug("  Checking field: %s, Type: %s, IsRef: %v\n", field.Name, field.Type, field.IsRef)
-							if field.Name == fieldName {
-								fieldType := field.Type
-								if after, ok := strings.CutPrefix(fieldType, "ref "); ok {
-									fieldType = after
-								}
-								className = fieldType
-								logger.Debug("Found field '%s' of type '%s' in class '%s'\n", fieldName, fieldType, currentClassName)
-								break
-							}
-						}
-					}
-				}
-
-				if className == "" {
-					logger.Debug("Searching all classes for field '%s'\n", fieldName)
-					if currentClassName != "" {
-						if classInfo, exists := globalClasses[currentClassName]; exists {
-							for _, field := range classInfo.Fields {
-								if field.Name == fieldName {
-									fieldType := field.Type
-									if after, ok := strings.CutPrefix(fieldType, "ref "); ok {
-										fieldType = after
-									}
-									if strings.Contains(fieldType, "::") {
-										parts := strings.Split(fieldType, "::")
-										if len(parts) == 2 {
-											className = lexer.GenerateUniqueSymbol(parts[1], parts[0])
-											logger.Debug("Found namespace-qualified field '%s' of type '%s' in class '%s'\n", fieldName, className, currentClassName)
-											break
-										}
-									} else {
-										className = fieldType
-										logger.Debug("Found field '%s' of type '%s' in class '%s'\n", fieldName, fieldType, currentClassName)
-										break
-									}
-								}
-							}
-						}
-					}
-
-					if className == "" {
-						for classNameIter, classInfo := range globalClasses {
-							for _, field := range classInfo.Fields {
-								if field.Name == fieldName {
-									fieldType := field.Type
-									if after, ok := strings.CutPrefix(fieldType, "ref "); ok {
-										fieldType = after
-									}
-									className = fieldType
-									logger.Debug("Found field '%s' of type '%s' in class '%s' (fallback search)\n", fieldName, fieldType, classNameIter)
-									break
-								}
-							}
-							if className != "" {
-								break
-							}
-						}
-					}
-				}
-
-				logger.Debug("Final className for field '%s': '%s'\n", fieldName, className)
-				if className == "" {
-					return expr
-				}
-
-				objectRef := fmt.Sprintf("this->%s", fieldName)
-
-				var result string
-				if args == "" {
-					result = fmt.Sprintf("%s%s_%s(%s)%s", prefix, className, methodName, objectRef, suffix)
-					logger.Debug("Generated method call (no args): '%s'\n", result)
-				} else {
-					processedArgs := processMethodArguments(args)
-					result = fmt.Sprintf("%s%s_%s(%s, %s)%s", prefix, className, methodName, objectRef, processedArgs, suffix)
-					logger.Debug("Generated method call (with args): '%s'\n", result)
-				}
-
-				return result
+		nameStart := dotIndex + 1
+		i := nameStart
+		for i < len(expr) {
+			ch := expr[i]
+			if (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') || (ch == '_') || (i > nameStart && ch >= '0' && ch <= '9') {
+				i++
+				continue
 			}
+			break
+		}
+		name := expr[nameStart:i]
+		j := i
+		for j < len(expr) && (expr[j] == ' ' || expr[j] == '\t' || expr[j] == '\n' || expr[j] == '\r') {
+			j++
+		}
+		if j >= len(expr) || expr[j] != '(' {
+			suffix := expr[i:]
+			return fmt.Sprintf("%sthis->%s%s", prefix, name, suffix)
 		}
 
-		parenIndex := strings.Index(expr[dotIndex:], "(")
-		if parenIndex == -1 {
-			fieldName := expr[dotIndex+1:]
-			return fmt.Sprintf("%sthis->%s", prefix, fieldName)
-		}
-
-		parenIndex += dotIndex
+		parenIndex := j
 		var (
-			methodName = expr[dotIndex+1 : parenIndex]
+			methodName = name
 			className  = currentClassName
 		)
 		if className == "" {
@@ -6230,7 +6121,7 @@ func parseListElements(elementsStr string) []string {
 	return elements
 }
 
-func postProcessC(csrc string) string {
+func intermediatePostProcessC(csrc string) string {
 	if csrc == "" {
 		return csrc
 	}
@@ -6239,7 +6130,51 @@ func postProcessC(csrc string) string {
 	if csrc != before {
 		logger.Debug("postProcessC: sanitizeModuleCalls modified output\n")
 	}
-	re := regexp.MustCompile(`(?m)^(\s*)this\.([A-Za-z_][A-Za-z0-9_]*)\s*=`)
-	csrc = re.ReplaceAllString(csrc, `${1}this->${2} =`)
+	reAssign := regexp.MustCompile(`(?m)^(\s*)this\.([A-Za-z_][A-Za-z0-9_]*)\s*=`)
+	csrc = reAssign.ReplaceAllString(csrc, `${1}this->${2} =`)
+
+	reThisField := regexp.MustCompile(`\bthis\.([A-Za-z_][A-Za-z0-9_]*)\b`)
+	if locs := reThisField.FindAllStringSubmatchIndex(csrc, -1); len(locs) > 0 {
+		var b strings.Builder
+		last := 0
+		modified := false
+		for _, idx := range locs {
+			start, end := idx[0], idx[1]
+			fieldStart, fieldEnd := idx[2], idx[3]
+			j := end
+			for j < len(csrc) {
+				ch := csrc[j]
+				if ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r' {
+					j++
+					continue
+				}
+				break
+			}
+			isCall := j < len(csrc) && csrc[j] == '('
+			if isCall {
+				b.WriteString(csrc[last:end])
+				last = end
+			} else {
+				b.WriteString(csrc[last:start])
+				b.WriteString("this->")
+				b.WriteString(csrc[fieldStart:fieldEnd])
+				last = end
+				modified = true
+			}
+		}
+		b.WriteString(csrc[last:])
+		if modified {
+			logger.Debug("postProcessC: normalized non-call this.field occurrences to this->field\n")
+			csrc = b.String()
+		}
+	}
+
+	if strings.Contains(csrc, "strings_Builder_length") {
+		beforeFix := csrc
+		csrc = strings.ReplaceAll(csrc, "strings_Builder_length", "this->length")
+		if csrc != beforeFix {
+			logger.Debug("postProcessC: replaced stray 'strings_Builder_length' with 'this->length'\n")
+		}
+	}
 	return csrc
 }
