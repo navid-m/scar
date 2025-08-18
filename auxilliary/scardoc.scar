@@ -181,7 +181,7 @@ fn generate_markdown(ref ParsedDoc doc) -> void:
                     builder.append(fdoc)
                     builder.append("\n")
 
-    string output_file = fmt!("%s_documentation.md", modname)
+    string output_file = fmt!("%s.md", modname)
     io::write_file(output_file, builder.buffer)
     print "Documentation written to: %s" | output_file
     os::exit(0)
