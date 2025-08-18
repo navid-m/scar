@@ -174,7 +174,22 @@ func insertLstring(output string) string {
 }
 
 func insertSprintf(output string) string {
-	return "#define fmt(...) ({ int __len = snprintf(NULL, 0, __VA_ARGS__) + 1; char* __buf = malloc(__len); if(__buf) snprintf(__buf, __len, __VA_ARGS__); __buf; })\n" + output
+	return "#include <stdarg.h>\n#include <stdio.h>\n#include <stdlib.h>\n" +
+		"static inline char* __scar_fmt_alloc(const char* fmt, ...) {\n" +
+		"    va_list ap;\n" +
+		"    va_start(ap, fmt);\n" +
+		"    int needed = vsnprintf(NULL, 0, fmt, ap);\n" +
+		"    va_end(ap);\n" +
+		"    if (needed < 0) return NULL;\n" +
+		"    size_t len = (size_t)needed + 1;\n" +
+		"    char* buf = (char*)malloc(len);\n" +
+		"    if (!buf) return NULL;\n" +
+		"    va_start(ap, fmt);\n" +
+		"    vsnprintf(buf, len, fmt, ap);\n" +
+		"    va_end(ap);\n" +
+		"    return buf;\n" +
+		"}\n" +
+		"#define fmt(...) __scar_fmt_alloc(__VA_ARGS__)\n" + output
 }
 
 func insertCat(output string) string {
