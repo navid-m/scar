@@ -20,6 +20,8 @@ class ParsedDoc:
         collections::StringArrayList this.imports = new collections::StringArrayList(100)
         collections::StringArrayList this.functions = new collections::StringArrayList(100)
         collections::StringArrayList this.classes = new collections::StringArrayList(100)
+        collections::StringArrayList this.function_docs = new collections::StringArrayList(100)
+        collections::StringArrayList this.class_docs = new collections::StringArrayList(100)
         string this.filepath = ""
         string this.module_name = ""
 
@@ -71,6 +73,26 @@ fn parse_file(string fpath, string module_name) -> ref ParsedDoc:
             string class_name = extract_class_name(trimmed)
             if strings::length(class_name) > 0:
                 add_elem(doc.classes, class_name)
+                int j = i - 1
+                int start = j
+                while start >= 0:
+                    string t = strings::trim(lines[start])
+                    if strings::starts_with(t, "##"):
+                        start = start - 1
+                        continue
+                    break
+                start = start + 1
+                var cbuild = new strings::Builder()
+                int k = start
+                while k <= j:
+                    string t2 = strings::trim(lines[k])
+                    string content = strings::trim_prefix(t2, "##")
+                    if strings::starts_with(content, " "):
+                        content = strings::trim_prefix(content, " ")
+                    cbuild.append(content)
+                    cbuild.append("\n")
+                    k = k + 1
+                add_elem(doc.class_docs, cbuild.buffer)
         
         if strings::starts_with(trimmed, "fn ") or strings::starts_with(trimmed, "pub fn "):
             print "Function line detected: '%s'" | trimmed
@@ -78,6 +100,27 @@ fn parse_file(string fpath, string module_name) -> ref ParsedDoc:
             if strings::length(func_name) > 0:
                 add_elem(doc.functions, func_name)
                 print "Added function to collection: %s (total: %d)" | func_name, get_size(doc.functions)
+                # Gather preceding '##' doc lines for function
+                int j2 = i - 1
+                int start2 = j2
+                while start2 >= 0:
+                    string t = strings::trim(lines[start2])
+                    if strings::starts_with(t, "##"):
+                        start2 = start2 - 1
+                        continue
+                    break
+                start2 = start2 + 1
+                var fbuild = new strings::Builder()
+                int k2 = start2
+                while k2 <= j2:
+                    string t3 = strings::trim(lines[k2])
+                    string content2 = strings::trim_prefix(t3, "##")
+                    if strings::starts_with(content2, " "):
+                        content2 = strings::trim_prefix(content2, " ")
+                    fbuild.append(content2)
+                    fbuild.append("\n")
+                    k2 = k2 + 1
+                add_elem(doc.function_docs, fbuild.buffer)
             else:
                 print "Function name extraction failed for: '%s'" | trimmed
     
@@ -89,14 +132,23 @@ fn parse_file(string fpath, string module_name) -> ref ParsedDoc:
     return doc
 
 fn generate_markdown(ref ParsedDoc doc) -> void:
-    var builder = new strings::Builder()
-    builder.append(fmt!("# %s\n\n", doc.module_name))
+    # Derive module name safely from filepath to avoid null doc.module_name issues
     string display_path = doc.filepath
     string cwd = os::cwd()
     display_path = strings::replace(display_path, "\\", "/")
     cwd = strings::replace(cwd, "\\", "/")
     if not strings::ends_with(cwd, "/"):
         cwd = fmt!("%s/", cwd)
+    string modname = display_path
+    int ls0 = strings::last_index_of(display_path, "/")
+    if ls0 != -1:
+        modname = strings::substring(display_path, ls0 + 1, strings::length(display_path))
+    int dp0 = strings::index_of(modname, ".")
+    if dp0 != -1:
+        modname = strings::substring(modname, 0, dp0)
+
+    var builder = new strings::Builder()
+    builder.append(fmt!("# %s\n\n", modname))
     if strings::starts_with(display_path, cwd):
         display_path = strings::substring(display_path, strings::length(cwd), strings::length(display_path))
     builder.append(fmt!("*Source: `%s`*\n\n", display_path))
@@ -111,6 +163,11 @@ fn generate_markdown(ref ParsedDoc doc) -> void:
         for int i = 0; i < get_size(doc.classes); i++:
             string class_name = get_element(doc.classes, i)
             builder.append(fmt!("### %s\n\n", class_name))
+            if i < get_size(doc.class_docs):
+                string cdoc = get_element(doc.class_docs, i)
+                if strings::length(cdoc) > 0:
+                    builder.append(cdoc)
+                    builder.append("\n")
         builder.append("\n")
     if get_size(doc.functions) > 0:
         builder.append("## Functions\n\n")
@@ -119,11 +176,20 @@ fn generate_markdown(ref ParsedDoc doc) -> void:
             string func_name = get_element(doc.functions, i)
             print "Processing function %d: %s" | i, func_name
             builder.append(fmt!("### %s\n\n", func_name))
+            # Append function docstring if captured
+            if i < get_size(doc.function_docs):
+                string fdoc = get_element(doc.function_docs, i)
+                if strings::length(fdoc) > 0:
+                    builder.append(fdoc)
+                    builder.append("\n")
 
     string markdown = builder.buffer
     print "Generated markdown:\n%s" | markdown
 
-    string output_file = fmt!("%s_documentation.md", doc.module_name)
+    var ofb = new strings::Builder()
+    ofb.append(modname)
+    ofb.append("_documentation.md")
+    string output_file = ofb.buffer
     io::write_file(output_file, markdown)
     print "Documentation written to: %s" | output_file
 
