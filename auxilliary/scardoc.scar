@@ -60,7 +60,6 @@ class MacroParts:
         string this.part_two = ""
 
 fn extract_macro_parts(string line) -> ref MacroParts:
-    # Capture name and arg list for macros like: (pub )?macro Name(arg1, arg2):
     string pattern = "^(?:pub\\s+)?macro\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*\\(([^)]*)\\)\\s*:"
     list[string] matches = regex::find(pattern, line)
     if len(matches) >= 3:
@@ -75,7 +74,6 @@ fn extract_macro_parts(string line) -> ref MacroParts:
 
 fn format_return_for_doc(string ret) -> string:
     string r = strings::trim_space(ret)
-    # Map (string, string) to an object-like description
     if regex::matches("^\(\s*string\s*,\s*string\s*\)$", r):
         return "{ a: string, b: string }"
     return r
@@ -186,7 +184,6 @@ fn parse_file(string fpath, string module_name) -> ref ParsedDoc:
                     sbuild.append("\n")
                     ks = ks + 1
                 add_elem(doc.struct_docs, sbuild.buffer)
-                # collect fields indented under struct
                 var fbuild = new strings::Builder()
                 int kf = i + 1
                 while kf < len(lines):
@@ -414,7 +411,6 @@ fn generate_markdown(ref ParsedDoc doc) -> void:
             string func_name = get_element(doc.functions, i)
             print "Processing function %d: %s" | i, func_name
             builder.append(fmt!("### %s\n\n", func_name))
-            # Try to discover signature from source (column 0 only)
             string found_sig = ""
             for int li = 0; li < get_size(__src_lines); li++:
                 string raw = get_element(__src_lines, li)
