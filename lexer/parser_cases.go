@@ -985,6 +985,7 @@ func LoadModuleWithCycleDetection(moduleName string, baseDir string, loadingStac
 	defer delete(loadingStack, moduleName)
 
 	var modulePath string
+	isStdModule := false
 	if strings.HasPrefix(moduleName, "std/") {
 		exePath, err := os.Executable()
 		if err != nil {
@@ -993,6 +994,7 @@ func LoadModuleWithCycleDetection(moduleName string, baseDir string, loadingStac
 		baseExeDir := filepath.Dir(exePath)
 		moduleName = strings.TrimPrefix(moduleName, "std/")
 		modulePath = filepath.Join(baseExeDir, "lib", moduleName+".scar")
+		isStdModule = true
 		if _, err := os.Stat(modulePath); err != nil {
 			return nil, fmt.Errorf("std module '%s' not found at '%s'", moduleName, modulePath)
 		}
@@ -1105,10 +1107,82 @@ func LoadModuleWithCycleDetection(moduleName string, baseDir string, loadingStac
 		}
 	}
 
+	{
+		explicit := make(map[string]bool)
+		for _, imp := range program.Imports {
+			if imp != nil && imp.Module != "" {
+				explicit[imp.Module] = true
+			}
+		}
+
+		src := sourceWithMacros
+		inStr := false
+		var current strings.Builder
+		var refs = make(map[string]bool)
+		for i := 0; i < len(src); i++ {
+			ch := src[i]
+			if ch == '"' && (i == 0 || src[i-1] != '\\') {
+				inStr = !inStr
+				current.Reset()
+				continue
+			}
+			if inStr {
+				continue
+			}
+			if ch == ':' && i+1 < len(src) && src[i+1] == ':' {
+				token := strings.TrimSpace(current.String())
+				if token != "" {
+					j := len(token) - 1
+					for j >= 0 {
+						c := token[j]
+						if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' {
+							j--
+							continue
+						}
+						break
+					}
+					mod := token[j+1:]
+					if mod != "" && mod != moduleName {
+						ref := mod
+						if isStdModule {
+							ref = "std/" + mod
+						}
+						if !explicit[ref] {
+							refs[ref] = true
+						}
+					}
+				}
+				current.Reset()
+				i++ // skip second ':'
+				continue
+			}
+			if len := current.Len(); len > 128 {
+				current.Reset()
+			}
+			current.WriteByte(ch)
+		}
+
+		if len(refs) > 0 {
+			importBaseDir := filepath.Dir(modulePath)
+			for ref := range refs {
+				if _, exists := LoadedModules[ref]; exists {
+					continue
+				}
+				// Cycle detection
+				if loadingStack[ref] {
+					continue
+				}
+				if _, err := LoadModuleWithCycleDetection(ref, importBaseDir, loadingStack); err != nil {
+					// Non-fatal: continue loading other inferred modules
+					continue
+				}
+			}
+		}
+	}
+
 	LoadedModules[moduleName] = module
 	return module, nil
 }
-
 func ReplaceDoubleColonsOutsideStrings(input string) string {
 	var result strings.Builder
 	inString := false
