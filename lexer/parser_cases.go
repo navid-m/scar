@@ -1051,11 +1051,15 @@ func LoadModuleWithCycleDetection(moduleName string, baseDir string, loadingStac
 		PublicFuncs:     make(map[string]*MethodDeclStmt),
 		PublicMacros:    make(map[string]*MacroDeclStmt),
 		ExternalImports: []string{},
+		LocalImports:    []string{},
 	}
 
 	for _, stmt := range program.Statements {
 		if stmt.ExternalImport != nil {
 			module.ExternalImports = append(module.ExternalImports, stmt.ExternalImport.Header)
+		}
+		if stmt.LocalImport != nil {
+			module.LocalImports = append(module.LocalImports, stmt.LocalImport.Header)
 		}
 		if stmt.PubVarDecl != nil {
 			varDecl := &VarDeclStmt{
@@ -1183,6 +1187,7 @@ func LoadModuleWithCycleDetection(moduleName string, baseDir string, loadingStac
 	LoadedModules[moduleName] = module
 	return module, nil
 }
+
 func ReplaceDoubleColonsOutsideStrings(input string) string {
 	var result strings.Builder
 	inString := false

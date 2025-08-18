@@ -15,6 +15,7 @@ import (
 	"path"
 	"path/filepath"
 	"runtime"
+	"scar/comptime"
 	"scar/lexer"
 	"scar/logger"
 	"scar/meta"
@@ -37,7 +38,20 @@ func main() {
 		opt     = flag.Bool("opt", false, "optimise for performance")
 		version = flag.Bool("v", false, "show version")
 	)
+
+	var nowin *bool
+	if runtime.GOOS == "windows" {
+		nowin = flag.Bool("nowin", false, "disable native windows headers")
+
+	}
+
 	flag.Parse()
+
+	if runtime.GOOS == "windows" {
+		if *nowin {
+			comptime.WinEnabled = false
+		}
+	}
 
 	if *debug {
 		logger.Loud = true

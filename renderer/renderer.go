@@ -10,12 +10,14 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"runtime"
 	"runtime/debug"
 	"slices"
 	"strconv"
 	"strings"
 	"unicode"
 
+	"scar/comptime"
 	"scar/lexer"
 	"scar/logger"
 )
@@ -68,14 +70,19 @@ func RenderC(program *lexer.Program, baseDir string, gcFlag bool) string {
 	}
 
 	var externalImports []string
+	var localImports []string
 	for _, stmt := range program.Statements {
 		if stmt.ExternalImport != nil {
 			externalImports = append(externalImports, stmt.ExternalImport.Header)
+		}
+		if stmt.LocalImport != nil {
+			localImports = append(localImports, stmt.LocalImport.Header)
 		}
 	}
 
 	for _, module := range lexer.LoadedModules {
 		externalImports = append(externalImports, module.ExternalImports...)
+		localImports = append(localImports, module.LocalImports...)
 	}
 
 	for _, stmt := range program.Statements {
@@ -165,18 +172,34 @@ func RenderC(program *lexer.Program, baseDir string, gcFlag bool) string {
 #include <stdlib.h>
 #include <stdbool.h>
 #include <stdint.h>
-
-#ifdef _WIN32
-#include <windows.h>
-#endif
 `)
+	if runtime.GOOS == "windows" {
+		b.WriteString(`#include <windows.h>
+`)
+	}
 
 	if useGC {
 		b.WriteString(`#include <gc.h>
 `)
 	}
-	for _, header := range externalImports {
-		b.WriteString(fmt.Sprintf("#include <%s>\n", header))
+	{
+		// de-duplicate while preserving order minimally
+		seenLocal := make(map[string]bool)
+		for _, h := range localImports {
+			if h == "" || seenLocal[h] {
+				continue
+			}
+			seenLocal[h] = true
+			b.WriteString(fmt.Sprintf("#include \"%s\"\n", h))
+		}
+		seenExt := make(map[string]bool)
+		for _, h := range externalImports {
+			if h == "" || seenExt[h] {
+				continue
+			}
+			seenExt[h] = true
+			b.WriteString(fmt.Sprintf("#include <%s>\n", h))
+		}
 	}
 
 	b.WriteString(`
@@ -475,9 +498,11 @@ bool __check_key_exists(int* keys, int size, int key) {
 	}
 
 	b.WriteString("int main(int argc, char** argv) {\n")
-	b.WriteString("#ifdef _WIN32\n")
-	b.WriteString("    SetConsoleOutputCP(CP_UTF8);\n")
-	b.WriteString("#endif\n")
+	if comptime.WinEnabled {
+		b.WriteString("#ifdef _WIN32\n")
+		b.WriteString("    SetConsoleOutputCP(CP_UTF8);\n")
+		b.WriteString("#endif\n")
+	}
 	b.WriteString("    __global_argc = argc;\n")
 	b.WriteString("    __global_argv = argv;\n")
 

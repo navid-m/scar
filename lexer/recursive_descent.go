@@ -921,6 +921,15 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 			return &Statement{ExternalImport: &ExternalImportStmt{Header: headerName}}, lineNum + 1, nil
 		}
 		return nil, lineNum + 1, fmt.Errorf("unknown external statement at line %d", lineNum+1)
+	case "local":
+		if len(parts) >= 3 && parts[1] == "import" {
+			if len(parts) < 3 {
+				return nil, lineNum + 1, fmt.Errorf("local import statement requires a header name at line %d", lineNum+1)
+			}
+			headerName := strings.Trim(strings.Join(parts[2:], " "), "\"")
+			return &Statement{LocalImport: &LocalImportStmt{Header: headerName}}, lineNum + 1, nil
+		}
+		return nil, lineNum + 1, fmt.Errorf("unknown local statement at line %d", lineNum+1)
 	case "ref":
 		if len(parts) < 5 || parts[3] != "=" {
 			return nil, lineNum + 1, fmt.Errorf("ref declaration format error at line %d (expected: ref type name = value)", lineNum+1)

@@ -8,6 +8,7 @@ package meta
 
 import (
 	"fmt"
+	"runtime"
 )
 
 const Version = "v0.0.1-alpha.1"
@@ -29,5 +30,10 @@ func ShowUsage() {
 	fmt.Printf("  %-10s %s\n", "-o <file>", "Output binary name")
 	fmt.Printf("  %-10s %s\n", "-opt", "Optimize for performance")
 	fmt.Printf("  %-10s %s\n", "-v", "Show version")
+
+	if runtime.GOOS == "windows" {
+		fmt.Printf("  %-10s %s\n", "-nowin", "Disable native windows headers")
+	}
+
 	fmt.Printf("  %-10s %s\n\n", "-h, --help", "Show this help message")
 }

@@ -1,0 +1,3 @@
+local import "raylib.h"
+
+print "Hello raylib."

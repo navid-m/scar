@@ -23,6 +23,10 @@ type ExternalImportStmt struct {
 	Header string
 }
 
+type LocalImportStmt struct {
+	Header string
+}
+
 type ModuleInfo struct {
 	Name            string
 	FilePath        string
@@ -31,6 +35,7 @@ type ModuleInfo struct {
 	PublicFuncs     map[string]*MethodDeclStmt
 	PublicMacros    map[string]*MacroDeclStmt
 	ExternalImports []string
+	LocalImports    []string
 }
 
 type Program struct {
@@ -41,6 +46,7 @@ type Program struct {
 type Statement struct {
 	Import               *ImportStmt
 	ExternalImport       *ExternalImportStmt
+	LocalImport          *LocalImportStmt
 	Print                *PrintStmt
 	Sleep                *SleepStmt
 	While                *WhileStmt
