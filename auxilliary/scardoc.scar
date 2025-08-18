@@ -54,32 +54,23 @@ fn extract_import(string line) -> string:
     return ""
 
 fn parse_file(string fpath, string module_name) -> ref ParsedDoc:
-    print "ok-1"
     ref ParsedDoc doc = new ParsedDoc()
-    print "ok-1.1"
     doc.filepath = fpath
-    print "ok-1.2"
     doc.module_name = module_name
-    print "ok-2"
     list[string] lines = fs::read_lines(fpath)
-    print "ok-3"
     for int i = 0; i < len(lines); i++:
         string line = lines[i]
         string trimmed = strings::trim_space(line)
-        print "ok-4"
         if strings::length(trimmed) == 0:
             continue
-        print "ok-5"
         if regex::matches("^import\\s+\"[^\"]+\"", trimmed):
             string import_path = extract_import(trimmed)
             if strings::length(import_path) > 0:
                 add_elem(doc.imports, import_path)
-        print "ok-6"
         if regex::matches("^class\\s+[a-zA-Z_][a-zA-Z0-9_]*\\s*:", trimmed):
             string class_name = extract_class_name(trimmed)
             if strings::length(class_name) > 0:
                 add_elem(doc.classes, class_name)
-        print "ok-7"
         
         if strings::starts_with(trimmed, "fn ") or strings::starts_with(trimmed, "pub fn "):
             print "Function line detected: '%s'" | trimmed
@@ -98,27 +89,21 @@ fn parse_file(string fpath, string module_name) -> ref ParsedDoc:
     return doc
 
 fn generate_markdown(ref ParsedDoc doc) -> void:
-    print "OK-1"
     string markdown = ""
-    print "OK0"
     markdown = fmt!("%s# %s\n\n", markdown, doc.module_name)
-    print "OK1"
     markdown = fmt!("%s*Source: `%s`*\n\n", markdown, doc.filepath)
-    print "OK2"
     if get_size(doc.imports) > 0:
         markdown = fmt!("%s## Imports\n\n", markdown)
         for int i = 0; i < get_size(doc.imports); i++:
             string import_name = get_element(doc.imports, i)
             markdown = fmt!("%s- `%s`\n", markdown, import_name)
         markdown = fmt!("%s\n", markdown)
-    print "OK3"
     if get_size(doc.classes) > 0:
         markdown = fmt!("%s## Classes\n\n", markdown)
         for int i = 0; i < get_size(doc.classes); i++:
             string class_name = get_element(doc.classes, i)
             markdown = fmt!("%s### %s\n\n", markdown, class_name)
         markdown = fmt!("%s\n", markdown)
-    print "OK4"
     if get_size(doc.functions) > 0:
         markdown = fmt!("%s## Functions\n\n", markdown)
         print "Generating markdown for %d functions" | get_size(doc.functions)
@@ -127,7 +112,6 @@ fn generate_markdown(ref ParsedDoc doc) -> void:
             print "Processing function %d: %s" | i, func_name
             markdown = fmt!("%s### %s\n\n", markdown, func_name)
     
-    print "OK5"
     print "Generated markdown:\n%s" | markdown
     
     string output_file = fmt!("%s_documentation.md", doc.module_name)
