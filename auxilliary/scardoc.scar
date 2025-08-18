@@ -22,6 +22,9 @@ class ParsedDoc:
         collections::StringArrayList this.classes = new collections::StringArrayList(100)
         collections::StringArrayList this.function_docs = new collections::StringArrayList(100)
         collections::StringArrayList this.class_docs = new collections::StringArrayList(100)
+        collections::StringArrayList this.methods = new collections::StringArrayList(200)
+        collections::StringArrayList this.method_docs = new collections::StringArrayList(200)
+        collections::StringArrayList this.method_parents = new collections::StringArrayList(200)
         string this.filepath = ""
         string this.module_name = ""
 
@@ -60,11 +63,25 @@ fn parse_file(string fpath, string module_name) -> ref ParsedDoc:
     doc.filepath = fpath
     doc.module_name = module_name
     list[string] lines = fs::read_lines(fpath)
+    string current_class = ""
+    int class_indent = -1
     for int i = 0; i < len(lines); i++:
         string line = lines[i]
         string trimmed = strings::trim_space(line)
         if strings::length(trimmed) == 0:
             continue
+        int indent = 0
+        string left = line
+        while strings::starts_with(left, " ") or strings::starts_with(left, "\t"):
+            if strings::starts_with(left, " "):
+                left = strings::trim_prefix(left, " ")
+                indent = indent + 1
+            else:
+                left = strings::trim_prefix(left, "\t")
+                indent = indent + 1
+        if strings::length(current_class) > 0 and indent <= class_indent and !regex::matches("^(?:pub\\s+)?class\\s+", trimmed):
+            current_class = ""
+            class_indent = -1
         if regex::matches("^import\\s+\"[^\"]+\"", trimmed):
             string import_path = extract_import(trimmed)
             if strings::length(import_path) > 0:
@@ -73,6 +90,8 @@ fn parse_file(string fpath, string module_name) -> ref ParsedDoc:
             string class_name = extract_class_name(trimmed)
             if strings::length(class_name) > 0:
                 add_elem(doc.classes, class_name)
+                current_class = class_name
+                class_indent = indent
                 int j = i - 1
                 int start = j
                 while start >= 0:
@@ -93,14 +112,46 @@ fn parse_file(string fpath, string module_name) -> ref ParsedDoc:
                     cbuild.append("\n")
                     k = k + 1
                 add_elem(doc.class_docs, cbuild.buffer)
+        if strings::length(current_class) > 0:
+            bool is_method_sig = strings::starts_with(trimmed, "fn ") or strings::starts_with(trimmed, "pub fn ") or regex::matches("^(?:pub\\s+)?init\\s*\\(", trimmed)
+            if is_method_sig:
+                string mname = ""
+                if strings::starts_with(trimmed, "fn ") or strings::starts_with(trimmed, "pub fn "):
+                    mname = extract_function_name(trimmed)
+                else:
+                    mname = "init"
+                if strings::length(mname) > 0:
+                    add_elem(doc.methods, mname)
+                    add_elem(doc.method_parents, current_class)
+                    int mj = i - 1
+                    int mstart = mj
+                    while mstart >= 0:
+                        string t = strings::trim(lines[mstart])
+                        if strings::starts_with(t, "##"):
+                            mstart = mstart - 1
+                            continue
+                        break
+                    mstart = mstart + 1
+                    var mbuilder = new strings::Builder()
+                    int mk = mstart
+                    while mk <= mj:
+                        string t3 = strings::trim(lines[mk])
+                        string content2 = strings::trim_prefix(t3, "##")
+                        if strings::starts_with(content2, " "):
+                            content2 = strings::trim_prefix(content2, " ")
+                        mbuilder.append(content2)
+                        mbuilder.append("\n")
+                        mk = mk + 1
+                    add_elem(doc.method_docs, mbuilder.buffer)
+                continue
         
-        if strings::starts_with(trimmed, "fn ") or strings::starts_with(trimmed, "pub fn "):
+        # top-level functions (only when not inside a class scope)
+        if (strings::starts_with(trimmed, "fn ") or strings::starts_with(trimmed, "pub fn ")) and strings::length(current_class) == 0:
             print "Function line detected: '%s'" | trimmed
             string func_name = extract_function_name(trimmed)
             if strings::length(func_name) > 0:
                 add_elem(doc.functions, func_name)
                 print "Added function to collection: %s (total: %d)" | func_name, get_size(doc.functions)
-                # Gather preceding '##' doc lines for function
                 int j2 = i - 1
                 int start2 = j2
                 while start2 >= 0:
@@ -167,6 +218,20 @@ fn generate_markdown(ref ParsedDoc doc) -> void:
                 if strings::length(cdoc) > 0:
                     builder.append(cdoc)
                     builder.append("\n")
+            bool has_methods = false
+            for int mi = 0; mi < get_size(doc.methods); mi++:
+                string parent = get_element(doc.method_parents, mi)
+                if strings::length(parent) > 0 and strings::compare(parent, class_name) == 0:
+                    if not has_methods:
+                        builder.append("#### Methods\n\n")
+                        has_methods = true
+                    string mname = get_element(doc.methods, mi)
+                    builder.append(fmt!("- `%s`\n", mname))
+                    if mi < get_size(doc.method_docs):
+                        string mdoc = get_element(doc.method_docs, mi)
+                        if strings::length(mdoc) > 0:
+                            builder.append(mdoc)
+                            builder.append("\n")
         builder.append("\n")
     if get_size(doc.functions) > 0:
         builder.append("## Functions\n\n")
