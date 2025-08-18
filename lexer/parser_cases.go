@@ -114,8 +114,10 @@ func parseAllImports(lines []string, startLine int) ([]*ImportStmt, error) {
 	} else {
 		currentLine := startLine + 1
 		for currentLine < len(lines) {
-			line := lines[currentLine]
-			trimmed := strings.TrimSpace(line)
+			var (
+				line    = lines[currentLine]
+				trimmed = strings.TrimSpace(line)
+			)
 
 			if trimmed == "" || strings.HasPrefix(trimmed, "#") {
 				currentLine++
