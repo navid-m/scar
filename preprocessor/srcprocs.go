@@ -176,8 +176,8 @@ func parseMacroDefinition(lines []string, startLine int) (*Macro, int) {
 
 	var parameters []string
 	if paramsStr != "" {
-		paramList := strings.Split(paramsStr, ",")
-		for _, param := range paramList {
+		paramList := strings.SplitSeq(paramsStr, ",")
+		for param := range paramList {
 			param = strings.TrimSpace(param)
 			if param != "" {
 				parameters = append(parameters, param)
