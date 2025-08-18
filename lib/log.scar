@@ -1,23 +1,31 @@
+## Print a tagged warning to the stderr stream
 pub fn warn(string message) -> void:
     fprintf(stderr, "[WARNING] %s\n", message);
 
+## Print a tagged error to the stderr stream
 pub fn error(string message) -> void:
     fprintf(stderr, "[ERROR] %s\n", message);
 
-pub fn to_stderr(string message) -> void:
-    fprintf(stderr, "%s", message);
-    
+## Print a tagged info to the stdout stream
 pub fn info(string message) -> void:
     put "[INFO] %s \n " | message
 
+## Print a tagged debug to the stdout stream
 pub fn debug(string message) -> void:
     put "[DEBUG] %s \n" | message
 
+## Print a string to the stderr stream
+pub fn to_stderr(string message) -> void:
+    fprintf(stderr, "%s", message);
+
+## Print a green success message to the stdout stream
 pub fn success(string message) -> void:
     print "\033[0;32m%s\033[0m" | message
 
+## Print a red failure message to the stdout stream
 pub fn failure(string message) -> void:
     print "\033[0;31m%s\033[0m" | message
 
+## Print an amber warning message to the stdout stream
 pub fn warning(string message) -> void:
     print "\033[0;33m%s\033[0m" | message

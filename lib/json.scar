@@ -382,7 +382,7 @@ pub fn dec_ref(void* json_obj) -> void:
         }
     )
 
-## Utility functions for easier usage
+## Utility function for easier usage, get object string
 pub fn get_object_string(void* json_obj, string key) -> string:
     $raw (
         if (!json_obj || !json_is_object((json_t*)json_obj)) {
@@ -403,6 +403,7 @@ pub fn get_object_string(void* json_obj, string key) -> string:
         }
     )
 
+## Utility function for easier usage, get object integer
 pub fn get_object_integer(void* json_obj, string key) -> i64:
     $raw (
         if (!json_obj || !json_is_object((json_t*)json_obj)) {
@@ -415,6 +416,7 @@ pub fn get_object_integer(void* json_obj, string key) -> i64:
         return json_integer_value(value);
     )
 
+## Utility function for easier usage, get object real
 pub fn get_object_real(void* json_obj, string key) -> f64:
     $raw (
         if (!json_obj || !json_is_object((json_t*)json_obj)) {
@@ -427,6 +429,7 @@ pub fn get_object_real(void* json_obj, string key) -> f64:
         return json_real_value(value);
     )
 
+## Utility function for easier usage, get object boolean
 pub fn get_object_boolean(void* json_obj, string key) -> bool:
     $raw (
         if (!json_obj || !json_is_object((json_t*)json_obj)) {
