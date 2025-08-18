@@ -193,36 +193,21 @@ func insertSprintf(output string) string {
 }
 
 func insertCat(output string) string {
-	return `#define cat(x, y) \
-    ({ \
-        static char __cat_buf[1024]; \
-        const char* __x_val = (x); \
-        const char* __y_val = (y); \
-        \
-        if (!__x_val) __x_val = ""; \
-        if (!__y_val) __y_val = ""; \
-        \
-        size_t __x_len = strlen(__x_val); \
-        size_t __y_len = strlen(__y_val); \
-        \
-        if (__x_len + __y_len >= sizeof(__cat_buf)) { \
-            size_t __max_x = sizeof(__cat_buf) - 1; \
-            size_t __max_y = 0; \
-            if (__x_len < __max_x) { \
-                __max_x = __x_len; \
-                __max_y = sizeof(__cat_buf) - 1 - __max_x; \
-                if (__y_len < __max_y) __max_y = __y_len; \
-            } \
-            strncpy(__cat_buf, __x_val, __max_x); \
-            __cat_buf[__max_x] = '\0'; \
-            strncat(__cat_buf, __y_val, __max_y); \
-        } else { \
-            strcpy(__cat_buf, __x_val); \
-            strcat(__cat_buf, __y_val); \
-        } \
-        \
-        __cat_buf; \
-    })` + "\n" + strings.ReplaceAll(output, "cat!(", "cat(")
+    return "#include <string.h>\n#include <stdlib.h>\n" +
+        "static inline char* __scar_cat_alloc(const char* x, const char* y) {\n" +
+        "    if (!x) x = \"\";\n" +
+        "    if (!y) y = \"\";\n" +
+        "    size_t lx = strlen(x);\n" +
+        "    size_t ly = strlen(y);\n" +
+        "    size_t len = lx + ly + 1;\n" +
+        "    char* buf = (char*)malloc(len);\n" +
+        "    if (!buf) return NULL;\n" +
+        "    memcpy(buf, x, lx);\n" +
+        "    memcpy(buf + lx, y, ly);\n" +
+        "    buf[len - 1] = '\\0';\n" +
+        "    return buf;\n" +
+        "}\n" +
+        "#define cat(x, y) __scar_cat_alloc((x), (y))\n" + strings.ReplaceAll(output, "cat!(", "cat(")
 }
 
 func insertNilMacro(output string) string {
