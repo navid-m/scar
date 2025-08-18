@@ -1422,6 +1422,8 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 					fmt.Fprintf(b, "    this->%s = 0;\n", field.Name)
 				case "float", "double":
 					fmt.Fprintf(b, "    this->%s = 0.0;\n", field.Name)
+				case "cstring":
+					fmt.Fprintf(b, "    strcpy(this->%s, \"\");\n", field.Name)
 				case "string":
 					if !strings.HasSuffix(field.Name, "_keys") && !strings.HasSuffix(field.Name, "_values") {
 						fmt.Fprintf(b, "    this->%s = NULL;\n", field.Name)
@@ -1442,6 +1444,9 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 					if field.Name == param.Name {
 						if strings.HasPrefix(field.Type, "ref ") {
 							fmt.Fprintf(b, "    this->%s = %s;\n", param.Name, param.Name)
+						} else if field.Type == "cstring" {
+							// Copy into fixed-size array
+							fmt.Fprintf(b, "    strcpy(this->%s, %s);\n", param.Name, param.Name)
 						} else if param.Type == "string" {
 							fmt.Fprintf(b, "    this->%s = %s;\n", param.Name, param.Name)
 						} else {
@@ -1508,12 +1513,16 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 					logger.Debug("Processing field assignment: fieldName=%s, type=%s, value=%s\n", fieldName, stmt.VarDecl.Type, value)
 
 					isStringField := false
+					isCStringField := false
 					isListField := false
 					if classInfo, exists := globalClasses[className]; exists {
 						for _, field := range classInfo.Fields {
 							if field.Name == fieldName {
 								if field.Type == "string" {
 									isStringField = true
+								}
+								if field.Type == "cstring" {
+									isCStringField = true
 								}
 								fieldType := field.Type
 								if after, ok := strings.CutPrefix(fieldType, "ref "); ok {
@@ -1529,6 +1538,10 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 					if isListField && value == "[]" {
 						logger.Debug("Detected list field %s with empty initialization in VarDecl, setting _len to 0\n", fieldName)
 						fmt.Fprintf(b, "    this->%s_len = 0;\n", fieldName)
+					} else if isCStringField {
+						convertedValue := convertNewToConstructor(value)
+						convertedValue = strings.ReplaceAll(convertedValue, "this.", "this->")
+						fmt.Fprintf(b, "    strcpy(this->%s, %s);\n", fieldName, convertedValue)
 					} else if isStringField {
 						convertedValue := convertNewToConstructor(value)
 						convertedValue = strings.ReplaceAll(convertedValue, "this.", "this->")
@@ -1600,10 +1613,16 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 				fieldName = strings.TrimPrefix(fieldName, "this.")
 
 				isStringField := false
+				isCStringField := false
 				if classInfo, exists := globalClasses[className]; exists {
 					for _, field := range classInfo.Fields {
-						if field.Name == fieldName && field.Type == "string" {
-							isStringField = true
+						if field.Name == fieldName {
+							if field.Type == "string" {
+								isStringField = true
+							}
+							if field.Type == "cstring" {
+								isCStringField = true
+							}
 							break
 						}
 					}
@@ -1639,6 +1658,10 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 				if isListField && value == "[]" {
 					logger.Debug("Detected list field %s with empty initialization, setting _len to 0\n", fieldName)
 					fmt.Fprintf(b, "    this->%s_len = 0;\n", fieldName)
+				} else if isCStringField {
+					convertedValue := convertNewToConstructor(value)
+					convertedValue = strings.ReplaceAll(convertedValue, "this.", "this->")
+					fmt.Fprintf(b, "    strcpy(this->%s, %s);\n", fieldName, convertedValue)
 				} else if isStringField {
 					convertedValue := convertNewToConstructor(value)
 					convertedValue = strings.ReplaceAll(convertedValue, "this.", "this->")

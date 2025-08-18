@@ -200,7 +200,7 @@ pub fn tcp_server_close(net::TcpServer server) -> void:
         }
     )
 
-pub fn http_parse_request(string raw_data) -> net::HttpRequest:
+pub fn http_parse_request(cstring raw_data) -> net::HttpRequest:
     $raw (
         net_HttpRequest* request = net_HttpRequest_new();
         strcpy(request->method, "");
@@ -286,7 +286,7 @@ pub fn http_server_start(net::HttpServer server) -> bool:
         return 1;
     )
 
-pub fn http_server_handle_request(net::TcpConnection conn, string response_body) -> void:
+pub fn http_server_handle_request(net::TcpConnection conn, cstring response_body) -> void:
     $raw (
         char response[2048];
         int content_length = strlen(response_body);
@@ -303,7 +303,7 @@ pub fn http_server_handle_request(net::TcpConnection conn, string response_body)
         net_tcp_send(conn, response);
     )
 
-pub fn http_json_response(net::TcpConnection conn, string json_body) -> void:
+pub fn http_json_response(net::TcpConnection conn, cstring json_body) -> void:
     $raw (
         char response[2048];
         int content_length = strlen(json_body);
@@ -320,7 +320,7 @@ pub fn http_json_response(net::TcpConnection conn, string json_body) -> void:
         net_tcp_send(conn, response);
     )
 
-pub fn http_html_response(net::TcpConnection conn, string html_body) -> void:
+pub fn http_html_response(net::TcpConnection conn, cstring html_body) -> void:
     $raw (
         char response[2048];
         int content_length = strlen(html_body);
@@ -339,7 +339,7 @@ pub fn http_html_response(net::TcpConnection conn, string html_body) -> void:
 
 
 ## URL encode a string
-pub fn url_encode(string input) -> char*:
+pub fn url_encode(cstring input) -> char*:
     $raw (
         char *encodedText = (char*)malloc(sizeof(char)*strlen(input)*3+1);
         const char *hex = "0123456789abcdef";
@@ -394,8 +394,8 @@ pub fn url_decode(char* str) -> char*:
 pub class HttpResponse:
     init:
         i32 this.status_code = 0
-        string this.body = ""
-        string this.error = ""
+        cstring this.body = ""
+        cstring this.error = ""
 
 ## Send a GET request to the specified URL and return the response
 pub fn http_get(char* url) -> net::HttpResponse:
@@ -527,7 +527,7 @@ pub fn http_post(char* url, char* data) -> net::HttpResponse:
     )
 
 ## HTTP PUT request
-pub fn http_put(string url, string data) -> net::HttpResponse:
+pub fn http_put(cstring url, cstring data) -> net::HttpResponse:
     $raw (
         typedef struct {
             char *data;
@@ -595,7 +595,7 @@ pub fn http_put(string url, string data) -> net::HttpResponse:
     )
 
 ## HTTP DELETE request
-pub fn http_delete(string url) -> net::HttpResponse:
+pub fn http_delete(cstring url) -> net::HttpResponse:
     $raw (
         typedef struct {
             char *data;
@@ -660,7 +660,7 @@ pub fn http_delete(string url) -> net::HttpResponse:
     )
 
 ## Download a file from URL to local path
-pub fn download_file(string url, string filepath) -> bool:
+pub fn download_file(cstring url, cstring filepath) -> bool:
     $raw (
         CURL *curl = NULL;
         CURLcode res;
@@ -692,7 +692,7 @@ pub fn download_file(string url, string filepath) -> bool:
     )
 
 ## Check if a URL is reachable
-pub fn ping_url(string url) -> bool:
+pub fn ping_url(cstring url) -> bool:
     $raw (
         CURL *curl = NULL;
         CURLcode res;
