@@ -1,7 +1,7 @@
 class Cat:
     init:
-        int      this.age  = 5
-        cstring  this.name = "Fluffy"
+        int       this.age  = 5
+        string    this.name = "Fluffy"
 
     fn setAge(int newAge) -> void:
         this.age = newAge

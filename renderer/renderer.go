@@ -352,7 +352,7 @@ bool __check_key_exists(int* keys, int size, int key) {
 		)
 
 		switch varDecl.Type {
-		case "string":
+		case "cstring":
 			if !strings.HasPrefix(value, "\"") {
 				value = fmt.Sprintf("\"%s\"", value)
 			}
@@ -364,6 +364,9 @@ bool __check_key_exists(int* keys, int size, int key) {
 			}
 			fmt.Fprintf(&b, "char %s[10000];\n", varName)
 			fmt.Fprintf(&b, "void init_%s() { strcpy(%s, %s); }\n", varName, varName, value)
+		case "string":
+			fmt.Fprintf(&b, "char* %s;\n", varName)
+			fmt.Fprintf(&b, "void init_%s() { %s = %s; }\n", varName, varName, value)
 		default:
 			fmt.Fprintf(&b, "%s %s = %s;\n", cType, varName, value)
 		}
@@ -396,10 +399,12 @@ bool __check_key_exists(int* keys, int size, int key) {
 			cType := mapTypeToCType(varDecl.Type)
 			uniqueName := lexer.GenerateUniqueSymbol(varName, module.Name)
 			switch varDecl.Type {
-			case "string":
+			case "cstring":
 				fmt.Fprintf(&b, "extern char %s[256];\n", uniqueName)
 			case "lstring":
 				fmt.Fprintf(&b, "extern char %s[10000];\n", uniqueName)
+			case "string":
+				fmt.Fprintf(&b, "extern char* %s;\n", uniqueName)
 			default:
 				fmt.Fprintf(&b, "extern %s %s;\n", cType, uniqueName)
 			}
@@ -414,7 +419,7 @@ bool __check_key_exists(int* keys, int size, int key) {
 				value      = varDecl.Value
 			)
 			switch varDecl.Type {
-			case "string":
+			case "cstring":
 				if !strings.HasPrefix(value, "\"") {
 					value = fmt.Sprintf("\"%s\"", value)
 				}
@@ -426,6 +431,9 @@ bool __check_key_exists(int* keys, int size, int key) {
 				}
 				fmt.Fprintf(&b, "char %s[10000];\n", uniqueName)
 				fmt.Fprintf(&b, "void init_%s() { strcpy(%s, %s); }\n", uniqueName, uniqueName, value)
+			case "string":
+				fmt.Fprintf(&b, "char* %s;\n", uniqueName)
+				fmt.Fprintf(&b, "void init_%s() { %s = %s; }\n", uniqueName, uniqueName, value)
 			default:
 				fmt.Fprintf(&b, "%s %s = %s;\n", cType, uniqueName, value)
 			}
@@ -1294,14 +1302,14 @@ func generateStructDefinition(b *strings.Builder, classInfo *ClassInfo, structNa
 
 	for _, field := range classInfo.Fields {
 		if strings.HasSuffix(field.Name, "_keys") {
-			if field.Type == "string" {
+			if field.Type == "cstring" {
 				fmt.Fprintf(b, "    char %s[MAX_MAP_SIZE][MAX_STRING_LENGTH];\n", field.Name)
 			} else {
 				cType := mapTypeToCType(field.Type)
 				fmt.Fprintf(b, "    %s %s[MAX_MAP_SIZE];\n", cType, field.Name)
 			}
 		} else if strings.HasSuffix(field.Name, "_values") {
-			if field.Type == "string" {
+			if field.Type == "cstring" {
 				fmt.Fprintf(b, "    char %s[MAX_MAP_SIZE][MAX_STRING_LENGTH];\n", field.Name)
 			} else {
 				cType := mapTypeToCType(field.Type)
@@ -1312,7 +1320,7 @@ func generateStructDefinition(b *strings.Builder, classInfo *ClassInfo, structNa
 		} else if strings.HasPrefix(field.Type, "list[") && strings.HasSuffix(field.Type, "]") {
 			innerType := extractListInnerType(field.Type)
 			logger.Debug("List field %s: field.Type=%s, innerType=%s\n", field.Name, field.Type, innerType)
-			if innerType == "string" {
+			if innerType == "cstring" {
 				fmt.Fprintf(b, "    char %s[1000][MAX_STRING_LENGTH]; int %s_len;\n", field.Name, field.Name)
 			} else {
 				cType := mapBasicTypeToCType(innerType)
@@ -1332,7 +1340,7 @@ func generateStructDefinition(b *strings.Builder, classInfo *ClassInfo, structNa
 					fmt.Fprintf(b, "    %s* %s;\n", mapTypeToCType(field.Type), field.Name)
 				}
 			}
-		} else if field.Type == "string" {
+		} else if field.Type == "cstring" {
 			fmt.Fprintf(b, "    char %s[MAX_STRING_LENGTH];\n", field.Name)
 		} else {
 			cType := mapTypeToCType(field.Type)
@@ -1416,7 +1424,7 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 					fmt.Fprintf(b, "    this->%s = 0.0;\n", field.Name)
 				case "string":
 					if !strings.HasSuffix(field.Name, "_keys") && !strings.HasSuffix(field.Name, "_values") {
-						fmt.Fprintf(b, "    this->%s[0] = '\\0';\n", field.Name)
+						fmt.Fprintf(b, "    this->%s = NULL;\n", field.Name)
 					}
 				case "bool":
 					if !strings.HasSuffix(field.Name, "_values") {
@@ -1435,7 +1443,7 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 						if strings.HasPrefix(field.Type, "ref ") {
 							fmt.Fprintf(b, "    this->%s = %s;\n", param.Name, param.Name)
 						} else if param.Type == "string" {
-							fmt.Fprintf(b, "    strcpy(this->%s, %s);\n", param.Name, param.Name)
+							fmt.Fprintf(b, "    this->%s = %s;\n", param.Name, param.Name)
 						} else {
 							fmt.Fprintf(b, "    this->%s = %s;\n", param.Name, param.Name)
 						}
@@ -1522,10 +1530,10 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 						logger.Debug("Detected list field %s with empty initialization in VarDecl, setting _len to 0\n", fieldName)
 						fmt.Fprintf(b, "    this->%s_len = 0;\n", fieldName)
 					} else if isStringField {
-						if !strings.HasPrefix(value, "\"") && !strings.HasSuffix(value, "\"") && isValidIdentifier(value) {
-							value = fmt.Sprintf("\"%s\"", value)
-						}
-						fmt.Fprintf(b, "    strcpy(this->%s, %s);\n", fieldName, value)
+						convertedValue := convertNewToConstructor(value)
+						convertedValue = strings.ReplaceAll(convertedValue, "this.", "this->")
+						logger.Debug("Generated string field assignment: this->%s = %s\n", fieldName, convertedValue)
+						fmt.Fprintf(b, "    this->%s = %s;\n", fieldName, convertedValue)
 					} else {
 						convertedValue := convertNewToConstructor(value)
 						convertedValue = strings.ReplaceAll(convertedValue, "this.", "this->")
@@ -1632,10 +1640,9 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 					logger.Debug("Detected list field %s with empty initialization, setting _len to 0\n", fieldName)
 					fmt.Fprintf(b, "    this->%s_len = 0;\n", fieldName)
 				} else if isStringField {
-					if !strings.HasPrefix(value, "\"") && !strings.HasSuffix(value, "\"") && isValidIdentifier(value) {
-						value = fmt.Sprintf("\"%s\"", value)
-					}
-					fmt.Fprintf(b, "    strcpy(this->%s, %s);\n", fieldName, value)
+					convertedValue := convertNewToConstructor(value)
+					convertedValue = strings.ReplaceAll(convertedValue, "this.", "this->")
+					fmt.Fprintf(b, "    this->%s = %s;\n", fieldName, convertedValue)
 				} else {
 					// Convert new expressions to constructor calls
 					convertedValue := convertNewToConstructor(value)
