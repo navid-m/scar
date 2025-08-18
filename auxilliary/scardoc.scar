@@ -317,29 +317,37 @@ fn generate_markdown(ref ParsedDoc doc) -> void:
     if ls0 != -1:
         modname = strings::substring(display_path, ls0 + 1, strings::length(display_path))
     int dp0 = strings::index_of(modname, ".")
+    
     if dp0 != -1:
         modname = strings::substring(modname, 0, dp0)
     var builder = new strings::Builder()
     builder.append(fmt!("# %s\n\n", modname))
+    
     if strings::starts_with(display_path, cwd):
         display_path = strings::substring(display_path, strings::length(cwd), strings::length(display_path))
     builder.append(fmt!("*Source: `%s`*\n\n", display_path))
+    
     if get_size(doc.imports) > 0:
         builder.append("## Imports\n\n")
+        
         for int i = 0; i < get_size(doc.imports); i++:
             string import_name = get_element(doc.imports, i)
             builder.append(fmt!("- `%s`\n", import_name))
         builder.append("\n")
+    
     if get_size(doc.classes) > 0:
         builder.append("## Classes\n\n")
+        
         for int i = 0; i < get_size(doc.classes); i++:
             string class_name = get_element(doc.classes, i)
             builder.append(fmt!("### %s\n\n", class_name))
+            
             if i < get_size(doc.class_docs):
                 string cdoc = get_element(doc.class_docs, i)
                 if strings::length(cdoc) > 0:
                     builder.append(cdoc)
                     builder.append("\n")
+
             # Render methods for this class as subheadings
             bool any_methods = false
             for int mi = 0; mi < get_size(doc.methods); mi++:
