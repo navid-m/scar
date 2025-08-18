@@ -1282,9 +1282,9 @@ func inferTypeFromValue(value string) string {
 }
 
 func generateStructDefinition(b *strings.Builder, classInfo *ClassInfo, structName string) {
-	fmt.Fprintf(b, "#define MAX_STRING_LENGTH 256\n")
-	fmt.Fprintf(b, "#define MAX_LSTRING_LENGTH 10000\n")
-	fmt.Fprintf(b, "#define MAX_MAP_SIZE 100\n")
+	fmt.Fprintf(b, "#define MAX_STRING_LENGTH 14560\n")
+	fmt.Fprintf(b, "#define MAX_LSTRING_LENGTH 50000\n")
+	fmt.Fprintf(b, "#define MAX_MAP_SIZE 194000\n")
 
 	hasSelfReference := false
 	for _, field := range classInfo.Fields {

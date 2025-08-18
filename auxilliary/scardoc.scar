@@ -132,7 +132,6 @@ fn parse_file(string fpath, string module_name) -> ref ParsedDoc:
     return doc
 
 fn generate_markdown(ref ParsedDoc doc) -> void:
-    # Derive module name safely from filepath to avoid null doc.module_name issues
     string display_path = doc.filepath
     string cwd = os::cwd()
     display_path = strings::replace(display_path, "\\", "/")
@@ -176,22 +175,16 @@ fn generate_markdown(ref ParsedDoc doc) -> void:
             string func_name = get_element(doc.functions, i)
             print "Processing function %d: %s" | i, func_name
             builder.append(fmt!("### %s\n\n", func_name))
-            # Append function docstring if captured
             if i < get_size(doc.function_docs):
                 string fdoc = get_element(doc.function_docs, i)
                 if strings::length(fdoc) > 0:
                     builder.append(fdoc)
                     builder.append("\n")
 
-    string markdown = builder.buffer
-    print "Generated markdown:\n%s" | markdown
-
-    var ofb = new strings::Builder()
-    ofb.append(modname)
-    ofb.append("_documentation.md")
-    string output_file = ofb.buffer
-    io::write_file(output_file, markdown)
+    string output_file = fmt!("%s_documentation.md", modname)
+    io::write_file(output_file, builder.buffer)
     print "Documentation written to: %s" | output_file
+    os::exit(0)
 
 fn generate_documentation(string source_file):
     print "Generating documentation for: %s" | source_file
