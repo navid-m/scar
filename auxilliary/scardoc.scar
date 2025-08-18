@@ -36,7 +36,7 @@ fn extract_function_name(string line) -> string:
     return ""
 
 fn extract_class_name(string line) -> string:
-    string pattern = "^class\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*:"
+    string pattern = "^(?:pub\\s+)?class\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*:"
     
     list[string] matches = regex::find(pattern, line)
     if len(matches) >= 2:
@@ -69,7 +69,7 @@ fn parse_file(string fpath, string module_name) -> ref ParsedDoc:
             string import_path = extract_import(trimmed)
             if strings::length(import_path) > 0:
                 add_elem(doc.imports, import_path)
-        if regex::matches("^class\\s+[a-zA-Z_][a-zA-Z0-9_]*\\s*:", trimmed):
+        if regex::matches("^(?:pub\\s+)?class\\s+[a-zA-Z_][a-zA-Z0-9_]*\\s*:", trimmed):
             string class_name = extract_class_name(trimmed)
             if strings::length(class_name) > 0:
                 add_elem(doc.classes, class_name)
