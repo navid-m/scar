@@ -160,7 +160,7 @@ pub fn last_index_of(lstring str, lstring substring) -> int:
         return (int)(last_found - str);
     )
 
-pub fn starts_with(cstring str, cstring prefix) -> bool:
+pub fn starts_with(string str, string prefix) -> bool:
     $raw (
         if (str == NULL || prefix == NULL) {
             return false;

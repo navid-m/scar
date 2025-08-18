@@ -3145,12 +3145,15 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 					logger.Debug("Handling empty list assignment for %s\n", varName)
 					fmt.Fprintf(b, "%s%s_len = 0;\n", indent, varName)
 				} else if varType == "string" || varType == "lstring" {
-					logger.Debug("Handling string field assignment for %s = %s\n", varName, value)
+					logger.Debug("Handling string assignment for %s = %s\n", varName, value)
 					value = processCatExpression(value)
 
+					isPointerTarget := strings.Contains(varName, "->")
 					if isFunctionCall(value) {
 						value = resolveFunctionCall(value)
-						fmt.Fprintf(b, "%sstrcpy(%s, %s);\n", indent, varName, value)
+					}
+					if isPointerTarget {
+						fmt.Fprintf(b, "%s%s = %s;\n", indent, varName, value)
 					} else {
 						if strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"") {
 							fmt.Fprintf(b, "%sstrcpy(%s, %s);\n", indent, varName, value)
