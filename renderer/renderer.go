@@ -3236,6 +3236,19 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 					fmt.Fprintf(b, "%s#error \"%s\"\n", indent, err.Error())
 					continue
 				}
+
+				if innerType == "string" {
+					if isFunctionCall(value) {
+						value = resolveFunctionCall(value)
+						fmt.Fprintf(b, "%sstrcpy(%s[%s], %s);\n", indent, listName, index, value)
+					} else {
+						if !strings.HasPrefix(value, "\"") && !strings.HasSuffix(value, "\"") {
+							value = fmt.Sprintf("\"%s\"", value)
+						}
+						fmt.Fprintf(b, "%sstrcpy(%s[%s], %s);\n", indent, listName, index, value)
+					}
+					continue
+				}
 			}
 
 			fmt.Fprintf(b, "%s%s[%s] = %s;\n", indent, listName, index, value)
@@ -3248,9 +3261,12 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			if isComplexCollectionType(listType) {
 				renderComplexListDecl(b, stmt.ListDecl, indent, currentModule)
 			} else {
-				var cListType string
+				var (
+					cListType string
+					innerType = listType
+				)
 				if strings.HasPrefix(listType, "list[") && strings.HasSuffix(listType, "]") {
-					innerType := strings.TrimPrefix(strings.TrimSuffix(listType, "]"), "list[")
+					innerType = strings.TrimPrefix(strings.TrimSuffix(listType, "]"), "list[")
 					cListType = mapTypeToCType(innerType)
 				} else {
 					cListType = mapTypeToCType(listType)
@@ -3259,10 +3275,11 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				if len(stmt.ListDecl.Elements) == 1 && !strings.Contains(stmt.ListDecl.Elements[0], ",") &&
 					!strings.HasPrefix(stmt.ListDecl.Elements[0], "\"") && !strings.HasSuffix(stmt.ListDecl.Elements[0], "\"") &&
 					!isNumericOrBoolean(stmt.ListDecl.Elements[0]) {
+
 					// This is likely a variable assignment (e.g., list[int] sorted_list = input_list)
 					sourceVar := lexer.ResolveSymbol(stmt.ListDecl.Elements[0], currentModule)
 
-					if listType == "string" {
+					if innerType == "string" {
 						fmt.Fprintf(b, "%s%s %s[1000][256];\n", indent, "char", listName)
 						fmt.Fprintf(b, "%sint %s_len = %s_len;\n", indent, listName, sourceVar)
 						fmt.Fprintf(b, "%sfor (int i = 0; i < %s_len; i++) {\n", indent, sourceVar)
@@ -3276,20 +3293,47 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 						fmt.Fprintf(b, "%s}\n", indent)
 					}
 				} else {
-					// Traditional list declaration with elements
-					if listType == "string" {
+					if innerType == "string" {
 						fmt.Fprintf(b, "%s%s %s[%d][256];\n", indent, "char", listName, len(stmt.ListDecl.Elements))
 					} else {
 						fmt.Fprintf(b, "%s%s %s[%d];\n", indent, cListType, listName, len(stmt.ListDecl.Elements))
 					}
 					for i, elem := range stmt.ListDecl.Elements {
-						elem = lexer.ResolveSymbol(elem, currentModule)
+						origElem := elem
+						isQuotedLiteral := strings.HasPrefix(origElem, "\"") && strings.HasSuffix(origElem, "\"")
+						if !isQuotedLiteral {
+							elem = lexer.ResolveSymbol(elem, currentModule)
+						}
 						elem = convertNewToConstructor(elem)
-						if listType == "string" {
-							if !strings.HasPrefix(elem, "\"") && !strings.HasSuffix(elem, "\"") {
-								elem = fmt.Sprintf("\"%s\"", elem)
+						if innerType == "string" {
+							if isFunctionCall(elem) {
+								elem = resolveFunctionCall(elem)
+								fmt.Fprintf(b, "%sstrcpy(%s[%d], %s);\n", indent, listName, i, elem)
+							} else {
+								// Decide quoting using:
+								// 1. Original token quoted -> use as-is (preserve quotes)
+								// 2. Function calls -> already handled above
+								// 3. Indexed expressions like arr[i] -> do not quote
+								// 4. Identifiers: do not quote (variables)
+								if isQuotedLiteral {
+									elem = origElem
+								} else {
+									isIndexed := strings.Contains(elem, "[") && strings.Contains(elem, "]")
+									isIdent := regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`).MatchString(origElem)
+									if isIndexed {
+									} else if isIdent {
+										_, inLocal := localVars[origElem]
+										_, inGlobal := globalVars[origElem]
+										if !(inLocal || inGlobal) {
+											elem = fmt.Sprintf("\"%s\"", origElem)
+										}
+									} else if !(strings.HasPrefix(elem, "\"") && strings.HasSuffix(elem, "\"")) {
+										// Not ident, not indexed, not already quoted -> treat as literal and quote
+										elem = fmt.Sprintf("\"%s\"", elem)
+									}
+								}
+								fmt.Fprintf(b, "%sstrcpy(%s[%d], %s);\n", indent, listName, i, elem)
 							}
-							fmt.Fprintf(b, "%sstrcpy(%s[%d], %s);\n", indent, listName, i, elem)
 						} else {
 							fmt.Fprintf(b, "%s%s[%d] = %s;\n", indent, listName, i, elem)
 						}
