@@ -29,7 +29,6 @@ func InsertMacros(output string) string {
 		outp = replaceRandCalls(outp)
 		outp = insertRand(outp)
 	}
-
 	if strings.Contains(output, "cat") {
 		outp = insertCat(outp)
 	}
