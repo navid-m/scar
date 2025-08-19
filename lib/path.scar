@@ -1,6 +1,8 @@
+## Check if a path is absolute.
 pub fn is_absolute_path(string path) -> bool:
     return path[0] == '/' or (path[0] && path[1] == ':');
 
+## Get the extension of a path.
 pub fn extension(string path) -> char*:
     $raw (
         const char *dot = strrchr(path, '.');
@@ -10,6 +12,7 @@ pub fn extension(string path) -> char*:
         return strdup("");
     )
 
+## Join two paths.
 pub fn join(string base, string relative) -> char*:
     $raw (
         char *result = malloc(strlen(base) + strlen(relative) + 2);
@@ -24,6 +27,7 @@ pub fn join(string base, string relative) -> char*:
         return result;
     )
 
+## Get the base name of a path.
 pub fn basename(string path) -> char*:
     $raw (
         const char *base = strrchr(path, '/');
@@ -33,6 +37,7 @@ pub fn basename(string path) -> char*:
         return strdup(path);
     )
 
+## Get the directory name of a path.
 pub fn dirname(string path) -> char*:
     $raw (
         char *result = strdup(path);
