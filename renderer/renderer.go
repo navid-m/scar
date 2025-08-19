@@ -5743,8 +5743,9 @@ func inferArithmeticExpressionType(value string) string {
 	return "unknown"
 }
 
+var numericTypes = []string{"i32", "int", "f32", "float", "f64", "double", "i16", "i64", "u16", "u32", "u64"}
+
 func isNumericType(typeName string) bool {
-	numericTypes := []string{"i32", "int", "f32", "float", "f64", "double", "i16", "i64", "u16", "u32", "u64"}
 	return slices.Contains(numericTypes, typeName)
 }
 
