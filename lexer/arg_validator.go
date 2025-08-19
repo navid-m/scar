@@ -172,41 +172,58 @@ func parseArguments(argsStr string) []string {
 		return []string{}
 	}
 
-	var args []string
-	var current strings.Builder
-	parenDepth := 0
-	inString := false
-	var stringDelimiter rune
+	var (
+		args            []string
+		current         strings.Builder
+		parenDepth      = 0
+		inString        = false
+		stringDelimiter byte
+		escapeNext      = false
+	)
 
-	for _, char := range argsStr {
-		switch char {
-		case '"', '\'':
-			if !inString {
-				inString = true
-				stringDelimiter = char
-			} else if char == stringDelimiter {
+	for i := 0; i < len(argsStr); i++ {
+		ch := argsStr[i]
+
+		if inString {
+			if escapeNext {
+				escapeNext = false
+				current.WriteByte(ch)
+				continue
+			}
+			if ch == '\\' {
+				escapeNext = true
+				current.WriteByte(ch)
+				continue
+			}
+			if ch == stringDelimiter {
 				inString = false
+				current.WriteByte(ch)
+				continue
 			}
-			current.WriteRune(char)
+			current.WriteByte(ch)
+			continue
+		}
+
+		switch ch {
+		case '"', '\'':
+			inString = true
+			stringDelimiter = ch
+			current.WriteByte(ch)
 		case '(':
-			if !inString {
-				parenDepth++
-			}
-			current.WriteRune(char)
+			parenDepth++
+			current.WriteByte(ch)
 		case ')':
-			if !inString {
-				parenDepth--
-			}
-			current.WriteRune(char)
+			parenDepth--
+			current.WriteByte(ch)
 		case ',':
-			if parenDepth == 0 && !inString {
+			if parenDepth == 0 {
 				args = append(args, strings.TrimSpace(current.String()))
 				current.Reset()
 			} else {
-				current.WriteRune(char)
+				current.WriteByte(ch)
 			}
 		default:
-			current.WriteRune(char)
+			current.WriteByte(ch)
 		}
 	}
 

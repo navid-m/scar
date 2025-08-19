@@ -55,29 +55,59 @@ func parseStatements(lines []string, startLine, expectedIndent int) ([]*Statemen
 
 func splitRespectingQuotes(input string) []string {
 	var (
-		result   []string
-		current  strings.Builder
-		inQuotes = false
+		result          []string
+		current         strings.Builder
+		parenDepth      = 0
+		inString        = false
+		stringDelimiter byte
+		escapeNext      = false
 	)
 
-	for i, char := range input {
-		switch char {
-		case '"':
-			if i > 0 && input[i-1] == '\\' {
-				current.WriteRune(char)
-			} else {
-				inQuotes = !inQuotes
-				current.WriteRune(char)
+	for i := 0; i < len(input); i++ {
+		ch := input[i]
+
+		if inString {
+			if escapeNext {
+				escapeNext = false
+				current.WriteByte(ch)
+				continue
 			}
+			if ch == '\\' {
+				escapeNext = true
+				current.WriteByte(ch)
+				continue
+			}
+			if ch == stringDelimiter {
+				inString = false
+				current.WriteByte(ch)
+				continue
+			}
+			current.WriteByte(ch)
+			continue
+		}
+
+		switch ch {
+		case '"', '\'':
+			inString = true
+			stringDelimiter = ch
+			current.WriteByte(ch)
+		case '(':
+			parenDepth++
+			current.WriteByte(ch)
+		case ')':
+			if parenDepth > 0 {
+				parenDepth--
+			}
+			current.WriteByte(ch)
 		case ',':
-			if !inQuotes {
+			if parenDepth == 0 {
 				result = append(result, strings.TrimSpace(current.String()))
 				current.Reset()
 			} else {
-				current.WriteRune(char)
+				current.WriteByte(ch)
 			}
 		default:
-			current.WriteRune(char)
+			current.WriteByte(ch)
 		}
 	}
 
@@ -2320,17 +2350,48 @@ func parseArgumentsRespectingNesting(argsStr string) []string {
 		return []string{}
 	}
 
-	var args []string
-	var current strings.Builder
-	parenDepth := 0
+	var (
+		args            []string
+		current         strings.Builder
+		parenDepth      = 0
+		inString        = false
+		stringDelimiter rune
+		escapeNext      = false
+	)
 
 	for _, char := range argsStr {
+		if inString {
+			if escapeNext {
+				escapeNext = false
+				current.WriteRune(char)
+				continue
+			}
+			if char == '\\' {
+				escapeNext = true
+				current.WriteRune(char)
+				continue
+			}
+			if char == stringDelimiter {
+				inString = false
+				current.WriteRune(char)
+				continue
+			}
+			current.WriteRune(char)
+			continue
+		}
+
 		switch char {
+		case '\'', '"':
+			inString = true
+			stringDelimiter = char
+			current.WriteRune(char)
 		case '(':
 			parenDepth++
 			current.WriteRune(char)
 		case ')':
-			parenDepth--
+			if parenDepth > 0 {
+				parenDepth--
+			}
 			current.WriteRune(char)
 		case ',':
 			if parenDepth == 0 {
@@ -2354,6 +2415,7 @@ func parseArgumentsRespectingNesting(argsStr string) []string {
 func parseNewExprStatement(line string, lineNum int) (*Statement, int, error) {
 	expr := strings.TrimSpace(line[4:])
 	parenPos := strings.Index(expr, "(")
+
 	if parenPos == -1 {
 		return nil, lineNum, fmt.Errorf("invalid new expression: %s", line)
 	}
