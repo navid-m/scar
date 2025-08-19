@@ -6,9 +6,9 @@ import "std/os"
 # Basic HTTP server example using std/net
 #
 # Routes:
-#   - GET /       -> HTML hello
-#   - GET /json   -> JSON payload
-#   - All other paths -> 404
+#   - GET /             -> HTML hello
+#   - GET /json         -> JSON payload
+#   - All other paths   -> 404
 
 i32 port = 8080
 
@@ -33,22 +33,15 @@ if !net::tcp_server_listen(server):
 log::success(fmt!("Listening at http://localhost:%d", port))
 
 while true:
-    print "Yo"
     net::TcpConnection conn = net::tcp_server_accept(server)
-    print "sup"
     if conn.socket_fd < 0:
-        print "skipping"
         continue
 
     lstring raw = net::tcp_receive(conn, 8192)
-    print "recieved raw"
     net::HttpRequest req = net::http_parse_request(raw)
-    print "reqed."
 
     if strings::compare(req.path, "/") == 0:
-        print "wow hello"
         net::http_html_response(conn, "<html><body><h1>Hello from Scar HTTP server</h1><p>Try <a href=\"/json\">/json</a></p></body></html>")
-        print "and goodbye"
     elif strings::compare(req.path, "/json") == 0:
         net::http_json_response(conn, "{\"ok\":true,\"message\":\"Hello JSON\"}")
     else:
