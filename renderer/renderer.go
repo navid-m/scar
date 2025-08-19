@@ -5748,9 +5748,17 @@ func isNumericType(typeName string) bool {
 	return slices.Contains(numericTypes, typeName)
 }
 
+func isCharLiteral(value string) bool {
+	return strings.HasPrefix(value, "'") && strings.HasSuffix(value, "'")
+}
+
 func inferValueType(value string) string {
 	if isStringLiteral(value) {
 		return "string"
+	}
+
+	if isCharLiteral(value) {
+		return "char"
 	}
 
 	if value == "true" || value == "false" {
