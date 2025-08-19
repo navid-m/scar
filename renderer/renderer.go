@@ -2794,11 +2794,23 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 					innerType := strings.TrimPrefix(varType, "ref ")
 					switch innerType {
 					case "int", "float", "double", "bool", "char":
-						fmt.Fprintf(b, "%s%s* %s = ", indent, mapTypeToCType(innerType), varName)
+						if stmt.VarDecl.IsConst {
+							fmt.Fprintf(b, "%s%s* const %s = ", indent, mapTypeToCType(innerType), varName)
+						} else {
+							fmt.Fprintf(b, "%s%s* %s = ", indent, mapTypeToCType(innerType), varName)
+						}
 					case "string":
-						fmt.Fprintf(b, "%schar* %s = ", indent, varName)
+						if stmt.VarDecl.IsConst {
+							fmt.Fprintf(b, "%schar* const %s = ", indent, varName)
+						} else {
+							fmt.Fprintf(b, "%schar* %s = ", indent, varName)
+						}
 					default:
-						fmt.Fprintf(b, "%s%s* %s = ", indent, innerType, varName)
+						if stmt.VarDecl.IsConst {
+							fmt.Fprintf(b, "%s%s* const %s = ", indent, innerType, varName)
+						} else {
+							fmt.Fprintf(b, "%s%s* %s = ", indent, innerType, varName)
+						}
 					}
 
 					if value == "0" || value == "NULL" || value == "nil" {
@@ -2879,46 +2891,50 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				}
 			} else {
 				if stmt.VarDecl.Type == "string" {
-					fmt.Fprintf(b, "%schar %s[256];\n", indent, varName)
-					if value == "" || value == "\"\"" {
-						fmt.Fprintf(b, "%sstrcpy(%s, \"\");\n", indent, varName)
-					} else if isFunctionCall(value) {
-						funcName, args := parseFunctionCall(value)
-						resolvedFuncName := lexer.ResolveSymbol(funcName, currentModule)
-
-						if functionReturnsString(resolvedFuncName) {
-							if len(args) == 0 {
-								fmt.Fprintf(b, "%s%s(%s);\n", indent, resolvedFuncName, varName)
-							} else {
-								resolvedArgs := make([]string, len(args))
-								for i, arg := range args {
-									resolvedArgs[i] = lexer.ResolveSymbol(arg, currentModule)
-								}
-								fmt.Fprintf(b, "%s%s(%s, %s);\n", indent, resolvedFuncName, varName, strings.Join(resolvedArgs, ", "))
-							}
-						} else {
-							resolvedCall := resolveFunctionCall(value)
-							fmt.Fprintf(b, "%sstrcpy(%s, %s);\n", indent, varName, resolvedCall)
-						}
+					if stmt.VarDecl.IsConst && strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"") {
+						fmt.Fprintf(b, "%sconst char* %s = %s;\n", indent, varName, value)
 					} else {
-						if !strings.HasPrefix(value, "\"") && !strings.HasSuffix(value, "\"") {
-							if strings.Contains(value, "->") || strings.Contains(value, ".") {
-								if strings.Contains(value, ".") && !strings.Contains(value, "->") {
-									value = convertPropertyAccess(value)
+						fmt.Fprintf(b, "%schar %s[256];\n", indent, varName)
+						if value == "" || value == "\"\"" {
+							fmt.Fprintf(b, "%sstrcpy(%s, \"\");\n", indent, varName)
+						} else if isFunctionCall(value) {
+							funcName, args := parseFunctionCall(value)
+							resolvedFuncName := lexer.ResolveSymbol(funcName, currentModule)
+
+							if functionReturnsString(resolvedFuncName) {
+								if len(args) == 0 {
+									fmt.Fprintf(b, "%s%s(%s);\n", indent, resolvedFuncName, varName)
+								} else {
+									resolvedArgs := make([]string, len(args))
+									for i, arg := range args {
+										resolvedArgs[i] = lexer.ResolveSymbol(arg, currentModule)
+									}
+									fmt.Fprintf(b, "%s%s(%s, %s);\n", indent, resolvedFuncName, varName, strings.Join(resolvedArgs, ", "))
 								}
-								fmt.Fprintf(b, "%sstrcpy(%s, %s);\n", indent, varName, value)
-							} else if _, isLocal := localVars[value]; isLocal {
-								fmt.Fprintf(b, "%sstrcpy(%s, %s);\n", indent, varName, value)
-							} else if _, isGlobal := globalVars[value]; isGlobal {
-								fmt.Fprintf(b, "%sstrcpy(%s, %s);\n", indent, varName, value)
-							} else if strings.Contains(value, "[") && strings.Contains(value, "]") {
-								fmt.Fprintf(b, "%sstrcpy(%s, %s);\n", indent, varName, value)
 							} else {
-								value = fmt.Sprintf("\"%s\"", value)
-								fmt.Fprintf(b, "%sstrcpy(%s, %s);\n", indent, varName, value)
+								resolvedCall := resolveFunctionCall(value)
+								fmt.Fprintf(b, "%sstrcpy(%s, %s);\n", indent, varName, resolvedCall)
 							}
 						} else {
-							fmt.Fprintf(b, "%sstrcpy(%s, %s);\n", indent, varName, value)
+							if !strings.HasPrefix(value, "\"") && !strings.HasSuffix(value, "\"") {
+								if strings.Contains(value, "->") || strings.Contains(value, ".") {
+									if strings.Contains(value, ".") && !strings.Contains(value, "->") {
+										value = convertPropertyAccess(value)
+									}
+									fmt.Fprintf(b, "%sstrcpy(%s, %s);\n", indent, varName, value)
+								} else if _, isLocal := localVars[value]; isLocal {
+									fmt.Fprintf(b, "%sstrcpy(%s, %s);\n", indent, varName, value)
+								} else if _, isGlobal := globalVars[value]; isGlobal {
+									fmt.Fprintf(b, "%sstrcpy(%s, %s);\n", indent, varName, value)
+								} else if strings.Contains(value, "[") && strings.Contains(value, "]") {
+									fmt.Fprintf(b, "%sstrcpy(%s, %s);\n", indent, varName, value)
+								} else {
+									value = fmt.Sprintf("\"%s\"", value)
+									fmt.Fprintf(b, "%sstrcpy(%s, %s);\n", indent, varName, value)
+								}
+							} else {
+								fmt.Fprintf(b, "%sstrcpy(%s, %s);\n", indent, varName, value)
+							}
 						}
 					}
 				} else {
@@ -2927,7 +2943,11 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 					}
 					value = convertNewToConstructor(value)
 					cType := mapTypeToCType(varType)
-					fmt.Fprintf(b, "%s%s %s = %s;\n", indent, cType, varName, value)
+					if stmt.VarDecl.IsConst {
+						fmt.Fprintf(b, "%sconst %s %s = %s;\n", indent, cType, varName, value)
+					} else {
+						fmt.Fprintf(b, "%s%s %s = %s;\n", indent, cType, varName, value)
+					}
 				}
 			}
 		case stmt.VarAssign != nil:
@@ -3596,22 +3616,18 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				varType = inferTypeFromValue(stmt.VarDeclInferred.Value)
 				cType   = mapTypeToCType(varType)
 			)
+
 			if isFunctionCall(value) {
 				funcName, _ := parseFunctionCall(value)
 				resolvedFuncName := lexer.ResolveSymbol(funcName, currentModule)
 				if functionReturnsString(resolvedFuncName) {
 					varType = "string"
-					cType = "char"
-				} else if _, isStruct := globalStructs[resolvedFuncName]; isStruct {
-					varType = resolvedFuncName
-					cType = resolvedFuncName
 				}
 			}
 
-			switch varType {
-			case "string":
+			if varType == "string" {
 				fmt.Fprintf(b, "%s%s %s[256];\n", indent, cType, varName)
-			case "lstring":
+			} else if varType == "lstring" {
 				fmt.Fprintf(b, "%s%s %s[10000];\n", indent, cType, varName)
 			}
 
@@ -3645,14 +3661,19 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				if isFunctionCall(value) {
 					value = resolveFunctionCall(value)
 				}
+				constPrefix := ""
+				if stmt.VarDeclInferred.IsConst && varType != "string" && varType != "lstring" {
+					constPrefix = "const "
+				}
 				if _, isStruct := globalStructs[varType]; isStruct {
-					fmt.Fprintf(b, "%s%s %s = %s;\n", indent, cType, varName, value)
+					fmt.Fprintf(b, "%s%s%s %s = %s;\n", indent, constPrefix, cType, varName, value)
 					localVars[varName] = varType
 					logger.Debug("Added struct variable '%s' of type '%s' to localVars map\n", varName, varType)
 				} else {
-					fmt.Fprintf(b, "%s%s %s = %s;\n", indent, cType, varName, value)
+					fmt.Fprintf(b, "%s%s%s %s = %s;\n", indent, constPrefix, cType, varName, value)
 				}
 			}
+
 		case stmt.VarDeclRead != nil:
 			var (
 				varName   = lexer.ResolveSymbol(stmt.VarDeclRead.Name, currentModule)

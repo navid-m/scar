@@ -299,8 +299,9 @@ type MapPair struct {
 }
 
 type VarDeclInferredStmt struct {
-	Name  string
-	Value string
+	Name    string
+	Value   string
+	IsConst bool
 }
 
 type VarDeclWriteStmt struct {
@@ -388,6 +389,7 @@ type VarDeclStmt struct {
 	Name  string
 	Value string
 	IsRef bool
+	IsConst bool
 }
 
 type VarAssignStmt struct {

@@ -1034,6 +1034,113 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 
 		return &Statement{VarDeclInferred: &VarDeclInferredStmt{Name: varName, Value: value}}, lineNum + 1, nil
 
+	case "val":
+		if len(parts) < 4 {
+			return nil, lineNum + 1, fmt.Errorf("val declaration format error at line %d (expected: val name = value or val type name = value)", lineNum+1)
+		}
+
+		if len(parts) >= 5 && parts[3] == "=" {
+			varType := parts[1]
+			varName := parts[2]
+			value := strings.Join(parts[4:], " ")
+
+			return &Statement{VarDecl: &VarDeclStmt{
+				Type:    varType,
+				Name:    varName,
+				Value:   value,
+				IsConst: true,
+			}}, lineNum + 1, nil
+		}
+
+		if len(parts) >= 6 && parts[1] == "ref" && parts[4] == "=" {
+			varType := parts[2]
+			varName := parts[3]
+			value := strings.Join(parts[5:], " ")
+			return &Statement{VarDecl: &VarDeclStmt{
+				Type:    varType,
+				Name:    varName,
+				Value:   value,
+				IsRef:   true,
+				IsConst: true,
+			}}, lineNum + 1, nil
+		}
+
+		if parts[2] != "=" {
+			return nil, lineNum + 1, fmt.Errorf("val declaration format error at line %d (expected: val name = value)", lineNum+1)
+		}
+
+		isRef := false
+		varName := parts[1]
+		value := strings.Join(parts[3:], " ")
+		varType := ""
+
+		if parts[1] == "ref" && len(parts) >= 5 {
+			isRef = true
+			varType = parts[2]
+			varName = parts[3]
+			if parts[4] == "=" {
+				value = strings.Join(parts[5:], " ")
+			}
+		}
+
+		if strings.HasPrefix(varName, "this.") && isRef {
+			return &Statement{VarDecl: &VarDeclStmt{
+				Type:    varType,
+				Name:    varName,
+				Value:   value,
+				IsRef:   true,
+				IsConst: true,
+			}}, lineNum + 1, nil
+		}
+		if strings.HasPrefix(value, "new ") {
+			newPart := strings.TrimSpace(value[4:]) // Remove "new "
+			parenStart := strings.Index(newPart, "(")
+			if parenStart == -1 {
+				return nil, lineNum + 1, fmt.Errorf("object declaration missing parentheses at line %d", lineNum+1)
+			}
+
+			className := strings.TrimSpace(newPart[:parenStart])
+
+			var constructorArgs []string
+			argsStart := strings.Index(value, "(")
+			argsEnd := strings.LastIndex(value, ")")
+			if argsStart != -1 && argsEnd != -1 && argsEnd > argsStart+1 {
+				constructorArgsStr := strings.TrimSpace(value[argsStart+1 : argsEnd])
+				if constructorArgsStr != "" {
+					constructorArgsList := strings.SplitSeq(constructorArgsStr, ",")
+					for arg := range constructorArgsList {
+						constructorArgs = append(constructorArgs, strings.TrimSpace(arg))
+					}
+				}
+			}
+
+			typeName := className
+			var args []string
+			if strings.Contains(className, ".") {
+				parts := strings.Split(className, ".")
+				if len(parts) == 2 {
+					args = append(args, parts[0])
+					args = append(args, parts[1])
+					typeName = className
+				} else {
+					return nil, lineNum + 1, fmt.Errorf("invalid module-qualified class name at line %d", lineNum+1)
+				}
+			} else {
+				args = append(args, className)
+			}
+			args = append(args, constructorArgs...)
+
+			return &Statement{ObjectDecl: &ObjectDeclStmt{Type: typeName, Name: varName, Args: args}}, lineNum + 1, nil
+		}
+
+		if strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"") {
+		} else if strings.Contains(value, " ") && !strings.Contains(value, "\"") && !strings.HasPrefix(value, "new ") {
+			value = fmt.Sprintf("\"%s\"", value)
+		}
+
+		// For inferred 'val', mark as const so codegen can emit C 'const'.
+		return &Statement{VarDeclInferred: &VarDeclInferredStmt{Name: varName, Value: value, IsConst: true}}, lineNum + 1, nil
+
 	case "pub":
 		return parsePubStatement(lines, lineNum, currentIndent)
 
