@@ -1,16 +1,20 @@
+## Execute a command.
 pub fn exec(string command) -> i64:
     $raw (
         return system(command);
     )
 
+## Execute a command with arguments.
 pub fn exec_with_args(string command, list[string] args) -> i64:
     return system(fmt!("%s %s", command, args))
 
+## Exit the program.
 pub fn exit(i64 code):
     $raw (
         exit(code);
     )
 
+## Get the current working directory.
 pub fn cwd() -> char*:
     $raw (
         char *buffer = getcwd(NULL, 0);
@@ -18,11 +22,13 @@ pub fn cwd() -> char*:
         return result;
     )
 
+## Change the current working directory.
 pub fn chdir(string path) -> int:
     $raw (
         return chdir(path);
     )
 
+## Get the home directory.
 pub fn homedir() -> char*:
     $raw (
         char *home = getenv("HOME");
@@ -32,12 +38,14 @@ pub fn homedir() -> char*:
         return home ? strdup(home) : NULL;
     )
 
+## Get an environment variable.
 pub fn get_env(string name) -> char*:
     $raw (
         char *value = getenv(name);
         return value ? strdup(value) : NULL;
     )
 
+## Get the temporary directory.
 pub fn tempdir() -> char*:
     $raw (
         char *temp = getenv("TMPDIR");
@@ -50,6 +58,7 @@ pub fn tempdir() -> char*:
         return temp ? strdup(temp) : NULL;
     )
 
+## Get the command line arguments.
 pub fn get_args() -> list[string]:
     $raw (
         extern int __global_argc;
@@ -61,6 +70,7 @@ pub fn get_args() -> list[string]:
         return __global_argc;
     )
 
+## Read the contents of a directory.
 pub fn read_dir(string path) -> list[string]:
     platform (Posix):
         $raw (
@@ -95,6 +105,7 @@ pub fn read_dir(string path) -> list[string]:
             return count;
         )
 
+## Clear the terminal.
 pub fn clear():
     external import "stdio.h"
 
