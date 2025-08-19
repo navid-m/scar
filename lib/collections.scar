@@ -1,3 +1,4 @@
+## Define a new array type.
 pub macro NewArray(class_name, field_type, elem_type, cType, d_return, alloc_expr, free_expr, copy_expr, get_check):
     pub class class_name:
         init(i32 initial_capacity):
@@ -8,6 +9,7 @@ pub macro NewArray(class_name, field_type, elem_type, cType, d_return, alloc_exp
                 this->data = malloc(this->capacity * sizeof(cType));
             )
 
+        ## Add an element to the array.
         fn add_element(elem_type value) -> void:
             if this.size >= this.capacity:
                 this.resize()
@@ -16,6 +18,7 @@ pub macro NewArray(class_name, field_type, elem_type, cType, d_return, alloc_exp
             )
             this.size = this.size + 1
 
+        ## Get an element from the array.
         fn get_element(i32 index) -> elem_type:
             if index < 0 || index >= this.size:
                 return d_return
@@ -23,6 +26,7 @@ pub macro NewArray(class_name, field_type, elem_type, cType, d_return, alloc_exp
                 get_check;
             )
 
+        ## Set an element in the array.
         fn set_element(i32 index, elem_type value) -> void:
             if index >= 0 && index < this.size:
                 $raw (
@@ -30,9 +34,11 @@ pub macro NewArray(class_name, field_type, elem_type, cType, d_return, alloc_exp
                     ((cType*)this->data)[index] = copy_expr;
                 )
 
+        ## Get the size of the array.
         fn get_size() -> i32:
             return this.size
 
+        ## Resize the array.
         fn resize() -> void:
             this.capacity = this.capacity * 2
             $raw (
