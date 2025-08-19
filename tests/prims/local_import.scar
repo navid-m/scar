@@ -1,8 +1,8 @@
 local import "raylib.h"
 
-val width = 800
-val height = 600
-val drops = 400
+pub val width = 800
+pub val height = 600
+pub val drops = 400
 
 InitWindow(width, height, "Rain")
 SetTargetFPS(60)
@@ -18,8 +18,8 @@ while not WindowShouldClose():
         i32 sp = 4 + ((i * 13) % 8)
         i32 yi0 = (i * 97) % height
         i32 y = (yi0 + t * sp) % height
-
         i32 y2 = y + 12
+        
         if y2 >= height:
             y2 = height
 

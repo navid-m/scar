@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -254,6 +255,29 @@ func parsePubStatement(lines []string, lineNum, currentIndent int) (*Statement, 
 		size = strings.Join(parts[equalIndex+1:], " ")
 		return &Statement{PubAllocate: &PubAllocateStmt{Type: varType, Name: varName, Size: size}}, lineNum + 1, nil
 	default:
+		// "pub val <name> = <value>" (inferred) and "pub val <type> <name> = <value>"
+		if parts[1] == "val" {
+			if len(parts) >= 6 && parts[4] == "=" && isValidType(parts[2]) {
+				var (
+					varType = parts[2]
+					varName = parts[3]
+					value   = strings.Join(parts[5:], " ")
+				)
+				return &Statement{PubVarDecl: &PubVarDeclStmt{Type: varType, Name: varName, Value: value, IsConst: true}}, lineNum + 1, nil
+			}
+			if len(parts) >= 5 && parts[3] == "=" {
+				var (
+					varName = parts[2]
+					value   = strings.Join(parts[4:], " ")
+					varType = inferBasicTypeFromValue(value)
+				)
+				if varType == "string" && !(strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"")) {
+					value = fmt.Sprintf("\"%s\"", value)
+				}
+				return &Statement{PubVarDecl: &PubVarDeclStmt{Type: varType, Name: varName, Value: value, IsConst: true}}, lineNum + 1, nil
+			}
+			return nil, lineNum + 1, fmt.Errorf("invalid pub val declaration at line %d", lineNum+1)
+		}
 		if len(parts) >= 5 && parts[3] == "=" && isValidType(parts[1]) {
 			var (
 				varType = parts[1]
@@ -264,6 +288,34 @@ func parsePubStatement(lines []string, lineNum, currentIndent int) (*Statement, 
 		}
 		return nil, lineNum + 1, fmt.Errorf("invalid pub declaration at line %d", lineNum+1)
 	}
+}
+
+func inferBasicTypeFromValue(value string) string {
+	v := strings.TrimSpace(value)
+	if len(v) >= 2 && (v[0] == '"' && v[len(v)-1] == '"') {
+		if len(v) > 256 {
+			return "lstring"
+		}
+		return "string"
+	}
+	if len(v) >= 3 && v[0] == '\'' && v[len(v)-1] == '\'' {
+		return "char"
+	}
+	if v == "true" || v == "false" {
+		return "bool"
+	}
+	if strings.ContainsAny(v, ".eE") {
+		if _, err := strconv.ParseFloat(strings.TrimSuffix(strings.TrimSuffix(v, "f"), "F"), 64); err == nil {
+			if strings.HasSuffix(v, "f") || strings.HasSuffix(v, "F") {
+				return "float"
+			}
+			return "double"
+		}
+	}
+	if _, err := strconv.ParseInt(v, 10, 64); err == nil {
+		return "int"
+	}
+	return "int"
 }
 
 func parsePubClassStatement(lines []string, lineNum, currentIndent int) (*Statement, int, error) {
@@ -719,9 +771,6 @@ func parseTopLevelFunctionStatement(lines []string, lineNum, currentIndent int) 
 				continue
 			}
 			paramParts := strings.Fields(param)
-			if len(paramParts) < 2 {
-				return nil, lineNum + 1, fmt.Errorf("invalid parameter format at line %d", lineNum+1)
-			}
 
 			var paramType, paramName string
 			var isRef bool = false
@@ -1069,9 +1118,10 @@ func LoadModuleWithCycleDetection(moduleName string, baseDir string, loadingStac
 		}
 		if stmt.PubVarDecl != nil {
 			varDecl := &VarDeclStmt{
-				Type:  stmt.PubVarDecl.Type,
-				Name:  stmt.PubVarDecl.Name,
-				Value: stmt.PubVarDecl.Value,
+				Type:    stmt.PubVarDecl.Type,
+				Name:    stmt.PubVarDecl.Name,
+				Value:   stmt.PubVarDecl.Value,
+				IsConst: stmt.PubVarDecl.IsConst,
 			}
 			module.PublicVars[stmt.PubVarDecl.Name] = varDecl
 		}

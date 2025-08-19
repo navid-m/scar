@@ -391,7 +391,11 @@ bool __check_key_exists(int* keys, int size, int key) {
 			fmt.Fprintf(&b, "char* %s;\n", varName)
 			fmt.Fprintf(&b, "void init_%s() { %s = %s; }\n", varName, varName, value)
 		default:
-			fmt.Fprintf(&b, "%s %s = %s;\n", cType, varName, value)
+			if varDecl.IsConst {
+				fmt.Fprintf(&b, "const %s %s = %s;\n", cType, varName, value)
+			} else {
+				fmt.Fprintf(&b, "%s %s = %s;\n", cType, varName, value)
+			}
 		}
 	}
 	b.WriteString("\n")
@@ -429,7 +433,11 @@ bool __check_key_exists(int* keys, int size, int key) {
 			case "string":
 				fmt.Fprintf(&b, "extern char* %s;\n", uniqueName)
 			default:
-				fmt.Fprintf(&b, "extern %s %s;\n", cType, uniqueName)
+				if varDecl.IsConst {
+					fmt.Fprintf(&b, "extern const %s %s;\n", cType, uniqueName)
+				} else {
+					fmt.Fprintf(&b, "extern %s %s;\n", cType, uniqueName)
+				}
 			}
 		}
 	}
@@ -458,7 +466,11 @@ bool __check_key_exists(int* keys, int size, int key) {
 				fmt.Fprintf(&b, "char* %s;\n", uniqueName)
 				fmt.Fprintf(&b, "void init_%s() { %s = %s; }\n", uniqueName, uniqueName, value)
 			default:
-				fmt.Fprintf(&b, "%s %s = %s;\n", cType, uniqueName, value)
+				if varDecl.IsConst {
+					fmt.Fprintf(&b, "const %s %s = %s;\n", cType, uniqueName, value)
+				} else {
+					fmt.Fprintf(&b, "%s %s = %s;\n", cType, uniqueName, value)
+				}
 			}
 		}
 	}

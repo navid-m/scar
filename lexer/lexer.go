@@ -232,9 +232,10 @@ type ParallelBlockStmt struct {
 }
 
 type PubVarDeclStmt struct {
-	Type  string
-	Name  string
-	Value string
+	Type    string
+	Name    string
+	Value   string
+	IsConst bool
 }
 
 type EnumDeclStmt struct {
