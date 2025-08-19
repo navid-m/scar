@@ -5,15 +5,20 @@ import (
 )
 
 func TestParseSimpleVariableDeclaration(t *testing.T) {
-	input := `var x = 10`
-	program, err := ParseWithIndentation(input)
+	var (
+		input        = `var x = 10`
+		program, err = ParseWithIndentation(input)
+	)
+
 	if err != nil {
 		t.Fatalf("ParseWithIndentation failed: %v", err)
 	}
 	if len(program.Statements) != 1 {
 		t.Fatalf("expected 1 statement, got %d", len(program.Statements))
 	}
+
 	stmt := program.Statements[0]
+
 	if stmt.VarDeclInferred == nil {
 		t.Fatal("expected a VarDeclInferred statement, got nil")
 	}
