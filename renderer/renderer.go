@@ -883,6 +883,68 @@ func isStandaloneFunctionCall(expr string) bool {
 	return true
 }
 
+func resolveNestedFieldType(varName string) string {
+	expr := strings.TrimSpace(varName)
+	if expr == "" {
+		return ""
+	}
+	expr = strings.ReplaceAll(expr, "->", ".")
+	parts := strings.Split(expr, ".")
+	if len(parts) < 2 {
+		return ""
+	}
+
+	base := parts[0]
+	curType := ""
+	if t, ok := localVars[base]; ok {
+		curType = t
+	} else if vd, ok := globalVars[base]; ok {
+		curType = vd.Type
+	} else if obj, ok := globalObjects[base]; ok {
+		curType = obj.Type
+	} else if _, isStruct := globalStructs[base]; isStruct {
+		curType = base
+	} else if _, isClass := globalClasses[base]; isClass {
+		curType = base
+	} else {
+		return ""
+	}
+	curType = strings.TrimPrefix(curType, "ref ")
+
+	for _, field := range parts[1:] {
+		if s, ok := globalStructs[curType]; ok {
+			found := false
+			for _, f := range s.Fields {
+				if f.Name == field {
+					curType = strings.TrimPrefix(f.Type, "ref ")
+					found = true
+					break
+				}
+			}
+			if !found {
+				return ""
+			}
+			continue
+		}
+		if c, ok := globalClasses[curType]; ok {
+			found := false
+			for _, f := range c.Fields {
+				if f.Name == field {
+					curType = strings.TrimPrefix(f.Type, "ref ")
+					found = true
+					break
+				}
+			}
+			if !found {
+				return ""
+			}
+			continue
+		}
+		return ""
+	}
+	return curType
+}
+
 func resolveFunctionCall(value string) string {
 	if !isStandaloneFunctionCall(value) {
 		return value
@@ -1659,6 +1721,7 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 				fmt.Fprintf(b, "    this->%s = %s_new(%s);\n", fieldName, resolvedType, argsStr)
 
 			case stmt.VarAssign != nil:
+
 				fieldName := stmt.VarAssign.Name
 				value := stmt.VarAssign.Value
 
@@ -3070,6 +3133,14 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 					}
 				}
 			}
+
+			if varType == "" && strings.Contains(varName, ".") {
+				if t := resolveNestedFieldType(varName); t != "" {
+					varType = t
+					localVars[varName] = t
+					logger.Debug("VarAssign - resolved nested field '%s' type as '%s'\n", varName, t)
+				}
+			}
 			if varType != "" {
 				if err := checkTypeCompatibility(varName, varType, value); err != nil {
 					fmt.Fprintf(os.Stderr, "\033[31mCompilation error: %s\033[0m\n", err.Error())
@@ -3103,6 +3174,13 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 										logger.Debug("VarAssign - struct field '%s' of type '%s' recorded in localVars\n", varName, f.Type)
 										break
 									}
+								}
+							}
+							// For deeper chains like a.b.c.d, resolve and record the full chain type
+							if strings.Count(varName, ".") >= 2 {
+								if t := resolveNestedFieldType(varName); t != "" {
+									localVars[varName] = t
+									logger.Debug("VarAssign - resolved deep nested field '%s' type as '%s'\n", varName, t)
 								}
 							}
 							logger.Debug("VarAssign - detected struct field access, keeping dot notation for '%s'\n", varName)
@@ -3210,6 +3288,14 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 					}
 				}
 
+				if varType == "" && strings.Contains(varName, ".") {
+					if t := resolveNestedFieldType(varName); t != "" {
+						varType = t
+						localVars[varName] = t
+						logger.Debug("VarAssign - resolved nested field '%s' type as '%s'\n", varName, t)
+					}
+				}
+
 				isListField := false
 				fieldType := strings.TrimPrefix(varType, "ref ")
 				if strings.HasPrefix(fieldType, "list[") && strings.HasSuffix(fieldType, "]") {
@@ -3229,23 +3315,14 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				} else if value == "[]" {
 					logger.Debug("Handling empty list assignment for %s\n", varName)
 					fmt.Fprintf(b, "%s%s_len = 0;\n", indent, varName)
-				} else if varType == "string" || varType == "lstring" {
+				} else if varType == "string" || varType == "lstring" || varType == "cstring" {
 					logger.Debug("Handling string assignment for %s = %s\n", varName, value)
 					value = processCatExpression(value)
 
-					isPointerTarget := strings.Contains(varName, "->")
 					if isFunctionCall(value) {
 						value = resolveFunctionCall(value)
 					}
-					if isPointerTarget {
-						fmt.Fprintf(b, "%s%s = %s;\n", indent, varName, value)
-					} else {
-						if strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"") {
-							fmt.Fprintf(b, "%sstrcpy(%s, %s);\n", indent, varName, value)
-						} else {
-							fmt.Fprintf(b, "%sstrcpy(%s, %s);\n", indent, varName, value)
-						}
-					}
+					fmt.Fprintf(b, "%sstrcpy(%s, %s);\n", indent, varName, value)
 				} else {
 					logger.Debug("VarAssign fallback case: varName=%s, value=%s, varType=%s\n", varName, value, varType)
 

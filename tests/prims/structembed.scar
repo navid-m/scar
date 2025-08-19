@@ -1,5 +1,5 @@
 struct InnerMetaData:
-    cstring data
+    string data
 
 struct Vector2:
     InnerMetaData inner
