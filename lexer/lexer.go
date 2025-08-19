@@ -385,10 +385,10 @@ type ContinueStmt struct {
 }
 
 type VarDeclStmt struct {
-	Type  string
-	Name  string
-	Value string
-	IsRef bool
+	Type    string
+	Name    string
+	Value   string
+	IsRef   bool
 	IsConst bool
 }
 
@@ -507,11 +507,13 @@ type VarDeclReadStmt struct {
 	FilePath string
 }
 
-var LoadedModules = make(map[string]*ModuleInfo)
-var CurrentSourceFile string
-var RegisteredMacros = make(map[string]bool)
-var Aliases = make(map[string]string)
-var UnsafeAliases = make(map[string]string)
+var (
+	LoadedModules     = make(map[string]*ModuleInfo)
+	CurrentSourceFile string
+	RegisteredMacros  = make(map[string]bool)
+	Aliases           = make(map[string]string)
+	UnsafeAliases     = make(map[string]string)
+)
 
 func isStandardLibraryFile(filePath string) bool {
 	if filePath == "" {
