@@ -1,3 +1,4 @@
+## Represents some date.
 pub class Date:
     init:
         int this.year = 1970
