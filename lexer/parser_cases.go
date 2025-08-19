@@ -103,8 +103,11 @@ func parseAllImports(lines []string, startLine int) ([]*ImportStmt, error) {
 	line := strings.TrimSpace(lines[startLine])
 
 	if strings.Contains(line, ",") {
-		importLine := strings.TrimSpace(line[6:])
-		moduleNames := strings.SplitSeq(importLine, ",")
+		var (
+			importLine  = strings.TrimSpace(line[6:])
+			moduleNames = strings.SplitSeq(importLine, ",")
+		)
+
 		for moduleName := range moduleNames {
 			moduleName = strings.TrimSpace(strings.Trim(moduleName, "\""))
 			if moduleName != "" {
