@@ -1,10 +1,10 @@
 local import "raylib.h"
 
-i32 WIDTH = 800
-i32 HEIGHT = 600
-i32 DROPS = 400
+val width = 800
+val height = 600
+val drops = 400
 
-InitWindow(WIDTH, HEIGHT, "Rain")
+InitWindow(width, height, "Rain")
 SetTargetFPS(60)
 
 i32 t = 0
@@ -13,15 +13,15 @@ while not WindowShouldClose():
     BeginDrawing()
     ClearBackground(BLACK)
 
-    for i = 0 to DROPS - 1:
-        i32 xi = (i * 37) % WIDTH
+    for i = 0 to drops - 1:
+        i32 xi = (i * 37) % width
         i32 sp = 4 + ((i * 13) % 8)
-        i32 yi0 = (i * 97) % HEIGHT
-        i32 y = (yi0 + t * sp) % HEIGHT
+        i32 yi0 = (i * 97) % height
+        i32 y = (yi0 + t * sp) % height
 
         i32 y2 = y + 12
-        if y2 >= HEIGHT:
-            y2 = HEIGHT
+        if y2 >= height:
+            y2 = height
 
         DrawLine(xi, y, xi, y2, BLUE)
 
