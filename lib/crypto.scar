@@ -304,25 +304,20 @@ pub fn aes128_encrypt(string plaintext, string key) -> string:
             unsigned char state[16];
             memcpy(state, padded_data + block, 16);
 
-            // Initial round key addition
             for (int i = 0; i < 16; i++) {
                 state[i] ^= round_keys[i];
             }
 
-            // Main rounds (1-9)
             for (int round = 1; round <= 9; round++) {
-                // SubBytes
                 for (int i = 0; i < 16; i++) {
                     state[i] = sbox[state[i]];
                 }
 
-                // ShiftRows
                 unsigned char temp = state[1]; state[1] = state[5]; state[5] = state[9]; state[9] = state[13]; state[13] = temp;
                 temp = state[2]; state[2] = state[10]; state[10] = temp;
                 temp = state[6]; state[6] = state[14]; state[14] = temp;
                 temp = state[3]; state[3] = state[15]; state[15] = state[11]; state[11] = state[7]; state[7] = temp;
 
-                // MixColumns
                 for (int col = 0; col < 4; col++) {
                     unsigned char a = state[col*4], b = state[col*4+1], c = state[col*4+2], d = state[col*4+3];
                     state[col*4] = (a<<1) ^ (a>>7 ? 0x1b : 0) ^ (b<<1) ^ (b>>7 ? 0x1b : 0) ^ b ^ c ^ d;
@@ -331,13 +326,11 @@ pub fn aes128_encrypt(string plaintext, string key) -> string:
                     state[col*4+3] = (a<<1) ^ (a>>7 ? 0x1b : 0) ^ a ^ b ^ c ^ (d<<1) ^ (d>>7 ? 0x1b : 0);
                 }
 
-                // AddRoundKey
                 for (int i = 0; i < 16; i++) {
                     state[i] ^= round_keys[round*16 + i];
                 }
             }
 
-            // Final round (10)
             for (int i = 0; i < 16; i++) state[i] = sbox[state[i]];
             unsigned char temp = state[1]; state[1] = state[5]; state[5] = state[9]; state[9] = state[13]; state[13] = temp;
             temp = state[2]; state[2] = state[10]; state[10] = temp;
@@ -345,7 +338,6 @@ pub fn aes128_encrypt(string plaintext, string key) -> string:
             temp = state[3]; state[3] = state[15]; state[15] = state[11]; state[11] = state[7]; state[7] = temp;
             for (int i = 0; i < 16; i++) state[i] ^= round_keys[160 + i];
 
-            // Convert to hex
             for (int i = 0; i < 16; i++) {
                 sprintf(hex_output + strlen(hex_output), "%02x", state[i]);
             }
@@ -416,11 +408,9 @@ pub fn aes128_decrypt(string ciphertext_hex, string key) -> string:
             unsigned char temp[4];
             memcpy(temp, round_keys + (i-1)*16 + 12, 4);
             
-            // RotWord
             unsigned char t = temp[0];
             temp[0] = temp[1]; temp[1] = temp[2]; temp[2] = temp[3]; temp[3] = t;
             
-            // SubBytes (using regular sbox for key expansion)
             static const unsigned char sbox[256] = {
                 0x63, 0x7c, 0x77, 0x7b, 0xf2, 0x6b, 0x6f, 0xc5, 0x30, 0x01, 0x67, 0x2b, 0xfe, 0xd7, 0xab, 0x76,
                 0xca, 0x82, 0xc9, 0x7d, 0xfa, 0x59, 0x47, 0xf0, 0xad, 0xd4, 0xa2, 0xaf, 0x9c, 0xa4, 0x72, 0xc0,
@@ -441,10 +431,8 @@ pub fn aes128_decrypt(string ciphertext_hex, string key) -> string:
             };
             for (int j = 0; j < 4; j++) temp[j] = sbox[temp[j]];
             
-            // XOR with rcon
             temp[0] ^= rcon[i];
             
-            // Generate new round key
             for (int j = 0; j < 4; j++) {
                 round_keys[i*16 + j] = round_keys[(i-1)*16 + j] ^ temp[j];
                 round_keys[i*16 + 4 + j] = round_keys[(i-1)*16 + 4 + j] ^ round_keys[i*16 + j];
@@ -503,24 +491,18 @@ pub fn aes128_decrypt(string ciphertext_hex, string key) -> string:
                 }
             }
 
-            // Final round (0)
-            // Inverse ShiftRows
             unsigned char temp = state[13]; state[13] = state[9]; state[9] = state[5]; state[5] = state[1]; state[1] = temp;
             temp = state[2]; state[2] = state[10]; state[10] = temp;
             temp = state[6]; state[6] = state[14]; state[14] = temp;
             temp = state[7]; state[7] = state[11]; state[11] = state[15]; state[15] = state[3]; state[3] = temp;
             
-            // Inverse SubBytes
             for (int i = 0; i < 16; i++) state[i] = inv_sbox[state[i]];
             
-            // AddRoundKey
             for (int i = 0; i < 16; i++) state[i] ^= round_keys[i];
 
-            // Copy decrypted block
             memcpy(plaintext + block, state, 16);
         }
 
-        // Remove PKCS#7 padding
         if (data_len > 0) {
             unsigned char pad_val = plaintext[data_len - 1];
             if (pad_val > 0 && pad_val <= 16) {
