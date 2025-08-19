@@ -1,0 +1,30 @@
+import "std/net"
+import "std/strings"
+import "std/log"
+import "std/os"
+
+i32 port = 8080
+
+net::socket_init():
+net::TcpServer server = net::tcp_server_create(port)
+net::tcp_server_listen(server):
+log::success(fmt!("Listening at http://localhost:%d", port))
+
+while true:
+    net::TcpConnection conn = net::tcp_server_accept(server)
+    if conn.socket_fd < 0:
+        continue
+
+    lstring raw = net::tcp_receive(conn, 8192)
+    net::HttpRequest req = net::http_parse_request(raw)
+
+    if strings::compare(req.path, "/") == 0:
+        net::http_html_response(conn, "Hello from Scar HTTP server")
+    else:
+        string body = "Not Found"
+        net::tcp_send(conn, fmt!("HTTP/1.1 404 Not Found\r\nContent-Type: text/plain\r\nContent-Length: %d\r\nConnection: close\r\n\r\n%s", strings::length(body), body))
+
+    net::tcp_close(conn)
+
+net::tcp_server_close(server)
+net::socket_cleanup()
