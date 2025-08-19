@@ -159,7 +159,7 @@ pub fn dirname(string path) -> char*:
 
 ## Split a path into (dirname, basename).
 pub fn split(string path) -> path::PathParts:
-    path::PathParts parts = new path::PathParts()
+    var parts = new path::PathParts()
     parts.dirname = path::dirname(path)
     parts.basename = path::basename(path)
     return parts
