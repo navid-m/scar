@@ -255,10 +255,11 @@ func parsePubStatement(lines []string, lineNum, currentIndent int) (*Statement, 
 		return &Statement{PubAllocate: &PubAllocateStmt{Type: varType, Name: varName, Size: size}}, lineNum + 1, nil
 	default:
 		if len(parts) >= 5 && parts[3] == "=" && isValidType(parts[1]) {
-			varType := parts[1]
-			varName := parts[2]
-			value := strings.Join(parts[4:], " ")
-
+			var (
+				varType = parts[1]
+				varName = parts[2]
+				value   = strings.Join(parts[4:], " ")
+			)
 			return &Statement{PubVarDecl: &PubVarDeclStmt{Type: varType, Name: varName, Value: value}}, lineNum + 1, nil
 		}
 		return nil, lineNum + 1, fmt.Errorf("invalid pub declaration at line %d", lineNum+1)
