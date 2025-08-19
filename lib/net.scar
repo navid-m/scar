@@ -14,18 +14,21 @@ platform (Posix):
     external import "unistd.h"
     external import "fcntl.h"
 
+## Represents some TCP server.
 pub class TcpServer:
     init:
         i32 this.socket_fd = -1
         i32 this.port = 0
         bool this.is_listening = false
 
+## Represents some TCP connection.
 pub class TcpConnection:
     init:
         i32 this.socket_fd = -1
         string this.client_ip = ""
         i32 this.client_port = 0
 
+## Represents some HTTP request.
 pub class HttpRequest:
     init:
         string this.method = ""
@@ -34,11 +37,13 @@ pub class HttpRequest:
         string this.body = ""
         string this.query_string = ""
 
+## Represents some HTTP server.
 pub class HttpServer:
     init:
         i32 this.server_fd = -1
         i32 this.port = 0
 
+## Initialize the socket library.
 pub fn socket_init() -> bool:
     $raw (
         #ifdef _WIN32
@@ -50,6 +55,7 @@ pub fn socket_init() -> bool:
         #endif
     )
 
+## Clean up the socket library.
 pub fn socket_cleanup() -> void:
     $raw (
         #ifdef _WIN32
@@ -57,6 +63,7 @@ pub fn socket_cleanup() -> void:
         #endif
     )
 
+## Create a TCP server.
 pub fn tcp_server_create(i32 port) -> net::TcpServer:
     $raw (
         net_TcpServer* server = net_TcpServer_new();
@@ -105,6 +112,7 @@ pub fn tcp_server_create(i32 port) -> net::TcpServer:
         return server;
     )
 
+## Listen for incoming connections.
 pub fn tcp_server_listen(net::TcpServer server) -> bool:
     $raw (
         if (server->socket_fd < 0) return 0;
@@ -117,6 +125,7 @@ pub fn tcp_server_listen(net::TcpServer server) -> bool:
         return 1;
     )
 
+## Accept an incoming connection.
 pub fn tcp_server_accept(net::TcpServer server) -> net::TcpConnection:
     $raw (
         #ifdef _WIN32
@@ -145,6 +154,7 @@ pub fn tcp_server_accept(net::TcpServer server) -> net::TcpConnection:
         return conn;
     )
 
+## Send data over a TCP connection.
 pub fn tcp_send(net::TcpConnection conn, string data) -> i32:
     $raw (
         if (conn->socket_fd < 0) return -1;
@@ -153,6 +163,7 @@ pub fn tcp_send(net::TcpConnection conn, string data) -> i32:
         return bytes_sent;
     )
 
+## Receive data from a TCP connection.
 pub fn tcp_receive(net::TcpConnection conn, i32 max_size) -> lstring:
     $raw (
         if (conn->socket_fd < 0) return "";
@@ -175,6 +186,7 @@ pub fn tcp_receive(net::TcpConnection conn, i32 max_size) -> lstring:
         return result;
     )
 
+## Close a TCP connection.
 pub fn tcp_close(net::TcpConnection conn) -> void:
     $raw (
         if (conn->socket_fd >= 0) {
@@ -187,6 +199,7 @@ pub fn tcp_close(net::TcpConnection conn) -> void:
         }
     )
 
+## Close a TCP server.
 pub fn tcp_server_close(net::TcpServer server) -> void:
     $raw (
         if (server->socket_fd >= 0) {
@@ -200,6 +213,7 @@ pub fn tcp_server_close(net::TcpServer server) -> void:
         }
     )
 
+## Parse an HTTP request.
 pub fn http_parse_request(cstring raw_data) -> net::HttpRequest:
     $raw (
         net_HttpRequest* request = net_HttpRequest_new();
@@ -266,6 +280,7 @@ pub fn http_parse_request(cstring raw_data) -> net::HttpRequest:
         return request;
     )
 
+## Create a HTTP server.
 pub fn http_server_create(i32 port) -> net::HttpServer:
     $raw (
         net_HttpServer* server = net_HttpServer_new();
@@ -275,6 +290,7 @@ pub fn http_server_create(i32 port) -> net::HttpServer:
         return server;
     )
 
+## Start the HTTP server.
 pub fn http_server_start(net::HttpServer server) -> bool:
     $raw (
         if (server->server_fd < 0) return 0;
@@ -286,6 +302,7 @@ pub fn http_server_start(net::HttpServer server) -> bool:
         return 1;
     )
 
+## Handle an HTTP request.
 pub fn http_server_handle_request(net::TcpConnection conn, cstring response_body) -> void:
     $raw (
         char response[2048];
@@ -303,6 +320,7 @@ pub fn http_server_handle_request(net::TcpConnection conn, cstring response_body
         net_tcp_send(conn, response);
     )
 
+## Send a JSON response.
 pub fn http_json_response(net::TcpConnection conn, cstring json_body) -> void:
     $raw (
         char response[2048];
@@ -320,6 +338,7 @@ pub fn http_json_response(net::TcpConnection conn, cstring json_body) -> void:
         net_tcp_send(conn, response);
     )
 
+## Send an HTML response.
 pub fn http_html_response(net::TcpConnection conn, cstring html_body) -> void:
     $raw (
         char response[2048];
