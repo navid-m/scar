@@ -15,7 +15,7 @@ import (
 	"strings"
 )
 
-// RemoveComments removes both full-line and inline comments from source code
+// Removes both full-line and inline comments from source code
 // but preserves comments inside $raw blocks (for C preprocessor directives)
 func RemoveComments(source string) string {
 	var (
