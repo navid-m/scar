@@ -1,23 +1,28 @@
+## String builder for manual string concatenation, works on mutable strings.
 pub class Builder:
     init:
         string this.buffer = ""
         int this.length = 0
         int this.capacity = 0
     
+    ## Appends a string to the builder.
     fn append(string str) -> void:
         this.buffer = cat!(this.buffer, str)
         this.length = this.length + strings::length(str)
 
+## Returns the length of a string.
 pub fn length(string str) -> int:
     $raw (
         return strlen(str);
     )
 
+## Compares two strings.
 pub fn compare(string a, string b) -> int:
     $raw (
         return strcmp(a, b);
     )
 
+## Returns the ordinal value of the first character of a string.
 pub fn ord(string str) -> int:
     $raw (
         if (str == NULL || str[0] == '\0') {
@@ -26,9 +31,11 @@ pub fn ord(string str) -> int:
         return (int)str[0];
     )
 
+## Returns the ordinal value of a character.
 pub fn ord_char(char c) -> int:
     return (int)c;
 
+## Returns the character with the given ordinal value.
 pub fn chr(int ascii_value) -> char*:
     $raw (
         char result[2];
@@ -41,6 +48,7 @@ pub fn chr(int ascii_value) -> char*:
         return strdup(result);
     )
 
+## Trims leading and trailing whitespace from a string.
 pub fn trim_space(string str) -> lstring:
     $raw (
         if (str == NULL) {
@@ -67,6 +75,7 @@ pub fn trim_space(string str) -> lstring:
         return result;
     )
 
+## Trims a prefix from a string.
 pub fn trim_prefix(string str, string prefix) -> string:
     $raw (
         if (str == NULL || prefix == NULL) {
@@ -82,6 +91,7 @@ pub fn trim_prefix(string str, string prefix) -> string:
         }
     )
 
+## Trims a suffix from a string.
 pub fn trim_suffix(lstring str, lstring suffix) -> lstring:
     $raw (
         if (str == NULL || suffix == NULL) {
@@ -100,6 +110,7 @@ pub fn trim_suffix(lstring str, lstring suffix) -> lstring:
         return str;
     )
 
+## Checks if a string ends with a suffix.
 pub fn ends_with(string str, string suffix) -> bool:
     $raw (
         if (str == NULL || suffix == NULL) {
@@ -116,6 +127,7 @@ pub fn ends_with(string str, string suffix) -> bool:
         return strcmp(str + str_len - suffix_len, suffix) == 0;
     )
 
+## Checks if a string contains a substring.
 pub fn contains(string str, string substring) -> bool:
     $raw (
         if (str == NULL || substring == NULL) {
@@ -124,6 +136,7 @@ pub fn contains(string str, string substring) -> bool:
         return strstr(str, substring) != NULL;
     )
 
+## Returns the index of the first occurrence of a substring in a string.
 pub fn index_of(lstring str, lstring substring) -> int:
     $raw (
         if (str == NULL || substring == NULL) {
@@ -136,6 +149,7 @@ pub fn index_of(lstring str, lstring substring) -> int:
         return (int)(found - str);
     )
 
+## Returns the index of the last occurrence of a substring in a string.
 pub fn last_index_of(lstring str, lstring substring) -> int:
     $raw (
         if (str == NULL || substring == NULL) {
@@ -160,6 +174,7 @@ pub fn last_index_of(lstring str, lstring substring) -> int:
         return (int)(last_found - str);
     )
 
+## Checks if a string starts with a prefix.
 pub fn starts_with(string str, string prefix) -> bool:
     $raw (
         if (str == NULL || prefix == NULL) {
@@ -176,6 +191,7 @@ pub fn starts_with(string str, string prefix) -> bool:
         return strncmp(str, prefix, prefix_len) == 0;
     )
 
+## Returns a substring of a string.
 pub fn substring(string str, int start, int end) -> char*:
     $raw (
         if (str == NULL) {
@@ -202,6 +218,7 @@ pub fn substring(string str, int start, int end) -> char*:
         return result;
     )
 
+## Converts an integer to a hexadecimal string.
 pub fn to_hex(int value) -> char*:
     $raw (
         char *result = malloc(16);
@@ -218,6 +235,7 @@ pub fn to_hex(int value) -> char*:
         return result;
     )
 
+## Compares two strings.
 pub fn equal(string a, string b) -> bool:
     $raw (
         if (a == NULL && b == NULL) {
@@ -230,6 +248,7 @@ pub fn equal(string a, string b) -> bool:
         return strcmp(a, b) == 0;
     )
 
+## Replaces all occurrences of a substring in a string.
 pub fn replace(string str, string old_substr, string new_substr) -> char*:
     $raw (
         if (str == NULL || old_substr == NULL || new_substr == NULL) {
@@ -275,6 +294,7 @@ pub fn replace(string str, string old_substr, string new_substr) -> char*:
         return result;
     )
 
+## Splits a string into a list of substrings.
 pub fn split(string str, string delimiter) -> collections::StringArrayList:
     var result = new collections::StringArrayList(10)
     if strings::length(str) == 0:
@@ -316,6 +336,7 @@ pub fn split(string str, string delimiter) -> collections::StringArrayList:
     result.add_element(current_part)
     return result
 
+## Trims leading and trailing whitespace from a string.
 pub fn trim(string str) -> string:
     $raw (
         if (str == NULL) {
@@ -340,6 +361,7 @@ pub fn trim(string str) -> string:
         _output_buffer[len] = '\0';
     )
 
+## Returns the character at a specific index in a string.
 macro get_char_at_either(name, return_type):
     pub fn name(string str, int index) -> return_type:
         $raw (

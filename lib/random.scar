@@ -1,3 +1,4 @@
+## Get a random UUID.
 pub fn uuid(int length) -> char*:
     $raw (
         #include <sys/time.h> 
@@ -16,6 +17,9 @@ pub fn uuid(int length) -> char*:
         return buffer;
     )
 
+## Get a random number.
+##
+## Returns an integer between x and y, inclusive.
 pub fn num(int x, int y) -> int:
     int g_seed = 0
     if g_seed == 0:
@@ -42,8 +46,9 @@ pub fn num(int x, int y) -> int:
         y = temp
     return x + (g_seed % (y - x + 1))
 
-## Random boolean value
-## Returns true or false with equal probability
+## Random boolean value.
+##
+## Returns true or false with equal probability.
 pub fn boolean() -> bool:
     return random::num(0, 1)
 

@@ -6,6 +6,7 @@ external import "pcre.h"
 
 pub i64 _max_str_len = 954020
 
+## Check if a string matches a regular expression pattern.
 pub fn matches(string pattern, string text) -> bool: 
     $raw (
         #include <string.h>
@@ -17,6 +18,7 @@ pub fn matches(string pattern, string text) -> bool:
         return rc >= 0;
     )
 
+## Find all matches of a regular expression pattern in a string.
 pub fn find(string pattern, string text) -> list[string]:
     $raw (
         #include <string.h>
@@ -45,6 +47,9 @@ pub fn find(string pattern, string text) -> list[string]:
         return count;
     )
 
+## Replace all matches of a regular expression pattern in a string. 
+##
+## Returns the modified string.
 pub fn replace(string pattern, string text, string replacement) -> char*:
     $raw (
         #include <string.h>
@@ -106,6 +111,7 @@ pub fn replace(string pattern, string text, string replacement) -> char*:
         return out;
     )
 
+## Split a string into a list of substrings using a regular expression pattern.
 pub fn split(string pattern, string text) -> list[string]:
     $raw (
         #include <string.h>

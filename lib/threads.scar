@@ -1,10 +1,12 @@
 ## Cross-platform threading primitives for Scar
 ## Provides: Thread spawn/join/detach, Mutex, sleep/yield, CPU count, current thread ID
 
+## Represents some thread.
 pub class Thread:
     init:
         i64 this.handle = 0
 
+## Represents some mutex.
 pub class Mutex:
     init:
         i64 this.handle = 0
