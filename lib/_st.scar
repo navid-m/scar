@@ -315,6 +315,13 @@ t.assert_string_equals("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b
 string sha_abc = crypto::sha256("abc")
 t.assert_string_equals("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad", sha_abc, "SHA-256 of 'abc' should match")
 
+string aes_key = "0123456789ABCDEF"
+string aes_pt = "Attack at dawn"
+string aes_ct_hex = crypto::aes128_encrypt(aes_pt, aes_key)
+string aes_rt = crypto::aes128_decrypt(aes_ct_hex, aes_key)
+
+t.assert_string_equals(aes_pt, aes_rt, "AES-128 round-trip should return original plaintext")
+
 # Networking Tests
 platform (Windows):
     net::HttpResponse hello = net::http_get("https://httpbin.org/get")
