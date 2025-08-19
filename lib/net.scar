@@ -25,17 +25,17 @@ pub class TcpServer:
 pub class TcpConnection:
     init:
         i32 this.socket_fd = -1
-        string this.client_ip = ""
+        cstring this.client_ip = ""
         i32 this.client_port = 0
 
 ## Represents some HTTP request.
 pub class HttpRequest:
     init:
-        string this.method = ""
-        string this.path = ""
-        string this.version = ""
-        string this.body = ""
-        string this.query_string = ""
+        cstring this.method = ""
+        cstring this.path = ""
+        cstring this.version = ""
+        cstring this.body = ""
+        cstring this.query_string = ""
 
 ## Represents some HTTP server.
 pub class HttpServer:
@@ -131,14 +131,14 @@ pub fn tcp_server_accept(net::TcpServer server) -> net::TcpConnection:
         #ifdef _WIN32
             typedef int socklen_t;
         #endif
-        
+
         net_TcpConnection* conn = net_TcpConnection_new();
         conn->socket_fd = -1;
-        
+
         if (server->socket_fd < 0 || !server->is_listening) {
             return conn;
         }
-        
+
         struct sockaddr_in client_addr;
         socklen_t client_len = sizeof(client_addr);
         
@@ -150,7 +150,7 @@ pub fn tcp_server_accept(net::TcpServer server) -> net::TcpConnection:
         conn->socket_fd = client_fd;
         strcpy(conn->client_ip, inet_ntoa(client_addr.sin_addr));
         conn->client_port = ntohs(client_addr.sin_port);
-        
+
         return conn;
     )
 
