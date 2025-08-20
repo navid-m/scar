@@ -66,10 +66,9 @@ fn extract_macro_parts(string line) -> MacroParts:
     if len(matches) >= 3:
         string name = matches[1]
         string args = matches[2]
-        print "Macro found: %s(%s)" | name, args
         MacroParts mp = MacroParts()
-        mp.part_one = name
-        mp.part_two = args
+        mp:part_one = name
+        mp:part_two = args
         return mp
     return MacroParts()
 
@@ -108,11 +107,14 @@ fn parse_file(string fpath, string module_name) -> ref ParsedDoc:
     int class_indent = -1
     string current_struct = ""
     int struct_indent = -1
+
     for int i = 0; i < len(lines); i++:
         string line = lines[i]
         string trimmed = strings::trim_space(line)
+        
         if strings::length(trimmed) == 0:
             continue
+
         int indent = 0
         string left = line
         
@@ -295,11 +297,9 @@ fn parse_file(string fpath, string module_name) -> ref ParsedDoc:
         
         # top-level functions (only when not inside a class scope)
         if (strings::starts_with(trimmed, "fn ") or strings::starts_with(trimmed, "pub fn ")) and strings::length(current_class) == 0:
-            print "Function line detected: '%s'" | trimmed
             string func_name = extract_function_name(trimmed)
             if strings::length(func_name) > 0:
                 add_elem(doc.functions, func_name)
-                print "Added function to collection: %s (total: %d)" | func_name, get_size(doc.functions)
 
                 string fpat = fmt!("^(?:pub\\s+)?fn\\s+%s\\s*\\(([^)]*)\\)\\s*(?:->\\s*([^:]+))?\\s*:", func_name)
                 list[string] fm = regex::find(fpat, trimmed)
@@ -341,11 +341,8 @@ fn parse_file(string fpath, string module_name) -> ref ParsedDoc:
             else:
                 print "Function name extraction failed for: '%s'" | trimmed
     
-    print "Final function count: %d" | get_size(doc.functions)
     for int j = 0; j < get_size(doc.functions); j++:
-        print "ok"
         string debug_func = get_element(doc.functions, j)
-        print "Function %d: %s" | j, debug_func
     
     return doc
 
@@ -461,7 +458,6 @@ fn generate_markdown(ref ParsedDoc doc) -> void:
         print "Generating markdown for %d functions" | __functions_count
         for int i = 0; i < __functions_count; i++:
             string func_name = get_element(doc.functions, i)
-            print "Processing function %d: %s" | i, func_name
             builder.append(fmt!("### %s\n\n", func_name))
             if i < get_size(doc.function_sigs):
                 string fs = get_element(doc.function_sigs, i)
