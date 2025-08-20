@@ -11,6 +11,7 @@ struct Stuff:
     Vector2 vec
 
 var stuff = Stuff()
+
 stuff:stuff_name = "test"
 stuff:vec:x = 10
 stuff:vec:y = 20
