@@ -111,7 +111,7 @@ func main() {
 	validationErrors := lexer.ValidateProgram(program)
 	if len(validationErrors) > 0 {
 		for _, err := range validationErrors {
-			fmt.Fprintf(os.Stderr, "\033[31m%v\033[0m\n", err)
+			fmt.Fprintf(os.Stderr, "\033[31mComptimeError: %v\033[0m\n", err)
 		}
 		log.Fatal("Failed to compile.")
 	}
