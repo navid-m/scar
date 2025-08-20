@@ -656,10 +656,8 @@ pub fn poly1305_mac(string message, string key) -> string:
         const unsigned char *m = (const unsigned char*)message;
         size_t mlen = strlen(message);
 
-        // ---- parse & clamp r (first 16 bytes of key), parse s (last 16) ----
         unsigned char rbytes[16];
         memcpy(rbytes, key, 16);
-        // Clamp: clear specified bits per RFC 7539
         rbytes[3]  &= 15;
         rbytes[7]  &= 15;
         rbytes[11] &= 15;
@@ -671,38 +669,29 @@ pub fn poly1305_mac(string message, string key) -> string:
         uint64_t r_lo = ld_le64(rbytes + 0);
         uint64_t r_hi = ld_le64(rbytes + 8);
 
-        // Represent numbers in 130 bits as 3 limbs: 44,44,42 bits (base 2^44)
         const uint64_t MASK44 = ((1ULL << 44) - 1ULL);
         const uint64_t MASK42 = ((1ULL << 42) - 1ULL);
 
         uint64_t r0 =  r_lo & MASK44;
         uint64_t r1 = ((r_lo >> 44) | (r_hi << 20)) & MASK44;
         uint64_t r2 =  (r_hi >> 24) & MASK42;
-
-        // precompute 5*r1, 5*r2 for reduction shortcuts
         uint64_t r1_5 = r1 * 5;
         uint64_t r2_5 = r2 * 5;
-
-        // Accumulator h = 0
         uint64_t h0 = 0, h1 = 0, h2 = 0;
 
-        // ---- process message in 16-byte chunks with implicit 0x01 ----
-        unsigned char block[17]; // 16 bytes msg + 0x01
+        unsigned char block[17];
         while (mlen > 0) {
             size_t n = (mlen >= 16) ? 16 : mlen;
             memset(block, 0, sizeof block);
             memcpy(block, m, n);
-            block[n] = 1; // append 0x01
+            block[n] = 1;
 
-            // Load n as 130-bit (44/44/42)
             uint64_t b_lo = ld_le64(block + 0);
-            uint64_t b_hi = ld_le64(block + 8); // contains the extra 0x01 when n<16
+            uint64_t b_hi = ld_le64(block + 8);
 
             uint64_t n0 =  b_lo & MASK44;
             uint64_t n1 = ((b_lo >> 44) | (b_hi << 20)) & MASK44;
-            uint64_t n2 =  (b_hi >> 24);                  // up to 42 bits naturally
-            // For full 16-byte blocks, the appended 1-bit is at position 2^128,
-            // which maps to bit 40 within n2 in the 44/44/42 limb representation.
+            uint64_t n2 =  (b_hi >> 24);
             if (n == 16) {
                 n2 += (1ULL << 40);
             }
@@ -738,13 +727,12 @@ pub fn poly1305_mac(string message, string key) -> string:
             mlen -= n;
         }
 
-        // ---- final reduction h %= p (p = 2^130 - 5) ----
-        // Compute g = h + 5 and see if it overflows 2^130
         uint64_t g0 = h0 + 5;
         uint64_t c  = g0 >> 44;  g0 &= MASK44;
         uint64_t g1 = h1 + c;    c  = g1 >> 44;  g1 &= MASK44;
         uint64_t g2 = h2 + c;
-        uint64_t mask = (uint64_t)0 - (uint64_t)(((g2 >> 42) ^ 1) & 1); // all 1s if NO overflow, else 0
+        uint64_t mask = (uint64_t)0 - (uint64_t)(((g2 >> 42) ^ 1) & 1);
+        
         g2 &= MASK42;
         h0 = (h0 & ~mask) | (g0 & mask);
         h1 = (h1 & ~mask) | (g1 & mask);
@@ -761,7 +749,6 @@ pub fn poly1305_mac(string message, string key) -> string:
         uint64_t tag1 = t1 + s1 + carry;
 
         unsigned char tag[16];
-        // Store as little-endian: low 64 then high 64
         st_le64(tag + 0, tag0);
         st_le64(tag + 8, tag1);
 
