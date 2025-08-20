@@ -8,7 +8,6 @@ package lexer
 
 import (
 	"fmt"
-	"slices"
 	"strings"
 )
 
@@ -175,64 +174,6 @@ func normalizeTypeName(t string) string {
 		}
 	}
 	return s
-}
-
-func tryInferNewType(expr string) (string, bool) {
-	s := strings.TrimSpace(expr)
-	if s == "" {
-		return "", false
-	}
-	if after, ok := strings.CutPrefix(s, "new "); ok {
-		after = strings.TrimSpace(after)
-		if idx := strings.Index(after, "("); idx > 0 {
-			typ := strings.TrimSpace(after[:idx])
-			if typ != "" {
-				return typ, true
-			}
-		}
-	}
-	return "", false
-}
-
-func (av *ArgumentValidator) inferReturnTypeWithSymbols(expr string, varTypes map[string]string) (string, bool) {
-	s := strings.TrimSpace(expr)
-	if s == "" || !strings.Contains(s, "(") {
-		return "", false
-	}
-	open := strings.Index(s, "(")
-	close := findMatchingParen(s, open)
-	if close == -1 {
-		return "", false
-	}
-	callee := strings.TrimSpace(s[:open])
-	if isValidType(callee) {
-		return callee, true
-	}
-	if dot := strings.LastIndex(callee, "."); dot != -1 {
-		obj := strings.TrimSpace(callee[:dot])
-		meth := strings.TrimSpace(callee[dot+1:])
-		if objType, ok := varTypes[obj]; ok {
-			if after, ok0 := strings.CutPrefix(objType, "ref "); ok0 {
-				objType = strings.TrimSpace(after)
-			}
-			objType = normalizeTypeName(objType)
-			if sig, ok := av.functions[objType+"."+meth]; ok {
-				return sig.ReturnType, true
-			}
-			if strings.Contains(objType, "::") {
-				if sig, ok := av.functions[objType+"."+meth]; ok {
-					return sig.ReturnType, true
-				}
-				parts := strings.Split(objType, "::")
-				base := parts[len(parts)-1]
-				if sig, ok := av.functions[base+"."+meth]; ok {
-					return sig.ReturnType, true
-				}
-			}
-		}
-		return "", false
-	}
-	return av.inferReturnType(s)
 }
 
 func (av *ArgumentValidator) RegisterMethod(
@@ -608,141 +549,241 @@ func parseArguments(argsStr string) []string {
 	return args
 }
 
-func scanUnknownVars(expr string, varTypes map[string]string) []string {
-	s := strings.TrimSpace(expr)
-	if s == "" {
+func validateStatementRecursive(stmt *Statement, validator *ArgumentValidator, line int, expectedReturn string, varTypes map[string]string) []error {
+	if stmt == nil {
 		return nil
 	}
 
-	if containsAlias(s) {
-		return nil
+	errors := []error{}
+
+	cloneScope := func() map[string]string {
+		child := make(map[string]string, len(varTypes))
+		for k, v := range varTypes {
+			child[k] = v
+		}
+		return child
 	}
 
-	if strings.Contains(s, "=") && !strings.Contains(s, "==") && !strings.Contains(s, "!=") && !strings.Contains(s, "<=") && !strings.Contains(s, ">=") {
-		return nil
+	if stmt.VarDecl != nil && stmt.VarDecl.Name != "" {
+		varTypes[stmt.VarDecl.Name] = normalizeTypeName(strings.TrimSpace(stmt.VarDecl.Type))
+	}
+	if stmt.VarDeclInferred != nil && stmt.VarDeclInferred.Name != "" {
+		varTypes[stmt.VarDeclInferred.Name] = ""
+	}
+	if stmt.PubVarDecl != nil && stmt.PubVarDecl.Name != "" {
+		varTypes[stmt.PubVarDecl.Name] = normalizeTypeName(strings.TrimSpace(stmt.PubVarDecl.Type))
+	}
+	if stmt.ListDecl != nil && stmt.ListDecl.Name != "" {
+		et := strings.TrimSpace(stmt.ListDecl.Type)
+		if et == "" {
+			varTypes[stmt.ListDecl.Name] = "list[]"
+		} else {
+			varTypes[stmt.ListDecl.Name] = et
+		}
+	}
+	if stmt.ListOfDecl != nil && stmt.ListOfDecl.Name != "" {
+		varTypes[stmt.ListOfDecl.Name] = strings.TrimSpace(stmt.ListOfDecl.Type)
+	}
+	if stmt.MapDecl != nil && stmt.MapDecl.Name != "" {
+		key := strings.TrimSpace(stmt.MapDecl.KeyType)
+		val := strings.TrimSpace(stmt.MapDecl.ValueType)
+		if key == "" || val == "" {
+			varTypes[stmt.MapDecl.Name] = "map[]"
+		} else {
+			varTypes[stmt.MapDecl.Name] = "map[" + key + ":" + val + "]"
+		}
+	}
+	if stmt.CatString != nil && stmt.CatString.Target != "" {
+		varTypes[stmt.CatString.Target] = "string"
+	}
+	if stmt.CatList != nil && stmt.CatList.Target != "" {
+		if _, ok := varTypes[stmt.CatList.Target]; !ok {
+			varTypes[stmt.CatList.Target] = "list[]"
+		}
+	}
+	if stmt.VarDeclRead != nil && stmt.VarDeclRead.Name != "" {
+		varTypes[stmt.VarDeclRead.Name] = normalizeTypeName(strings.TrimSpace(stmt.VarDeclRead.Type))
 	}
 
-	var (
-		unknown  []string
-		inString bool
-		esc      bool
-		quote    byte
-		i        int
-	)
-	isIdentStart := func(ch byte) bool { return (ch == '_') || (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') }
-	isIdent := func(ch byte) bool { return isIdentStart(ch) || (ch >= '0' && ch <= '9') }
-	for i < len(s) {
-		ch := s[i]
-		if inString {
-			if esc {
-				esc = false
-				i++
-				continue
+	if stmt.TopLevelFuncDecl != nil {
+		child := cloneScope()
+		for _, p := range stmt.TopLevelFuncDecl.Parameters {
+			if p != nil && p.Name != "" {
+				typ := strings.TrimSpace(p.Type)
+				if p.IsList && p.ListType != "" {
+					typ = "list[" + strings.TrimSpace(p.ListType) + "]"
+				}
+				child[p.Name] = normalizeTypeName(typ)
 			}
-			if ch == '\\' {
-				esc = true
-				i++
-				continue
-			}
-			if ch == quote {
-				inString = false
-				i++
-				continue
-			}
-			i++
-			continue
 		}
-		if ch == '"' || ch == '\'' {
-			inString = true
-			quote = ch
-			i++
-			continue
+		for _, nested := range stmt.TopLevelFuncDecl.Body {
+			nestedErrors := validateStatementRecursive(nested, validator, line, stmt.TopLevelFuncDecl.ReturnType, child)
+			errors = append(errors, nestedErrors...)
 		}
-		if isIdentStart(ch) {
-			start := i
-			i++
-			for i < len(s) && isIdent(s[i]) {
-				i++
-			}
-			baseTok := s[start:i]
-
-			if i < len(s) && s[i] == '.' {
-				for i < len(s) && (isIdent(s[i]) || s[i] == '.') {
-					i++
-				}
-
-				j := i
-				for j < len(s) && s[j] == ' ' {
-					j++
-				}
-				if j < len(s) && s[j] == '(' {
-					continue
-				} // function call
-
-				if _, ok := varTypes[baseTok]; ok {
-					continue
-				}
-
-				if !slices.Contains(unknown, baseTok) {
-					unknown = append(unknown, baseTok)
-				}
-				continue
-			}
-
-			tok := baseTok
-
-			j := i
-			for j < len(s) && s[j] == ' ' {
-				j++
-			}
-			if j < len(s) && s[j] == '(' {
-				continue
-			} // function call
-			jj := j
-			if jj < len(s) && s[jj] == '!' {
-				jj++
-				for jj < len(s) && s[jj] == ' ' {
-					jj++
-				}
-				if jj < len(s) && s[jj] == '(' {
-					continue
-				}
-			}
-			if j+1 < len(s) && s[j] == ':' && s[j+1] == ':' {
-				continue
-			}
-			if tok == "new" {
-				continue
-			}
-			if tok == "or" || tok == "and" || tok == "not" {
-				continue
-			}
-			if tok == "true" || tok == "false" {
-				continue
-			}
-			if isValidType(tok) {
-				continue
-			}
-			if _, ok := varTypes[tok]; ok {
-				continue
-			}
-
-			if !slices.Contains(unknown, tok) {
-				unknown = append(unknown, tok)
-			}
-			continue
-		}
-		i++
 	}
-	return unknown
+
+	if stmt.PubTopLevelFuncDecl != nil {
+		child := cloneScope()
+		for _, p := range stmt.PubTopLevelFuncDecl.Parameters {
+			if p != nil && p.Name != "" {
+				typ := strings.TrimSpace(p.Type)
+				if p.IsList && p.ListType != "" {
+					typ = "list[" + strings.TrimSpace(p.ListType) + "]"
+				}
+				child[p.Name] = normalizeTypeName(typ)
+			}
+		}
+		for _, nested := range stmt.PubTopLevelFuncDecl.Body {
+			nestedErrors := validateStatementRecursive(nested, validator, line, stmt.PubTopLevelFuncDecl.ReturnType, child)
+			errors = append(errors, nestedErrors...)
+		}
+	}
+
+	if stmt.ClassDecl != nil {
+		for _, m := range stmt.ClassDecl.Methods {
+			child := cloneScope()
+			for _, p := range m.Parameters {
+				if p != nil && p.Name != "" {
+					typ := strings.TrimSpace(p.Type)
+					if p.IsList && p.ListType != "" {
+						typ = "list[" + strings.TrimSpace(p.ListType) + "]"
+					}
+					child[p.Name] = normalizeTypeName(typ)
+				}
+			}
+			for _, nestedStmt := range m.Body {
+				nestedErrors := validateStatementRecursive(nestedStmt, validator, line, m.ReturnType, child)
+				errors = append(errors, nestedErrors...)
+			}
+		}
+	}
+
+	if stmt.PubClassDecl != nil {
+		for _, m := range stmt.PubClassDecl.Methods {
+			child := cloneScope()
+			for _, p := range m.Parameters {
+				if p != nil && p.Name != "" {
+					typ := strings.TrimSpace(p.Type)
+					if p.IsList && p.ListType != "" {
+						typ = "list[" + strings.TrimSpace(p.ListType) + "]"
+					}
+					child[p.Name] = normalizeTypeName(typ)
+				}
+			}
+			for _, nestedStmt := range m.Body {
+				nestedErrors := validateStatementRecursive(nestedStmt, validator, line, m.ReturnType, child)
+				errors = append(errors, nestedErrors...)
+			}
+		}
+	}
+
+	if stmt.For != nil {
+		child := cloneScope()
+		if stmt.For.Var != "" {
+			child[stmt.For.Var] = "int"
+		}
+		for _, nested := range stmt.For.Body {
+			nestedErrors := validateStatementRecursive(nested, validator, line, expectedReturn, child)
+			errors = append(errors, nestedErrors...)
+		}
+	}
+
+	if stmt.ReverseFor != nil {
+		child := cloneScope()
+		if stmt.ReverseFor.Var != "" {
+			child[stmt.ReverseFor.Var] = "int"
+		}
+		for _, nested := range stmt.ReverseFor.Body {
+			nestedErrors := validateStatementRecursive(nested, validator, line, expectedReturn, child)
+			errors = append(errors, nestedErrors...)
+		}
+	}
+
+	if stmt.VerboseFor != nil {
+		child := cloneScope()
+		if stmt.VerboseFor.VarName != "" {
+			t := strings.TrimSpace(stmt.VerboseFor.VarType)
+			if t == "" {
+				t = "int"
+			}
+			child[stmt.VerboseFor.VarName] = normalizeTypeName(t)
+		}
+		for _, nested := range stmt.VerboseFor.Body {
+			nestedErrors := validateStatementRecursive(nested, validator, line, expectedReturn, child)
+			errors = append(errors, nestedErrors...)
+		}
+	}
+
+	if stmt.Foreach != nil {
+		child := cloneScope()
+		if stmt.Foreach.VarName != "" {
+			t := strings.TrimSpace(stmt.Foreach.VarType)
+			if t == "" {
+				t = "auto"
+			}
+			child[stmt.Foreach.VarName] = normalizeTypeName(t)
+		}
+		for _, nestedStmt := range stmt.Foreach.Body {
+			nestedErrors := validateStatementRecursive(nestedStmt, validator, line, expectedReturn, child)
+			errors = append(errors, nestedErrors...)
+		}
+	}
+
+	if stmt.While != nil {
+		child := cloneScope()
+		for _, nested := range stmt.While.Body {
+			nestedErrors := validateStatementRecursive(nested, validator, line, expectedReturn, child)
+			errors = append(errors, nestedErrors...)
+		}
+	}
+
+	if stmt.If != nil {
+		child := cloneScope()
+		for _, nested := range stmt.If.Body {
+			nestedErrors := validateStatementRecursive(nested, validator, line, expectedReturn, child)
+			errors = append(errors, nestedErrors...)
+		}
+		for _, e := range stmt.If.ElseIfs {
+			for _, nested := range e.Body {
+				nestedErrors := validateStatementRecursive(nested, validator, line, expectedReturn, child)
+				errors = append(errors, nestedErrors...)
+			}
+		}
+		if stmt.If.Else != nil {
+			for _, nested := range stmt.If.Else.Body {
+				nestedErrors := validateStatementRecursive(nested, validator, line, expectedReturn, child)
+				errors = append(errors, nestedErrors...)
+			}
+		}
+	}
+
+	return errors
 }
 
-func findFirstParenOutsideString(s string) int {
+func ValidateProgram(program *Program) []error {
+	if program == nil {
+		return []error{fmt.Errorf("nil program")}
+	}
+	validator := NewArgumentValidator()
+	varTypes := make(map[string]string)
+	preRegisterVars(program.Statements, varTypes)
+
+	var allErrors []error
+	line := 1
+	for _, stmt := range program.Statements {
+		errs := validateStatementRecursive(stmt, validator, line, "", varTypes)
+		allErrors = append(allErrors, errs...)
+		line++
+	}
+	return allErrors
+}
+
+func findFirstParenOutsideString(expr string) int {
 	inString := false
 	esc := false
 	var quote byte
-	for i := 0; i < len(s); i++ {
-		ch := s[i]
+	for i := 0; i < len(expr); i++ {
+		ch := expr[i]
 		if inString {
 			if esc {
 				esc = false
@@ -768,418 +809,6 @@ func findFirstParenOutsideString(s string) int {
 		}
 	}
 	return -1
-}
-
-func ValidateProgram(program *Program) []error {
-	validator := NewArgumentValidator()
-	var errors []error
-
-	for _, stmt := range program.Statements {
-		if stmt.Import != nil {
-			_, err := LoadModule(stmt.Import.Module, "")
-			if err != nil {
-				continue
-			}
-		}
-	}
-	for _, imp := range program.Imports {
-		_, err := LoadModule(imp.Module, "")
-		if err != nil {
-			continue
-		}
-	}
-
-	for _, stmt := range program.Statements {
-		if stmt.TopLevelFuncDecl != nil {
-			if stmt.TopLevelFuncDecl.Name == "main" {
-				errors = append(errors, fmt.Errorf("function name 'main' is reserved and cannot be used. use top-level statements."))
-			}
-			if stmt.TopLevelFuncDecl.Name == "min" {
-				errors = append(errors, fmt.Errorf("function name 'min' is reserved and cannot be used."))
-			}
-			validator.RegisterFunction(
-				stmt.TopLevelFuncDecl.Name,
-				stmt.TopLevelFuncDecl.Parameters,
-				stmt.TopLevelFuncDecl.ReturnType,
-				"",
-			)
-		}
-		if stmt.PubTopLevelFuncDecl != nil {
-			if stmt.PubTopLevelFuncDecl.Name == "main" {
-				errors = append(errors, fmt.Errorf("function name 'main' is reserved and cannot be used. use top-level statements."))
-			}
-			if stmt.PubTopLevelFuncDecl.Name == "min" {
-				errors = append(errors, fmt.Errorf("function name 'min' is reserved and cannot be used."))
-			}
-			validator.RegisterFunction(
-				stmt.PubTopLevelFuncDecl.Name,
-				stmt.PubTopLevelFuncDecl.Parameters,
-				stmt.PubTopLevelFuncDecl.ReturnType,
-				"",
-			)
-		}
-		if stmt.ClassDecl != nil {
-			for _, m := range stmt.ClassDecl.Methods {
-				validator.RegisterMethod(stmt.ClassDecl.Name, m.Name, m.Parameters, m.ReturnType, "")
-			}
-		}
-		if stmt.PubClassDecl != nil {
-			for _, m := range stmt.PubClassDecl.Methods {
-				validator.RegisterMethod(stmt.PubClassDecl.Name, m.Name, m.Parameters, m.ReturnType, "")
-			}
-		}
-	}
-
-	for _, module := range LoadedModules {
-		for funcName, funcDecl := range module.PublicFuncs {
-			validator.RegisterFunction(funcName, funcDecl.Parameters, funcDecl.ReturnType, module.Name)
-		}
-		for className, classDecl := range module.PublicClasses {
-			for _, m := range classDecl.Methods {
-				validator.RegisterMethod(className, m.Name, m.Parameters, m.ReturnType, module.Name)
-			}
-		}
-	}
-	varTypes := make(map[string]string)
-	preRegisterVars(program.Statements, varTypes)
-	lineNum := 1
-	for _, stmt := range program.Statements {
-		stmtErrors := validateStatementRecursive(stmt, validator, lineNum, "", varTypes)
-		errors = append(errors, stmtErrors...)
-		lineNum++
-	}
-
-	seen := make(map[string]bool)
-	var dedup []error
-	for _, err := range errors {
-		if err == nil {
-			continue
-		}
-		msg := err.Error()
-		if !seen[msg] {
-			seen[msg] = true
-			dedup = append(dedup, err)
-		}
-	}
-
-	return dedup
-}
-
-// Validates function calls in a statement and its nested statements
-func validateStatementRecursive(stmt *Statement, validator *ArgumentValidator, line int, expectedReturn string, varTypes map[string]string) []error {
-	var errors []error
-
-	if stmt.FunctionCall != nil {
-		if err := validator.ValidateFunctionCall(stmt.FunctionCall, line); err != nil {
-			errors = append(errors, err)
-		}
-	} else if stmt.MethodCall != nil {
-		if err := validator.ValidateMethodCall(stmt.MethodCall, line); err != nil {
-			errors = append(errors, err)
-		}
-	} else if stmt.VarDecl != nil {
-		if stmt.VarDecl.Value != "" {
-			if err := validator.ValidateStringFunctionCall(stmt.VarDecl.Value, line); err != nil {
-				errors = append(errors, err)
-			}
-			for _, u := range scanUnknownVars(stmt.VarDecl.Value, varTypes) {
-				errors = append(errors, fmt.Errorf("line %d: variable '%s' is not defined", line, u))
-			}
-			if newTyp, ok := tryInferNewType(stmt.VarDecl.Value); ok {
-				declared := normalizeTypeName(stmt.VarDecl.Type)
-				inst := normalizeTypeName(newTyp)
-				if declared != "" && declared != inst {
-					errors = append(errors, fmt.Errorf("line %d: cannot assign 'new %s' to variable '%s' of type '%s'", line, newTyp, stmt.VarDecl.Name, stmt.VarDecl.Type))
-				}
-			} else if rt, ok := validator.inferReturnTypeWithSymbols(stmt.VarDecl.Value, varTypes); ok && rt != "" {
-				declared := normalizeTypeName(stmt.VarDecl.Type)
-				inferred := normalizeTypeName(rt)
-				if declared != "" && declared != inferred {
-					errors = append(errors, fmt.Errorf("line %d: cannot assign call returning '%s' to variable '%s' of type '%s'", line, rt, stmt.VarDecl.Name, stmt.VarDecl.Type))
-				}
-			}
-		}
-		if stmt.VarDecl.Name != "" && stmt.VarDecl.Type != "" {
-			normalizedType := normalizeTypeName(stmt.VarDecl.Type)
-			varTypes[stmt.VarDecl.Name] = normalizedType
-		}
-	} else if stmt.ListDecl != nil {
-		if stmt.ListDecl.Name != "" {
-			elemType := strings.TrimSpace(stmt.ListDecl.Type)
-			t := "list[" + elemType + "]"
-			if elemType == "" {
-				t = "list[]"
-			}
-			varTypes[stmt.ListDecl.Name] = t
-		}
-	} else if stmt.ListOfDecl != nil {
-		if stmt.ListOfDecl.Name != "" {
-			varTypes[stmt.ListOfDecl.Name] = strings.TrimSpace(stmt.ListOfDecl.Type)
-		}
-	} else if stmt.MapDecl != nil {
-		if stmt.MapDecl.Name != "" {
-			key := strings.TrimSpace(stmt.MapDecl.KeyType)
-			val := strings.TrimSpace(stmt.MapDecl.ValueType)
-			t := "map[" + key + ":" + val + "]"
-			if key == "" || val == "" {
-				t = "map[]"
-			}
-			varTypes[stmt.MapDecl.Name] = t
-		}
-	} else if stmt.VarDeclInferred != nil {
-		if stmt.VarDeclInferred.Name != "" {
-			varTypes[stmt.VarDeclInferred.Name] = ""
-		}
-	} else if stmt.PubVarDecl != nil {
-		if stmt.PubVarDecl.Name != "" {
-			varTypes[stmt.PubVarDecl.Name] = normalizeTypeName(stmt.PubVarDecl.Type)
-		}
-	} else if stmt.Run != nil {
-		s := strings.TrimSpace(stmt.Run.FunctionCall)
-		if eq := strings.Index(s, "="); eq != -1 {
-			lhs := strings.TrimSpace(s[:eq])
-			// LHS may look like: "void* loaded" or "auto loaded" or just "loaded"
-			fields := strings.Fields(lhs)
-			if len(fields) > 0 {
-				name := fields[len(fields)-1]
-				if name != "" {
-					if _, ok := varTypes[name]; !ok {
-						varTypes[name] = ""
-					}
-				}
-			}
-		}
-	} else if stmt.VarAssign != nil {
-		if err := validator.ValidateStringFunctionCall(stmt.VarAssign.Value, line); err != nil {
-			errors = append(errors, err)
-		}
-		if stmt.VarAssign.Name != "" {
-			target := strings.TrimSpace(stmt.VarAssign.Name)
-			if dot := strings.Index(target, "."); dot != -1 {
-				base := strings.TrimSpace(target[:dot])
-				if _, ok := varTypes[base]; !ok {
-					errors = append(errors, fmt.Errorf("line %d: variable '%s' is not defined", line, base))
-				}
-			} else {
-				if _, ok := varTypes[target]; !ok {
-					errors = append(errors, fmt.Errorf("line %d: variable '%s' is not defined", line, target))
-				}
-			}
-		}
-		for _, u := range scanUnknownVars(stmt.VarAssign.Value, varTypes) {
-			errors = append(errors, fmt.Errorf("line %d: variable '%s' is not defined", line, u))
-		}
-	} else if stmt.ObjectDecl != nil {
-		if stmt.ObjectDecl.Name != "" && stmt.ObjectDecl.Type != "" {
-			normalizedType := normalizeTypeName(stmt.ObjectDecl.Type)
-			varTypes[stmt.ObjectDecl.Name] = normalizedType
-		}
-	}
-	if stmt.Print != nil {
-		for _, variable := range stmt.Print.Variables {
-			if err := validator.ValidateStringFunctionCall(variable, line); err != nil {
-				errors = append(errors, err)
-			}
-			for _, u := range scanUnknownVars(variable, varTypes) {
-				errors = append(errors, fmt.Errorf("line %d: variable '%s' is not defined", line, u))
-			}
-		}
-	}
-
-	if stmt.Return != nil {
-		if err := validator.ValidateStringFunctionCall(stmt.Return.Value, line); err != nil {
-			errors = append(errors, err)
-		}
-		for _, u := range scanUnknownVars(stmt.Return.Value, varTypes) {
-			errors = append(errors, fmt.Errorf("line %d: variable '%s' is not defined", line, u))
-		}
-		if expectedReturn != "" {
-			if rt, ok := validator.inferReturnTypeWithSymbols(stmt.Return.Value, varTypes); ok && rt != "" {
-				exp := normalizeTypeName(expectedReturn)
-				inferred := normalizeTypeName(rt)
-				if inferred != exp {
-					errors = append(errors, fmt.Errorf("line %d: return type mismatch: expected '%s' but expression returns '%s'", line, expectedReturn, rt))
-				}
-			}
-		}
-	}
-	if stmt.If != nil {
-		for _, nestedStmt := range stmt.If.Body {
-			nestedErrors := validateStatementRecursive(nestedStmt, validator, line, expectedReturn, varTypes)
-			errors = append(errors, nestedErrors...)
-		}
-		for _, elif := range stmt.If.ElseIfs {
-			for _, nestedStmt := range elif.Body {
-				nestedErrors := validateStatementRecursive(nestedStmt, validator, line, expectedReturn, varTypes)
-				errors = append(errors, nestedErrors...)
-			}
-		}
-		if stmt.If.Else != nil {
-			for _, nestedStmt := range stmt.If.Else.Body {
-				nestedErrors := validateStatementRecursive(nestedStmt, validator, line, expectedReturn, varTypes)
-				errors = append(errors, nestedErrors...)
-			}
-		}
-	}
-
-	if stmt.While != nil {
-		for _, nestedStmt := range stmt.While.Body {
-			nestedErrors := validateStatementRecursive(nestedStmt, validator, line, expectedReturn, varTypes)
-			errors = append(errors, nestedErrors...)
-		}
-	}
-
-	if stmt.For != nil {
-		child := make(map[string]string, len(varTypes)+1)
-		for k, v := range varTypes {
-			child[k] = v
-		}
-		if stmt.For.Var != "" {
-			child[stmt.For.Var] = "int"
-		}
-		for _, nestedStmt := range stmt.For.Body {
-			nestedErrors := validateStatementRecursive(nestedStmt, validator, line, expectedReturn, child)
-			errors = append(errors, nestedErrors...)
-		}
-	}
-
-	if stmt.ReverseFor != nil {
-		child := make(map[string]string, len(varTypes)+1)
-		for k, v := range varTypes {
-			child[k] = v
-		}
-		if stmt.ReverseFor.Var != "" {
-			child[stmt.ReverseFor.Var] = "int"
-		}
-		for _, nestedStmt := range stmt.ReverseFor.Body {
-			nestedErrors := validateStatementRecursive(nestedStmt, validator, line, expectedReturn, child)
-			errors = append(errors, nestedErrors...)
-		}
-	}
-
-	if stmt.VerboseFor != nil {
-		child := make(map[string]string, len(varTypes)+1)
-		for k, v := range varTypes {
-			child[k] = v
-		}
-		if stmt.VerboseFor.VarName != "" {
-			t := strings.TrimSpace(stmt.VerboseFor.VarType)
-			if t == "" {
-				t = "int"
-			}
-			child[stmt.VerboseFor.VarName] = normalizeTypeName(t)
-		}
-		for _, nestedStmt := range stmt.VerboseFor.Body {
-			nestedErrors := validateStatementRecursive(nestedStmt, validator, line, expectedReturn, child)
-			errors = append(errors, nestedErrors...)
-		}
-	}
-
-	if stmt.TopLevelFuncDecl != nil {
-		for _, nestedStmt := range stmt.TopLevelFuncDecl.Body {
-			// Child scope with parameters
-			child := make(map[string]string, len(varTypes)+len(stmt.TopLevelFuncDecl.Parameters))
-			for k, v := range varTypes {
-				child[k] = v
-			}
-			for _, p := range stmt.TopLevelFuncDecl.Parameters {
-				if p != nil && p.Name != "" {
-					typ := strings.TrimSpace(p.Type)
-					if p.IsList && p.ListType != "" {
-						typ = "list[" + strings.TrimSpace(p.ListType) + "]"
-					}
-					child[p.Name] = normalizeTypeName(typ)
-				}
-			}
-			nestedErrors := validateStatementRecursive(nestedStmt, validator, line, stmt.TopLevelFuncDecl.ReturnType, child)
-			errors = append(errors, nestedErrors...)
-		}
-	}
-
-	if stmt.PubTopLevelFuncDecl != nil {
-		for _, nestedStmt := range stmt.PubTopLevelFuncDecl.Body {
-			child := make(map[string]string, len(varTypes)+len(stmt.PubTopLevelFuncDecl.Parameters))
-			for k, v := range varTypes {
-				child[k] = v
-			}
-			for _, p := range stmt.PubTopLevelFuncDecl.Parameters {
-				if p != nil && p.Name != "" {
-					typ := strings.TrimSpace(p.Type)
-					if p.IsList && p.ListType != "" {
-						typ = "list[" + strings.TrimSpace(p.ListType) + "]"
-					}
-					child[p.Name] = normalizeTypeName(typ)
-				}
-			}
-			nestedErrors := validateStatementRecursive(nestedStmt, validator, line, stmt.PubTopLevelFuncDecl.ReturnType, child)
-			errors = append(errors, nestedErrors...)
-		}
-	}
-
-	if stmt.ClassDecl != nil {
-		for _, m := range stmt.ClassDecl.Methods {
-			for _, nestedStmt := range m.Body {
-				// Child scope with method parameters
-				child := make(map[string]string, len(varTypes)+len(m.Parameters))
-				for k, v := range varTypes {
-					child[k] = v
-				}
-				for _, p := range m.Parameters {
-					if p != nil && p.Name != "" {
-						typ := strings.TrimSpace(p.Type)
-						if p.IsList && p.ListType != "" {
-							typ = "list[" + strings.TrimSpace(p.ListType) + "]"
-						}
-						child[p.Name] = normalizeTypeName(typ)
-					}
-				}
-				nestedErrors := validateStatementRecursive(nestedStmt, validator, line, m.ReturnType, child)
-				errors = append(errors, nestedErrors...)
-			}
-		}
-	}
-
-	if stmt.PubClassDecl != nil {
-		for _, m := range stmt.PubClassDecl.Methods {
-			for _, nestedStmt := range m.Body {
-				child := make(map[string]string, len(varTypes)+len(m.Parameters))
-				for k, v := range varTypes {
-					child[k] = v
-				}
-				for _, p := range m.Parameters {
-					if p != nil && p.Name != "" {
-						typ := strings.TrimSpace(p.Type)
-						if p.IsList && p.ListType != "" {
-							typ = "list[" + strings.TrimSpace(p.ListType) + "]"
-						}
-						child[p.Name] = normalizeTypeName(typ)
-					}
-				}
-				nestedErrors := validateStatementRecursive(nestedStmt, validator, line, m.ReturnType, child)
-				errors = append(errors, nestedErrors...)
-			}
-		}
-	}
-
-	if stmt.Foreach != nil {
-		child := make(map[string]string, len(varTypes)+1)
-		for k, v := range varTypes {
-			child[k] = v
-		}
-		if stmt.Foreach.VarName != "" {
-			t := strings.TrimSpace(stmt.Foreach.VarType)
-			if t == "" {
-				t = "auto"
-			}
-			child[stmt.Foreach.VarName] = normalizeTypeName(t)
-		}
-		for _, nestedStmt := range stmt.Foreach.Body {
-			nestedErrors := validateStatementRecursive(nestedStmt, validator, line, expectedReturn, child)
-			errors = append(errors, nestedErrors...)
-		}
-	}
-
-	return errors
 }
 
 func containsAlias(expr string) bool {
