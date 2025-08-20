@@ -842,6 +842,9 @@ func validateStatementRecursive(stmt *Statement, validator *ArgumentValidator, l
 
 	if stmt.VarAssign != nil {
 		if _, ok := varTypes[stmt.VarAssign.Name]; !ok {
+			if strings.Contains(stmt.VarAssign.Name, "this") {
+				return nil
+			}
 			if !strings.Contains(stmt.VarAssign.Name, ".") || !slices.Contains(primitiveTypes, stmt.VarAssign.Name) {
 				return []error{fmt.Errorf("line %d: variable '%s' is not defined", line, stmt.VarAssign.Name)}
 			}
