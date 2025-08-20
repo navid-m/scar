@@ -37,6 +37,10 @@ func InsertMacros(output string) string {
 	outp = fixMethodCalls(outp)
 	outp = fixPropertyAccess(outp)
 
+	if strings.Contains(outp, ":") {
+		outp = replaceColonMemberAccess(outp)
+	}
+
 	// Don't convert this. to this-> for struct constructors since structs use value semantics
 	// The conversion will be handled by the renderer based on context
 
@@ -270,6 +274,85 @@ func replaceOutsideStringLiterals(code, target, replacement string) string {
 		}
 	}
 	return result.String()
+}
+
+func replaceColonMemberAccess(code string) string {
+	var b strings.Builder
+	inString := false
+	escaped := false
+
+	isWord := func(c byte) bool {
+		return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_'
+	}
+	isIdentStart := func(c byte) bool {
+		return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_'
+	}
+
+	i := 0
+	for i < len(code) {
+		ch := code[i]
+		if inString {
+			b.WriteByte(ch)
+			if ch == '\\' && !escaped {
+				escaped = true
+			} else {
+				if ch == '"' && !escaped {
+					inString = false
+				}
+				escaped = false
+			}
+			i++
+			continue
+		}
+
+		if ch == '"' {
+			inString = true
+			b.WriteByte(ch)
+			i++
+			continue
+		}
+
+		if ch == ':' {
+			leftEnd := i - 1
+			leftStart := leftEnd
+			for leftStart >= 0 && isWord(code[leftStart]) {
+				leftStart--
+			}
+			leftStart++
+			leftLen := i - leftStart
+
+			rightStart := i + 1
+			if rightStart < len(code) && isIdentStart(code[rightStart]) && leftLen > 0 {
+				rightEnd := rightStart
+				for rightEnd < len(code) && isWord(code[rightEnd]) {
+					rightEnd++
+				}
+				j := leftStart - 1
+				for j >= 0 {
+					if code[j] == ' ' || code[j] == '\t' || code[j] == '\n' || code[j] == '\r' {
+						j--
+						continue
+					}
+					break
+				}
+				if j >= 0 && code[j] == '?' {
+					// Likely ternary, do not replace
+					b.WriteByte(ch)
+					i++
+					continue
+				}
+				if rightEnd > rightStart {
+					b.WriteByte('.')
+					i++
+					continue
+				}
+			}
+		}
+
+		b.WriteByte(ch)
+		i++
+	}
+	return b.String()
 }
 
 func fixCustomClassReturnTypes(output string) string {
