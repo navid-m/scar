@@ -7,11 +7,11 @@ struct HappyGreeting:
     Greeting actual_greeting
 
 var greeting = Greeting()
-greeting.message = "Hello, World!"
-greeting.sender = "Me"
+greeting:message = "Hello, World!"
+greeting:sender = "Me"
 
 var hg = HappyGreeting()
-hg.truly_happy = true
-hg.actual_greeting = greeting
+hg:truly_happy = true
+hg:actual_greeting = greeting
 
-print "Greeting: %s" | hg.actual_greeting.message
+print "Greeting: %s" | hg:actual_greeting:message
