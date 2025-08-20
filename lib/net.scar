@@ -356,7 +356,6 @@ pub fn http_html_response(net::TcpConnection conn, cstring html_body) -> void:
         net_tcp_send(conn, response);
     )
 
-
 ## URL encode a string
 pub fn url_encode(cstring input) -> char*:
     $raw (
