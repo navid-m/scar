@@ -25,6 +25,7 @@ class ParsedDoc:
         var this.methods        = new collections::StringArrayList(200)
         var this.method_docs    = new collections::StringArrayList(200)
         var this.method_parents = new collections::StringArrayList(200)
+        var this.method_sigs    = new collections::StringArrayList(200)
         var this.structs        = new collections::StringArrayList(100)
         var this.struct_docs    = new collections::StringArrayList(100)
         var this.struct_fields  = new collections::StringArrayList(100)
@@ -246,6 +247,29 @@ fn parse_file(string fpath, string module_name) -> ref ParsedDoc:
                 if strings::length(mname) > 0:
                     add_elem(doc.methods, mname)
                     add_elem(doc.method_parents, current_class)
+                    # extract and store method signature for markdown
+                    string msig = ""
+                    if strings::compare(mname, "init") == 0:
+                        string ipat = "^init\\s*\\(([^)]*)\\)\\s*:"
+                        list[string] im = regex::find(ipat, trimmed)
+                        if len(im) >= 2:
+                            msig = fmt!("%s(%s)", mname, im[1])
+                    else:
+                        string fpat = fmt!("^(?:pub\\s+)?fn\\s+%s\\s*\\(([^)]*)\\)\\s*(?:->\\s*([^:]+))?\\s*:", mname)
+                        list[string] fm = regex::find(fpat, trimmed)
+                        if len(fm) >= 1:
+                            string args = ""
+                            string ret  = ""
+                            if len(fm) >= 2:
+                                args = fm[1]
+                            if len(fm) >= 3:
+                                ret = fm[2]
+                            if strings::length(ret) > 0:
+                                ret = format_return_for_doc(ret)
+                                msig = fmt!("%s(%s) -> %s", mname, args, ret)
+                            else:
+                                msig = fmt!("%s(%s)", mname, args)
+                    add_elem(doc.method_sigs, msig)
                     int mj = i - 1
                     int mstart = mj
                     while mstart >= 0:
@@ -359,6 +383,10 @@ fn generate_markdown(ref ParsedDoc doc) -> void:
                         any_methods = true
                     string mname = get_element(doc.methods, mi)
                     builder.append(fmt!("##### %s\n\n", mname))
+                    if mi < get_size(doc.method_sigs):
+                        string ms = get_element(doc.method_sigs, mi)
+                        if strings::length(ms) > 0:
+                            builder.append(fmt!("Signature: `%s`\n\n", ms))
                     if mi < get_size(doc.method_docs):
                         string mdoc = get_element(doc.method_docs, mi)
                         if strings::length(mdoc) > 0:
