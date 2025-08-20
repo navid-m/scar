@@ -688,10 +688,10 @@ pub fn poly1305_mac(string message, string key) -> string:
 
             uint64_t b_lo = ld_le64(block + 0);
             uint64_t b_hi = ld_le64(block + 8);
-
             uint64_t n0 =  b_lo & MASK44;
             uint64_t n1 = ((b_lo >> 44) | (b_hi << 20)) & MASK44;
             uint64_t n2 =  (b_hi >> 24);
+
             if (n == 16) {
                 n2 += (1ULL << 40);
             }
