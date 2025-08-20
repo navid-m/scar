@@ -322,6 +322,14 @@ string aes_rt = crypto::aes128_decrypt(aes_ct_hex, aes_key)
 
 t.assert_string_equals(aes_pt, aes_rt, "AES-128 round-trip should return original plaintext")
 
+string ch_key = "0123456789ABCDEF0123456789ABCDEF"
+string ch_nonce = "0123456789AB"
+string ch_pt = "The quick brown fox jumps over the lazy dog"
+string ch_ct_hex = crypto::chacha20_encrypt(ch_pt, ch_key, ch_nonce)
+string ch_rt = crypto::chacha20_decrypt(ch_ct_hex, ch_key, ch_nonce)
+
+t.assert_string_equals(ch_pt, ch_rt, "ChaCha20 round-trip should return original plaintext")
+
 # Networking Tests
 platform (Windows):
     net::HttpResponse hello = net::http_get("https://httpbin.org/get")

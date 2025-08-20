@@ -414,3 +414,210 @@ pub fn aes128_decrypt(string ciphertext_hex, string key) -> string:
         free(ciphertext);
         free(plaintext);
     )
+
+## Encrypt data using ChaCha20 stream cipher.
+##
+## Takes plaintext, a 32-byte (256-bit) key, and a 12-byte (96-bit) nonce.
+##
+## Returns encrypted data as hexadecimal string.
+pub fn chacha20_encrypt(string plaintext, string key, string nonce) -> string:
+    $raw (
+        if (!plaintext || !key || !nonce || strlen(key) != 32 || strlen(nonce) != 12) {
+            strcpy(_output_buffer, "");
+            return;
+        }
+
+        size_t plen = strlen(plaintext);
+        unsigned char *ciphertext = (unsigned char*)malloc(plen);
+        if (!ciphertext) {
+            strcpy(_output_buffer, "");
+            return;
+        }
+        #define QUARTERROUND(a, b, c, d) \
+            a += b; d ^= a; d = (d << 16) | (d >> 16); \
+            c += d; b ^= c; b = (b << 12) | (b >> 20); \
+            a += b; d ^= a; d = (d << 8) | (d >> 24); \
+            c += d; b ^= c; b = (b << 7) | (b >> 25);
+
+        for (size_t block_num = 0; block_num < (plen + 63) / 64; block_num++) {
+            uint32_t state[16];
+            
+            state[0] = 0x61707865;
+            state[1] = 0x3320646e;
+            state[2] = 0x79622d32;
+            state[3] = 0x6b206574;
+            
+            for (int i = 0; i < 8; i++) {
+                state[4 + i] = ((uint32_t)key[i*4]) |
+                              ((uint32_t)key[i*4 + 1] << 8) |
+                              ((uint32_t)key[i*4 + 2] << 16) |
+                              ((uint32_t)key[i*4 + 3] << 24);
+            }
+            
+            state[12] = (uint32_t)block_num;
+            
+            for (int i = 0; i < 3; i++) {
+                state[13 + i] = ((uint32_t)nonce[i*4]) |
+                               ((uint32_t)nonce[i*4 + 1] << 8) |
+                               ((uint32_t)nonce[i*4 + 2] << 16) |
+                               ((uint32_t)nonce[i*4 + 3] << 24);
+            }
+            
+            uint32_t working_state[16];
+            memcpy(working_state, state, sizeof(state));
+            
+            for (int i = 0; i < 10; i++) {
+                QUARTERROUND(working_state[0], working_state[4], working_state[8], working_state[12]);
+                QUARTERROUND(working_state[1], working_state[5], working_state[9], working_state[13]);
+                QUARTERROUND(working_state[2], working_state[6], working_state[10], working_state[14]);
+                QUARTERROUND(working_state[3], working_state[7], working_state[11], working_state[15]);
+                QUARTERROUND(working_state[0], working_state[5], working_state[10], working_state[15]);
+                QUARTERROUND(working_state[1], working_state[6], working_state[11], working_state[12]);
+                QUARTERROUND(working_state[2], working_state[7], working_state[8], working_state[13]);
+                QUARTERROUND(working_state[3], working_state[4], working_state[9], working_state[14]);
+            }
+            for (int i = 0; i < 16; i++) {
+                working_state[i] += state[i];
+            }
+            unsigned char keystream[64];
+            for (int i = 0; i < 16; i++) {
+                keystream[i*4] = working_state[i] & 0xff;
+                keystream[i*4 + 1] = (working_state[i] >> 8) & 0xff;
+                keystream[i*4 + 2] = (working_state[i] >> 16) & 0xff;
+                keystream[i*4 + 3] = (working_state[i] >> 24) & 0xff;
+            }
+            
+            size_t bytes_to_process = (plen - block_num * 64 > 64) ? 64 : (plen - block_num * 64);
+            for (size_t i = 0; i < bytes_to_process; i++) {
+                ciphertext[block_num * 64 + i] = plaintext[block_num * 64 + i] ^ keystream[i];
+            }
+        }
+
+        char *hex_output = (char*)malloc(plen * 2 + 1);
+        if (!hex_output) {
+            free(ciphertext);
+            strcpy(_output_buffer, "");
+            return;
+        }
+        
+        for (size_t i = 0; i < plen; i++) {
+            sprintf(hex_output + i * 2, "%02x", ciphertext[i]);
+        }
+        hex_output[plen * 2] = '\0';
+        
+        strncpy(_output_buffer, hex_output, 25402 - 1);
+        _output_buffer[25402 - 1] = '\0';
+        
+        free(ciphertext);
+        free(hex_output);
+        
+        #undef QUARTERROUND
+    )
+
+## Decrypt data using ChaCha20 stream cipher.
+##
+## Takes hexadecimal encrypted data, a 32-byte (256-bit) key, and a 12-byte (96-bit) nonce.
+##
+## Returns decrypted plaintext as a string.
+pub fn chacha20_decrypt(string ciphertext_hex, string key, string nonce) -> string:
+    $raw (
+        if (!ciphertext_hex || !key || !nonce || strlen(key) != 32 || strlen(nonce) != 12) {
+            strcpy(_output_buffer, "");
+            return;
+        }
+
+        size_t hex_len = strlen(ciphertext_hex);
+        if (hex_len % 2 != 0) {
+            strcpy(_output_buffer, "");
+            return;
+        }
+
+        size_t data_len = hex_len / 2;
+        unsigned char *ciphertext = (unsigned char*)malloc(data_len);
+        if (!ciphertext) {
+            strcpy(_output_buffer, "");
+            return;
+        }
+
+        for (size_t i = 0; i < data_len; i++) {
+            char hex_byte[3] = {ciphertext_hex[i*2], ciphertext_hex[i*2+1], '\0'};
+            ciphertext[i] = (unsigned char)strtol(hex_byte, NULL, 16);
+        }
+
+        char *plaintext = (char*)malloc(data_len + 1);
+        if (!plaintext) {
+            free(ciphertext);
+            strcpy(_output_buffer, "");
+            return;
+        }
+        #define QUARTERROUND(a, b, c, d) \
+            a += b; d ^= a; d = (d << 16) | (d >> 16); \
+            c += d; b ^= c; b = (b << 12) | (b >> 20); \
+            a += b; d ^= a; d = (d << 8) | (d >> 24); \
+            c += d; b ^= c; b = (b << 7) | (b >> 25);
+
+        for (size_t block_num = 0; block_num < (data_len + 63) / 64; block_num++) {
+            uint32_t state[16];
+            
+            state[0] = 0x61707865; // "expa"
+            state[1] = 0x3320646e; // "nd 3"
+            state[2] = 0x79622d32; // "2-by"
+            state[3] = 0x6b206574; // "te k"
+            
+            for (int i = 0; i < 8; i++) {
+                state[4 + i] = ((uint32_t)key[i*4]) |
+                              ((uint32_t)key[i*4 + 1] << 8) |
+                              ((uint32_t)key[i*4 + 2] << 16) |
+                              ((uint32_t)key[i*4 + 3] << 24);
+            }
+            
+            state[12] = (uint32_t)block_num;
+            
+            for (int i = 0; i < 3; i++) {
+                state[13 + i] = ((uint32_t)nonce[i*4]) |
+                               ((uint32_t)nonce[i*4 + 1] << 8) |
+                               ((uint32_t)nonce[i*4 + 2] << 16) |
+                               ((uint32_t)nonce[i*4 + 3] << 24);
+            }
+            
+            uint32_t working_state[16];
+            memcpy(working_state, state, sizeof(state));
+            
+            for (int i = 0; i < 10; i++) {
+                QUARTERROUND(working_state[0], working_state[4], working_state[8], working_state[12]);
+                QUARTERROUND(working_state[1], working_state[5], working_state[9], working_state[13]);
+                QUARTERROUND(working_state[2], working_state[6], working_state[10], working_state[14]);
+                QUARTERROUND(working_state[3], working_state[7], working_state[11], working_state[15]);
+                QUARTERROUND(working_state[0], working_state[5], working_state[10], working_state[15]);
+                QUARTERROUND(working_state[1], working_state[6], working_state[11], working_state[12]);
+                QUARTERROUND(working_state[2], working_state[7], working_state[8], working_state[13]);
+                QUARTERROUND(working_state[3], working_state[4], working_state[9], working_state[14]);
+            }
+            
+            for (int i = 0; i < 16; i++) {
+                working_state[i] += state[i];
+            }
+            
+            unsigned char keystream[64];
+            for (int i = 0; i < 16; i++) {
+                keystream[i*4] = working_state[i] & 0xff;
+                keystream[i*4 + 1] = (working_state[i] >> 8) & 0xff;
+                keystream[i*4 + 2] = (working_state[i] >> 16) & 0xff;
+                keystream[i*4 + 3] = (working_state[i] >> 24) & 0xff;
+            }
+            
+            size_t bytes_to_process = (data_len - block_num * 64 > 64) ? 64 : (data_len - block_num * 64);
+            for (size_t i = 0; i < bytes_to_process; i++) {
+                plaintext[block_num * 64 + i] = ciphertext[block_num * 64 + i] ^ keystream[i];
+            }
+        }
+
+        plaintext[data_len] = '\0';
+        strncpy(_output_buffer, plaintext, 25402 - 1);
+        _output_buffer[25402 - 1] = '\0';
+        
+        free(ciphertext);
+        free(plaintext);
+        
+        #undef QUARTERROUND
+    )
