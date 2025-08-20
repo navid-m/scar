@@ -3732,15 +3732,15 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				if functionReturnsString(resolvedFuncName) {
 					varType = "string"
 				} else if _, isStruct := globalStructs[resolvedFuncName]; isStruct {
-					// Infer variable type from struct constructor-style call: StructName(...)
 					varType = resolvedFuncName
 					cType = mapTypeToCType(varType)
 				}
 			}
 
-			if varType == "string" {
+			switch varType {
+			case "string":
 				fmt.Fprintf(b, "%s%s %s[256];\n", indent, cType, varName)
-			} else if varType == "lstring" {
+			case "lstring":
 				fmt.Fprintf(b, "%s%s %s[10000];\n", indent, cType, varName)
 			}
 
