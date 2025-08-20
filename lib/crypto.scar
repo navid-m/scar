@@ -621,3 +621,160 @@ pub fn chacha20_decrypt(string ciphertext_hex, string key, string nonce) -> stri
         
         #undef QUARTERROUND
     )
+
+## Compute Poly1305 authenticator for a message using a 32-byte one-time key.
+## key layout: r = key[0..15] (clamped), s = key[16..31]
+## Returns 16-byte tag as lowercase hex.
+pub fn poly1305_mac(string message, string key) -> string:
+    $raw (
+        #define ld_le64(p) ( \
+        ((uint64_t)((p)[0])      ) | \
+        ((uint64_t)((p)[1]) << 8 ) | \
+        ((uint64_t)((p)[2]) << 16) | \
+        ((uint64_t)((p)[3]) << 24) | \
+        ((uint64_t)((p)[4]) << 32) | \
+        ((uint64_t)((p)[5]) << 40) | \
+        ((uint64_t)((p)[6]) << 48) | \
+        ((uint64_t)((p)[7]) << 56)   )
+
+        #define st_le64(p,v) do { \
+        (p)[0] = (unsigned char)((v)      ); \
+        (p)[1] = (unsigned char)((v) >> 8 ); \
+        (p)[2] = (unsigned char)((v) >> 16); \
+        (p)[3] = (unsigned char)((v) >> 24); \
+        (p)[4] = (unsigned char)((v) >> 32); \
+        (p)[5] = (unsigned char)((v) >> 40); \
+        (p)[6] = (unsigned char)((v) >> 48); \
+        (p)[7] = (unsigned char)((v) >> 56); \
+        } while(0)
+
+        if (!message || !key || strlen(key) != 32) {
+            strcpy(_output_buffer, "");
+            return;
+        }
+
+        const unsigned char *m = (const unsigned char*)message;
+        size_t mlen = strlen(message);
+
+        // ---- parse & clamp r (first 16 bytes of key), parse s (last 16) ----
+        unsigned char rbytes[16];
+        memcpy(rbytes, key, 16);
+        // Clamp: clear specified bits per RFC 7539
+        rbytes[3]  &= 15;
+        rbytes[7]  &= 15;
+        rbytes[11] &= 15;
+        rbytes[15] &= 15;
+        rbytes[4]  &= 252;
+        rbytes[8]  &= 252;
+        rbytes[12] &= 252;
+
+        uint64_t r_lo = ld_le64(rbytes + 0);
+        uint64_t r_hi = ld_le64(rbytes + 8);
+
+        // Represent numbers in 130 bits as 3 limbs: 44,44,42 bits (base 2^44)
+        const uint64_t MASK44 = ((1ULL << 44) - 1ULL);
+        const uint64_t MASK42 = ((1ULL << 42) - 1ULL);
+
+        uint64_t r0 =  r_lo & MASK44;
+        uint64_t r1 = ((r_lo >> 44) | (r_hi << 20)) & MASK44;
+        uint64_t r2 =  (r_hi >> 24) & MASK42;
+
+        // precompute 5*r1, 5*r2 for reduction shortcuts
+        uint64_t r1_5 = r1 * 5;
+        uint64_t r2_5 = r2 * 5;
+
+        // Accumulator h = 0
+        uint64_t h0 = 0, h1 = 0, h2 = 0;
+
+        // ---- process message in 16-byte chunks with implicit 0x01 ----
+        unsigned char block[17]; // 16 bytes msg + 0x01
+        while (mlen > 0) {
+            size_t n = (mlen >= 16) ? 16 : mlen;
+            memset(block, 0, sizeof block);
+            memcpy(block, m, n);
+            block[n] = 1; // append 0x01
+
+            // Load n as 130-bit (44/44/42)
+            uint64_t b_lo = ld_le64(block + 0);
+            uint64_t b_hi = ld_le64(block + 8); // contains the extra 0x01 when n<16
+
+            uint64_t n0 =  b_lo & MASK44;
+            uint64_t n1 = ((b_lo >> 44) | (b_hi << 20)) & MASK44;
+            uint64_t n2 =  (b_hi >> 24);                  // up to 42 bits naturally
+            // For full 16-byte blocks, the appended 1-bit is at position 2^128,
+            // which maps to bit 40 within n2 in the 44/44/42 limb representation.
+            if (n == 16) {
+                n2 += (1ULL << 40);
+            }
+
+            // h += n
+            h0 += n0;
+            h1 += n1;
+            h2 += n2;
+
+            // h *= r  (with reduction by 2^130 ≡ 5)
+            __uint128_t x0 = (__uint128_t)h0 * r0 + (__uint128_t)h1 * r2_5 + (__uint128_t)h2 * r1_5;
+            __uint128_t x1 = (__uint128_t)h0 * r1 + (__uint128_t)h1 * r0   + (__uint128_t)h2 * r2_5;
+            __uint128_t x2 = (__uint128_t)h0 * r2 + (__uint128_t)h1 * r1   + (__uint128_t)h2 * r0;
+
+            // carry / reduce to 44/44/42 with 2^130 -> 5
+            uint64_t c;
+
+            h0 = (uint64_t)(x0) & MASK44;    c  = (uint64_t)(x0 >> 44);
+            x1 += c;
+            h1 = (uint64_t)(x1) & MASK44;    c  = (uint64_t)(x1 >> 44);
+            x2 += c;
+            h2 = (uint64_t)(x2) & MASK42;    c  = (uint64_t)(x2 >> 42);
+
+            // fold the overflow (at 2^130) back: add 5*c to h0
+            h0 += c * 5;
+            c   = h0 >> 44;  h0 &= MASK44;
+            h1 += c;
+            // propagate any carry from h1 into h2 (must keep limbs 44/44/42)
+            c   = h1 >> 44;  h1 &= MASK44;
+            h2 += c;
+
+            m    += n;
+            mlen -= n;
+        }
+
+        // ---- final reduction h %= p (p = 2^130 - 5) ----
+        // Compute g = h + 5 and see if it overflows 2^130
+        uint64_t g0 = h0 + 5;
+        uint64_t c  = g0 >> 44;  g0 &= MASK44;
+        uint64_t g1 = h1 + c;    c  = g1 >> 44;  g1 &= MASK44;
+        uint64_t g2 = h2 + c;
+        uint64_t mask = (uint64_t)0 - (uint64_t)(((g2 >> 42) ^ 1) & 1); // all 1s if NO overflow, else 0
+        g2 &= MASK42;
+        h0 = (h0 & ~mask) | (g0 & mask);
+        h1 = (h1 & ~mask) | (g1 & mask);
+        h2 = (h2 & ~mask) | (g2 & mask);
+
+        uint64_t t0 = h0 + (h1 << 44);
+        uint64_t t1 = (h1 >> 20) | (h2 << 24);
+
+        uint64_t s0 = ld_le64((const unsigned char*)key + 16);
+        uint64_t s1 = ld_le64((const unsigned char*)key + 24);
+
+        uint64_t tag0 = t0 + s0;
+        uint64_t carry = (tag0 < t0);
+        uint64_t tag1 = t1 + s1 + carry;
+
+        unsigned char tag[16];
+        // Store as little-endian: low 64 then high 64
+        st_le64(tag + 0, tag0);
+        st_le64(tag + 8, tag1);
+
+        static const char *hex = "0123456789abcdef";
+        char *out = (char*)malloc(16 * 2 + 1);
+        if (!out) { strcpy(_output_buffer, ""); return; }
+        for (int i = 0; i < 16; i++) {
+            unsigned v = tag[i];
+            out[i*2]     = hex[v >> 4];
+            out[i*2 + 1] = hex[v & 15];
+        }
+        out[32] = '\0';
+        strncpy(_output_buffer, out, 25402 - 1);
+        _output_buffer[25402 - 1] = '\0';
+        free(out);
+    )

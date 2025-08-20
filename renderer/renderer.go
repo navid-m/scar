@@ -5916,6 +5916,10 @@ func areTypesCompatible(targetType, valueType string) bool {
 	return false
 }
 
+func isStringWithEscapeSequences(value string) bool {
+	return strings.HasSuffix(value, "\"") && strings.HasPrefix(value, "\"") && strings.Contains(value, "\\")
+}
+
 func checkTypeCompatibility(varName, varType, value string) error {
 	valueType := inferValueType(value)
 
@@ -5943,6 +5947,10 @@ func checkTypeCompatibility(varName, varType, value string) error {
 		}
 
 		if containsValidExpressionElements(value) {
+			return nil
+		}
+
+		if isStringWithEscapeSequences(value) {
 			return nil
 		}
 
