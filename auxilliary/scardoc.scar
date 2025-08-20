@@ -19,6 +19,7 @@ class ParsedDoc:
     init:
         var this.imports        = new collections::StringArrayList(100)
         var this.functions      = new collections::StringArrayList(100)
+        var this.function_sigs  = new collections::StringArrayList(100)
         var this.classes        = new collections::StringArrayList(100)
         var this.function_docs  = new collections::StringArrayList(100)
         var this.class_docs     = new collections::StringArrayList(100)
@@ -299,6 +300,24 @@ fn parse_file(string fpath, string module_name) -> ref ParsedDoc:
             if strings::length(func_name) > 0:
                 add_elem(doc.functions, func_name)
                 print "Added function to collection: %s (total: %d)" | func_name, get_size(doc.functions)
+
+                string fpat = fmt!("^(?:pub\\s+)?fn\\s+%s\\s*\\(([^)]*)\\)\\s*(?:->\\s*([^:]+))?\\s*:", func_name)
+                list[string] fm = regex::find(fpat, trimmed)
+                string fsig = ""
+                if len(fm) >= 1:
+                    string args = ""
+                    string ret  = ""
+                    if len(fm) >= 2:
+                        args = fm[1]
+                    if len(fm) >= 3:
+                        ret = fm[2]
+                    if strings::length(ret) > 0:
+                        ret = format_return_for_doc(ret)
+                        fsig = fmt!("%s(%s) -> %s", func_name, args, ret)
+                    else:
+                        fsig = fmt!("%s(%s)", func_name, args)
+
+                add_elem(doc.function_sigs, fsig)
                 int j2 = i - 1
                 int start2 = j2
                 while start2 >= 0:
@@ -373,7 +392,6 @@ fn generate_markdown(ref ParsedDoc doc) -> void:
                     builder.append(cdoc)
                     builder.append("\n")
 
-            # Render methods for this class as subheadings
             bool any_methods = false
             for int mi = 0; mi < get_size(doc.methods); mi++:
                 string parent = get_element(doc.method_parents, mi)
@@ -386,7 +404,7 @@ fn generate_markdown(ref ParsedDoc doc) -> void:
                     if mi < get_size(doc.method_sigs):
                         string ms = get_element(doc.method_sigs, mi)
                         if strings::length(ms) > 0:
-                            builder.append(fmt!("Signature: `%s`\n\n", ms))
+                            builder.append(fmt!("`%s`\n\n", ms))
                     if mi < get_size(doc.method_docs):
                         string mdoc = get_element(doc.method_docs, mi)
                         if strings::length(mdoc) > 0:
@@ -401,7 +419,7 @@ fn generate_markdown(ref ParsedDoc doc) -> void:
             if i < get_size(doc.macro_sigs):
                 string sig = get_element(doc.macro_sigs, i)
                 if strings::length(sig) > 0:
-                    builder.append(fmt!("Signature: `%s`\n\n", sig))
+                    builder.append(fmt!("`%s`\n\n", sig))
             if i < get_size(doc.macro_docs):
                 string mdoc = get_element(doc.macro_docs, i)
                 if strings::length(mdoc) > 0:
@@ -439,38 +457,16 @@ fn generate_markdown(ref ParsedDoc doc) -> void:
     if doc.functions != nil:
         __functions_count = get_size(doc.functions)
     if __functions_count > 0:
-        # Preload source for function signature extraction (for display only)
-        string __src = io::read_file(doc.filepath)
-        ref collections::StringArrayList __src_lines = strings::split(__src, "\n")
         builder.append("## Functions\n\n")
         print "Generating markdown for %d functions" | __functions_count
         for int i = 0; i < __functions_count; i++:
             string func_name = get_element(doc.functions, i)
             print "Processing function %d: %s" | i, func_name
             builder.append(fmt!("### %s\n\n", func_name))
-            string found_sig = ""
-            for int li = 0; li < get_size(__src_lines); li++:
-                string raw = get_element(__src_lines, li)
-                if strings::starts_with(raw, " ") or strings::starts_with(raw, "\t"):
-                    continue
-                string line = strings::trim_space(raw)
-                string pat = fmt!("^(?:pub\\s+)?fn\\s+%s\\s*\\(([^)]*)\\)\\s*(?:->\\s*(.+))?$", func_name)
-                list[string] mm = regex::find(pat, line)
-                if len(mm) >= 1:
-                    string args = ""
-                    string ret  = ""
-                    if len(mm) >= 2:
-                        args = mm[1]
-                    if len(mm) >= 3:
-                        ret = mm[2]
-                    if strings::length(ret) > 0:
-                        ret = format_return_for_doc(ret)
-                        found_sig = fmt!("%s(%s) -> %s", func_name, args, ret)
-                    else:
-                        found_sig = fmt!("%s(%s)", func_name, args)
-                    break
-            if strings::length(found_sig) > 0:
-                builder.append(fmt!("Signature: `%s`\n\n", found_sig))
+            if i < get_size(doc.function_sigs):
+                string fs = get_element(doc.function_sigs, i)
+                if strings::length(fs) > 0:
+                    builder.append(fmt!("`%s`\n\n", fs))
             if i < get_size(doc.function_docs):
                 string fdoc = get_element(doc.function_docs, i)
                 if strings::length(fdoc) > 0:
