@@ -91,7 +91,6 @@ fn extract_import(string line) -> string:
     
     list[string] matches = regex::find(pattern, line)
     if len(matches) >= 2:
-        print "Import found: %s" | matches[1]
         return matches[1]
     
     return ""
