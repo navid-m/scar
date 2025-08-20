@@ -1,0 +1,4 @@
+pub fn some_thing() -> i32:
+    return 42
+
+string x = some_thing() # should fail.

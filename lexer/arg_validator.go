@@ -11,7 +11,6 @@ import (
 	"strings"
 )
 
-// Represents the signature of a function for validation
 type FunctionSignature struct {
 	Name       string
 	Parameters []*MethodParameter
@@ -19,19 +18,106 @@ type FunctionSignature struct {
 	Module     string
 }
 
-// Validates function call arguments
+// Converts C-style or runtime type names to Scar source type names
+//
+// Examples:
+//   - "char*" -> "string"
+//   - "lstring" -> "string"
+//   - "ref math::Vector2" -> "math::Vector2"
+//   - "math_Vector3" -> "math::Vector3"
+func normalizeTypeName(t string) string {
+	s := strings.TrimSpace(t)
+	if s == "" {
+		return s
+	}
+	if after, ok := strings.CutPrefix(s, "ref "); ok {
+		s = strings.TrimSpace(after)
+	}
+	switch s {
+	case "char*", "lstring":
+		return "string"
+	}
+	if strings.Contains(s, "::") {
+		return s
+	}
+	if idx := strings.Index(s, "_"); idx > 0 {
+		mod := s[:idx]
+		rest := s[idx+1:]
+		if mod != "" && rest != "" {
+			return mod + "::" + rest
+		}
+	}
+	return s
+}
+
+func (av *ArgumentValidator) inferReturnTypeWithSymbols(expr string, varTypes map[string]string) (string, bool) {
+	s := strings.TrimSpace(expr)
+	if s == "" || !strings.Contains(s, "(") {
+		return "", false
+	}
+	open := strings.Index(s, "(")
+	close := findMatchingParen(s, open)
+	if close == -1 {
+		return "", false
+	}
+	callee := strings.TrimSpace(s[:open])
+	if isValidType(callee) {
+		return callee, true
+	}
+	if dot := strings.LastIndex(callee, "."); dot != -1 {
+		obj := strings.TrimSpace(callee[:dot])
+		meth := strings.TrimSpace(callee[dot+1:])
+		if objType, ok := varTypes[obj]; ok {
+			if after, ok0 := strings.CutPrefix(objType, "ref "); ok0 {
+				objType = strings.TrimSpace(after)
+			}
+			objType = normalizeTypeName(objType)
+			if sig, ok := av.functions[objType+"."+meth]; ok {
+				return sig.ReturnType, true
+			}
+			if strings.Contains(objType, "::") {
+				if sig, ok := av.functions[objType+"."+meth]; ok {
+					return sig.ReturnType, true
+				}
+				parts := strings.Split(objType, "::")
+				base := parts[len(parts)-1]
+				if sig, ok := av.functions[base+"."+meth]; ok {
+					return sig.ReturnType, true
+				}
+			}
+		}
+		return "", false
+	}
+	return av.inferReturnType(s)
+}
+
+func (av *ArgumentValidator) RegisterMethod(
+	className string,
+	name string,
+	params []*MethodParameter,
+	returnType string,
+	module string,
+) {
+	if className != "" {
+		key := className + "." + name
+		av.functions[key] = &FunctionSignature{Name: key, Parameters: params, ReturnType: returnType, Module: module}
+		if module != "" {
+			modKey := module + "::" + className + "." + name
+			av.functions[modKey] = &FunctionSignature{Name: modKey, Parameters: params, ReturnType: returnType, Module: module}
+		}
+	}
+}
+
 type ArgumentValidator struct {
 	functions map[string]*FunctionSignature
 }
 
-// Creates a new argument validator
 func NewArgumentValidator() *ArgumentValidator {
 	return &ArgumentValidator{
 		functions: make(map[string]*FunctionSignature),
 	}
 }
 
-// Registers a function signature for validation
 func (av *ArgumentValidator) RegisterFunction(
 	name string,
 	params []*MethodParameter,
@@ -112,6 +198,56 @@ func (av *ArgumentValidator) ValidateFunctionCall(funcCall *FunctionCallStmt, li
 	}
 
 	return nil
+}
+
+// Infers the return type of a simple call expression.
+//
+// Supports:
+//   - func(args)
+//   - module::func(args)
+//   - obj.method(args) [uses method name only]
+//   - type casts like float(expr) -> returns "float"
+func (av *ArgumentValidator) inferReturnType(expr string) (string, bool) {
+	s := strings.TrimSpace(expr)
+	if s == "" {
+		return "", false
+	}
+	open := strings.Index(s, "(")
+	if open == -1 {
+		return "", false
+	}
+	close := findMatchingParen(s, open)
+	if close == -1 {
+		return "", false
+	}
+	before := strings.TrimSpace(s[:open])
+	after := strings.TrimSpace(s[close+1:])
+	if before == "" || after != "" {
+		return "", false
+	}
+	callee := before
+	if isValidType(callee) {
+		return callee, true
+	}
+	if strings.Contains(callee, ".") {
+		parts := strings.Split(callee, ".")
+		callee = parts[len(parts)-1]
+	}
+	if sig, ok := av.functions[callee]; ok {
+		return sig.ReturnType, true
+	}
+	for key, sig := range av.functions {
+		if key == callee {
+			return sig.ReturnType, true
+		}
+		if strings.Contains(key, "::") {
+			kp := strings.Split(key, "::")
+			if len(kp) == 2 && kp[1] == callee {
+				return sig.ReturnType, true
+			}
+		}
+	}
+	return "", false
 }
 
 // TODO: Implement method call validation
@@ -283,16 +419,33 @@ func ValidateProgram(program *Program) []error {
 				"",
 			)
 		}
+		if stmt.ClassDecl != nil {
+			// Register methods from class
+			for _, m := range stmt.ClassDecl.Methods {
+				validator.RegisterMethod(stmt.ClassDecl.Name, m.Name, m.Parameters, m.ReturnType, "")
+			}
+		}
+		if stmt.PubClassDecl != nil {
+			for _, m := range stmt.PubClassDecl.Methods {
+				validator.RegisterMethod(stmt.PubClassDecl.Name, m.Name, m.Parameters, m.ReturnType, "")
+			}
+		}
 	}
 
 	for _, module := range LoadedModules {
 		for funcName, funcDecl := range module.PublicFuncs {
 			validator.RegisterFunction(funcName, funcDecl.Parameters, funcDecl.ReturnType, module.Name)
 		}
+		for className, classDecl := range module.PublicClasses {
+			for _, m := range classDecl.Methods {
+				validator.RegisterMethod(className, m.Name, m.Parameters, m.ReturnType, module.Name)
+			}
+		}
 	}
 	lineNum := 1
+	var varTypes = make(map[string]string)
 	for _, stmt := range program.Statements {
-		stmtErrors := validateStatementRecursive(stmt, validator, lineNum)
+		stmtErrors := validateStatementRecursive(stmt, validator, lineNum, "", varTypes)
 		errors = append(errors, stmtErrors...)
 		lineNum++
 	}
@@ -301,7 +454,7 @@ func ValidateProgram(program *Program) []error {
 }
 
 // Validates function calls in a statement and its nested statements
-func validateStatementRecursive(stmt *Statement, validator *ArgumentValidator, line int) []error {
+func validateStatementRecursive(stmt *Statement, validator *ArgumentValidator, line int, expectedReturn string, varTypes map[string]string) []error {
 	var errors []error
 
 	if stmt.FunctionCall != nil {
@@ -317,14 +470,26 @@ func validateStatementRecursive(stmt *Statement, validator *ArgumentValidator, l
 			if err := validator.ValidateStringFunctionCall(stmt.VarDecl.Value, line); err != nil {
 				errors = append(errors, err)
 			}
+			if rt, ok := validator.inferReturnTypeWithSymbols(stmt.VarDecl.Value, varTypes); ok && rt != "" {
+				declared := normalizeTypeName(stmt.VarDecl.Type)
+				inferred := normalizeTypeName(rt)
+				if declared != "" && declared != inferred {
+					errors = append(errors, fmt.Errorf("line %d: cannot assign call returning '%s' to variable '%s' of type '%s'", line, rt, stmt.VarDecl.Name, stmt.VarDecl.Type))
+				}
+			}
+		}
+		if stmt.VarDecl.Name != "" && stmt.VarDecl.Type != "" {
+			varTypes[stmt.VarDecl.Name] = stmt.VarDecl.Type
 		}
 	} else if stmt.VarAssign != nil {
 		if err := validator.ValidateStringFunctionCall(stmt.VarAssign.Value, line); err != nil {
 			errors = append(errors, err)
 		}
 	}
-	if stmt.VarDeclMethodCall != nil {
-		// TODO: This is a method call, handle differently
+	if stmt.ObjectDecl != nil {
+		if stmt.ObjectDecl.Name != "" && stmt.ObjectDecl.Type != "" {
+			varTypes[stmt.ObjectDecl.Name] = stmt.ObjectDecl.Type
+		}
 	}
 	if stmt.Print != nil {
 		for _, variable := range stmt.Print.Variables {
@@ -338,21 +503,30 @@ func validateStatementRecursive(stmt *Statement, validator *ArgumentValidator, l
 		if err := validator.ValidateStringFunctionCall(stmt.Return.Value, line); err != nil {
 			errors = append(errors, err)
 		}
+		if expectedReturn != "" {
+			if rt, ok := validator.inferReturnTypeWithSymbols(stmt.Return.Value, varTypes); ok && rt != "" {
+				exp := normalizeTypeName(expectedReturn)
+				inferred := normalizeTypeName(rt)
+				if inferred != exp {
+					errors = append(errors, fmt.Errorf("line %d: return type mismatch: expected '%s' but expression returns '%s'", line, expectedReturn, rt))
+				}
+			}
+		}
 	}
 	if stmt.If != nil {
 		for _, nestedStmt := range stmt.If.Body {
-			nestedErrors := validateStatementRecursive(nestedStmt, validator, line)
+			nestedErrors := validateStatementRecursive(nestedStmt, validator, line, expectedReturn, varTypes)
 			errors = append(errors, nestedErrors...)
 		}
 		for _, elif := range stmt.If.ElseIfs {
 			for _, nestedStmt := range elif.Body {
-				nestedErrors := validateStatementRecursive(nestedStmt, validator, line)
+				nestedErrors := validateStatementRecursive(nestedStmt, validator, line, expectedReturn, varTypes)
 				errors = append(errors, nestedErrors...)
 			}
 		}
 		if stmt.If.Else != nil {
 			for _, nestedStmt := range stmt.If.Else.Body {
-				nestedErrors := validateStatementRecursive(nestedStmt, validator, line)
+				nestedErrors := validateStatementRecursive(nestedStmt, validator, line, expectedReturn, varTypes)
 				errors = append(errors, nestedErrors...)
 			}
 		}
@@ -360,43 +534,61 @@ func validateStatementRecursive(stmt *Statement, validator *ArgumentValidator, l
 
 	if stmt.While != nil {
 		for _, nestedStmt := range stmt.While.Body {
-			nestedErrors := validateStatementRecursive(nestedStmt, validator, line)
+			nestedErrors := validateStatementRecursive(nestedStmt, validator, line, expectedReturn, varTypes)
 			errors = append(errors, nestedErrors...)
 		}
 	}
 
 	if stmt.For != nil {
 		for _, nestedStmt := range stmt.For.Body {
-			nestedErrors := validateStatementRecursive(nestedStmt, validator, line)
+			nestedErrors := validateStatementRecursive(nestedStmt, validator, line, expectedReturn, varTypes)
 			errors = append(errors, nestedErrors...)
 		}
 	}
 
 	if stmt.ReverseFor != nil {
 		for _, nestedStmt := range stmt.ReverseFor.Body {
-			nestedErrors := validateStatementRecursive(nestedStmt, validator, line)
+			nestedErrors := validateStatementRecursive(nestedStmt, validator, line, expectedReturn, varTypes)
 			errors = append(errors, nestedErrors...)
 		}
 	}
 
 	if stmt.VerboseFor != nil {
 		for _, nestedStmt := range stmt.VerboseFor.Body {
-			nestedErrors := validateStatementRecursive(nestedStmt, validator, line)
+			nestedErrors := validateStatementRecursive(nestedStmt, validator, line, expectedReturn, varTypes)
 			errors = append(errors, nestedErrors...)
 		}
 	}
 
 	if stmt.TopLevelFuncDecl != nil {
 		for _, nestedStmt := range stmt.TopLevelFuncDecl.Body {
-			nestedErrors := validateStatementRecursive(nestedStmt, validator, line)
+			nestedErrors := validateStatementRecursive(nestedStmt, validator, line, stmt.TopLevelFuncDecl.ReturnType, varTypes)
 			errors = append(errors, nestedErrors...)
 		}
 	}
 
 	if stmt.PubTopLevelFuncDecl != nil {
 		for _, nestedStmt := range stmt.PubTopLevelFuncDecl.Body {
-			nestedErrors := validateStatementRecursive(nestedStmt, validator, line)
+			nestedErrors := validateStatementRecursive(nestedStmt, validator, line, stmt.PubTopLevelFuncDecl.ReturnType, varTypes)
 			errors = append(errors, nestedErrors...)
+		}
+	}
+
+	if stmt.ClassDecl != nil {
+		for _, m := range stmt.ClassDecl.Methods {
+			for _, nestedStmt := range m.Body {
+				nestedErrors := validateStatementRecursive(nestedStmt, validator, line, m.ReturnType, varTypes)
+				errors = append(errors, nestedErrors...)
+			}
+		}
+	}
+
+	if stmt.PubClassDecl != nil {
+		for _, m := range stmt.PubClassDecl.Methods {
+			for _, nestedStmt := range m.Body {
+				nestedErrors := validateStatementRecursive(nestedStmt, validator, line, m.ReturnType, varTypes)
+				errors = append(errors, nestedErrors...)
+			}
 		}
 	}
 
