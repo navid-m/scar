@@ -19,6 +19,132 @@ type FunctionSignature struct {
 	Module     string
 }
 
+func preRegisterVars(stmts []*Statement, varTypes map[string]string) {
+	for _, stmt := range stmts {
+		if stmt == nil {
+			continue
+		}
+		if stmt.VarDecl != nil && stmt.VarDecl.Name != "" {
+			varTypes[stmt.VarDecl.Name] = normalizeTypeName(strings.TrimSpace(stmt.VarDecl.Type))
+		}
+		if stmt.VarDeclInferred != nil && stmt.VarDeclInferred.Name != "" {
+			varTypes[stmt.VarDeclInferred.Name] = ""
+		}
+		if stmt.PubVarDecl != nil && stmt.PubVarDecl.Name != "" {
+			varTypes[stmt.PubVarDecl.Name] = normalizeTypeName(strings.TrimSpace(stmt.PubVarDecl.Type))
+		}
+		if stmt.ObjectDecl != nil && stmt.ObjectDecl.Name != "" {
+			varTypes[stmt.ObjectDecl.Name] = normalizeTypeName(strings.TrimSpace(stmt.ObjectDecl.Type))
+		}
+		if stmt.ListDecl != nil && stmt.ListDecl.Name != "" {
+			et := strings.TrimSpace(stmt.ListDecl.Type)
+			if et == "" {
+				varTypes[stmt.ListDecl.Name] = "list[]"
+			} else {
+				varTypes[stmt.ListDecl.Name] = "list[" + et + "]"
+			}
+		}
+		if stmt.ListOfDecl != nil && stmt.ListOfDecl.Name != "" {
+			varTypes[stmt.ListOfDecl.Name] = strings.TrimSpace(stmt.ListOfDecl.Type)
+		}
+		if stmt.MapDecl != nil && stmt.MapDecl.Name != "" {
+			key := strings.TrimSpace(stmt.MapDecl.KeyType)
+			val := strings.TrimSpace(stmt.MapDecl.ValueType)
+			if key == "" || val == "" {
+				varTypes[stmt.MapDecl.Name] = "map[]"
+			} else {
+				varTypes[stmt.MapDecl.Name] = "map[" + key + ":" + val + "]"
+			}
+		}
+		if stmt.CatString != nil && stmt.CatString.Target != "" {
+			varTypes[stmt.CatString.Target] = "string"
+		}
+		if stmt.CatList != nil && stmt.CatList.Target != "" {
+			if _, ok := varTypes[stmt.CatList.Target]; !ok {
+				varTypes[stmt.CatList.Target] = "list[]"
+			}
+		}
+		if stmt.VarDeclRead != nil && stmt.VarDeclRead.Name != "" {
+			varTypes[stmt.VarDeclRead.Name] = normalizeTypeName(strings.TrimSpace(stmt.VarDeclRead.Type))
+		}
+		if stmt.Run != nil {
+			s := strings.TrimSpace(stmt.Run.FunctionCall)
+			if eq := strings.Index(s, "="); eq != -1 {
+				lhs := strings.TrimSpace(s[:eq])
+				fields := strings.Fields(lhs)
+				if len(fields) > 0 {
+					name := fields[len(fields)-1]
+					if name != "" {
+						if _, ok := varTypes[name]; !ok {
+							varTypes[name] = ""
+						}
+					}
+				}
+			}
+		}
+		if stmt.For != nil {
+			if stmt.For.Var != "" {
+				varTypes[stmt.For.Var] = "int"
+			}
+			preRegisterVars(stmt.For.Body, varTypes)
+		}
+		if stmt.ReverseFor != nil {
+			if stmt.ReverseFor.Var != "" {
+				varTypes[stmt.ReverseFor.Var] = "int"
+			}
+			preRegisterVars(stmt.ReverseFor.Body, varTypes)
+		}
+		if stmt.VerboseFor != nil {
+			if stmt.VerboseFor.VarName != "" {
+				t := strings.TrimSpace(stmt.VerboseFor.VarType)
+				if t == "" {
+					t = "int"
+				}
+				varTypes[stmt.VerboseFor.VarName] = normalizeTypeName(t)
+			}
+			preRegisterVars(stmt.VerboseFor.Body, varTypes)
+		}
+		if stmt.Foreach != nil {
+			if stmt.Foreach.VarName != "" {
+				t := strings.TrimSpace(stmt.Foreach.VarType)
+				if t == "" {
+					t = "auto"
+				}
+				varTypes[stmt.Foreach.VarName] = normalizeTypeName(t)
+			}
+			preRegisterVars(stmt.Foreach.Body, varTypes)
+		}
+		if stmt.If != nil {
+			preRegisterVars(stmt.If.Body, varTypes)
+			for _, e := range stmt.If.ElseIfs {
+				preRegisterVars(e.Body, varTypes)
+			}
+			if stmt.If.Else != nil {
+				preRegisterVars(stmt.If.Else.Body, varTypes)
+			}
+		}
+		if stmt.While != nil {
+			preRegisterVars(stmt.While.Body, varTypes)
+		}
+		if stmt.TopLevelFuncDecl != nil {
+			preRegisterVars(stmt.TopLevelFuncDecl.Body, varTypes)
+		}
+		if stmt.PubTopLevelFuncDecl != nil {
+			preRegisterVars(stmt.PubTopLevelFuncDecl.Body, varTypes)
+		}
+		if stmt.ClassDecl != nil {
+			for _, m := range stmt.ClassDecl.Methods {
+				preRegisterVars(m.Body, varTypes)
+			}
+		}
+		if stmt.PubClassDecl != nil {
+			for _, m := range stmt.PubClassDecl.Methods {
+				preRegisterVars(m.Body, varTypes)
+			}
+		}
+	}
+}
+
 // Converts C-style or runtime type names to Scar source type names
 //
 // Examples:
@@ -714,8 +840,9 @@ func ValidateProgram(program *Program) []error {
 			}
 		}
 	}
+	varTypes := make(map[string]string)
+	preRegisterVars(program.Statements, varTypes)
 	lineNum := 1
-	var varTypes = make(map[string]string)
 	for _, stmt := range program.Statements {
 		stmtErrors := validateStatementRecursive(stmt, validator, lineNum, "", varTypes)
 		errors = append(errors, stmtErrors...)
