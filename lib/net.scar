@@ -718,6 +718,7 @@ pub fn ping_url(cstring url) -> bool:
 
         curl_global_init(CURL_GLOBAL_DEFAULT);
         curl = curl_easy_init();
+
         if (curl) {
             curl_easy_setopt(curl, CURLOPT_URL, url);
             curl_easy_setopt(curl, CURLOPT_NOBODY, 1L); // HEAD request
