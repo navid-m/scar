@@ -31,8 +31,8 @@ class ParsedDoc:
         var this.macros         = new collections::StringArrayList(100)
         var this.macro_docs     = new collections::StringArrayList(100)
         var this.macro_sigs     = new collections::StringArrayList(100)
-        string this.filepath    = ""
-        string this.module_name = ""
+        cstring this.filepath    = ""
+        cstring this.module_name = ""
 
 fn extract_function_name(string line) -> string:
     string pattern = "^(?:pub\\s+)?fn\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*\\("
@@ -113,6 +113,7 @@ fn parse_file(string fpath, string module_name) -> ref ParsedDoc:
             continue
         int indent = 0
         string left = line
+        
         while strings::starts_with(left, " ") or strings::starts_with(left, "\t"):
             if strings::starts_with(left, " "):
                 left = strings::trim_prefix(left, " ")
@@ -120,6 +121,7 @@ fn parse_file(string fpath, string module_name) -> ref ParsedDoc:
             else:
                 left = strings::trim_prefix(left, "\t")
                 indent = indent + 1
+        
         if strings::length(current_class) > 0 and indent <= class_indent and !regex::matches("^(?:pub\\s+)?class\\s+", trimmed):
             current_class = ""
             class_indent = -1
@@ -450,24 +452,23 @@ fn generate_markdown(ref ParsedDoc doc) -> void:
     string output_file = fmt!("%s.md", modname)
     io::write_file(output_file, builder.buffer)
     print "Documentation written to: %s" | output_file
-    os::exit(0)
 
 fn generate_documentation(string source_file):
     print "Generating documentation for: %s" | source_file
-    
+
     if not fs::exists(source_file):
         print "Error: Source file %s not found." | source_file
         return
-    
+
     int last_slash = strings::last_index_of(source_file, "/")
     string filename = source_file
+
     if last_slash != -1:
         filename = strings::substring(source_file, last_slash + 1, strings::length(source_file))
     
     int dot_pos = strings::index_of(filename, ".")
     string module_name = filename
     ref ParsedDoc doc = parse_file(source_file, module_name)
-
     generate_markdown(doc)
     
     print "Documentation generated successfully."
