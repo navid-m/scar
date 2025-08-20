@@ -50,6 +50,23 @@ func normalizeTypeName(t string) string {
 	return s
 }
 
+func tryInferNewType(expr string) (string, bool) {
+	s := strings.TrimSpace(expr)
+	if s == "" {
+		return "", false
+	}
+	if after, ok := strings.CutPrefix(s, "new "); ok {
+		after = strings.TrimSpace(after)
+		if idx := strings.Index(after, "("); idx > 0 {
+			typ := strings.TrimSpace(after[:idx])
+			if typ != "" {
+				return typ, true
+			}
+		}
+	}
+	return "", false
+}
+
 func (av *ArgumentValidator) inferReturnTypeWithSymbols(expr string, varTypes map[string]string) (string, bool) {
 	s := strings.TrimSpace(expr)
 	if s == "" || !strings.Contains(s, "(") {
@@ -470,7 +487,13 @@ func validateStatementRecursive(stmt *Statement, validator *ArgumentValidator, l
 			if err := validator.ValidateStringFunctionCall(stmt.VarDecl.Value, line); err != nil {
 				errors = append(errors, err)
 			}
-			if rt, ok := validator.inferReturnTypeWithSymbols(stmt.VarDecl.Value, varTypes); ok && rt != "" {
+			if newTyp, ok := tryInferNewType(stmt.VarDecl.Value); ok {
+				declared := normalizeTypeName(stmt.VarDecl.Type)
+				inst := normalizeTypeName(newTyp)
+				if declared != "" && declared != inst {
+					errors = append(errors, fmt.Errorf("line %d: cannot assign 'new %s' to variable '%s' of type '%s'", line, newTyp, stmt.VarDecl.Name, stmt.VarDecl.Type))
+				}
+			} else if rt, ok := validator.inferReturnTypeWithSymbols(stmt.VarDecl.Value, varTypes); ok && rt != "" {
 				declared := normalizeTypeName(stmt.VarDecl.Type)
 				inferred := normalizeTypeName(rt)
 				if declared != "" && declared != inferred {
