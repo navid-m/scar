@@ -43,6 +43,14 @@ func preRegisterVars(stmts []*Statement, varTypes map[string]string) {
 				varTypes[stmt.ListDecl.Name] = "list[" + et + "]"
 			}
 		}
+		if stmt.ListDeclFunctionCall != nil && stmt.ListDeclFunctionCall.Name != "" {
+			et := strings.TrimSpace(stmt.ListDeclFunctionCall.Type)
+			if et == "" {
+				varTypes[stmt.ListDeclFunctionCall.Name] = "list[]"
+			} else {
+				varTypes[stmt.ListDeclFunctionCall.Name] = "list[" + et + "]"
+			}
+		}
 		if stmt.ListOfDecl != nil && stmt.ListOfDecl.Name != "" {
 			varTypes[stmt.ListOfDecl.Name] = strings.TrimSpace(stmt.ListOfDecl.Type)
 		}
@@ -782,7 +790,15 @@ func validateStatementRecursive(stmt *Statement, validator *ArgumentValidator, l
 		if et == "" {
 			varTypes[stmt.ListDecl.Name] = "list[]"
 		} else {
-			varTypes[stmt.ListDecl.Name] = et
+			varTypes[stmt.ListDecl.Name] = "list[" + et + "]"
+		}
+	}
+	if stmt.ListDeclFunctionCall != nil && stmt.ListDeclFunctionCall.Name != "" {
+		et := strings.TrimSpace(stmt.ListDeclFunctionCall.Type)
+		if et == "" {
+			varTypes[stmt.ListDeclFunctionCall.Name] = "list[]"
+		} else {
+			varTypes[stmt.ListDeclFunctionCall.Name] = "list[" + et + "]"
 		}
 	}
 	if stmt.ListOfDecl != nil && stmt.ListOfDecl.Name != "" {
@@ -1023,7 +1039,6 @@ func ValidateProgram(program *Program) []error {
 	varTypes := make(map[string]string)
 	preRegisterVars(program.Statements, varTypes)
 
-	// Register function signatures before validation so known functions aren't treated as undefined
 	var registerFuncs func(stmts []*Statement)
 	registerFuncs = func(stmts []*Statement) {
 		for _, st := range stmts {
@@ -1039,7 +1054,6 @@ func ValidateProgram(program *Program) []error {
 				registerFuncs(st.PubTopLevelFuncDecl.Body)
 			}
 			if st.ClassDecl != nil {
-				// Register class methods with ClassName.Method format
 				for _, m := range st.ClassDecl.Methods {
 					name := st.ClassDecl.Name + "." + m.Name
 					validator.RegisterMethod(st.ClassDecl.Name, m.Name, m.Parameters, m.ReturnType, "")
