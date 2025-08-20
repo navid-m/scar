@@ -118,11 +118,15 @@ func (av *ArgumentValidator) RegisterMethod(
 ) {
 	if className != "" {
 		key := className + "." + name
-		av.functions[key] = &FunctionSignature{Name: key, Parameters: params, ReturnType: returnType, Module: module}
+		sig := &FunctionSignature{Name: key, Parameters: params, ReturnType: returnType, Module: module}
+		av.functions[key] = sig
 		if module != "" {
 			modKey := module + "::" + className + "." + name
-			av.functions[modKey] = &FunctionSignature{Name: modKey, Parameters: params, ReturnType: returnType, Module: module}
+			av.functions[modKey] = sig
+			usKey := module + "_" + className + "_" + name
+			av.functions[usKey] = sig
 		}
+		av.functions[className+"_"+name] = sig
 	}
 }
 
@@ -135,12 +139,19 @@ func NewArgumentValidator() *ArgumentValidator {
 		functions: make(map[string]*FunctionSignature),
 	}
 
-	builtins := []string{"fmt!", "cat!", "has!", "put!"}
+	builtins := []string{"fmt!", "cat!", "has!", "put!", "len"}
 	for _, builtin := range builtins {
+		ret := "void"
+		switch builtin {
+		case "fmt!":
+			ret = "string"
+		case "len":
+			ret = "int"
+		}
 		av.functions[builtin] = &FunctionSignature{
 			Name:       builtin,
 			Parameters: []*MethodParameter{},
-			ReturnType: "void",
+			ReturnType: ret,
 			Module:     "",
 		}
 	}
@@ -168,7 +179,7 @@ func (av *ArgumentValidator) RegisterFunction(
 }
 
 func isBuiltinFunction(name string) bool {
-	builtins := []string{"fmt!", "cat!", "has!", "put!"}
+	builtins := []string{"fmt!", "cat!", "has!", "put!", "len"}
 	for _, builtin := range builtins {
 		if name == builtin {
 			return true
@@ -344,6 +355,10 @@ func findMatchingParen(expr string, openPos int) int {
 }
 
 func (av *ArgumentValidator) ValidateStringFunctionCall(expr string, line int) error {
+	if containsAlias(expr) {
+		return nil
+	}
+
 	if isNewExpression(expr) {
 		return nil
 	}
@@ -355,15 +370,31 @@ func (av *ArgumentValidator) ValidateStringFunctionCall(expr string, line int) e
 	if !strings.Contains(expr, "(") || !strings.Contains(expr, ")") {
 		return nil
 	}
-	parenStart := strings.Index(expr, "(")
+	parenStart := findFirstParenOutsideString(expr)
+	if parenStart == -1 {
+		return nil
+	}
 	parenEnd := findMatchingParen(expr, parenStart)
-	if parenStart == -1 || parenEnd == -1 || parenEnd < parenStart {
+	if parenEnd == -1 || parenEnd < parenStart {
 		return nil
 	}
 	funcName := strings.TrimSpace(expr[:parenStart])
 
 	if isBuiltinFunction(funcName) {
 		return nil
+	}
+
+	// Treat constructor-like calls (Type() or mod::Type()) as valid and skip
+	last := funcName
+	if strings.Contains(funcName, "::") {
+		parts := strings.Split(funcName, "::")
+		last = parts[len(parts)-1]
+	}
+	if last != "" {
+		first := last[0]
+		if (first >= 'A' && first <= 'Z') || isValidType(last) {
+			return nil
+		}
 	}
 
 	argsStr := strings.TrimSpace(expr[parenStart+1 : parenEnd])
@@ -457,6 +488,10 @@ func scanUnknownVars(expr string, varTypes map[string]string) []string {
 		return nil
 	}
 
+	if containsAlias(s) {
+		return nil
+	}
+
 	if strings.Contains(s, "=") && !strings.Contains(s, "==") && !strings.Contains(s, "!=") && !strings.Contains(s, "<=") && !strings.Contains(s, ">=") {
 		return nil
 	}
@@ -522,8 +557,7 @@ func scanUnknownVars(expr string, varTypes map[string]string) []string {
 					continue
 				}
 
-				alreadyAdded := slices.Contains(unknown, baseTok)
-				if !alreadyAdded {
+				if !slices.Contains(unknown, baseTok) {
 					unknown = append(unknown, baseTok)
 				}
 				continue
@@ -538,15 +572,28 @@ func scanUnknownVars(expr string, varTypes map[string]string) []string {
 			if j < len(s) && s[j] == '(' {
 				continue
 			} // function call
+			jj := j
+			if jj < len(s) && s[jj] == '!' {
+				jj++
+				for jj < len(s) && s[jj] == ' ' {
+					jj++
+				}
+				if jj < len(s) && s[jj] == '(' {
+					continue
+				}
+			}
 			if j+1 < len(s) && s[j] == ':' && s[j+1] == ':' {
 				continue
-			} // module/type token
+			}
 			if tok == "new" {
+				continue
+			}
+			if tok == "or" || tok == "and" || tok == "not" {
 				continue
 			}
 			if tok == "true" || tok == "false" {
 				continue
-			} // Boolean literals
+			}
 			if isValidType(tok) {
 				continue
 			}
@@ -554,12 +601,47 @@ func scanUnknownVars(expr string, varTypes map[string]string) []string {
 				continue
 			}
 
-			unknown = append(unknown, tok)
+			if !slices.Contains(unknown, tok) {
+				unknown = append(unknown, tok)
+			}
 			continue
 		}
 		i++
 	}
 	return unknown
+}
+
+func findFirstParenOutsideString(s string) int {
+	inString := false
+	esc := false
+	var quote byte
+	for i := 0; i < len(s); i++ {
+		ch := s[i]
+		if inString {
+			if esc {
+				esc = false
+				continue
+			}
+			if ch == '\\' {
+				esc = true
+				continue
+			}
+			if ch == quote {
+				inString = false
+				continue
+			}
+			continue
+		}
+		if ch == '"' || ch == '\'' {
+			inString = true
+			quote = ch
+			continue
+		}
+		if ch == '(' {
+			return i
+		}
+	}
+	return -1
 }
 
 func ValidateProgram(program *Program) []error {
@@ -611,7 +693,6 @@ func ValidateProgram(program *Program) []error {
 			)
 		}
 		if stmt.ClassDecl != nil {
-			// Register methods from class
 			for _, m := range stmt.ClassDecl.Methods {
 				validator.RegisterMethod(stmt.ClassDecl.Name, m.Name, m.Parameters, m.ReturnType, "")
 			}
@@ -641,7 +722,20 @@ func ValidateProgram(program *Program) []error {
 		lineNum++
 	}
 
-	return errors
+	seen := make(map[string]bool)
+	var dedup []error
+	for _, err := range errors {
+		if err == nil {
+			continue
+		}
+		msg := err.Error()
+		if !seen[msg] {
+			seen[msg] = true
+			dedup = append(dedup, err)
+		}
+	}
+
+	return dedup
 }
 
 // Validates function calls in a statement and its nested statements
@@ -809,36 +903,88 @@ func validateStatementRecursive(stmt *Statement, validator *ArgumentValidator, l
 	}
 
 	if stmt.For != nil {
+		child := make(map[string]string, len(varTypes)+1)
+		for k, v := range varTypes {
+			child[k] = v
+		}
+		if stmt.For.Var != "" {
+			child[stmt.For.Var] = "int"
+		}
 		for _, nestedStmt := range stmt.For.Body {
-			nestedErrors := validateStatementRecursive(nestedStmt, validator, line, expectedReturn, varTypes)
+			nestedErrors := validateStatementRecursive(nestedStmt, validator, line, expectedReturn, child)
 			errors = append(errors, nestedErrors...)
 		}
 	}
 
 	if stmt.ReverseFor != nil {
+		child := make(map[string]string, len(varTypes)+1)
+		for k, v := range varTypes {
+			child[k] = v
+		}
+		if stmt.ReverseFor.Var != "" {
+			child[stmt.ReverseFor.Var] = "int"
+		}
 		for _, nestedStmt := range stmt.ReverseFor.Body {
-			nestedErrors := validateStatementRecursive(nestedStmt, validator, line, expectedReturn, varTypes)
+			nestedErrors := validateStatementRecursive(nestedStmt, validator, line, expectedReturn, child)
 			errors = append(errors, nestedErrors...)
 		}
 	}
 
 	if stmt.VerboseFor != nil {
+		child := make(map[string]string, len(varTypes)+1)
+		for k, v := range varTypes {
+			child[k] = v
+		}
+		if stmt.VerboseFor.VarName != "" {
+			t := strings.TrimSpace(stmt.VerboseFor.VarType)
+			if t == "" {
+				t = "int"
+			}
+			child[stmt.VerboseFor.VarName] = normalizeTypeName(t)
+		}
 		for _, nestedStmt := range stmt.VerboseFor.Body {
-			nestedErrors := validateStatementRecursive(nestedStmt, validator, line, expectedReturn, varTypes)
+			nestedErrors := validateStatementRecursive(nestedStmt, validator, line, expectedReturn, child)
 			errors = append(errors, nestedErrors...)
 		}
 	}
 
 	if stmt.TopLevelFuncDecl != nil {
 		for _, nestedStmt := range stmt.TopLevelFuncDecl.Body {
-			nestedErrors := validateStatementRecursive(nestedStmt, validator, line, stmt.TopLevelFuncDecl.ReturnType, varTypes)
+			// Child scope with parameters
+			child := make(map[string]string, len(varTypes)+len(stmt.TopLevelFuncDecl.Parameters))
+			for k, v := range varTypes {
+				child[k] = v
+			}
+			for _, p := range stmt.TopLevelFuncDecl.Parameters {
+				if p != nil && p.Name != "" {
+					typ := strings.TrimSpace(p.Type)
+					if p.IsList && p.ListType != "" {
+						typ = "list[" + strings.TrimSpace(p.ListType) + "]"
+					}
+					child[p.Name] = normalizeTypeName(typ)
+				}
+			}
+			nestedErrors := validateStatementRecursive(nestedStmt, validator, line, stmt.TopLevelFuncDecl.ReturnType, child)
 			errors = append(errors, nestedErrors...)
 		}
 	}
 
 	if stmt.PubTopLevelFuncDecl != nil {
 		for _, nestedStmt := range stmt.PubTopLevelFuncDecl.Body {
-			nestedErrors := validateStatementRecursive(nestedStmt, validator, line, stmt.PubTopLevelFuncDecl.ReturnType, varTypes)
+			child := make(map[string]string, len(varTypes)+len(stmt.PubTopLevelFuncDecl.Parameters))
+			for k, v := range varTypes {
+				child[k] = v
+			}
+			for _, p := range stmt.PubTopLevelFuncDecl.Parameters {
+				if p != nil && p.Name != "" {
+					typ := strings.TrimSpace(p.Type)
+					if p.IsList && p.ListType != "" {
+						typ = "list[" + strings.TrimSpace(p.ListType) + "]"
+					}
+					child[p.Name] = normalizeTypeName(typ)
+				}
+			}
+			nestedErrors := validateStatementRecursive(nestedStmt, validator, line, stmt.PubTopLevelFuncDecl.ReturnType, child)
 			errors = append(errors, nestedErrors...)
 		}
 	}
@@ -846,7 +992,21 @@ func validateStatementRecursive(stmt *Statement, validator *ArgumentValidator, l
 	if stmt.ClassDecl != nil {
 		for _, m := range stmt.ClassDecl.Methods {
 			for _, nestedStmt := range m.Body {
-				nestedErrors := validateStatementRecursive(nestedStmt, validator, line, m.ReturnType, varTypes)
+				// Child scope with method parameters
+				child := make(map[string]string, len(varTypes)+len(m.Parameters))
+				for k, v := range varTypes {
+					child[k] = v
+				}
+				for _, p := range m.Parameters {
+					if p != nil && p.Name != "" {
+						typ := strings.TrimSpace(p.Type)
+						if p.IsList && p.ListType != "" {
+							typ = "list[" + strings.TrimSpace(p.ListType) + "]"
+						}
+						child[p.Name] = normalizeTypeName(typ)
+					}
+				}
+				nestedErrors := validateStatementRecursive(nestedStmt, validator, line, m.ReturnType, child)
 				errors = append(errors, nestedErrors...)
 			}
 		}
@@ -855,11 +1015,66 @@ func validateStatementRecursive(stmt *Statement, validator *ArgumentValidator, l
 	if stmt.PubClassDecl != nil {
 		for _, m := range stmt.PubClassDecl.Methods {
 			for _, nestedStmt := range m.Body {
-				nestedErrors := validateStatementRecursive(nestedStmt, validator, line, m.ReturnType, varTypes)
+				child := make(map[string]string, len(varTypes)+len(m.Parameters))
+				for k, v := range varTypes {
+					child[k] = v
+				}
+				for _, p := range m.Parameters {
+					if p != nil && p.Name != "" {
+						typ := strings.TrimSpace(p.Type)
+						if p.IsList && p.ListType != "" {
+							typ = "list[" + strings.TrimSpace(p.ListType) + "]"
+						}
+						child[p.Name] = normalizeTypeName(typ)
+					}
+				}
+				nestedErrors := validateStatementRecursive(nestedStmt, validator, line, m.ReturnType, child)
 				errors = append(errors, nestedErrors...)
 			}
 		}
 	}
 
+	if stmt.Foreach != nil {
+		child := make(map[string]string, len(varTypes)+1)
+		for k, v := range varTypes {
+			child[k] = v
+		}
+		if stmt.Foreach.VarName != "" {
+			t := strings.TrimSpace(stmt.Foreach.VarType)
+			if t == "" {
+				t = "auto"
+			}
+			child[stmt.Foreach.VarName] = normalizeTypeName(t)
+		}
+		for _, nestedStmt := range stmt.Foreach.Body {
+			nestedErrors := validateStatementRecursive(nestedStmt, validator, line, expectedReturn, child)
+			errors = append(errors, nestedErrors...)
+		}
+	}
+
 	return errors
+}
+
+func containsAlias(expr string) bool {
+	s := strings.TrimSpace(expr)
+	if s == "" {
+		return false
+	}
+	for k, v := range Aliases {
+		if k != "" && strings.Contains(s, k) {
+			return true
+		}
+		if v != "" && strings.Contains(s, v) {
+			return true
+		}
+	}
+	for k, v := range UnsafeAliases {
+		if k != "" && strings.Contains(s, k) {
+			return true
+		}
+		if v != "" && strings.Contains(s, v) {
+			return true
+		}
+	}
+	return false
 }
