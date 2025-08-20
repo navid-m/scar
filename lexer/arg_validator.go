@@ -8,6 +8,7 @@ package lexer
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 )
 
@@ -31,9 +32,6 @@ func preRegisterVars(stmts []*Statement, varTypes map[string]string) {
 		}
 		if stmt.PubVarDecl != nil && stmt.PubVarDecl.Name != "" {
 			varTypes[stmt.PubVarDecl.Name] = normalizeTypeName(strings.TrimSpace(stmt.PubVarDecl.Type))
-		}
-		if stmt.ObjectDecl != nil && stmt.ObjectDecl.Name != "" {
-			varTypes[stmt.ObjectDecl.Name] = normalizeTypeName(strings.TrimSpace(stmt.ObjectDecl.Type))
 		}
 		if stmt.ListDecl != nil && stmt.ListDecl.Name != "" {
 			et := strings.TrimSpace(stmt.ListDecl.Type)
@@ -71,6 +69,10 @@ func preRegisterVars(stmts []*Statement, varTypes map[string]string) {
 				varTypes[stmt.CatList.Target] = "list[]"
 			}
 		}
+		// var T name = obj.method(...)
+		if stmt.VarDeclMethodCall != nil && stmt.VarDeclMethodCall.Name != "" {
+			varTypes[stmt.VarDeclMethodCall.Name] = normalizeTypeName(strings.TrimSpace(stmt.VarDeclMethodCall.Type))
+		}
 		if stmt.VarDeclRead != nil && stmt.VarDeclRead.Name != "" {
 			varTypes[stmt.VarDeclRead.Name] = normalizeTypeName(strings.TrimSpace(stmt.VarDeclRead.Type))
 		}
@@ -92,6 +94,12 @@ func preRegisterVars(stmts []*Statement, varTypes map[string]string) {
 		if stmt.VarAssign != nil && stmt.VarAssign.Name != "" {
 			if _, ok := varTypes[stmt.VarAssign.Name]; !ok {
 				varTypes[stmt.VarAssign.Name] = ""
+			}
+		}
+		// name = obj.method(...)
+		if stmt.VarAssignMethodCall != nil && stmt.VarAssignMethodCall.Name != "" {
+			if _, ok := varTypes[stmt.VarAssignMethodCall.Name]; !ok {
+				varTypes[stmt.VarAssignMethodCall.Name] = ""
 			}
 		}
 		if stmt.IndexAssign != nil && stmt.IndexAssign.ListName != "" {
@@ -321,26 +329,11 @@ func (av *ArgumentValidator) ValidateFunctionCall(funcCall *FunctionCallStmt, li
 					break
 				}
 			}
-			if strings.Contains(funcName, "::") {
-				callParts := strings.Split(funcName, "::")
-				if len(callParts) == 2 {
-					if name == callParts[1] {
-						signature = sig
-						exists = true
-						break
-					}
-					if name == callParts[0]+"_"+callParts[1] {
-						signature = sig
-						exists = true
-						break
-					}
-				}
-			}
 		}
 	}
 
 	if !exists {
-		return nil
+		return fmt.Errorf("line %d: function '%s' is not defined", line, funcName)
 	}
 
 	expectedCount := 0
@@ -364,58 +357,94 @@ func (av *ArgumentValidator) ValidateFunctionCall(funcCall *FunctionCallStmt, li
 	return nil
 }
 
-// Infers the return type of a simple call expression.
+// Resolve the receiver class/type name from an object token and scope map.
 //
 // Supports:
-//   - func(args)
-//   - module::func(args)
-//   - obj.method(args) [uses method name only]
-//   - type casts like float(expr) -> returns "float"
-func (av *ArgumentValidator) inferReturnType(expr string) (string, bool) {
-	s := strings.TrimSpace(expr)
+//   - variable with known type in varTypes
+//   - temporary constructor form: new_ClassName(...)
+func resolveReceiverType(object string, varTypes map[string]string) (string, bool) {
+	s := strings.TrimSpace(object)
 	if s == "" {
 		return "", false
 	}
-	open := strings.Index(s, "(")
-	if open == -1 {
-		return "", false
-	}
-	close := findMatchingParen(s, open)
-	if close == -1 {
-		return "", false
-	}
-	before := strings.TrimSpace(s[:open])
-	after := strings.TrimSpace(s[close+1:])
-	if before == "" || after != "" {
-		return "", false
-	}
-	callee := before
-	if isValidType(callee) {
-		return callee, true
-	}
-	if strings.Contains(callee, ".") {
-		parts := strings.Split(callee, ".")
-		callee = parts[len(parts)-1]
-	}
-	if sig, ok := av.functions[callee]; ok {
-		return sig.ReturnType, true
-	}
-	for key, sig := range av.functions {
-		if key == callee {
-			return sig.ReturnType, true
-		}
-		if strings.Contains(key, "::") {
-			kp := strings.Split(key, "::")
-			if len(kp) == 2 && kp[1] == callee {
-				return sig.ReturnType, true
+	// new_Class(args)
+	if strings.HasPrefix(s, "new_") {
+		rest := s[len("new_"):]
+		if idx := strings.Index(rest, "("); idx != -1 {
+			cls := strings.TrimSpace(rest[:idx])
+			if cls != "" {
+				return cls, true
 			}
 		}
+	}
+	if t, ok := varTypes[s]; ok {
+		t = normalizeTypeName(strings.TrimSpace(t))
+		if strings.Contains(t, "::") {
+			parts := strings.Split(t, "::")
+			t = parts[len(parts)-1]
+		}
+		switch t {
+		case "int", "float", "bool", "string":
+			return "", false
+		}
+		if strings.HasPrefix(t, "list[") || strings.HasPrefix(t, "map[") {
+			return "", false
+		}
+		return t, true
 	}
 	return "", false
 }
 
-// TODO: Implement method call validation
-func (av *ArgumentValidator) ValidateMethodCall(methodCall *MethodCallStmt, line int) error {
+func (av *ArgumentValidator) ValidateMethodCall(methodCall *MethodCallStmt, line int, varTypes map[string]string) error {
+	recv, ok := resolveReceiverType(methodCall.Object, varTypes)
+	if !ok {
+		return nil
+	}
+	key := recv + "." + methodCall.Method
+	sig, exists := av.functions[key]
+	if !exists {
+		// try underscore variant (Class_Method)
+		if s2, ok2 := av.functions[recv+"_"+methodCall.Method]; ok2 {
+			sig, exists = s2, true
+		}
+	}
+	if !exists {
+		return fmt.Errorf("line %d: method '%s.%s' is not defined", line, recv, methodCall.Method)
+	}
+	if len(methodCall.Args) != len(sig.Parameters) {
+		return fmt.Errorf("line %d: method '%s.%s' expects %d arguments, but %d were provided", line, recv, methodCall.Method, len(sig.Parameters), len(methodCall.Args))
+	}
+	for _, a := range methodCall.Args {
+		if err := av.ValidateStringFunctionCall(a, line); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (av *ArgumentValidator) ValidateStaticMethodCall(call *StaticMethodCallStmt, line int) error {
+	recv := strings.TrimSpace(call.Class)
+	if recv == "" {
+		return nil
+	}
+	// Strip module if present
+	if strings.Contains(recv, "::") {
+		parts := strings.Split(recv, "::")
+		recv = parts[len(parts)-1]
+	}
+	key := recv + "." + call.Method
+	sig, exists := av.functions[key]
+	if !exists {
+		if s2, ok2 := av.functions[recv+"_"+call.Method]; ok2 {
+			sig, exists = s2, true
+		}
+	}
+	if !exists {
+		return fmt.Errorf("line %d: static method '%s.%s' is not defined", line, recv, call.Method)
+	}
+	if len(call.Args) != len(sig.Parameters) {
+		return fmt.Errorf("line %d: static method '%s.%s' expects %d arguments, but %d were provided", line, recv, call.Method, len(sig.Parameters), len(call.Args))
+	}
 	return nil
 }
 
@@ -423,7 +452,6 @@ func findMatchingParen(expr string, openPos int) int {
 	if openPos >= len(expr) || expr[openPos] != '(' {
 		return -1
 	}
-
 	parenCount := 1
 	for i := openPos + 1; i < len(expr); i++ {
 		switch expr[i] {
@@ -567,24 +595,30 @@ func parseArguments(argsStr string) []string {
 	return args
 }
 
-func scanUnknownVars(expr string, varTypes map[string]string) []string {
+func scanUnknownVars(expr string, varTypes map[string]string, excludedBases map[string]bool) []string {
 	s := strings.TrimSpace(expr)
 	if s == "" {
+		return nil
+	}
+	if (strings.HasPrefix(s, "\"") && strings.HasSuffix(s, "\"")) || (strings.HasPrefix(s, "'") && strings.HasSuffix(s, "'")) {
+		return nil
+	}
+	if strings.Contains(s, "\"") {
+		return nil
+	}
+	if strings.ContainsAny(s, "'") && !strings.ContainsAny(s, "\"'()::.+-*/%<>=!&|[]{}") {
 		return nil
 	}
 	hasRegexOrLines := strings.Contains(s, "regex::") || strings.Contains(s, "read_lines") || strings.Contains(s, "split(")
 	specialScratch := map[string]bool{"matches": true, "lines": true, "mm": true}
 	reserved := map[string]bool{"true": true, "false": true, "new": true, "or": true, "and": true, "not": true, "in": true}
-	builtinBases := map[string]bool{"fmt": true, "strings": true, "os": true, "io": true, "regex": true, "math": true, "path": true, "filepath": true, "time": true}
 	unknown := []string{}
 	for i := 0; i < len(s); {
 		ch := s[i]
-		// skip whitespace
 		if ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r' {
 			i++
 			continue
 		}
-		// skip string literals
 		if ch == '"' || ch == '\'' {
 			q := ch
 			i++
@@ -655,16 +689,15 @@ func scanUnknownVars(expr string, varTypes map[string]string) []string {
 					continue
 				}
 			}
-			if j < len(s) && s[j] == '(' { // function call
-				continue
-			}
 			// consume dotted chains and indexers to avoid reporting full path
+			hadDot := false
 			for {
 				// skip spaces
 				for i < len(s) && s[i] == ' ' {
 					i++
 				}
 				if i < len(s) && s[i] == '.' {
+					hadDot = true
 					// consume '.' and following identifier
 					i++
 					// skip spaces
@@ -678,65 +711,26 @@ func scanUnknownVars(expr string, varTypes map[string]string) []string {
 							i++
 							continue
 						}
-						break
-					}
-					continue
-				}
-				if i < len(s) && s[i] == '[' {
-					// consume bracketed index expression, accounting for nesting and strings
-					depth := 1
-					i++
-					inStr := false
-					esc := false
-					var q byte
-					for i < len(s) && depth > 0 {
-						c := s[i]
-						if inStr {
-							if esc {
-								esc = false
-								i++
-								continue
-							}
-							if c == '\\' {
-								esc = true
-								i++
-								continue
-							}
-							if c == q {
-								inStr = false
-								i++
-								continue
-							}
-							i++
-							continue
-						}
-						if c == '"' || c == '\'' {
-							inStr = true
-							q = c
-							i++
-							continue
-						}
-						if c == '[' {
-							depth++
-							i++
-							continue
-						}
-						if c == ']' {
-							depth--
-							i++
-							continue
-						}
 						i++
 					}
 					continue
 				}
 				break
 			}
+			if hadDot {
+				continue
+			}
 			if reserved[base] {
 				continue
 			}
-			if builtinBases[base] {
+			if excludedBases != nil && excludedBases[base] {
 				continue
+			}
+			if idx := strings.Index(base, "_"); idx > 0 {
+				mod := base[:idx]
+				if (excludedBases != nil && excludedBases[mod]) || reserved[mod] {
+					continue
+				}
 			}
 			if hasRegexOrLines && specialScratch[base] {
 				continue
@@ -761,7 +755,7 @@ func scanUnknownVars(expr string, varTypes map[string]string) []string {
 	return unknown
 }
 
-func validateStatementRecursive(stmt *Statement, validator *ArgumentValidator, line int, expectedReturn string, varTypes map[string]string) []error {
+func validateStatementRecursive(stmt *Statement, validator *ArgumentValidator, line int, expectedReturn string, varTypes map[string]string, excludedBases map[string]bool) []error {
 	if stmt == nil {
 		return nil
 	}
@@ -825,54 +819,58 @@ func validateStatementRecursive(stmt *Statement, validator *ArgumentValidator, l
 		varTypes[stmt.VarDeclRead.Name] = normalizeTypeName(strings.TrimSpace(stmt.VarDeclRead.Type))
 	}
 
-	if stmt.VarAssign != nil {
-		if _, ok := varTypes[stmt.VarAssign.Name]; !ok {
-			return []error{fmt.Errorf("line %d: variable '%s' is not defined", line, stmt.VarAssign.Name)}
-		}
-		if err := validator.ValidateStringFunctionCall(stmt.VarAssign.Value, line); err != nil {
-			return []error{err}
-		}
-		for _, u := range scanUnknownVars(stmt.VarAssign.Value, varTypes) {
-			return []error{fmt.Errorf("line %d: variable '%s' is not defined", line, u)}
-		}
-	}
-	if stmt.VarDecl != nil && strings.TrimSpace(stmt.VarDecl.Value) != "" {
-		if err := validator.ValidateStringFunctionCall(stmt.VarDecl.Value, line); err != nil {
-			return []error{err}
-		}
-		for _, u := range scanUnknownVars(stmt.VarDecl.Value, varTypes) {
-			return []error{fmt.Errorf("line %d: variable '%s' is not defined", line, u)}
-		}
-	}
-	if stmt.VarDeclInferred != nil && strings.TrimSpace(stmt.VarDeclInferred.Value) != "" {
-		if err := validator.ValidateStringFunctionCall(stmt.VarDeclInferred.Value, line); err != nil {
-			return []error{err}
-		}
-		for _, u := range scanUnknownVars(stmt.VarDeclInferred.Value, varTypes) {
-			return []error{fmt.Errorf("line %d: variable '%s' is not defined", line, u)}
-		}
-	}
-	if stmt.IndexAssign != nil {
-		if _, ok := varTypes[stmt.IndexAssign.ListName]; !ok {
-			return []error{fmt.Errorf("line %d: variable '%s' is not defined", line, stmt.IndexAssign.ListName)}
-		}
-		if err := validator.ValidateStringFunctionCall(stmt.IndexAssign.Index, line); err != nil {
-			return []error{err}
-		}
-		if err := validator.ValidateStringFunctionCall(stmt.IndexAssign.Value, line); err != nil {
-			return []error{err}
-		}
-		for _, u := range scanUnknownVars(stmt.IndexAssign.Index, varTypes) {
-			return []error{fmt.Errorf("line %d: variable '%s' is not defined", line, u)}
-		}
-		for _, u := range scanUnknownVars(stmt.IndexAssign.Value, varTypes) {
-			return []error{fmt.Errorf("line %d: variable '%s' is not defined", line, u)}
-		}
-	}
-
 	if stmt.FunctionCall != nil {
 		if err := validator.ValidateFunctionCall(stmt.FunctionCall, line); err != nil {
 			return []error{err}
+		}
+	}
+
+	if stmt.MethodCall != nil {
+		if err := validator.ValidateMethodCall(stmt.MethodCall, line, varTypes); err != nil {
+			return []error{err}
+		}
+		for _, a := range stmt.MethodCall.Args {
+			for _, u := range scanUnknownVars(a, varTypes, excludedBases) {
+				return []error{fmt.Errorf("line %d: variable '%s' is not defined", line, u)}
+			}
+		}
+	}
+
+	if stmt.StaticMethodCall != nil {
+		if err := validator.ValidateStaticMethodCall(stmt.StaticMethodCall, line); err != nil {
+			return []error{err}
+		}
+		for _, a := range stmt.StaticMethodCall.Args {
+			for _, u := range scanUnknownVars(a, varTypes, excludedBases) {
+				return []error{fmt.Errorf("line %d: variable '%s' is not defined", line, u)}
+			}
+		}
+	}
+
+	if stmt.VarDeclMethodCall != nil {
+		mc := &MethodCallStmt{Object: stmt.VarDeclMethodCall.Object, Method: stmt.VarDeclMethodCall.Method, Args: stmt.VarDeclMethodCall.Args}
+		if err := validator.ValidateMethodCall(mc, line, varTypes); err != nil {
+			return []error{err}
+		}
+		for _, a := range stmt.VarDeclMethodCall.Args {
+			for _, u := range scanUnknownVars(a, varTypes, excludedBases) {
+				return []error{fmt.Errorf("line %d: variable '%s' is not defined", line, u)}
+			}
+		}
+	}
+
+	if stmt.VarAssignMethodCall != nil {
+		if _, ok := varTypes[stmt.VarAssignMethodCall.Name]; !ok {
+			return []error{fmt.Errorf("line %d: variable '%s' is not defined", line, stmt.VarAssignMethodCall.Name)}
+		}
+		mc := &MethodCallStmt{Object: stmt.VarAssignMethodCall.Object, Method: stmt.VarAssignMethodCall.Method, Args: stmt.VarAssignMethodCall.Args}
+		if err := validator.ValidateMethodCall(mc, line, varTypes); err != nil {
+			return []error{err}
+		}
+		for _, a := range stmt.VarAssignMethodCall.Args {
+			for _, u := range scanUnknownVars(a, varTypes, excludedBases) {
+				return []error{fmt.Errorf("line %d: variable '%s' is not defined", line, u)}
+			}
 		}
 	}
 
@@ -888,7 +886,7 @@ func validateStatementRecursive(stmt *Statement, validator *ArgumentValidator, l
 			}
 		}
 		for _, nested := range stmt.TopLevelFuncDecl.Body {
-			nestedErrors := validateStatementRecursive(nested, validator, line, stmt.TopLevelFuncDecl.ReturnType, child)
+			nestedErrors := validateStatementRecursive(nested, validator, line, stmt.TopLevelFuncDecl.ReturnType, child, excludedBases)
 			errors = append(errors, nestedErrors...)
 		}
 	}
@@ -905,7 +903,7 @@ func validateStatementRecursive(stmt *Statement, validator *ArgumentValidator, l
 			}
 		}
 		for _, nested := range stmt.PubTopLevelFuncDecl.Body {
-			nestedErrors := validateStatementRecursive(nested, validator, line, stmt.PubTopLevelFuncDecl.ReturnType, child)
+			nestedErrors := validateStatementRecursive(nested, validator, line, stmt.PubTopLevelFuncDecl.ReturnType, child, excludedBases)
 			errors = append(errors, nestedErrors...)
 		}
 	}
@@ -923,7 +921,7 @@ func validateStatementRecursive(stmt *Statement, validator *ArgumentValidator, l
 				}
 			}
 			for _, nestedStmt := range m.Body {
-				nestedErrors := validateStatementRecursive(nestedStmt, validator, line, m.ReturnType, child)
+				nestedErrors := validateStatementRecursive(nestedStmt, validator, line, m.ReturnType, child, excludedBases)
 				errors = append(errors, nestedErrors...)
 			}
 		}
@@ -942,7 +940,7 @@ func validateStatementRecursive(stmt *Statement, validator *ArgumentValidator, l
 				}
 			}
 			for _, nestedStmt := range m.Body {
-				nestedErrors := validateStatementRecursive(nestedStmt, validator, line, m.ReturnType, child)
+				nestedErrors := validateStatementRecursive(nestedStmt, validator, line, m.ReturnType, child, excludedBases)
 				errors = append(errors, nestedErrors...)
 			}
 		}
@@ -954,7 +952,7 @@ func validateStatementRecursive(stmt *Statement, validator *ArgumentValidator, l
 			child[stmt.For.Var] = "int"
 		}
 		for _, nested := range stmt.For.Body {
-			nestedErrors := validateStatementRecursive(nested, validator, line, expectedReturn, child)
+			nestedErrors := validateStatementRecursive(nested, validator, line, expectedReturn, child, excludedBases)
 			errors = append(errors, nestedErrors...)
 		}
 	}
@@ -965,7 +963,7 @@ func validateStatementRecursive(stmt *Statement, validator *ArgumentValidator, l
 			child[stmt.ReverseFor.Var] = "int"
 		}
 		for _, nested := range stmt.ReverseFor.Body {
-			nestedErrors := validateStatementRecursive(nested, validator, line, expectedReturn, child)
+			nestedErrors := validateStatementRecursive(nested, validator, line, expectedReturn, child, excludedBases)
 			errors = append(errors, nestedErrors...)
 		}
 	}
@@ -980,7 +978,7 @@ func validateStatementRecursive(stmt *Statement, validator *ArgumentValidator, l
 			child[stmt.VerboseFor.VarName] = normalizeTypeName(t)
 		}
 		for _, nested := range stmt.VerboseFor.Body {
-			nestedErrors := validateStatementRecursive(nested, validator, line, expectedReturn, child)
+			nestedErrors := validateStatementRecursive(nested, validator, line, expectedReturn, child, excludedBases)
 			errors = append(errors, nestedErrors...)
 		}
 	}
@@ -995,7 +993,7 @@ func validateStatementRecursive(stmt *Statement, validator *ArgumentValidator, l
 			child[stmt.Foreach.VarName] = normalizeTypeName(t)
 		}
 		for _, nestedStmt := range stmt.Foreach.Body {
-			nestedErrors := validateStatementRecursive(nestedStmt, validator, line, expectedReturn, child)
+			nestedErrors := validateStatementRecursive(nestedStmt, validator, line, expectedReturn, child, excludedBases)
 			errors = append(errors, nestedErrors...)
 		}
 	}
@@ -1003,7 +1001,7 @@ func validateStatementRecursive(stmt *Statement, validator *ArgumentValidator, l
 	if stmt.While != nil {
 		child := cloneScope()
 		for _, nested := range stmt.While.Body {
-			nestedErrors := validateStatementRecursive(nested, validator, line, expectedReturn, child)
+			nestedErrors := validateStatementRecursive(nested, validator, line, expectedReturn, child, excludedBases)
 			errors = append(errors, nestedErrors...)
 		}
 	}
@@ -1011,18 +1009,18 @@ func validateStatementRecursive(stmt *Statement, validator *ArgumentValidator, l
 	if stmt.If != nil {
 		child := cloneScope()
 		for _, nested := range stmt.If.Body {
-			nestedErrors := validateStatementRecursive(nested, validator, line, expectedReturn, child)
+			nestedErrors := validateStatementRecursive(nested, validator, line, expectedReturn, child, excludedBases)
 			errors = append(errors, nestedErrors...)
 		}
 		for _, e := range stmt.If.ElseIfs {
 			for _, nested := range e.Body {
-				nestedErrors := validateStatementRecursive(nested, validator, line, expectedReturn, child)
+				nestedErrors := validateStatementRecursive(nested, validator, line, expectedReturn, child, excludedBases)
 				errors = append(errors, nestedErrors...)
 			}
 		}
 		if stmt.If.Else != nil {
 			for _, nested := range stmt.If.Else.Body {
-				nestedErrors := validateStatementRecursive(nested, validator, line, expectedReturn, child)
+				nestedErrors := validateStatementRecursive(nested, validator, line, expectedReturn, child, excludedBases)
 				errors = append(errors, nestedErrors...)
 			}
 		}
@@ -1038,6 +1036,21 @@ func ValidateProgram(program *Program) []error {
 	validator := NewArgumentValidator()
 	varTypes := make(map[string]string)
 	preRegisterVars(program.Statements, varTypes)
+
+	if len(program.Imports) > 0 {
+		baseDir := filepath.Dir(CurrentSourceFile)
+		for _, imp := range program.Imports {
+			if imp == nil || strings.TrimSpace(imp.Module) == "" {
+				continue
+			}
+			name := strings.TrimSpace(imp.Module)
+			if _, ok := LoadedModules[name]; !ok {
+				if _, err := LoadModule(name, baseDir); err != nil {
+					_ = err
+				}
+			}
+		}
+	}
 
 	var registerFuncs func(stmts []*Statement)
 	registerFuncs = func(stmts []*Statement) {
@@ -1101,10 +1114,37 @@ func ValidateProgram(program *Program) []error {
 	}
 	registerFuncs(program.Statements)
 
+	excludedBases := make(map[string]bool)
+	for _, imp := range program.Imports {
+		if imp == nil || strings.TrimSpace(imp.Module) == "" {
+			continue
+		}
+		full := strings.TrimSpace(imp.Module)
+		excludedBases[full] = true
+		if idx := strings.LastIndex(full, "/"); idx != -1 && idx+1 < len(full) {
+			short := full[idx+1:]
+			if short != "" {
+				excludedBases[short] = true
+			}
+		}
+	}
+	for name := range LoadedModules {
+		if name == "" {
+			continue
+		}
+		excludedBases[name] = true
+		if idx := strings.LastIndex(name, "/"); idx != -1 && idx+1 < len(name) {
+			short := name[idx+1:]
+			if short != "" {
+				excludedBases[short] = true
+			}
+		}
+	}
+
 	var allErrors []error
 	line := 1
 	for _, stmt := range program.Statements {
-		errs := validateStatementRecursive(stmt, validator, line, "", varTypes)
+		errs := validateStatementRecursive(stmt, validator, line, "", varTypes, excludedBases)
 		allErrors = append(allErrors, errs...)
 		line++
 	}
