@@ -1674,10 +1674,12 @@ func parseModuleMacroArguments(argsStr string) []string {
 		return []string{}
 	}
 
-	var args []string
-	var current strings.Builder
-	parenCount := 0
-	inString := false
+	var (
+		args       []string
+		current    strings.Builder
+		parenCount = 0
+		inString   = false
+	)
 
 	for i, char := range argsStr {
 		switch char {
