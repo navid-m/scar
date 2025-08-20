@@ -92,18 +92,8 @@ func preRegisterVars(stmts []*Statement, varTypes map[string]string) {
 				}
 			}
 		}
-		if stmt.VarAssign != nil && stmt.VarAssign.Name != "" {
-			if _, ok := varTypes[stmt.VarAssign.Name]; !ok {
-				varTypes[stmt.VarAssign.Name] = ""
-			}
-		}
 
-		// name = obj.method(...)
-		if stmt.VarAssignMethodCall != nil && stmt.VarAssignMethodCall.Name != "" {
-			if _, ok := varTypes[stmt.VarAssignMethodCall.Name]; !ok {
-				varTypes[stmt.VarAssignMethodCall.Name] = ""
-			}
-		}
+		// Do not pre-register assignment targets for method calls either.
 		if stmt.IndexAssign != nil && stmt.IndexAssign.ListName != "" {
 			if _, ok := varTypes[stmt.IndexAssign.ListName]; !ok {
 				varTypes[stmt.IndexAssign.ListName] = "list[]"
@@ -520,6 +510,7 @@ func (av *ArgumentValidator) ValidateStringFunctionCall(expr string, line int) e
 		parts := strings.Split(funcName, "::")
 		last = parts[len(parts)-1]
 	}
+
 	if last != "" {
 		first := last[0]
 		if (first >= 'A' && first <= 'Z') || isValidType(last) {
@@ -678,14 +669,14 @@ func scanUnknownVars(expr string, varTypes map[string]string, excludedBases map[
 			for j < len(s) && s[j] == ' ' {
 				j++
 			}
-			// treat module::func(...) as a call; skip flagging the module token
+			if j < len(s) && s[j] == '(' {
+				continue
+			}
 			if j+1 < len(s) && s[j] == ':' && s[j+1] == ':' {
-				// advance past '::' and following identifier
 				j += 2
 				for j < len(s) && s[j] == ' ' {
 					j++
 				}
-				// consume identifier
 				k := j
 				for k < len(s) {
 					c := s[k]
@@ -838,6 +829,17 @@ func validateStatementRecursive(stmt *Statement, validator *ArgumentValidator, l
 	if stmt.FunctionCall != nil {
 		if err := validator.ValidateFunctionCall(stmt.FunctionCall, line); err != nil {
 			return []error{err}
+		}
+	}
+
+	if stmt.VarAssign != nil {
+		if _, ok := varTypes[stmt.VarAssign.Name]; !ok {
+			if !strings.Contains(stmt.VarAssign.Name, ".") {
+				return []error{fmt.Errorf("line %d: variable '%s' is not defined", line, stmt.VarAssign.Name)}
+			}
+		}
+		for _, u := range scanUnknownVars(stmt.VarAssign.Value, varTypes, excludedBases) {
+			return []error{fmt.Errorf("line %d: variable '%s' is not defined", line, u)}
 		}
 	}
 
