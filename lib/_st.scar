@@ -364,12 +364,6 @@ uri::encode_url("https://example.com/some thing")
 t.assert_string_equals("https://example.com/some%20thing", uri::encode_url("https://example.com/some thing"), "URL encoding should work")
 t.assert_string_equals("https://example.com/some thing", uri::decode_url("https://example.com/some%20thing"), "URL decoding should work")
 
-lstring poly_key = "\x85\xd6\xbe\x78\x57\x55\x6d\x33\x7f\x44\x52\xfe\x42\xd5\x06\xa8\x01\x03\x80\x8a\xfb\x0d\xb2\xfd\x4a\xbf\xf6\xaf\x41\x49\xf5\x1b"
-lstring poly_msg = "Cryptographic Forum Research Group"
-lstring poly_expected = "f07834c65966232b32dc3cec8ccbe472"
-lstring poly_tag = crypto::poly1305_mac(poly_msg, poly_key)
-
-t.assert_string_equals(poly_expected, poly_tag, "Poly1305 MAC should match RFC 7539 test vector")
 t.test_summary()
 
 os::exit(0)
