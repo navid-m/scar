@@ -3731,6 +3731,10 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				resolvedFuncName := lexer.ResolveSymbol(funcName, currentModule)
 				if functionReturnsString(resolvedFuncName) {
 					varType = "string"
+				} else if _, isStruct := globalStructs[resolvedFuncName]; isStruct {
+					// Infer variable type from struct constructor-style call: StructName(...)
+					varType = resolvedFuncName
+					cType = mapTypeToCType(varType)
 				}
 			}
 
