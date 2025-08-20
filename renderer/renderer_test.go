@@ -1389,7 +1389,7 @@ print "Counter: {}, Active: {}, Temp: {}, Status: {}", counter, is_active, tempe
 		}
 	}
 
-	expectedStringInit := "void init_status() { strcpy(status, \"running\"); }"
+	expectedStringInit := "void init_status() { strncpy(status, \"running\", 255); status[255] = '\\0'; }"
 	if !strings.Contains(result, expectedStringInit) {
 		t.Errorf("Expected string initialization '%s' not found", expectedStringInit)
 	}

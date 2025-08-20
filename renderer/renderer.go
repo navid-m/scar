@@ -182,10 +182,28 @@ func RenderC(program *lexer.Program, baseDir string, gcFlag bool) string {
 
 	if useGC {
 		b.WriteString(`#include <gc.h>
+static inline void* scar_gc_calloc(size_t n, size_t sz) {
+    size_t total = n * sz;
+    void* p = GC_malloc(total);
+    if (p) memset(p, 0, total);
+    return p;
+}
+static inline char* scar_gc_strdup(const char* s) {
+    if (!s) return NULL;
+    size_t len = strlen(s) + 1;
+    char* p = (char*)GC_malloc(len);
+    if (!p) return NULL;
+    memcpy(p, s, len);
+    return p;
+}
+#define malloc(sz) GC_malloc(sz)
+#define realloc(ptr,sz) GC_realloc(ptr,sz)
+#define calloc(n,sz) scar_gc_calloc((n),(sz))
+#define strdup(s) scar_gc_strdup((s))
+#define free(p) ((void)0)
 `)
 	}
 	{
-		// de-duplicate while preserving order minimally
 		seenLocal := make(map[string]bool)
 		for _, h := range localImports {
 			if h == "" || seenLocal[h] {
@@ -382,13 +400,13 @@ bool __check_key_exists(int* keys, int size, int key) {
 				value = fmt.Sprintf("\"%s\"", value)
 			}
 			fmt.Fprintf(&b, "char %s[256];\n", varName)
-			fmt.Fprintf(&b, "void init_%s() { strcpy(%s, %s); }\n", varName, varName, value)
+			fmt.Fprintf(&b, "void init_%s() { strncpy(%s, %s, 255); %s[255] = '\\0'; }\n", varName, varName, value, varName)
 		case "lstring":
 			if !strings.HasPrefix(value, "\"") {
 				value = fmt.Sprintf("\"%s\"", value)
 			}
 			fmt.Fprintf(&b, "char %s[10000];\n", varName)
-			fmt.Fprintf(&b, "void init_%s() { strcpy(%s, %s); }\n", varName, varName, value)
+			fmt.Fprintf(&b, "void init_%s() { strncpy(%s, %s, 9999); %s[9999] = '\\0'; }\n", varName, varName, value, varName)
 		case "string":
 			fmt.Fprintf(&b, "char* %s;\n", varName)
 			fmt.Fprintf(&b, "void init_%s() { %s = %s; }\n", varName, varName, value)
@@ -457,13 +475,13 @@ bool __check_key_exists(int* keys, int size, int key) {
 					value = fmt.Sprintf("\"%s\"", value)
 				}
 				fmt.Fprintf(&b, "char %s[256];\n", uniqueName)
-				fmt.Fprintf(&b, "void init_%s() { strcpy(%s, %s); }\n", uniqueName, uniqueName, value)
+				fmt.Fprintf(&b, "void init_%s() { strncpy(%s, %s, 255); %s[255] = '\\0'; }\n", uniqueName, uniqueName, value, uniqueName)
 			case "lstring":
 				if !strings.HasPrefix(value, "\"") {
 					value = fmt.Sprintf("\"%s\"", value)
 				}
 				fmt.Fprintf(&b, "char %s[10000];\n", uniqueName)
-				fmt.Fprintf(&b, "void init_%s() { strcpy(%s, %s); }\n", uniqueName, uniqueName, value)
+				fmt.Fprintf(&b, "void init_%s() { strncpy(%s, %s, 9999); %s[9999] = '\\0'; }\n", uniqueName, uniqueName, value, uniqueName)
 			case "string":
 				fmt.Fprintf(&b, "char* %s;\n", uniqueName)
 				fmt.Fprintf(&b, "void init_%s() { %s = %s; }\n", uniqueName, uniqueName, value)
