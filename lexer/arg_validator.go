@@ -410,20 +410,27 @@ func (av *ArgumentValidator) ValidateMethodCall(methodCall *MethodCallStmt, line
 	if !ok {
 		return nil
 	}
-	key := recv + "." + methodCall.Method
-	sig, exists := av.functions[key]
+
+	var (
+		key         = recv + "." + methodCall.Method
+		sig, exists = av.functions[key]
+	)
+
+	// try underscore variant here (Class_Method).
 	if !exists {
-		// try underscore variant (Class_Method)
 		if s2, ok2 := av.functions[recv+"_"+methodCall.Method]; ok2 {
 			sig, exists = s2, true
 		}
 	}
+
 	if !exists {
 		return fmt.Errorf("line %d: method '%s.%s' is not defined", line, recv, methodCall.Method)
 	}
+
 	if len(methodCall.Args) != len(sig.Parameters) {
 		return fmt.Errorf("line %d: method '%s.%s' expects %d arguments, but %d were provided", line, recv, methodCall.Method, len(sig.Parameters), len(methodCall.Args))
 	}
+
 	for _, a := range methodCall.Args {
 		if err := av.ValidateStringFunctionCall(a, line); err != nil {
 			return err
