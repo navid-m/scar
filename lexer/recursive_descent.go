@@ -597,6 +597,10 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 
 	parts := strings.Fields(strings.TrimSuffix(line, ":"))
 
+	if len(parts) == 0 {
+		return nil, lineNum + 1, fmt.Errorf("empty statement at line %d", lineNum+1)
+	}
+
 	if strings.HasPrefix(parts[0], "list[") && strings.Contains(parts[0], "]") {
 		if len(parts) < 4 || parts[2] != "=" {
 			return nil, lineNum + 1, fmt.Errorf("list declaration format error at line %d (expected: list[type] name = [elements] or list[type] name = function_call())", lineNum+1)
@@ -675,10 +679,6 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 		}
 
 		return &Statement{ListDecl: &ListDeclStmt{Type: listType, Name: listName, Elements: elements}}, lineNum + 1, nil
-	}
-
-	if len(parts) == 0 {
-		return nil, lineNum + 1, fmt.Errorf("empty statement at line %d", lineNum+1)
 	}
 
 	if strings.HasPrefix(line, "cat!(") && strings.HasSuffix(line, ")") {
