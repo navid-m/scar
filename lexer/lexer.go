@@ -639,7 +639,7 @@ func InnerParseWithIndentation(input string, sourceFile string) (*Program, error
 // Converts type casting functions like float(expr) to C-style casts (float)(expr)
 func handleTypeCasting(symbolName string) string {
 	var (
-		typeCasts = []string{"float", "double", "char"}
+		typeCasts = []string{"float", "double"}
 		result    = symbolName
 	)
 	for _, typecast := range typeCasts {

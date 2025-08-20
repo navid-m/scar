@@ -235,6 +235,17 @@ pub fn to_hex(int value) -> char*:
         return result;
     )
 
+## Converts a hexadecimal string (like "2F" or "20") to an integer.
+pub fn from_hex(string hx) -> int:
+    $raw (
+        if (hx == NULL) {
+            return 0;
+        }
+        int value = 0;
+        sscanf(hx, "%x", &value);
+        return value;
+    )
+
 ## Compares two strings.
 pub fn equal(string a, string b) -> bool:
     $raw (
