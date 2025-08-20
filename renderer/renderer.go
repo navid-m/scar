@@ -6428,44 +6428,6 @@ func intermediatePostProcessC(csrc string) string {
 	if csrc == "" {
 		return csrc
 	}
-	{
-		var b strings.Builder
-		b.Grow(len(csrc))
-		inDbl := false // inside "..."
-		inSgl := false // inside '...'
-		for i := 0; i < len(csrc); i++ {
-			ch := csrc[i]
-			if ch == '"' && !inSgl {
-				bs := 0
-				for j := i - 1; j >= 0 && csrc[j] == '\\'; j-- {
-					bs++
-				}
-				if bs%2 == 0 {
-					inDbl = !inDbl
-				}
-				b.WriteByte(ch)
-				continue
-			}
-			if ch == '\'' && !inDbl {
-				bs := 0
-				for j := i - 1; j >= 0 && csrc[j] == '\\'; j-- {
-					bs++
-				}
-				if bs%2 == 0 {
-					inSgl = !inSgl
-				}
-				b.WriteByte(ch)
-				continue
-			}
-			if !inDbl && !inSgl && ch == '=' && i+1 < len(csrc) && csrc[i+1] == '>' {
-				b.WriteByte('.')
-				i++ // skip '>'
-				continue
-			}
-			b.WriteByte(ch)
-		}
-		csrc = b.String()
-	}
 	before := csrc
 	csrc = sanitizeModuleCalls(csrc)
 	if csrc != before {
