@@ -6,14 +6,14 @@
 
 external import "jansson.h"
 
-pub i32 JSON_OBJECT = 0
-pub i32 JSON_ARRAY = 1
-pub i32 JSON_STRING = 2
-pub i32 JSON_INTEGER = 3
-pub i32 JSON_REAL = 4
-pub i32 JSON_TRUE = 5
-pub i32 JSON_FALSE = 6
-pub i32 JSON_NULL = 7
+pub val i32 JSON_OBJECT = 0
+pub val i32 JSON_ARRAY = 1
+pub val i32 JSON_STRING = 2
+pub val i32 JSON_INTEGER = 3
+pub val i32 JSON_REAL = 4
+pub val i32 JSON_TRUE = 5
+pub val i32 JSON_FALSE = 6
+pub val i32 JSON_NULL = 7
 
 ## Parse JSON string and return json_t pointer
 pub fn parse(string json_string) -> void*:

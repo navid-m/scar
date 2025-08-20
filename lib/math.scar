@@ -1,9 +1,9 @@
-pub f32 PI      = 3.14159265359
-pub f32 E       = 2.71828182846
-pub i32 MAX_INT = 2147483647
-pub i32 MIN_INT = -2147483648
-pub f32 TAU     = 6.28318530718
-pub f32 PHI     = 1.61803398875
+pub val f32 PI      = 3.14159265359
+pub val f32 E       = 2.71828182846
+pub val i32 MAX_INT = 2147483647
+pub val i32 MIN_INT = -2147483648
+pub val f32 TAU     = 6.28318530718
+pub val f32 PHI     = 1.61803398875
 
 ## A 2D vector.
 pub class Vector2:
