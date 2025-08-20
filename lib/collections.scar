@@ -1,5 +1,5 @@
 ## Define a new array type.
-pub macro NewArray(class_name, field_type, elem_type, cType, d_return, alloc_expr, free_expr, copy_expr, get_check):
+pub macro new_array(class_name, field_type, elem_type, cType, d_return, alloc_expr, free_expr, copy_expr, get_check):
     pub class class_name:
         init(i32 initial_capacity):
             this.size = 0
@@ -45,8 +45,8 @@ pub macro NewArray(class_name, field_type, elem_type, cType, d_return, alloc_exp
                 this->data = realloc(this->data, this->capacity * sizeof(cType));
             )
 
-NewArray(ArrayList, i32, i32, int, -1,malloc(this->capacity * sizeof(int)), /* free_expr */, value,  return ((i32*)this->data)[index];)
-NewArray(FloatArrayList, f32, f32, float, 0.0, malloc(this->capacity * sizeof(float)), /* free_expr */, value, return ((f32*)this->data)[index];)
-NewArray(CharArrayList, char, char, char, '\0', malloc(this->capacity * sizeof(char)),  /* free_expr */, value,return ((char*)this->data)[index];)
-NewArray(BooleanArrayList, bool, bool, bool, false, malloc(this->capacity * sizeof(bool)), /* free_expr */, value, return ((bool*)this->data)[index];)
-NewArray(StringArrayList, char, string, char*, "",malloc(this->capacity * sizeof(char*)),free(((char**)this->data)[index]);,strdup(value),char* value = ((char**)this->data)[index];if (value == nil) {return ""; } return value;)
+new_array(ArrayList, i32, i32, int, -1,malloc(this->capacity * sizeof(int)), /* free_expr */, value,  return ((i32*)this->data)[index];)
+new_array(FloatArrayList, f32, f32, float, 0.0, malloc(this->capacity * sizeof(float)), /* free_expr */, value, return ((f32*)this->data)[index];)
+new_array(CharArrayList, char, char, char, '\0', malloc(this->capacity * sizeof(char)),  /* free_expr */, value,return ((char*)this->data)[index];)
+new_array(BooleanArrayList, bool, bool, bool, false, malloc(this->capacity * sizeof(bool)), /* free_expr */, value, return ((bool*)this->data)[index];)
+new_array(StringArrayList, char, string, char*, "",malloc(this->capacity * sizeof(char*)),free(((char**)this->data)[index]);,strdup(value),char* value = ((char**)this->data)[index];if (value == nil) {return ""; } return value;)
