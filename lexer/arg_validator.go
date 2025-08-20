@@ -1143,9 +1143,10 @@ func ValidateProgram(program *Program) []error {
 			}
 		}
 	}
-	registerFuncs(program.Statements)
 
+	registerFuncs(program.Statements)
 	excludedBases := make(map[string]bool)
+
 	for _, imp := range program.Imports {
 		if imp == nil || strings.TrimSpace(imp.Module) == "" {
 			continue
