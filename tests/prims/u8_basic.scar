@@ -1,0 +1,33 @@
+# u8 basic integration test
+
+int n = 16
+allocate u8 buf = n
+
+fn fill_u8(ref u8 a, int len, u8 base) -> void:
+    for i = 0 to (len - 1):
+        a[i] = (u8)(base + (u8)(i))
+
+fn sum_bytes(ref u8 a, int len) -> int:
+    int s = 0
+    for i = 0 to (len - 1):
+        s = s + (int)(a[i])
+    return s
+
+# scalar u8 usage
+u8 x = (u8)255
+u8 y = (u8)(x - (u8)(200))  # expect 55
+
+fill_u8(buf, n, (u8)(240))
+int total = sum_bytes(buf, n)
+
+# touch a few values to ensure indexing works
+int first = (int)(buf[0])
+int last = (int)(buf[n - 1])
+
+print "u8 test starting"
+print "%d" | x
+print "%d" | y
+print "%d" | first
+print "%d" | last
+print "%d" | total
+print "u8 test done"

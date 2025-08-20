@@ -727,7 +727,7 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 		}}, lineNum + 1, nil
 	}
 	switch parts[0] {
-	case "u16", "u32", "u64", "i16", "i32", "i64", "f32", "f64":
+	case "u8", "u16", "u32", "u64", "i16", "i32", "i64", "f32", "f64":
 		if len(parts) < 4 || parts[2] != "=" {
 			return nil, lineNum + 1, fmt.Errorf("numeric type declaration format error at line %d (expected: %s name = value)", lineNum+1, parts[0])
 		}
@@ -2271,7 +2271,7 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 		firstWord := strings.Fields(line)[0]
 		isKeyword := false
 		keywords := []string{"if", "for", "while", "fn", "class",
-			"var", "return", "import", "pub", "ref", "u16", "u32", "u64",
+			"var", "return", "import", "pub", "ref", "u8", "u16", "u32", "u64",
 			"i16", "i32", "i64", "f32", "f64", "print", "sleep", "break",
 			"continue", "foreach", "parallel", "char*", "allocate", "stallocate", "free", "new"}
 		if slices.Contains(keywords, firstWord) {

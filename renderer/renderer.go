@@ -46,9 +46,11 @@ var (
 		"string":  "char*",
 		"cstring": "char*",
 		"lstring": "char*",
+		"u8":      "uint8_t",
 		"u16":     "uint16_t",
 		"u32":     "uint32_t",
 		"u64":     "uint64_t",
+		"i8":      "int8_t",
 		"i16":     "int16_t",
 		"i32":     "int32_t",
 		"i64":     "int64_t",
@@ -6220,12 +6222,16 @@ func mapTypeToCType(mapType string) string {
 		return "char*"
 	case "bool":
 		return "bool"
+	case "u8":
+		return "unsigned char"
 	case "u16":
 		return "unsigned short"
 	case "u32":
 		return "unsigned int"
 	case "u64":
 		return "unsigned long"
+	case "i8":
+		return "signed char"
 	case "i16":
 		return "short"
 	case "i64":
