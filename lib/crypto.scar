@@ -696,17 +696,14 @@ pub fn poly1305_mac(string message, string key) -> string:
                 n2 += (1ULL << 40);
             }
 
-            // h += n
             h0 += n0;
             h1 += n1;
             h2 += n2;
 
-            // h *= r  (with reduction by 2^130 ≡ 5)
             __uint128_t x0 = (__uint128_t)h0 * r0 + (__uint128_t)h1 * r2_5 + (__uint128_t)h2 * r1_5;
             __uint128_t x1 = (__uint128_t)h0 * r1 + (__uint128_t)h1 * r0   + (__uint128_t)h2 * r2_5;
             __uint128_t x2 = (__uint128_t)h0 * r2 + (__uint128_t)h1 * r1   + (__uint128_t)h2 * r0;
 
-            // carry / reduce to 44/44/42 with 2^130 -> 5
             uint64_t c;
 
             h0 = (uint64_t)(x0) & MASK44;    c  = (uint64_t)(x0 >> 44);
@@ -715,11 +712,9 @@ pub fn poly1305_mac(string message, string key) -> string:
             x2 += c;
             h2 = (uint64_t)(x2) & MASK42;    c  = (uint64_t)(x2 >> 42);
 
-            // fold the overflow (at 2^130) back: add 5*c to h0
             h0 += c * 5;
             c   = h0 >> 44;  h0 &= MASK44;
             h1 += c;
-            // propagate any carry from h1 into h2 (must keep limbs 44/44/42)
             c   = h1 >> 44;  h1 &= MASK44;
             h2 += c;
 
