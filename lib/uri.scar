@@ -1,5 +1,6 @@
 import "std/strings"
 
+## Encode some string to be used in a URL
 pub fn encode_url(string url) -> cstring:
     if strings::length(url) == 0:
         return ""
@@ -25,7 +26,8 @@ pub fn encode_url(string url) -> cstring:
             builder.append(fmt!("%s%s", "%", hx))
     
     return builder.buffer
-    
+
+## Decode a URL encoded string
 pub fn decode_url(string url) -> cstring:
     if strings::length(url) == 0:
         return ""
