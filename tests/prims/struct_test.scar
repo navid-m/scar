@@ -3,21 +3,21 @@ struct ComplexType:
     bool what_is_up
 
 struct SomeDataContainer:
-    string data
+    cstring data
     int amount_of_data
-    lstring some_random_lstring
+    cstring some_random_lstring
     ComplexType some_complex_type
 
-var complex = ComplexType()
-complex.hello = 42
-complex.what_is_up = true
+ComplexType complex = ComplexType()
+complex:hello = 42
+complex:what_is_up = true
 
-var container = SomeDataContainer()
-container.data = "Hello, World!"
-container.amount_of_data = 100
-container.some_random_lstring = "Test lstring"
-container.some_complex_type = complex
+SomeDataContainer container = SomeDataContainer()
+container:data = "Hello, World!"
+container:amount_of_data = 100
+container:some_random_lstring = "Test lstring"
+container:some_complex_type = complex
 
-print "Complex: %d, %d" | complex.hello, complex.what_is_up
-print "Container: %s, %d, %s" | container.data, container.amount_of_data, container.some_random_lstring
-print "Container complex: %d, %d" | container.some_complex_type.hello, container.some_complex_type.what_is_up
+print "Complex: %d, %d" | complex:hello, complex:what_is_up
+print "Container: %s, %d, %s" | container:data, container:amount_of_data, container:some_random_lstring
+print "Container complex: %d, %d" | container:some_complex_type:hello, container:some_complex_type:what_is_up

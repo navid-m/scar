@@ -2,14 +2,14 @@ import "std/collections"
 
 struct ParsedDoc:
     collections::StringArrayList imports
-    string filename
+    cstring filename
     int line_count
 
-var doc = ParsedDoc()
-doc.filename = "test.scar"
-doc.line_count = 42
+ParsedDoc doc = ParsedDoc()
+doc:filename = "test.scar"
+doc:line_count = 42
 
 # Test that we can access the complex type field
-print "Filename: %s" | doc.filename
-print "Line count: %d" | doc.line_count
-print "Imports size: %d" | collections::StringArrayList::get_size(doc.imports)
+print "Filename: %s" | doc:filename
+print "Line count: %d" | doc:line_count
+print "Imports size: %d" | collections::StringArrayList::get_size(doc:imports)

@@ -1,5 +1,5 @@
 struct InnerMetaData:
-    string data
+    cstring data
 
 struct Vector2:
     InnerMetaData inner
@@ -7,16 +7,16 @@ struct Vector2:
     int y
 
 struct Stuff:
-    string stuff_name
+    cstring stuff_name
     Vector2 vec
 
 Stuff stuff = Stuff()
-stuff.stuff_name = "test"
-stuff.vec.x = 10
-stuff.vec.y = 20
-stuff.vec.inner = InnerMetaData()
-stuff.vec.inner.data = "testing inner inner data"
+stuff:stuff_name = "test"
+stuff:vec:x = 10
+stuff:vec:y = 20
+stuff:vec:inner = InnerMetaData()
+stuff:vec:inner:data = "testing inner inner data"
 
-print "name: %s" | stuff.stuff_name
-print "x: %d, y: %d" | stuff.vec.x, stuff.vec.y
-print "inner data: %s" | stuff.vec.inner.data
+print "name: %s" | stuff:stuff_name
+print "x: %d, y: %d" | stuff:vec:x, stuff:vec:y
+print "inner data: %s" | stuff:vec:inner:data

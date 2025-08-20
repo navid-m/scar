@@ -8,7 +8,7 @@ struct Point:
 
 var point = Point()
 
-point.x = 10
-point.y = 20
+point:x = 10
+point:y = 20
 
-print "%d %d" | point.x, point.y
+print "%d %d" | point:x, point:y
