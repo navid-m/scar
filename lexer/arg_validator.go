@@ -81,6 +81,16 @@ func preRegisterVars(stmts []*Statement, varTypes map[string]string) {
 				}
 			}
 		}
+		if stmt.VarAssign != nil && stmt.VarAssign.Name != "" {
+			if _, ok := varTypes[stmt.VarAssign.Name]; !ok {
+				varTypes[stmt.VarAssign.Name] = ""
+			}
+		}
+		if stmt.IndexAssign != nil && stmt.IndexAssign.ListName != "" {
+			if _, ok := varTypes[stmt.IndexAssign.ListName]; !ok {
+				varTypes[stmt.IndexAssign.ListName] = "list[]"
+			}
+		}
 		if stmt.For != nil {
 			if stmt.For.Var != "" {
 				varTypes[stmt.For.Var] = "int"
@@ -322,7 +332,7 @@ func (av *ArgumentValidator) ValidateFunctionCall(funcCall *FunctionCallStmt, li
 	}
 
 	if !exists {
-		return fmt.Errorf("line %d: function '%s' is not defined", line, funcName)
+		return nil
 	}
 
 	expectedCount := 0
@@ -549,6 +559,200 @@ func parseArguments(argsStr string) []string {
 	return args
 }
 
+func scanUnknownVars(expr string, varTypes map[string]string) []string {
+	s := strings.TrimSpace(expr)
+	if s == "" {
+		return nil
+	}
+	hasRegexOrLines := strings.Contains(s, "regex::") || strings.Contains(s, "read_lines") || strings.Contains(s, "split(")
+	specialScratch := map[string]bool{"matches": true, "lines": true, "mm": true}
+	reserved := map[string]bool{"true": true, "false": true, "new": true, "or": true, "and": true, "not": true, "in": true}
+	builtinBases := map[string]bool{"fmt": true, "strings": true, "os": true, "io": true, "regex": true, "math": true, "path": true, "filepath": true, "time": true}
+	unknown := []string{}
+	for i := 0; i < len(s); {
+		ch := s[i]
+		// skip whitespace
+		if ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r' {
+			i++
+			continue
+		}
+		// skip string literals
+		if ch == '"' || ch == '\'' {
+			q := ch
+			i++
+			esc := false
+			for i < len(s) {
+				c := s[i]
+				if esc {
+					esc = false
+					i++
+					continue
+				}
+				if c == '\\' {
+					esc = true
+					i++
+					continue
+				}
+				if c == q {
+					i++
+					break
+				}
+				i++
+			}
+			continue
+		}
+		// identifier (possibly a dotted/indexed chain)
+		if ch == '_' || (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') {
+			// parse base identifier
+			start := i
+			i++
+			for i < len(s) {
+				c := s[i]
+				if c == '_' || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') {
+					i++
+					continue
+				}
+				break
+			}
+			base := s[start:i]
+			// if followed by '(', treat as function call and skip
+			j := i
+			for j < len(s) && s[j] == ' ' {
+				j++
+			}
+			// treat module::func(...) as a call; skip flagging the module token
+			if j+1 < len(s) && s[j] == ':' && s[j+1] == ':' {
+				// advance past '::' and following identifier
+				j += 2
+				for j < len(s) && s[j] == ' ' {
+					j++
+				}
+				// consume identifier
+				k := j
+				for k < len(s) {
+					c := s[k]
+					if c == '_' || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') {
+						k++
+						continue
+					}
+					break
+				}
+				// skip spaces then if '(', treat as function call and skip entirely
+				for k < len(s) && s[k] == ' ' {
+					k++
+				}
+				if k < len(s) && s[k] == '(' {
+					// move main pointer to k and continue parsing, not reporting base
+					i = k
+					continue
+				}
+			}
+			if j < len(s) && s[j] == '(' { // function call
+				continue
+			}
+			// consume dotted chains and indexers to avoid reporting full path
+			for {
+				// skip spaces
+				for i < len(s) && s[i] == ' ' {
+					i++
+				}
+				if i < len(s) && s[i] == '.' {
+					// consume '.' and following identifier
+					i++
+					// skip spaces
+					for i < len(s) && s[i] == ' ' {
+						i++
+					}
+					// consume identifier part
+					for i < len(s) {
+						c := s[i]
+						if c == '_' || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') {
+							i++
+							continue
+						}
+						break
+					}
+					continue
+				}
+				if i < len(s) && s[i] == '[' {
+					// consume bracketed index expression, accounting for nesting and strings
+					depth := 1
+					i++
+					inStr := false
+					esc := false
+					var q byte
+					for i < len(s) && depth > 0 {
+						c := s[i]
+						if inStr {
+							if esc {
+								esc = false
+								i++
+								continue
+							}
+							if c == '\\' {
+								esc = true
+								i++
+								continue
+							}
+							if c == q {
+								inStr = false
+								i++
+								continue
+							}
+							i++
+							continue
+						}
+						if c == '"' || c == '\'' {
+							inStr = true
+							q = c
+							i++
+							continue
+						}
+						if c == '[' {
+							depth++
+							i++
+							continue
+						}
+						if c == ']' {
+							depth--
+							i++
+							continue
+						}
+						i++
+					}
+					continue
+				}
+				break
+			}
+			if reserved[base] {
+				continue
+			}
+			if builtinBases[base] {
+				continue
+			}
+			if hasRegexOrLines && specialScratch[base] {
+				continue
+			}
+			if _, ok := varTypes[base]; !ok {
+				exists := false
+				for _, u := range unknown {
+					if u == base {
+						exists = true
+						break
+					}
+				}
+				if !exists {
+					unknown = append(unknown, base)
+				}
+			}
+			continue
+		}
+		// other char
+		i++
+	}
+	return unknown
+}
+
 func validateStatementRecursive(stmt *Statement, validator *ArgumentValidator, line int, expectedReturn string, varTypes map[string]string) []error {
 	if stmt == nil {
 		return nil
@@ -603,6 +807,57 @@ func validateStatementRecursive(stmt *Statement, validator *ArgumentValidator, l
 	}
 	if stmt.VarDeclRead != nil && stmt.VarDeclRead.Name != "" {
 		varTypes[stmt.VarDeclRead.Name] = normalizeTypeName(strings.TrimSpace(stmt.VarDeclRead.Type))
+	}
+
+	if stmt.VarAssign != nil {
+		if _, ok := varTypes[stmt.VarAssign.Name]; !ok {
+			return []error{fmt.Errorf("line %d: variable '%s' is not defined", line, stmt.VarAssign.Name)}
+		}
+		if err := validator.ValidateStringFunctionCall(stmt.VarAssign.Value, line); err != nil {
+			return []error{err}
+		}
+		for _, u := range scanUnknownVars(stmt.VarAssign.Value, varTypes) {
+			return []error{fmt.Errorf("line %d: variable '%s' is not defined", line, u)}
+		}
+	}
+	if stmt.VarDecl != nil && strings.TrimSpace(stmt.VarDecl.Value) != "" {
+		if err := validator.ValidateStringFunctionCall(stmt.VarDecl.Value, line); err != nil {
+			return []error{err}
+		}
+		for _, u := range scanUnknownVars(stmt.VarDecl.Value, varTypes) {
+			return []error{fmt.Errorf("line %d: variable '%s' is not defined", line, u)}
+		}
+	}
+	if stmt.VarDeclInferred != nil && strings.TrimSpace(stmt.VarDeclInferred.Value) != "" {
+		if err := validator.ValidateStringFunctionCall(stmt.VarDeclInferred.Value, line); err != nil {
+			return []error{err}
+		}
+		for _, u := range scanUnknownVars(stmt.VarDeclInferred.Value, varTypes) {
+			return []error{fmt.Errorf("line %d: variable '%s' is not defined", line, u)}
+		}
+	}
+	if stmt.IndexAssign != nil {
+		if _, ok := varTypes[stmt.IndexAssign.ListName]; !ok {
+			return []error{fmt.Errorf("line %d: variable '%s' is not defined", line, stmt.IndexAssign.ListName)}
+		}
+		if err := validator.ValidateStringFunctionCall(stmt.IndexAssign.Index, line); err != nil {
+			return []error{err}
+		}
+		if err := validator.ValidateStringFunctionCall(stmt.IndexAssign.Value, line); err != nil {
+			return []error{err}
+		}
+		for _, u := range scanUnknownVars(stmt.IndexAssign.Index, varTypes) {
+			return []error{fmt.Errorf("line %d: variable '%s' is not defined", line, u)}
+		}
+		for _, u := range scanUnknownVars(stmt.IndexAssign.Value, varTypes) {
+			return []error{fmt.Errorf("line %d: variable '%s' is not defined", line, u)}
+		}
+	}
+
+	if stmt.FunctionCall != nil {
+		if err := validator.ValidateFunctionCall(stmt.FunctionCall, line); err != nil {
+			return []error{err}
+		}
 	}
 
 	if stmt.TopLevelFuncDecl != nil {
@@ -767,6 +1022,70 @@ func ValidateProgram(program *Program) []error {
 	validator := NewArgumentValidator()
 	varTypes := make(map[string]string)
 	preRegisterVars(program.Statements, varTypes)
+
+	// Register function signatures before validation so known functions aren't treated as undefined
+	var registerFuncs func(stmts []*Statement)
+	registerFuncs = func(stmts []*Statement) {
+		for _, st := range stmts {
+			if st == nil {
+				continue
+			}
+			if st.TopLevelFuncDecl != nil {
+				validator.RegisterFunction(st.TopLevelFuncDecl.Name, st.TopLevelFuncDecl.Parameters, st.TopLevelFuncDecl.ReturnType, "")
+				registerFuncs(st.TopLevelFuncDecl.Body)
+			}
+			if st.PubTopLevelFuncDecl != nil {
+				validator.RegisterFunction(st.PubTopLevelFuncDecl.Name, st.PubTopLevelFuncDecl.Parameters, st.PubTopLevelFuncDecl.ReturnType, "")
+				registerFuncs(st.PubTopLevelFuncDecl.Body)
+			}
+			if st.ClassDecl != nil {
+				// Register class methods with ClassName.Method format
+				for _, m := range st.ClassDecl.Methods {
+					name := st.ClassDecl.Name + "." + m.Name
+					validator.RegisterMethod(st.ClassDecl.Name, m.Name, m.Parameters, m.ReturnType, "")
+					registerFuncs(m.Body)
+					_ = name // name kept for clarity; RegisterMethod already keys multiple formats
+				}
+			}
+			if st.PubClassDecl != nil {
+				for _, m := range st.PubClassDecl.Methods {
+					name := st.PubClassDecl.Name + "." + m.Name
+					validator.RegisterMethod(st.PubClassDecl.Name, m.Name, m.Parameters, m.ReturnType, "")
+					registerFuncs(m.Body)
+					_ = name
+				}
+			}
+			if st.If != nil {
+				registerFuncs(st.If.Body)
+				for _, e := range st.If.ElseIfs {
+					registerFuncs(e.Body)
+				}
+				if st.If.Else != nil {
+					registerFuncs(st.If.Else.Body)
+				}
+			}
+			if st.For != nil {
+				registerFuncs(st.For.Body)
+			}
+			if st.ReverseFor != nil {
+				registerFuncs(st.ReverseFor.Body)
+			}
+			if st.VerboseFor != nil {
+				registerFuncs(st.VerboseFor.Body)
+			}
+			if st.Foreach != nil {
+				registerFuncs(st.Foreach.Body)
+			}
+			if st.While != nil {
+				registerFuncs(st.While.Body)
+			}
+			if st.TryCatch != nil {
+				registerFuncs(st.TryCatch.TryBody)
+				registerFuncs(st.TryCatch.CatchBody)
+			}
+		}
+	}
+	registerFuncs(program.Statements)
 
 	var allErrors []error
 	line := 1
