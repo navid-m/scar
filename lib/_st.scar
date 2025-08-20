@@ -12,6 +12,7 @@ import "std/hash"
 import "std/sort"
 import "std/io"
 import "std/json"
+import "std/uri"
 
 platform (Windows):
     import "std/net"
@@ -359,6 +360,9 @@ json::dec_ref(config)
 fs::remove("user.json")
 fs::remove("settings.json")
 
+uri::encode_url("https://example.com/some thing")
+t.assert_string_equals("https://example.com/some%20thing", uri::encode_url("https://example.com/some thing"), "URL encoding should work")
+t.assert_string_equals("https://example.com/some thing", uri::decode_url("https://example.com/some%20thing"), "URL decoding should work")
 t.test_summary()
 
 os::exit(0)

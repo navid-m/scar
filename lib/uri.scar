@@ -12,7 +12,7 @@ pub fn encode_url(string url) -> cstring:
         i32 oc = strings::ord_char(c)
 
         bool is_alnum = ((oc >= 48 && oc <= 57) || (oc >= 65 && oc <= 90) || (oc >= 97 && oc <= 122))
-        bool is_unreserved = is_alnum || oc == 45 || oc == 95 || oc == 46 || oc == 126 || oc == 32
+        bool is_unreserved = is_alnum || oc == 45 || oc == 95 || oc == 46 || oc == 126 || oc == 32 || oc == 58 || oc == 47
 
         if is_unreserved:
             if oc == 32:
@@ -40,7 +40,7 @@ pub fn decode_url(string url) -> cstring:
         char c = url[i]
         if c == '%':
             if i + 2 < n:
-                string hx = strings::substring(url, i + 1, 2)
+                string hx = strings::substring(url, i + 1, i + 3)
                 i32 oc = strings::from_hex(hx)
                 builder.append(strings::chr(oc))
                 i = i + 3
