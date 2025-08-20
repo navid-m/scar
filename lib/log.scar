@@ -14,10 +14,6 @@ pub fn info(string message) -> void:
 pub fn debug(string message) -> void:
     put "[DEBUG] %s \n" | message
 
-## Print a string to the stderr stream
-pub fn to_stderr(string message) -> void:
-    fprintf(stderr, "%s", message);
-
 ## Print a green success message to the stdout stream
 pub fn success(string message) -> void:
     print "\033[0;32m%s\033[0m" | message

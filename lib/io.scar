@@ -133,3 +133,7 @@ pub fn exists(string filepath) -> bool:
         fclose(file);
         return true;
     )
+
+## Send a string to the stderr stream
+pub fn to_stderr(string message) -> void:
+    fprintf(stderr, "%s", message);
