@@ -31,6 +31,7 @@ pub fn encode_url(string url) -> cstring:
 pub fn decode_url(string url) -> cstring:
     if strings::length(url) == 0:
         return ""
+
     strings::Builder builder = new strings::Builder()
     i32 n = strings::length(url)
     i32 i = 0
