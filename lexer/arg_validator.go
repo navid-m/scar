@@ -9,6 +9,7 @@ package lexer
 import (
 	"fmt"
 	"path/filepath"
+	"slices"
 	"strings"
 )
 
@@ -332,6 +333,9 @@ func (av *ArgumentValidator) ValidateFunctionCall(funcCall *FunctionCallStmt, li
 			if mod != "" && av.excludedBases != nil && av.excludedBases[mod] {
 				return nil
 			}
+		}
+		if funcName == "" {
+			return nil
 		}
 		return fmt.Errorf("line %d: function '%s' is not defined", line, funcName)
 	}
@@ -832,14 +836,20 @@ func validateStatementRecursive(stmt *Statement, validator *ArgumentValidator, l
 		}
 	}
 
+	primitiveTypes := []string{
+		"int", "float", "bool", "string", "i32", "i8", "u8", "u32", "u64", "i64", "f32", "f64", "char", "byte", "void", "nil",
+	}
+
 	if stmt.VarAssign != nil {
 		if _, ok := varTypes[stmt.VarAssign.Name]; !ok {
-			if !strings.Contains(stmt.VarAssign.Name, ".") {
+			if !strings.Contains(stmt.VarAssign.Name, ".") || !slices.Contains(primitiveTypes, stmt.VarAssign.Name) {
 				return []error{fmt.Errorf("line %d: variable '%s' is not defined", line, stmt.VarAssign.Name)}
 			}
 		}
 		for _, u := range scanUnknownVars(stmt.VarAssign.Value, varTypes, excludedBases) {
-			return []error{fmt.Errorf("line %d: variable '%s' is not defined", line, u)}
+			if !slices.Contains(primitiveTypes, u) && u != "" {
+				return []error{fmt.Errorf("line %d: variable '%s' is not defined", line, u)}
+			}
 		}
 	}
 
