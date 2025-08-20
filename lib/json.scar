@@ -86,46 +86,55 @@ pub fn check_is_object(void* json_obj) -> bool:
         return json_obj && json_is_object((json_t*)json_obj);
     )
 
+## Check if JSON value is an array
 pub fn check_is_array(void* json_obj) -> bool:
     $raw (
         return json_obj && json_is_array((json_t*)json_obj);
     )
 
+## Check if JSON value is a string
 pub fn check_is_string(void* json_obj) -> bool:
     $raw (
         return json_obj && json_is_string((json_t*)json_obj);
     )
 
+## Check if JSON value is an integer
 pub fn check_is_integer(void* json_obj) -> bool:
     $raw (
         return json_obj && json_is_integer((json_t*)json_obj);
     )
 
+## Check if JSON value is a real number
 pub fn check_is_real(void* json_obj) -> bool:
     $raw (
         return json_obj && json_is_real((json_t*)json_obj);
     )
 
+## Check if JSON value is a number
 pub fn check_is_number(void* json_obj) -> bool:
     $raw (
         return json_obj && json_is_number((json_t*)json_obj);
     )
 
+## Check if JSON value is true
 pub fn check_is_true(void* json_obj) -> bool:
     $raw (
         return json_obj && json_is_true((json_t*)json_obj);
     )
 
+## Check if JSON value is false
 pub fn check_is_false(void* json_obj) -> bool:
     $raw (
         return json_obj && json_is_false((json_t*)json_obj);
     )
 
+## Check if JSON value is a boolean
 pub fn check_is_boolean(void* json_obj) -> bool:
     $raw (
         return json_obj && json_is_boolean((json_t*)json_obj);
     )
 
+## Check if JSON value is null
 pub fn check_is_null(void* json_obj) -> bool:
     $raw (
         return json_obj && json_is_null((json_t*)json_obj);
@@ -137,41 +146,49 @@ pub fn new_object() -> void*:
         return json_object();
     )
 
+## Create a new JSON array
 pub fn new_array() -> void*:
     $raw (
         return json_array();
     )
 
+## Create a new JSON string
 pub fn new_string(string value) -> void*:
     $raw (
         return json_string(value);
     )
 
+## Create a new JSON integer
 pub fn new_integer(i64 value) -> void*:
     $raw (
         return json_integer(value);
     )
 
+## Create a new JSON real number
 pub fn new_real(f64 value) -> void*:
     $raw (
         return json_real(value);
     )
 
+## Create a new JSON true value
 pub fn new_true() -> void*:
     $raw (
         return json_true();
     )
 
+## Create a new JSON false value
 pub fn new_false() -> void*:
     $raw (
         return json_false();
     )
 
+## Create a new JSON boolean value
 pub fn new_boolean(bool value) -> void*:
     $raw (
         return value ? json_true() : json_false();
     )
 
+## Create a new JSON null value
 pub fn new_null() -> void*:
     $raw (
         return json_null();
@@ -193,6 +210,7 @@ pub fn get_string_value(void* json_obj) -> string:
         }
     )
 
+## Get the integer value of a JSON integer
 pub fn get_integer_value(void* json_obj) -> i64:
     $raw (
         if (!json_obj || !json_is_integer((json_t*)json_obj)) {
@@ -201,6 +219,7 @@ pub fn get_integer_value(void* json_obj) -> i64:
         return json_integer_value((json_t*)json_obj);
     )
 
+## Get the real value of a JSON real number
 pub fn get_real_value(void* json_obj) -> f64:
     $raw (
         if (!json_obj || !json_is_real((json_t*)json_obj)) {
@@ -209,6 +228,7 @@ pub fn get_real_value(void* json_obj) -> f64:
         return json_real_value((json_t*)json_obj);
     )
 
+## Get the number value of a JSON number
 pub fn get_number_value(void* json_obj) -> f64:
     $raw (
         if (!json_obj || !json_is_number((json_t*)json_obj)) {
@@ -217,6 +237,7 @@ pub fn get_number_value(void* json_obj) -> f64:
         return json_number_value((json_t*)json_obj);
     )
 
+## Get the boolean value of a JSON boolean
 pub fn get_boolean_value(void* json_obj) -> bool:
     $raw (
         if (!json_obj) return false;
@@ -232,6 +253,7 @@ pub fn obj_get(void* json_obj, string key) -> void*:
         return json_object_get((json_t*)json_obj, key);
     )
 
+## Set the value of a JSON object
 pub fn obj_set(void* json_obj, string key, void* value) -> bool:
     $raw (
         if (!json_obj || !json_is_object((json_t*)json_obj) || !value) {
@@ -241,6 +263,7 @@ pub fn obj_set(void* json_obj, string key, void* value) -> bool:
         return result == 0;
     )
 
+## Set the value of a JSON object with a new value
 pub fn obj_set_new(void* json_obj, string key, void* value) -> bool:
     $raw (
         if (!json_obj || !json_is_object((json_t*)json_obj) || !value) {
@@ -250,6 +273,7 @@ pub fn obj_set_new(void* json_obj, string key, void* value) -> bool:
         return result == 0;
     )
 
+## Delete a key from a JSON object
 pub fn obj_del(void* json_obj, string key) -> bool:
     $raw (
         if (!json_obj || !json_is_object((json_t*)json_obj)) {
@@ -259,6 +283,7 @@ pub fn obj_del(void* json_obj, string key) -> bool:
         return result == 0;
     )
 
+## Clear all keys from a JSON object
 pub fn obj_clear(void* json_obj) -> bool:
     $raw (
         if (!json_obj || !json_is_object((json_t*)json_obj)) {
@@ -268,6 +293,7 @@ pub fn obj_clear(void* json_obj) -> bool:
         return result == 0;
     )
 
+## Get the size of a JSON object
 pub fn obj_size(void* json_obj) -> i32:
     $raw (
         if (!json_obj || !json_is_object((json_t*)json_obj)) {
@@ -285,6 +311,7 @@ pub fn arr_get(void* json_array, i32 index) -> void*:
         return json_array_get((json_t*)json_array, index);
     )
 
+## Set the value of a JSON array
 pub fn arr_set(void* json_array, i32 index, void* value) -> bool:
     $raw (
         if (!json_array || !json_is_array((json_t*)json_array) || !value) {
@@ -294,6 +321,7 @@ pub fn arr_set(void* json_array, i32 index, void* value) -> bool:
         return result == 0;
     )
 
+## Set the value of a JSON array with a new value
 pub fn arr_set_new(void* json_array, i32 index, void* value) -> bool:
     $raw (
         if (!json_array || !json_is_array((json_t*)json_array) || !value) {
@@ -303,6 +331,7 @@ pub fn arr_set_new(void* json_array, i32 index, void* value) -> bool:
         return result == 0;
     )
 
+## Append a value to a JSON array
 pub fn arr_append(void* json_array, void* value) -> bool:
     $raw (
         if (!json_array || !json_is_array((json_t*)json_array) || !value) {
@@ -312,6 +341,7 @@ pub fn arr_append(void* json_array, void* value) -> bool:
         return result == 0;
     )
 
+## Append a value to a JSON array with a new value
 pub fn arr_append_new(void* json_array, void* value) -> bool:
     $raw (
         if (!json_array || !json_is_array((json_t*)json_array) || !value) {
@@ -321,6 +351,7 @@ pub fn arr_append_new(void* json_array, void* value) -> bool:
         return result == 0;
     )
 
+## Insert a value into a JSON array
 pub fn arr_insert(void* json_array, i32 index, void* value) -> bool:
     $raw (
         if (!json_array || !json_is_array((json_t*)json_array) || !value) {
@@ -330,6 +361,7 @@ pub fn arr_insert(void* json_array, i32 index, void* value) -> bool:
         return result == 0;
     )
 
+## Insert a value into a JSON array with a new value
 pub fn arr_insert_new(void* json_array, i32 index, void* value) -> bool:
     $raw (
         if (!json_array || !json_is_array((json_t*)json_array) || !value) {
@@ -339,6 +371,7 @@ pub fn arr_insert_new(void* json_array, i32 index, void* value) -> bool:
         return result == 0;
     )
 
+## Remove a value from a JSON array
 pub fn arr_remove(void* json_array, i32 index) -> bool:
     $raw (
         if (!json_array || !json_is_array((json_t*)json_array)) {
@@ -348,6 +381,7 @@ pub fn arr_remove(void* json_array, i32 index) -> bool:
         return result == 0;
     )
 
+## Clear all values from a JSON array
 pub fn arr_clear(void* json_array) -> bool:
     $raw (
         if (!json_array || !json_is_array((json_t*)json_array)) {
@@ -357,6 +391,7 @@ pub fn arr_clear(void* json_array) -> bool:
         return result == 0;
     )
 
+## Get the size of a JSON array
 pub fn arr_size(void* json_array) -> i32:
     $raw (
         if (!json_array || !json_is_array((json_t*)json_array)) {
