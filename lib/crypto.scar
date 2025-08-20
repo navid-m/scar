@@ -732,7 +732,7 @@ pub fn poly1305_mac(string message, string key) -> string:
         uint64_t g1 = h1 + c;    c  = g1 >> 44;  g1 &= MASK44;
         uint64_t g2 = h2 + c;
         uint64_t mask = (uint64_t)0 - (uint64_t)(((g2 >> 42) ^ 1) & 1);
-        
+
         g2 &= MASK42;
         h0 = (h0 & ~mask) | (g0 & mask);
         h1 = (h1 & ~mask) | (g1 & mask);
