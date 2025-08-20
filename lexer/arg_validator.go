@@ -69,6 +69,7 @@ func preRegisterVars(stmts []*Statement, varTypes map[string]string) {
 				varTypes[stmt.CatList.Target] = "list[]"
 			}
 		}
+
 		// var T name = obj.method(...)
 		if stmt.VarDeclMethodCall != nil && stmt.VarDeclMethodCall.Name != "" {
 			varTypes[stmt.VarDeclMethodCall.Name] = normalizeTypeName(strings.TrimSpace(stmt.VarDeclMethodCall.Type))
@@ -96,6 +97,7 @@ func preRegisterVars(stmts []*Statement, varTypes map[string]string) {
 				varTypes[stmt.VarAssign.Name] = ""
 			}
 		}
+
 		// name = obj.method(...)
 		if stmt.VarAssignMethodCall != nil && stmt.VarAssignMethodCall.Name != "" {
 			if _, ok := varTypes[stmt.VarAssignMethodCall.Name]; !ok {
@@ -224,12 +226,14 @@ func (av *ArgumentValidator) RegisterMethod(
 }
 
 type ArgumentValidator struct {
-	functions map[string]*FunctionSignature
+	functions     map[string]*FunctionSignature
+	excludedBases map[string]bool
 }
 
 func NewArgumentValidator() *ArgumentValidator {
 	av := &ArgumentValidator{
-		functions: make(map[string]*FunctionSignature),
+		functions:     make(map[string]*FunctionSignature),
+		excludedBases: make(map[string]bool),
 	}
 
 	builtins := []string{"fmt!", "cat!", "has!", "put!", "len"}
@@ -333,6 +337,12 @@ func (av *ArgumentValidator) ValidateFunctionCall(funcCall *FunctionCallStmt, li
 	}
 
 	if !exists {
+		if idx := strings.Index(funcName, "_"); idx > 0 {
+			mod := funcName[:idx]
+			if mod != "" && av.excludedBases != nil && av.excludedBases[mod] {
+				return nil
+			}
+		}
 		return fmt.Errorf("line %d: function '%s' is not defined", line, funcName)
 	}
 
@@ -657,7 +667,6 @@ func scanUnknownVars(expr string, varTypes map[string]string, excludedBases map[
 				break
 			}
 			base := s[start:i]
-			// if followed by '(', treat as function call and skip
 			j := i
 			for j < len(s) && s[j] == ' ' {
 				j++
@@ -749,7 +758,7 @@ func scanUnknownVars(expr string, varTypes map[string]string, excludedBases map[
 			}
 			continue
 		}
-		// other char
+		// some other char
 		i++
 	}
 	return unknown
@@ -1071,7 +1080,7 @@ func ValidateProgram(program *Program) []error {
 					name := st.ClassDecl.Name + "." + m.Name
 					validator.RegisterMethod(st.ClassDecl.Name, m.Name, m.Parameters, m.ReturnType, "")
 					registerFuncs(m.Body)
-					_ = name // name kept for clarity; RegisterMethod already keys multiple formats
+					_ = name // here the name's kept for clarity; RegisterMethod already keys multiple formats
 				}
 			}
 			if st.PubClassDecl != nil {
@@ -1140,6 +1149,8 @@ func ValidateProgram(program *Program) []error {
 			}
 		}
 	}
+
+	validator.excludedBases = excludedBases
 
 	var allErrors []error
 	line := 1
