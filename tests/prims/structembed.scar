@@ -1,12 +1,12 @@
 struct InnerMetaData:
     cstring data
 
-struct Vector2:
+pub struct Vector2:
     InnerMetaData inner
     int x
     int y
 
-struct Stuff:
+pub struct Stuff:
     cstring stuff_name
     Vector2 vec
 
