@@ -336,21 +336,13 @@ func main() {
 		}
 	}
 
-	cmd := exec.Command(cmpPath, compileArgs...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	err = cmd.Run()
-	success := false
-
-	if err == nil {
+	success := runCompilerWithMappedErrors(cmpPath, compileArgs, cCode, tmpCPath, ptf, input)
+	if success {
 		fmt.Printf("Compiled %s\n", outputBinary)
 		if *keepc {
 			fmt.Printf("C file kept as %s\n", tmpCPath)
 		}
-		success = true
-	}
-
-	if !success {
+	} else {
 		log.Fatal("Failed to compile.")
 	}
 }
