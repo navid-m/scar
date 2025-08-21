@@ -609,6 +609,7 @@ func parseArguments(argsStr string) []string {
 
 func scanUnknownVars(expr string, varTypes map[string]string, excludedBases map[string]bool) []string {
 	s := strings.TrimSpace(expr)
+
 	if s == "" {
 		return nil
 	}
@@ -661,7 +662,6 @@ func scanUnknownVars(expr string, varTypes map[string]string, excludedBases map[
 		}
 		// identifier (possibly a dotted/indexed chain)
 		if ch == '_' || (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') {
-			// parse base identifier
 			start := i
 			i++
 			for i < len(s) {
@@ -694,32 +694,25 @@ func scanUnknownVars(expr string, varTypes map[string]string, excludedBases map[
 					}
 					break
 				}
-				// skip spaces then if '(', treat as function call and skip entirely
 				for k < len(s) && s[k] == ' ' {
 					k++
 				}
 				if k < len(s) && s[k] == '(' {
-					// move main pointer to k and continue parsing, not reporting base
 					i = k
 					continue
 				}
 			}
-			// consume dotted chains and indexers to avoid reporting full path
 			hadDot := false
 			for {
-				// skip spaces
 				for i < len(s) && s[i] == ' ' {
 					i++
 				}
 				if i < len(s) && s[i] == '.' {
 					hadDot = true
-					// consume '.' and following identifier
 					i++
-					// skip spaces
 					for i < len(s) && s[i] == ' ' {
 						i++
 					}
-					// consume identifier part
 					for i < len(s) {
 						c := s[i]
 						if c == '_' || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') {
@@ -751,20 +744,13 @@ func scanUnknownVars(expr string, varTypes map[string]string, excludedBases map[
 				continue
 			}
 			if _, ok := varTypes[base]; !ok {
-				exists := false
-				for _, u := range unknown {
-					if u == base {
-						exists = true
-						break
-					}
-				}
+				exists := slices.Contains(unknown, base)
 				if !exists {
 					unknown = append(unknown, base)
 				}
 			}
 			continue
 		}
-		// some other char
 		i++
 	}
 	return unknown
