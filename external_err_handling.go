@@ -241,15 +241,11 @@ func inferScarLineFromC(cCode string, cErrLine int) int {
 }
 
 func printScarContext(src, path string, line, radius int) {
-	lines := strings.Split(src, "\n")
-	start := line - radius
-	if start < 1 {
-		start = 1
-	}
-	end := line + radius
-	if end > len(lines) {
-		end = len(lines)
-	}
+	var (
+		lines = strings.Split(src, "\n")
+		start = max(line-radius, 1)
+		end   = min(line+radius, len(lines))
+	)
 	fmt.Fprintf(os.Stderr, "in %s:%d\n", path, line)
 	for i := start; i <= end; i++ {
 		prefix := "   "
