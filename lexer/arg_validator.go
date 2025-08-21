@@ -7,6 +7,7 @@
 package lexer
 
 import (
+	"maps"
 	"fmt"
 	"path/filepath"
 	"slices"
@@ -765,9 +766,7 @@ func validateStatementRecursive(stmt *Statement, validator *ArgumentValidator, l
 
 	cloneScope := func() map[string]string {
 		child := make(map[string]string, len(varTypes))
-		for k, v := range varTypes {
-			child[k] = v
-		}
+		maps.Copy(child, varTypes)
 		return child
 	}
 
