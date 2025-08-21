@@ -37,6 +37,78 @@ func runCompilerWithMappedErrors(compiler string, args []string, cCode string, c
 	return false
 }
 
+func extractQuotedIdentifier(msg string) string {
+	i := strings.Index(msg, "'")
+	if i == -1 {
+		return ""
+	}
+	j := strings.Index(msg[i+1:], "'")
+	if j == -1 {
+		return ""
+	}
+	cand := msg[i+1 : i+1+j]
+	if len(cand) == 0 {
+		return ""
+	}
+	if (cand[0] >= 'A' && cand[0] <= 'Z') || (cand[0] >= 'a' && cand[0] <= 'z') || cand[0] == '_' {
+		return cand
+	}
+	return ""
+}
+
+func findScarLineBySymbol(scarSrc, symbol string) int {
+	lines := strings.Split(scarSrc, "\n")
+	best := 0
+	for i, ln := range lines {
+		if !containsWord(ln, symbol) {
+			continue
+		}
+		low := strings.ToLower(ln)
+		score := 0
+		if strings.Contains(low, "print") || strings.Contains(low, "fmt") {
+			score += 2
+		}
+		if strings.Contains(ln, symbol) {
+			score++
+		}
+		if score > 0 {
+			return i + 1
+		}
+		if best == 0 {
+			best = i + 1
+		}
+	}
+	return best
+}
+
+func containsWord(line, word string) bool {
+	if word == "" {
+		return false
+	}
+	f := func(r rune) bool {
+		return !(r == '_' || (r >= '0' && r <= '9') || (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z'))
+	}
+	fields := strings.FieldsFunc(line, f)
+	for _, tok := range fields {
+		if tok == word {
+			return true
+		}
+	}
+	return false
+}
+
+func firstMeaningfulScarLine(s string) int {
+	lines := strings.Split(s, "\n")
+	for i, ln := range lines {
+		t := strings.TrimSpace(ln)
+		if t == "" || strings.HasPrefix(t, "#") {
+			continue
+		}
+		return i + 1
+	}
+	return 0
+}
+
 var (
 	gccClangErrRe = regexp.MustCompile(`^(?P<file>[^:\n]+):(\d+)(?::(\d+))?:\s*(fatal error|error|warning|note):\s*(?P<msg>.*)$`)
 )
@@ -61,7 +133,6 @@ func reportCompilerErrors(stderrStr, cPath, scarPath, scarSource, cCode string) 
 	var (
 		cErrFile string
 		cErrLine int
-		cErrCol  int
 		cErrMsg  string
 	)
 	for _, l := range relevant {
@@ -71,9 +142,6 @@ func reportCompilerErrors(stderrStr, cPath, scarPath, scarSource, cCode string) 
 		}
 		cErrFile = m[1]
 		cErrLine = atoiSafe(m[2])
-		if len(m) > 3 {
-			cErrCol = atoiSafe(m[3])
-		}
 		cErrMsg = m[len(m)-1]
 		if strings.TrimSpace(cErrFile) != "" {
 			cPath = cErrFile
@@ -86,17 +154,41 @@ func reportCompilerErrors(stderrStr, cPath, scarPath, scarSource, cCode string) 
 		for _, l := range relevant {
 			fmt.Fprintln(os.Stderr, l)
 		}
+
+		if sym := extractQuotedIdentifier(cErrMsg); sym != "" {
+			if ln := findScarLineBySymbol(scarSource, sym); ln > 0 {
+				printScarContext(scarSource, scarPath, ln, 2)
+				return
+			}
+		}
+
+		if ln := firstMeaningfulScarLine(scarSource); ln > 0 {
+			printScarContext(scarSource, scarPath, ln, 2)
+			return
+		}
+
+		fmt.Fprintf(os.Stderr, "in %s\n", scarPath)
 		return
 	}
 
 	scarLine := inferScarLineFromC(cCode, cErrLine)
 
-	fmt.Fprintf(os.Stderr, "\n\x1b[31mPCompileError\x1b[0m: %s\n", strings.TrimSpace(cErrMsg))
+	fmt.Fprintf(os.Stderr, "\x1b[31mExtCompError\x1b[0m: %s\n", strings.TrimSpace(cErrMsg))
 	if scarLine > 0 {
 		printScarContext(scarSource, scarPath, scarLine, 2)
-	} else {
-		printCContext(cCode, cPath, cErrLine, cErrCol, 2)
+		return
 	}
+	if sym := extractQuotedIdentifier(cErrMsg); sym != "" {
+		if ln := findScarLineBySymbol(scarSource, sym); ln > 0 {
+			printScarContext(scarSource, scarPath, ln, 2)
+			return
+		}
+	}
+	if ln := firstMeaningfulScarLine(scarSource); ln > 0 {
+		printScarContext(scarSource, scarPath, ln, 2)
+		return
+	}
+	fmt.Fprintf(os.Stderr, "in %s\n", scarPath)
 }
 
 func splitNonEmptyLines(s string) []string {
@@ -159,30 +251,6 @@ func printScarContext(src, path string, line, radius int) {
 		end = len(lines)
 	}
 	fmt.Fprintf(os.Stderr, "in %s:%d\n", path, line)
-	for i := start; i <= end; i++ {
-		prefix := "   "
-		if i == line {
-			prefix = " > "
-		}
-		fmt.Fprintf(os.Stderr, "%s%5d | %s\n", prefix, i, lines[i-1])
-	}
-}
-
-func printCContext(src, path string, line, col, radius int) {
-	lines := strings.Split(src, "\n")
-	if line < 1 || line > len(lines) {
-		fmt.Fprintf(os.Stderr, "at %s:%d:%d\n", path, line, col)
-		return
-	}
-	start := line - radius
-	if start < 1 {
-		start = 1
-	}
-	end := line + radius
-	if end > len(lines) {
-		end = len(lines)
-	}
-	fmt.Fprintf(os.Stderr, "at %s:%d:%d\n", path, line, col)
 	for i := start; i <= end; i++ {
 		prefix := "   "
 		if i == line {
