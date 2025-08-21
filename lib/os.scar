@@ -59,16 +59,16 @@ pub fn tempdir() -> char*:
     )
 
 ## Get the command line arguments.
-pub fn get_args() -> list[string]:
+pub fn get_args() -> collections::StringArrayList:
+    var args = new collections::StringArrayList(4)
+
     $raw (
         extern int __global_argc;
-        extern char** __global_argv;
-        
-        for (int _i = 0; _i < __global_argc && _i < _max_size; _i++) {
-            strcpy(_output_array[_i], __global_argv[_i]);
-        }
-        return __global_argc;
+        extern char** __global_argv;    
     )
+    for i = 0 to __global_argc - 1:
+        args.add_element(__global_argv[i])
+    return args
 
 ## Read the contents of a directory.
 pub fn read_dir(string path) -> list[string]:

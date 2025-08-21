@@ -244,8 +244,8 @@ fs::remove("test_dir/test1.txt")
 fs::remove("test_dir/test2.txt")
 fs::remove_dir("test_dir")
 
-list[string] args = os::get_args()
-for i = 0 to len(args) - 1:
+collections::StringArrayList args = os::get_args()
+for i = 0 to args.get_size() - 1:
     log::success(fmt!("ASSERT PASSED: Command line argument %d: %s", i, args[i]))
 
 list[int] nums = [5, 10, 2, 20, 14, 12]
