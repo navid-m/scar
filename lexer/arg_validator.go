@@ -621,10 +621,14 @@ func scanUnknownVars(expr string, varTypes map[string]string, excludedBases map[
 	if strings.ContainsAny(s, "'") && !strings.ContainsAny(s, "\"'()::.+-*/%<>=!&|[]{}") {
 		return nil
 	}
-	hasRegexOrLines := strings.Contains(s, "regex::") || strings.Contains(s, "read_lines") || strings.Contains(s, "split(")
-	specialScratch := map[string]bool{"matches": true, "lines": true, "mm": true}
-	reserved := map[string]bool{"true": true, "false": true, "new": true, "or": true, "and": true, "not": true, "in": true}
-	unknown := []string{}
+
+	var (
+		hasRegexOrLines = strings.Contains(s, "regex::") || strings.Contains(s, "read_lines") || strings.Contains(s, "split(")
+		specialScratch  = map[string]bool{"matches": true, "lines": true, "mm": true}
+		reserved        = map[string]bool{"true": true, "false": true, "new": true, "or": true, "and": true, "not": true, "in": true}
+		unknown         = []string{}
+	)
+
 	for i := 0; i < len(s); {
 		ch := s[i]
 		if ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r' {
