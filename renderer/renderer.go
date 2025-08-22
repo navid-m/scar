@@ -279,6 +279,7 @@ static void scar_segv_handler(int sig) {
 #if defined(_WIN32)
 static void scar_win_print_backtrace(void) {
     HANDLE process = GetCurrentProcess();
+    SymSetOptions(SYMOPT_DEFERRED_LOADS | SYMOPT_UNDNAME | SYMOPT_LOAD_LINES);
     SymInitialize(process, NULL, TRUE);
 
     void* stack[64];
@@ -308,6 +309,14 @@ static LONG WINAPI scar_unhandled_exception_filter(EXCEPTION_POINTERS* info) {
     scar_win_print_backtrace();
     fflush(stderr);
     ExitProcess(1);
+    return EXCEPTION_EXECUTE_HANDLER;
+}
+
+static LONG CALLBACK scar_vectored_exception_handler(EXCEPTION_POINTERS* info) {
+    (void)info;
+    fprintf(stderr, "Fatal: Vectored exception.\n");
+    scar_win_print_backtrace();
+    fflush(stderr);
     return EXCEPTION_EXECUTE_HANDLER;
 }
 #endif
@@ -644,6 +653,8 @@ bool __check_key_exists(int* keys, int size, int key) {
 		b.WriteString("#ifdef _WIN32\n")
 		b.WriteString("    SetConsoleOutputCP(CP_UTF8);\n")
 		b.WriteString("    SetUnhandledExceptionFilter(scar_unhandled_exception_filter);\n")
+		b.WriteString("    SetErrorMode(GetErrorMode() | SEM_NOGPFAULTERRORBOX | SEM_FAILCRITICALERRORS | SEM_NOOPENFILEERRORBOX);\n")
+		b.WriteString("    AddVectoredExceptionHandler(1, scar_vectored_exception_handler);\n")
 		b.WriteString("#endif\n")
 	}
 	b.WriteString("    signal(SIGSEGV, scar_segv_handler);\n")
