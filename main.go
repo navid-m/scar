@@ -36,6 +36,7 @@ func main() {
 		linker  = flag.String("l", "", "additional linker options (e.g., -lm -lpthread)")
 		outName = flag.String("o", "", "output binary name")
 		opt     = flag.Bool("opt", false, "optimise for performance")
+		asan    = flag.Bool("asan", false, "enable Address/Undefined Sanitizers (non-Windows)")
 		version = flag.Bool("v", false, "show version")
 	)
 
@@ -155,11 +156,14 @@ func main() {
 	var (
 		outputBinary = "./" + outputName
 		cmpPath      = "gcc"
-		compileArgs  = []string{"-w", "-fopenmp", tmpCPath, "-o", outputBinary, extCflag}
+		compileArgs  = []string{"-w", "-fopenmp", "-g", "-fno-omit-frame-pointer", "-fstack-protector-strong", tmpCPath, "-o", outputBinary, extCflag}
 	)
 
 	if *opt {
 		compileArgs = append([]string{"-O2", "-fno-fast-math"}, compileArgs...)
+	}
+	if *asan && runtime.GOOS != "windows" {
+		compileArgs = append([]string{"-fsanitize=address,undefined"}, compileArgs...)
 	}
 
 	if *linker != "" {
@@ -169,11 +173,7 @@ func main() {
 
 	if *dll {
 		compileArgs = append(compileArgs, "-shared", "-fPIC")
-		if runtime.GOOS == "windows" {
-			outputBinary = "./" + outputName + ".dll"
-		} else {
-			outputBinary = "./" + outputName + ".so"
-		}
+		outputBinary = "./" + outputName + ".so"
 		for i, arg := range compileArgs {
 			if arg == "-o" && i+1 < len(compileArgs) {
 				compileArgs[i+1] = outputBinary
@@ -199,6 +199,9 @@ func main() {
 		compileArgs = []string{
 			"-w",
 			"-fopenmp",
+			"-g",
+			"-fno-omit-frame-pointer",
+			"-fstack-protector-strong",
 			"-I/opt/homebrew/opt/libomp/include",
 			"-I/opt/homebrew/include",
 			tmpCPath,
@@ -210,6 +213,9 @@ func main() {
 
 		if *opt {
 			compileArgs = append([]string{"-O2", "-fno-fast-math"}, compileArgs...)
+		}
+		if *asan {
+			compileArgs = append([]string{"-fsanitize=address,undefined"}, compileArgs...)
 		}
 
 		if *dll {
@@ -225,7 +231,6 @@ func main() {
 		if hasJson {
 			compileArgs = append(compileArgs, "-ljansson")
 		}
-
 		if *gc {
 			if gcFlags := findBundledBoehm(); gcFlags != nil {
 				compileArgs = append(compileArgs, gcFlags...)
@@ -235,15 +240,20 @@ func main() {
 				compileArgs = append(compileArgs, "-lgc")
 			}
 		}
-
 	case "linux":
 		compileArgs = []string{
 			"-fopenmp",
+			"-g",
+			"-fno-omit-frame-pointer",
+			"-fstack-protector-strong",
 			tmpCPath,
 			"-o", outputBinary,
 		}
 		if *opt {
 			compileArgs = append([]string{"-O2", "-fno-fast-math"}, compileArgs...)
+		}
+		if *asan {
+			compileArgs = append([]string{"-fsanitize=address,undefined"}, compileArgs...)
 		}
 		if *dll {
 			compileArgs = append(compileArgs, "-shared", "-fPIC")
@@ -281,6 +291,10 @@ func main() {
 
 		compileArgs = []string{
 			"-fopenmp",
+			"-g",
+			"-fno-omit-frame-pointer",
+			// -fstack-protector-strong is supported on many MinGW builds; keep it conservative
+			"-fstack-protector-strong",
 		}
 
 		if hasNet {
@@ -299,6 +313,9 @@ func main() {
 		if hasNet {
 			compileArgs = append(compileArgs, "-lws2_32")
 		}
+
+		// For Windows backtraces/symbolization
+		compileArgs = append(compileArgs, "-ldbghelp")
 
 		if *linker != "" {
 			linkerOpts := strings.Fields(*linker)

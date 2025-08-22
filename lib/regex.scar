@@ -40,9 +40,12 @@ pub fn find_joined(string pattern, string text) -> lstring:
                 int len   = end - start;
                 if (len < 0) len = 0;
                 size_t add = (size_t)len + (sz > 0 ? 1 : 0);
-                char *nb = (char*)realloc(buf, sz + add + 1);
-                if (!nb) { free(buf); pcre_free((void*)re); return strdup(""); }
-                buf = nb;
+                size_t need = sz + add + 1;
+                if (need > cap) {
+                    char *nb = (char*)realloc(buf, need);
+                    if (!nb) { free(buf); pcre_free((void*)re); return strdup(""); }
+                    buf = nb; cap = need;
+                }
                 if (sz > 0) { buf[sz] = '\n'; sz += 1; }
                 if (len > 0) { memcpy(buf + sz, text + start, len); }
                 sz += len;
@@ -73,14 +76,14 @@ pub fn replace(string pattern, string text, string replacement) -> char*:
         const char *err = NULL; int erroffset = 0;
         const pcre *re = pcre_compile(pattern, 0, &err, &erroffset, NULL);
         if (!re) {
-            char* out = (char*)malloc(1); if (out) out[0] = '\0';
-            return out;
+            return strdup("");
         }
 
         int text_len = (int)strlen(text);
         int repl_len = (int)strlen(replacement);
         int cap = text_len + 1; 
         char* out = (char*)malloc(cap);
+        if (!out) { pcre_free((void*)re); return strdup(""); }
         int out_len = 0;
 
         int ovecsize = 30;
@@ -92,7 +95,9 @@ pub fn replace(string pattern, string text, string replacement) -> char*:
                 int chunk_len = text_len - start_offset;
                 if (out_len + chunk_len + 1 > cap) {
                     cap = (out_len + chunk_len + 1) * 2;
-                    out = (char*)realloc(out, cap);
+                    char* nb = (char*)realloc(out, cap);
+                    if (!nb) { free(out); pcre_free((void*)re); return strdup(""); }
+                    out = nb;
                 }
                 if (chunk_len > 0) memcpy(out + out_len, text + start_offset, chunk_len);
                 out_len += chunk_len;
@@ -104,7 +109,9 @@ pub fn replace(string pattern, string text, string replacement) -> char*:
             if (before_len > 0) {
                 if (out_len + before_len + 1 > cap) {
                     cap = (out_len + before_len + 1 + repl_len) * 2;
-                    out = (char*)realloc(out, cap);
+                    char* nb = (char*)realloc(out, cap);
+                    if (!nb) { free(out); pcre_free((void*)re); return strdup(""); }
+                    out = nb;
                 }
                 memcpy(out + out_len, text + start_offset, before_len);
                 out_len += before_len;
@@ -112,7 +119,9 @@ pub fn replace(string pattern, string text, string replacement) -> char*:
             if (repl_len > 0) {
                 if (out_len + repl_len + 1 > cap) {
                     cap = (out_len + repl_len + 1) * 2;
-                    out = (char*)realloc(out, cap);
+                    char* nb = (char*)realloc(out, cap);
+                    if (!nb) { free(out); pcre_free((void*)re); return strdup(""); }
+                    out = nb;
                 }
                 memcpy(out + out_len, replacement, repl_len);
                 out_len += repl_len;
@@ -141,14 +150,20 @@ pub fn split_joined(string pattern, string text) -> lstring:
         int start_offset = 0;
         int last_end = 0;
         size_t cap = 0; size_t sz = 0; char *buf = NULL;
-        while (start_offset <= text_len) {
+        int safety = 0;
+        while (start_offset <= text_len && safety < 100000) {
             int rc = pcre_exec(re, NULL, text, text_len, start_offset, 0, ovector, ovecsize);
             if (rc < 0) {
                 int seg_len = text_len - last_end;
                 size_t add = (size_t)seg_len + (sz > 0 ? 1 : 0);
-                char *nb = (char*)realloc(buf, sz + add + 1);
-                if (!nb) { free(buf); pcre_free((void*)re); return strdup(""); }
-                buf = nb;
+                size_t need = sz + add + 1;
+                if (need > cap) {
+                    size_t newcap = cap ? cap : 64;
+                    while (newcap < need) newcap *= 2;
+                    char *nb = (char*)realloc(buf, newcap);
+                    if (!nb) { free(buf); pcre_free((void*)re); return strdup(""); }
+                    buf = nb; cap = newcap;
+                }
                 if (sz > 0) { buf[sz] = '\n'; sz += 1; }
                 if (seg_len > 0) memcpy(buf + sz, text + last_end, seg_len);
                 sz += seg_len;
@@ -161,9 +176,14 @@ pub fn split_joined(string pattern, string text) -> lstring:
             if (seg_len < 0) seg_len = 0;
             {
                 size_t add = (size_t)seg_len + (sz > 0 ? 1 : 0);
-                char *nb = (char*)realloc(buf, sz + add + 1);
-                if (!nb) { free(buf); pcre_free((void*)re); return strdup(""); }
-                buf = nb;
+                size_t need = sz + add + 1;
+                if (need > cap) {
+                    size_t newcap = cap ? cap : 64;
+                    while (newcap < need) newcap *= 2;
+                    char *nb = (char*)realloc(buf, newcap);
+                    if (!nb) { free(buf); pcre_free((void*)re); return strdup(""); }
+                    buf = nb; cap = newcap;
+                }
                 if (sz > 0) { buf[sz] = '\n'; sz += 1; }
                 if (seg_len > 0) memcpy(buf + sz, text + last_end, seg_len);
                 sz += seg_len;
@@ -172,6 +192,7 @@ pub fn split_joined(string pattern, string text) -> lstring:
             last_end = mend;
             start_offset = mend;
             if (mend == mstart) start_offset++;
+            safety++;
         }
         pcre_free((void*)re);
         if (!buf) return strdup("");

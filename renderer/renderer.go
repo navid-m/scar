@@ -175,9 +175,13 @@ func RenderC(program *lexer.Program, baseDir string, gcFlag bool) string {
 #include <stdbool.h>
 #include <stdint.h>
 #include <signal.h>
+#if defined(__unix__) || defined(__APPLE__)
+#include <execinfo.h>
+#endif
 `)
 	if runtime.GOOS == "windows" && comptime.WinEnabled {
 		b.WriteString(`#include <windows.h>
+#include <dbghelp.h>
 `)
 	}
 
@@ -259,10 +263,54 @@ static inline void* scar_null_assert(const void* p, const char* name, const char
 
 static void scar_segv_handler(int sig) {
     const char* name = (sig == SIGSEGV ? "SIGSEGV" : (sig == SIGABRT ? "SIGABRT" : "SIGNAL"));
-    fprintf(stderr, "Fatal: %s received. Exiting.\n", name);
+    fprintf(stderr, "Fatal: %s received.\n", name);
+#if defined(__unix__) || defined(__APPLE__)
+    void* frames[64];
+    int n = backtrace(frames, 64);
+    if (n > 0) {
+        fprintf(stderr, "Backtrace (%d frames):\n", n);
+        backtrace_symbols_fd(frames, n, fileno(stderr));
+    }
+#endif
     fflush(stderr);
     _exit(139);
 }
+
+#if defined(_WIN32)
+static void scar_win_print_backtrace(void) {
+    HANDLE process = GetCurrentProcess();
+    SymInitialize(process, NULL, TRUE);
+
+    void* stack[64];
+    USHORT frames = CaptureStackBackTrace(0, 64, stack, NULL);
+    fprintf(stderr, "Backtrace (%u frames):\n", (unsigned)frames);
+
+    SYMBOL_INFO* symbol = (SYMBOL_INFO*)malloc(sizeof(SYMBOL_INFO) + 256);
+    if (!symbol) return;
+    memset(symbol, 0, sizeof(SYMBOL_INFO) + 256);
+    symbol->MaxNameLen = 255;
+    symbol->SizeOfStruct = sizeof(SYMBOL_INFO);
+
+    for (USHORT i = 0; i < frames; i++) {
+        DWORD64 address = (DWORD64)(stack[i]);
+        if (SymFromAddr(process, address, 0, symbol)) {
+            fprintf(stderr, "  #%02u 0x%llx %s\n", (unsigned)i, (unsigned long long)address, symbol->Name);
+        } else {
+            fprintf(stderr, "  #%02u 0x%llx <unknown>\n", (unsigned)i, (unsigned long long)address);
+        }
+    }
+    free(symbol);
+}
+
+static LONG WINAPI scar_unhandled_exception_filter(EXCEPTION_POINTERS* info) {
+    (void)info;
+    fprintf(stderr, "Fatal: Unhandled exception.\n");
+    scar_win_print_backtrace();
+    fflush(stderr);
+    ExitProcess(1);
+    return EXCEPTION_EXECUTE_HANDLER;
+}
+#endif
 `)
 
 	{
@@ -595,6 +643,7 @@ bool __check_key_exists(int* keys, int size, int key) {
 	if comptime.WinEnabled {
 		b.WriteString("#ifdef _WIN32\n")
 		b.WriteString("    SetConsoleOutputCP(CP_UTF8);\n")
+		b.WriteString("    SetUnhandledExceptionFilter(scar_unhandled_exception_filter);\n")
 		b.WriteString("#endif\n")
 	}
 	b.WriteString("    signal(SIGSEGV, scar_segv_handler);\n")
@@ -1570,11 +1619,12 @@ func generateStructStructDefinition(b *strings.Builder, structInfo *StructInfo, 
 	fmt.Fprintf(b, "typedef struct %s {\n", structName)
 
 	for _, field := range structInfo.Fields {
-		if field.Type == "string" {
+		switch field.Type {
+		case "string":
 			fmt.Fprintf(b, "    char %s[MAX_STRING_LENGTH];\n", field.Name)
-		} else if field.Type == "lstring" {
+		case "lstring":
 			fmt.Fprintf(b, "    char %s[MAX_LSTRING_LENGTH];\n", field.Name)
-		} else {
+		default:
 			cType := mapTypeToCType(field.Type)
 			fmt.Fprintf(b, "    %s %s;\n", cType, field.Name)
 		}
@@ -4499,9 +4549,7 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 		case stmt.Free != nil:
 			variable := lexer.ResolveSymbol(stmt.Free.Variable, currentModule)
 
-			if useGC {
-				fmt.Fprintf(b, "%s%s = NULL;\n", indent, variable)
-			} else {
+			if !useGC {
 				fmt.Fprintf(b, "%sfree(%s);\n", indent, variable)
 			}
 		case stmt.NewExpr != nil:
