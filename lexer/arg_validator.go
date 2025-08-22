@@ -7,8 +7,8 @@
 package lexer
 
 import (
-	"maps"
 	"fmt"
+	"maps"
 	"path/filepath"
 	"slices"
 	"strings"

@@ -39,18 +39,18 @@ class ParsedDoc:
 fn extract_function_name(string line) -> string:
     string pattern = "^(?:pub\\s+)?fn\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*\\("
     
-    list[string] matches = regex::find(pattern, line)
-    if len(matches) >= 2:
-        return matches[1]
+    collections::StringArrayList matches = regex::find(pattern, line)
+    if matches.get_size() >= 2:
+        return matches.get_element(1)
     
     return ""
 
 fn extract_struct_name(string line) -> string:
     string pattern = "^(?:pub\\s+)?struct\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*:"
     
-    list[string] matches = regex::find(pattern, line)
-    if len(matches) >= 2:
-        return matches[1]
+    collections::StringArrayList matches = regex::find(pattern, line)
+    if matches.get_size() >= 2:
+        return matches.get_element(1)
     
     return ""
 
@@ -60,10 +60,10 @@ struct MacroParts:
 
 fn extract_macro_parts(string line) -> MacroParts:
     string pattern = "^(?:pub\\s+)?macro\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*\\(([^)]*)\\)\\s*:"
-    list[string] matches = regex::find(pattern, line)
-    if len(matches) >= 3:
-        string name = matches[1]
-        string args = matches[2]
+    collections::StringArrayList matches = regex::find(pattern, line)
+    if matches.get_size() >= 3:
+        string name = matches.get_element(1)
+        string args = matches.get_element(2)
         MacroParts mp = MacroParts()
         mp:part_one = name
         mp:part_two = args
@@ -79,18 +79,18 @@ fn format_return_for_doc(string ret) -> string:
 fn extract_class_name(string line) -> string:
     string pattern = "^(?:pub\\s+)?class\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*:"
     
-    list[string] matches = regex::find(pattern, line)
-    if len(matches) >= 2:
-        return matches[1]
+    collections::StringArrayList matches = regex::find(pattern, line)
+    if matches.get_size() >= 2:
+        return matches.get_element(1)
     
     return ""
 
 fn extract_import(string line) -> string:
     string pattern = "^import\\s+\"([^\"]+)\""
     
-    list[string] matches = regex::find(pattern, line)
-    if len(matches) >= 2:
-        return matches[1]
+    collections::StringArrayList matches = regex::find(pattern, line)
+    if matches.get_size() >= 2:
+        return matches.get_element(1)
     
     return ""
 
@@ -98,14 +98,14 @@ fn parse_file(string fpath, string module_name) -> ref ParsedDoc:
     ref ParsedDoc doc = new ParsedDoc()
     doc.filepath = fpath
     doc.module_name = module_name
-    list[string] lines = fs::read_lines(fpath)
+    collections::StringArrayList lines = fs::read_lines(fpath)
     string current_class = ""
     int class_indent = -1
     string current_struct = ""
     int struct_indent = -1
 
-    for int i = 0; i < len(lines); i++:
-        string line = lines[i]
+    for int i = 0; i < lines.get_size(); i++:
+        string line = lines.get_element(i)
         string trimmed = strings::trim_space(line)
         
         if strings::length(trimmed) == 0:
@@ -250,12 +250,12 @@ fn parse_file(string fpath, string module_name) -> ref ParsedDoc:
                     string msig = ""
                     if strings::compare(mname, "init") == 0:
                         string ipat = "^init\\s*\\(([^)]*)\\)\\s*:"
-                        list[string] im = regex::find(ipat, trimmed)
-                        if len(im) >= 2:
-                            msig = fmt!("%s(%s)", mname, im[1])
+                        collections::StringArrayList im = regex::find(ipat, trimmed)
+                        if im.get_size() >= 2:
+                            msig = fmt!("%s(%s)", mname, im.get_element(1))
                     else:
                         string fpat = fmt!("^(?:pub\\s+)?fn\\s+%s\\s*\\(([^)]*)\\)\\s*(?:->\\s*([^:]+))?\\s*:", mname)
-                        list[string] fm = regex::find(fpat, trimmed)
+                        collections::StringArrayList fm = regex::find(fpat, trimmed)
                         if len(fm) >= 1:
                             string args = ""
                             string ret  = ""
@@ -298,12 +298,12 @@ fn parse_file(string fpath, string module_name) -> ref ParsedDoc:
                 add_elem(doc.functions, func_name)
 
                 string fpat = fmt!("^(?:pub\\s+)?fn\\s+%s\\s*\\(([^)]*)\\)\\s*(?:->\\s*([^:]+))?\\s*:", func_name)
-                list[string] fm = regex::find(fpat, trimmed)
+                collections::StringArrayList fm = regex::find(fpat, trimmed)
                 string fsig = ""
-                if len(fm) >= 1:
+                if fm.get_size() >= 1:
                     string args = ""
                     string ret  = ""
-                    if len(fm) >= 2:
+                    if fm.get_size() >= 2:
                         args = fm[1]
                     if len(fm) >= 3:
                         ret = fm[2]
@@ -491,10 +491,10 @@ fn generate_documentation(string source_file):
 
 string current_dir = os::cwd()
 
-list[string] args = os::get_args()
-if len(args) < 2:
+collections::StringArrayList args = os::get_args()
+if args.get_size() < 2:
     print "Usage: scardoc <file1> <file2> <file3>..."
     os::exit(1)
 
-for i = 1 to len(args) - 1:
-    generate_documentation(fmt!("%s/%s", current_dir, args[i]))
+for i = 1 to args.get_size() - 1:
+    generate_documentation(fmt!("%s/%s", current_dir, args.get_element(i)))
