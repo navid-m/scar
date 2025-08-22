@@ -14,10 +14,18 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 )
 
-func RunCompilerWithMappedErrors(compiler string, args []string, cCode string, cFilePath string, scarPath string, scarSource string) bool {
+func RunCompilerWithMappedErrors(
+	compiler string,
+	args []string,
+	cCode string,
+	cFilePath string,
+	scarPath string,
+	scarSource string,
+) bool {
 	if cFilePath == "" {
 		base := strings.TrimSuffix(filepath.Base(scarPath), ".scar")
 		cFilePath = base + ".c"
@@ -89,12 +97,7 @@ func containsWord(line, word string) bool {
 		return !(r == '_' || (r >= '0' && r <= '9') || (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z'))
 	}
 	fields := strings.FieldsFunc(line, f)
-	for _, tok := range fields {
-		if tok == word {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(fields, word)
 }
 
 func firstMeaningfulScarLine(s string) int {
