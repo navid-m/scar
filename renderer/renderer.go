@@ -3904,10 +3904,6 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 							break
 						}
 					}
-					// TODO: This is terrible.
-					if resolvedClassName == "" {
-						resolvedClassName = "Matrix"
-					}
 				}
 
 				methodExists := false
