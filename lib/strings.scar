@@ -212,7 +212,7 @@ pub fn substring(string str, int start, int end) -> char*:
             return strdup("");
         }
         
-        strncpy(result, str + start, sub_len);
+        memcpy(result, str + start, sub_len);
         result[sub_len] = '\0';
         
         return result;
@@ -295,7 +295,7 @@ pub fn replace(string str, string old_substr, string new_substr) -> char*:
         
         while ((temp = strstr(src, old_substr)) != NULL) {
             int prefix_len = temp - src;
-            strncpy(dst, src, prefix_len);
+            memcpy(dst, src, prefix_len);
             dst += prefix_len;
             strcpy(dst, new_substr);
             dst += new_len;

@@ -58,8 +58,12 @@ pub fn vigenere_encrypt(string text, string key) -> string:
             }
         }
         out[n] = '\0';
-        strncpy(_output_buffer, out, 25402 - 1);
-        _output_buffer[25402 - 1] = '\0';
+        {
+            size_t len = strlen(out);
+            if (len >= 25402) len = 25401;
+            memcpy(_output_buffer, out, len);
+            _output_buffer[len] = '\0';
+        }
         free(out);
     )
 
@@ -87,8 +91,12 @@ pub fn vigenere_decrypt(string text, string key) -> string:
             }
         }
         out[n] = '\0';
-        strncpy(_output_buffer, out, 25402 - 1);
-        _output_buffer[25402 - 1] = '\0';
+        {
+            size_t len = strlen(out);
+            if (len >= 25402) len = 25401;
+            memcpy(_output_buffer, out, len);
+            _output_buffer[len] = '\0';
+        }
         free(out);
     )
 
@@ -105,8 +113,12 @@ pub fn random_salt(i32 length) -> string:
             out[i] = alphabet[r % alpha_len];
         }
         out[n] = '\0';
-        strncpy(_output_buffer, out, 25402 - 1);
-        _output_buffer[25402 - 1] = '\0';
+        {
+            size_t len = strlen(out);
+            if (len >= 25402) len = 25401;
+            memcpy(_output_buffer, out, len);
+            _output_buffer[len] = '\0';
+        }
         free(out);
     )
 
@@ -232,8 +244,12 @@ pub fn aes128_encrypt(string plaintext, string key) -> string:
             }
         }
 
-        strncpy(_output_buffer, hex_output, 25402 - 1);
-        _output_buffer[25402 - 1] = '\0';
+        {
+            size_t len = strlen(hex_output);
+            if (len >= 25402) len = 25401;
+            memcpy(_output_buffer, hex_output, len);
+            _output_buffer[len] = '\0';
+        }
         free(padded_data);
         free(hex_output);
     )
@@ -408,8 +424,12 @@ pub fn aes128_decrypt(string ciphertext_hex, string key) -> string:
         }
 
         plaintext[data_len] = '\0';
-        strncpy(_output_buffer, plaintext, 25402 - 1);
-        _output_buffer[25402 - 1] = '\0';
+        {
+            size_t len = strlen(plaintext);
+            if (len >= 25402) len = 25401;
+            memcpy(_output_buffer, plaintext, len);
+            _output_buffer[len] = '\0';
+        }
         
         free(ciphertext);
         free(plaintext);
@@ -505,8 +525,12 @@ pub fn chacha20_encrypt(string plaintext, string key, string nonce) -> string:
         }
         hex_output[plen * 2] = '\0';
         
-        strncpy(_output_buffer, hex_output, 25402 - 1);
-        _output_buffer[25402 - 1] = '\0';
+        {
+            size_t len = strlen(hex_output);
+            if (len >= 25402) len = 25401;
+            memcpy(_output_buffer, hex_output, len);
+            _output_buffer[len] = '\0';
+        }
         
         free(ciphertext);
         free(hex_output);
@@ -613,8 +637,12 @@ pub fn chacha20_decrypt(string ciphertext_hex, string key, string nonce) -> stri
         }
 
         plaintext[data_len] = '\0';
-        strncpy(_output_buffer, plaintext, 25402 - 1);
-        _output_buffer[25402 - 1] = '\0';
+        {
+            size_t len = strlen(plaintext);
+            if (len >= 25402) len = 25401;
+            memcpy(_output_buffer, plaintext, len);
+            _output_buffer[len] = '\0';
+        }
         
         free(ciphertext);
         free(plaintext);
