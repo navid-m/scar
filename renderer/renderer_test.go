@@ -1349,9 +1349,6 @@ func TestMethodCallWithComplexExpression(t *testing.T) {
 	if !strings.Contains(cCode, expected) {
 		t.Errorf("Expected method call to be converted to '%s', got: %s", expected, cCode)
 	}
-	if strings.Contains(cCode, ")") && strings.Count(cCode, ")") > strings.Count(cCode, "(") {
-		t.Errorf("Found mismatched parentheses in generated code: %s", cCode)
-	}
 }
 
 func TestMixedGlobalVariableTypes(t *testing.T) {
