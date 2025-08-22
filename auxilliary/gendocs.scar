@@ -3,11 +3,13 @@ import "std/fs"
 import "std/os"
 import "std/collections"
 
+unsafe alias get_element = collections::StringArrayList::get_element
+
 string path = "."
 collections::StringArrayList entries = fs::list_dir(path)
 
 for i = 0 to entries.get_size() - 1:
-    string name = entries.get_element(i)
+    string name = get_element(entries, i)
     if strings::ends_with(name, ".scar"):
         print "Running scardoc on %s" | name
         os::exec(fmt!("scardoc %s", name))
