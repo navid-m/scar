@@ -1,0 +1,6 @@
+import "std/os"
+
+collections::StringArrayList x = os::get_args()
+
+for i = 1 to x.get_size() - 1:
+    print "%s" | x.get_element(i)
