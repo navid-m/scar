@@ -209,7 +209,7 @@ fn parse_file(string fpath, string module_name) -> ref ParsedDoc:
                     kf = kf + 1
                 add_elem(doc.struct_fields, fbuild.buffer)
                 i = kf - 1
-        # top-level macros
+        
         if regex::matches("^(?:pub\\s+)?macro\\s+[a-zA-Z_][a-zA-Z0-9_]*\\s*\\(", trimmed):
             MacroParts mp = extract_macro_parts(trimmed)
             if strings::length(mp:part_one) > 0:
@@ -246,7 +246,7 @@ fn parse_file(string fpath, string module_name) -> ref ParsedDoc:
                 if strings::length(mname) > 0:
                     add_elem(doc.methods, mname)
                     add_elem(doc.method_parents, current_class)
-                    # extract and store method signature for markdown
+
                     string msig = ""
                     if strings::compare(mname, "init") == 0:
                         string ipat = "^init\\s*\\(([^)]*)\\)\\s*:"
