@@ -23,7 +23,7 @@ pub macro new_array(class_name, field_type, elem_type, cType, d_return, alloc_ex
         ## Get an element from the array.
         fn get_element(i32 index) -> elem_type:
             if index < 0 || index >= this.size:
-                os::panic("index out of bounds")
+                os::runtime_error("index out of bounds")
             $raw (
                 get_check;
             )
