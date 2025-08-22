@@ -336,7 +336,7 @@ func main() {
 		}
 	}
 
-	success := runCompilerWithMappedErrors(cmpPath, compileArgs, cCode, tmpCPath, ptf, input)
+	success := comptime.RunCompilerWithMappedErrors(cmpPath, compileArgs, cCode, tmpCPath, ptf, input)
 	if success {
 		fmt.Printf("Compiled %s\n", outputBinary)
 		if *keepc {

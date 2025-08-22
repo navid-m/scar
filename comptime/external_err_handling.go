@@ -2,9 +2,9 @@
 // Date: 2025
 // License: GPL3
 //
-// Captures GCC/Clang stderr and reports relevant errors.
+// Captures stderr and reports relevant errors.
 
-package main
+package comptime
 
 import (
 	"bufio"
@@ -17,7 +17,7 @@ import (
 	"strings"
 )
 
-func runCompilerWithMappedErrors(compiler string, args []string, cCode string, cFilePath string, scarPath string, scarSource string) bool {
+func RunCompilerWithMappedErrors(compiler string, args []string, cCode string, cFilePath string, scarPath string, scarSource string) bool {
 	if cFilePath == "" {
 		base := strings.TrimSuffix(filepath.Base(scarPath), ".scar")
 		cFilePath = base + ".c"
