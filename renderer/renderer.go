@@ -174,6 +174,7 @@ func RenderC(program *lexer.Program, baseDir string, gcFlag bool) string {
 #include <stdlib.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <signal.h>
 `)
 	if runtime.GOOS == "windows" && comptime.WinEnabled {
 		b.WriteString(`#include <windows.h>
@@ -202,7 +203,68 @@ static inline char* scar_gc_strdup(const char* s) {
 #define strdup(s) scar_gc_strdup((s))
 #define free(p) ((void)0)
 `)
+	} else {
+		b.WriteString(`
+static inline void* scar_malloc(size_t sz) {
+    void* p = malloc(sz);
+    if (!p) { fprintf(stderr, "Out of memory (malloc %zu)\n", sz); fflush(stderr); exit(1); }
+    return p;
+}
+static inline void* scar_calloc(size_t n, size_t sz) {
+    void* p = calloc(n, sz);
+    if (!p) { fprintf(stderr, "Out of memory (calloc %zu x %zu)\n", n, sz); fflush(stderr); exit(1); }
+    return p;
+}
+static inline void* scar_realloc(void* ptr, size_t sz) {
+    void* p = realloc(ptr, sz);
+    if (!p) { fprintf(stderr, "Out of memory (realloc %zu)\n", sz); fflush(stderr); exit(1); }
+    return p;
+}
+static inline char* scar_strdup(const char* s) {
+    if (!s) return NULL;
+    size_t len = strlen(s) + 1;
+    char* p = (char*)scar_malloc(len);
+    memcpy(p, s, len);
+    return p;
+}
+#undef malloc
+#undef calloc
+#undef realloc
+#undef strdup
+#define malloc(sz) scar_malloc((sz))
+#define calloc(n,sz) scar_calloc((n),(sz))
+#define realloc(ptr,sz) scar_realloc((ptr),(sz))
+#define strdup(s) scar_strdup((s))
+`)
 	}
+
+	b.WriteString(`
+static inline void scar_bounds_assert(long long idx, long long len, const char* expr, const char* file, int line) {
+    if (idx < 0 || idx >= len) {
+        fprintf(stderr, "Bounds error: index %lld out of [0, %lld) at %s:%d in %s\n", idx, len, file, line, expr);
+        fflush(stderr);
+        exit(1);
+    }
+}
+static inline void* scar_null_assert(const void* p, const char* name, const char* file, int line) {
+    if (!p) {
+        fprintf(stderr, "Null pointer: %s at %s:%d\n", name, file, line);
+        fflush(stderr);
+        exit(1);
+    }
+    return (void*)p;
+}
+#define SCAR_BOUNDS_CHECK(i, n) scar_bounds_assert((long long)(i), (long long)(n), #i, __FILE__, __LINE__)
+#define SCAR_NOT_NULL(p) scar_null_assert((p), #p, __FILE__, __LINE__)
+
+static void scar_segv_handler(int sig) {
+    const char* name = (sig == SIGSEGV ? "SIGSEGV" : (sig == SIGABRT ? "SIGABRT" : "SIGNAL"));
+    fprintf(stderr, "Fatal: %s received. Exiting.\n", name);
+    fflush(stderr);
+    _exit(139);
+}
+`)
+
 	{
 		seenLocal := make(map[string]bool)
 		for _, h := range localImports {
@@ -535,6 +597,8 @@ bool __check_key_exists(int* keys, int size, int key) {
 		b.WriteString("    SetConsoleOutputCP(CP_UTF8);\n")
 		b.WriteString("#endif\n")
 	}
+	b.WriteString("    signal(SIGSEGV, scar_segv_handler);\n")
+	b.WriteString("    signal(SIGABRT, scar_segv_handler);\n")
 	b.WriteString("    __global_argc = argc;\n")
 	b.WriteString("    __global_argv = argv;\n")
 
