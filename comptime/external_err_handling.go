@@ -176,7 +176,11 @@ func reportCompilerErrors(stderrStr, cPath, scarPath, scarSource, cCode string) 
 
 	scarLine := inferScarLineFromC(cCode, cErrLine)
 
-	fmt.Fprintf(os.Stderr, "\x1b[31mCompError: %s\x1b[0m\n", strings.TrimSpace(cErrMsg))
+	fmt.Fprintf(
+		os.Stderr,
+		"\x1b[31mCompError: %s\x1b[0m\n",
+		strings.ReplaceAll(strings.TrimSpace(cErrMsg), "(first use in this function)", ""),
+	)
 	if scarLine > 0 {
 		printScarContext(scarSource, scarPath, scarLine, 2)
 		return
