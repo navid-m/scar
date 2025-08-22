@@ -109,6 +109,7 @@ pub fn clear():
     platform (Posix):
         system("clear")
 
+## Print a panic message and exit with code 1.
 pub fn panic(string msg):
     print "\033[91mpanic: %s\033[0m" | msg
     os::exit(1)
