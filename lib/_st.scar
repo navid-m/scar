@@ -218,8 +218,8 @@ for i = 0 to max:
 write("Hello World", "output.txt", overwrite!)
 string data = read("output.txt")
 t.assert_string_equals("Hello World", data, "Read data should be 'Hello World'")
-list[string] otherdata = fs::read_lines("output.txt")
-t.assert_string_equals("Hello World", otherdata[0], "First line should be 'Hello World'")
+collections::StringArrayList otherdata = fs::read_lines("output.txt")
+t.assert_string_equals("Hello World", otherdata.get_element(0), "First line should be 'Hello World'")
 fs::remove("output.txt")
 
 # Filesystem Tests
