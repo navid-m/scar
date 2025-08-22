@@ -5446,12 +5446,14 @@ func convertSingleMethodCall(expr string) string {
 			args = expr[parenIndex+1 : closeParen]
 		}
 
-		// Now construct the method call: doc->imports.get_size()
+		var newExpr string
 		if args == "" {
-			return convertedFieldAccess + "." + actualMethodName + "()"
+			newExpr = convertedFieldAccess + "." + actualMethodName + "()"
 		} else {
-			return convertedFieldAccess + "." + actualMethodName + "(" + args + ")"
+			newExpr = convertedFieldAccess + "." + actualMethodName + "(" + args + ")"
 		}
+		newExpr = strings.ReplaceAll(newExpr, "->", "__ARROW__")
+		return convertSingleMethodCall(newExpr)
 	}
 
 	closeParen := findMatchingParen(expr, parenIndex)
