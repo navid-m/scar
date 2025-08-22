@@ -40,8 +40,8 @@ fn extract_function_name(string line) -> string:
     string pattern = "^(?:pub\\s+)?fn\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*\\("
     
     collections::StringArrayList matches = regex::find(pattern, line)
-    if matches.get_size() >= 2:
-        return matches.get_element(1)
+    if get_size(matches) >= 2:
+        return get_element(matches,1)
     
     return ""
 
@@ -49,8 +49,8 @@ fn extract_struct_name(string line) -> string:
     string pattern = "^(?:pub\\s+)?struct\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*:"
     
     collections::StringArrayList matches = regex::find(pattern, line)
-    if matches.get_size() >= 2:
-        return matches.get_element(1)
+    if get_size(matches) >= 2:
+        return get_element(matches,1)
     
     return ""
 
@@ -61,9 +61,9 @@ struct MacroParts:
 fn extract_macro_parts(string line) -> MacroParts:
     string pattern = "^(?:pub\\s+)?macro\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*\\(([^)]*)\\)\\s*:"
     collections::StringArrayList matches = regex::find(pattern, line)
-    if matches.get_size() >= 3:
-        string name = matches.get_element(1)
-        string args = matches.get_element(2)
+    if get_size(matches) >= 3:
+        string name = get_element(matches,1)
+        string args = get_element(matches,2)
         MacroParts mp = MacroParts()
         mp:part_one = name
         mp:part_two = args
@@ -80,8 +80,8 @@ fn extract_class_name(string line) -> string:
     string pattern = "^(?:pub\\s+)?class\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*:"
     
     collections::StringArrayList matches = regex::find(pattern, line)
-    if matches.get_size() >= 2:
-        return matches.get_element(1)
+    if get_size(matches) >= 2:
+        return get_element(matches,1)
     
     return ""
 
@@ -89,8 +89,8 @@ fn extract_import(string line) -> string:
     string pattern = "^import\\s+\"([^\"]+)\""
     
     collections::StringArrayList matches = regex::find(pattern, line)
-    if matches.get_size() >= 2:
-        return matches.get_element(1)
+    if get_size(matches) >= 2:
+        return get_element(matches,1)
     
     return ""
 
@@ -104,8 +104,8 @@ fn parse_file(string fpath, string module_name) -> ref ParsedDoc:
     string current_struct = ""
     int struct_indent = -1
 
-    for int i = 0; i < lines.get_size(); i++:
-        string line = lines.get_element(i)
+    for int i = 0; i < get_size(lines); i++:
+        string line = get_element(lines,i)
         string trimmed = strings::trim_space(line)
         
         if strings::length(trimmed) == 0:
@@ -139,9 +139,9 @@ fn parse_file(string fpath, string module_name) -> ref ParsedDoc:
                 current_class = class_name
                 class_indent = indent
                 int j = i - 1
-                int start = j
+                int start = get_size(lines) - 1
                 while start >= 0:
-                    string t = strings::trim(lines[start])
+                    string t = strings::trim(get_element(lines,start))
                     if strings::starts_with(t, "##"):
                         start = start - 1
                         continue
@@ -150,7 +150,7 @@ fn parse_file(string fpath, string module_name) -> ref ParsedDoc:
                 var cbuild = new strings::Builder()
                 int k = start
                 while k <= j:
-                    string t2 = strings::trim(lines[k])
+                    string t2 = strings::trim(get_element(lines,k))
                     string content = strings::trim_prefix(t2, "##")
                     if strings::starts_with(content, " "):
                         content = strings::trim_prefix(content, " ")
@@ -168,7 +168,7 @@ fn parse_file(string fpath, string module_name) -> ref ParsedDoc:
                 int js = i - 1
                 int starts = js
                 while starts >= 0:
-                    string ts = strings::trim(lines[starts])
+                    string ts = strings::trim(get_element(lines,starts))
                     if strings::starts_with(ts, "##"):
                         starts = starts - 1
                         continue
@@ -177,7 +177,7 @@ fn parse_file(string fpath, string module_name) -> ref ParsedDoc:
                 var sbuild = new strings::Builder()
                 int ks = starts
                 while ks <= js:
-                    string t2s = strings::trim(lines[ks])
+                    string t2s = strings::trim(get_element(lines,ks))
                     string contents = strings::trim_prefix(t2s, "##")
                     if strings::starts_with(contents, " "):
                         contents = strings::trim_prefix(contents, " ")
@@ -188,7 +188,7 @@ fn parse_file(string fpath, string module_name) -> ref ParsedDoc:
                 var fbuild = new strings::Builder()
                 int kf = i + 1
                 while kf < len(lines):
-                    string l2 = lines[kf]
+                    string l2 = get_element(lines,kf)
                     string t2 = strings::trim_space(l2)
                     int ind2 = 0
                     string lleft = l2
@@ -218,7 +218,7 @@ fn parse_file(string fpath, string module_name) -> ref ParsedDoc:
                 int mj = i - 1
                 int mstart = mj
                 while mstart >= 0:
-                    string t = strings::trim(lines[mstart])
+                    string t = strings::trim(get_element(lines,mstart))
                     if strings::starts_with(t, "##"):
                         mstart = mstart - 1
                         continue
@@ -227,7 +227,7 @@ fn parse_file(string fpath, string module_name) -> ref ParsedDoc:
                 var mb = new strings::Builder()
                 int mk = mstart
                 while mk <= mj:
-                    string t3 = strings::trim(lines[mk])
+                    string t3 = strings::trim(get_element(lines,mk))
                     string content2 = strings::trim_prefix(t3, "##")
                     if strings::starts_with(content2, " "):
                         content2 = strings::trim_prefix(content2, " ")
@@ -251,18 +251,18 @@ fn parse_file(string fpath, string module_name) -> ref ParsedDoc:
                     if strings::compare(mname, "init") == 0:
                         string ipat = "^init\\s*\\(([^)]*)\\)\\s*:"
                         collections::StringArrayList im = regex::find(ipat, trimmed)
-                        if im.get_size() >= 2:
-                            msig = fmt!("%s(%s)", mname, im.get_element(1))
+                        if get_size(im) >= 2:
+                            msig = fmt!("%s(%s)", mname, get_element(im,1))
                     else:
                         string fpat = fmt!("^(?:pub\\s+)?fn\\s+%s\\s*\\(([^)]*)\\)\\s*(?:->\\s*([^:]+))?\\s*:", mname)
                         collections::StringArrayList fm = regex::find(fpat, trimmed)
-                        if len(fm) >= 1:
+                        if get_size(fm) >= 1:
                             string args = ""
                             string ret  = ""
-                            if len(fm) >= 2:
-                                args = fm[1]
-                            if len(fm) >= 3:
-                                ret = fm[2]
+                            if get_size(fm) >= 2:
+                                args = get_element(fm,1)
+                            if get_size(fm) >= 3:
+                                ret = get_element(fm,2)
                             if strings::length(ret) > 0:
                                 ret = format_return_for_doc(ret)
                                 msig = fmt!("%s(%s) -> %s", mname, args, ret)
@@ -272,7 +272,7 @@ fn parse_file(string fpath, string module_name) -> ref ParsedDoc:
                     int mj = i - 1
                     int mstart = mj
                     while mstart >= 0:
-                        string t = strings::trim(lines[mstart])
+                        string t = strings::trim(get_element(lines,mstart))
                         if strings::starts_with(t, "##"):
                             mstart = mstart - 1
                             continue
@@ -281,7 +281,7 @@ fn parse_file(string fpath, string module_name) -> ref ParsedDoc:
                     var mbuilder = new strings::Builder()
                     int mk = mstart
                     while mk <= mj:
-                        string t3 = strings::trim(lines[mk])
+                        string t3 = strings::trim(get_element(lines,mk))
                         string content2 = strings::trim_prefix(t3, "##")
                         if strings::starts_with(content2, " "):
                             content2 = strings::trim_prefix(content2, " ")
@@ -300,13 +300,13 @@ fn parse_file(string fpath, string module_name) -> ref ParsedDoc:
                 string fpat = fmt!("^(?:pub\\s+)?fn\\s+%s\\s*\\(([^)]*)\\)\\s*(?:->\\s*([^:]+))?\\s*:", func_name)
                 collections::StringArrayList fm = regex::find(fpat, trimmed)
                 string fsig = ""
-                if fm.get_size() >= 1:
+                if get_size(fm) >= 1:
                     string args = ""
                     string ret  = ""
-                    if fm.get_size() >= 2:
-                        args = fm[1]
-                    if len(fm) >= 3:
-                        ret = fm[2]
+                    if get_size(fm) >= 2:
+                        args = get_element(fm,1)
+                    if get_size(fm) >= 3:
+                        ret = get_element(fm,2)
                     if strings::length(ret) > 0:
                         ret = format_return_for_doc(ret)
                         fsig = fmt!("%s(%s) -> %s", func_name, args, ret)
@@ -317,7 +317,7 @@ fn parse_file(string fpath, string module_name) -> ref ParsedDoc:
                 int j2 = i - 1
                 int start2 = j2
                 while start2 >= 0:
-                    string t = strings::trim(lines[start2])
+                    string t = strings::trim(get_element(lines,start2))
                     if strings::starts_with(t, "##"):
                         start2 = start2 - 1
                         continue
@@ -326,7 +326,7 @@ fn parse_file(string fpath, string module_name) -> ref ParsedDoc:
                 var fbuild = new strings::Builder()
                 int k2 = start2
                 while k2 <= j2:
-                    string t3 = strings::trim(lines[k2])
+                    string t3 = strings::trim(get_element(lines,k2))
                     string content2 = strings::trim_prefix(t3, "##")
                     if strings::starts_with(content2, " "):
                         content2 = strings::trim_prefix(content2, " ")
@@ -492,9 +492,9 @@ fn generate_documentation(string source_file):
 string current_dir = os::cwd()
 
 collections::StringArrayList args = os::get_args()
-if args.get_size() < 2:
+if get_size(args) < 2:
     print "Usage: scardoc <file1> <file2> <file3>..."
     os::exit(1)
 
-for i = 1 to args.get_size() - 1:
-    generate_documentation(fmt!("%s/%s", current_dir, args.get_element(i)))
+for i = 1 to get_size(args) - 1:
+    generate_documentation(fmt!("%s/%s", current_dir, get_element(args,i)))
