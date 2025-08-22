@@ -108,3 +108,7 @@ pub fn clear():
         system("cls")
     platform (Posix):
         system("clear")
+
+pub fn panic(string msg):
+    print "\033[91mpanic: %s\033[0m" | msg
+    os::exit(1)
