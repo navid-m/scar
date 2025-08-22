@@ -68,11 +68,11 @@ pub fn read_lines(string filename) -> collections::StringArrayList:
         lines.set_element(i, clean)
     return lines
 
-## List directory entries (files and subdirectories). Excludes . and ..
-pub fn list_dir(string path) -> list[string]:
+## Internal helper: returns directory entries joined by newlines. Excludes . and ..
+pub fn list_dir_joined(string path) -> lstring:
     $raw (
-        char** entries_temp = malloc(1000 * sizeof(char*));
-        int entries_count = 0;
+        char *buffer = NULL;
+        size_t size = 0;
         
         #ifdef _WIN32
             WIN32_FIND_DATA find_data;
@@ -81,20 +81,23 @@ pub fn list_dir(string path) -> list[string]:
             
             HANDLE handle = FindFirstFile(search_path, &find_data);
             if (handle == INVALID_HANDLE_VALUE) {
-                for (int _i = 0; _i < entries_count && _i < _max_size; _i++) {
-                    strcpy(_output_array[_i], "");
-                }
-                free(entries_temp);
-                return 0;
+                return strdup("");
             }
             
             do {
                 if (strcmp(find_data.cFileName, ".") != 0 && strcmp(find_data.cFileName, "..") != 0) {
-                    entries_temp[entries_count] = malloc(strlen(find_data.cFileName) + 1);
-                    strcpy(entries_temp[entries_count], find_data.cFileName);
-                    entries_count++;
+                    const char *name = find_data.cFileName;
+                    size_t name_len = strlen(name);
+                    size_t add_len = name_len + (size > 0 ? 1 : 0);
+                    char *newbuf = realloc(buffer, size + add_len + 1);
+                    if (!newbuf) { free(buffer); FindClose(handle); return strdup(""); }
+                    buffer = newbuf;
+                    if (size > 0) { buffer[size] = '\n'; }
+                    memcpy(buffer + size + (size > 0 ? 1 : 0), name, name_len);
+                    size += add_len;
+                    buffer[size] = '\0';
                 }
-            } while (FindNextFile(handle, &find_data) && entries_count < 1000);
+            } while (FindNextFile(handle, &find_data));
             
             FindClose(handle);
         #else
@@ -102,29 +105,39 @@ pub fn list_dir(string path) -> list[string]:
             #include <sys/types.h>
             DIR* dir = opendir(path);
             if (dir == NULL) {
-                for (int _i = 0; _i < entries_count && _i < _max_size; _i++) {
-                    strcpy(_output_array[_i], "");
-                }
-                free(entries_temp);
-                return 0;
+                return strdup("");
             }
             
             struct dirent* entry;
-            while ((entry = readdir(dir)) != NULL && entries_count < 1000) {
+            while ((entry = readdir(dir)) != NULL) {
                 if (strcmp(entry->d_name, ".") != 0 && strcmp(entry->d_name, "..") != 0) {
-                    entries_temp[entries_count] = malloc(strlen(entry->d_name) + 1);
-                    strcpy(entries_temp[entries_count], entry->d_name);
-                    entries_count++;
+                    const char *name = entry->d_name;
+                    size_t name_len = strlen(name);
+                    size_t add_len = name_len + (size > 0 ? 1 : 0);
+                    char *newbuf = realloc(buffer, size + add_len + 1);
+                    if (!newbuf) { free(buffer); closedir(dir); return strdup(""); }
+                    buffer = newbuf;
+                    if (size > 0) { buffer[size] = '\n'; }
+                    memcpy(buffer + size + (size > 0 ? 1 : 0), name, name_len);
+                    size += add_len;
+                    buffer[size] = '\0';
                 }
             }
             
             closedir(dir);
         #endif
         
-        for (int _i = 0; _i < entries_count && _i < _max_size; _i++) {
-            strcpy(_output_array[_i], entries_temp[_i]);
-            free(entries_temp[_i]);
+        if (buffer == NULL) {
+            return strdup("");
         }
-        free(entries_temp);
-        return entries_count;
+        return buffer;
     )
+
+## List directory entries (files and subdirectories). Excludes . and ..
+pub fn list_dir(string path) -> collections::StringArrayList:
+    string joined = fs::list_dir_joined(path)
+    var result = new collections::StringArrayList(16)
+    if strings::length(joined) == 0:
+        return result
+    result = strings::split(joined, "\n")
+    return result

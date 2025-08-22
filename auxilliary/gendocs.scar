@@ -1,11 +1,13 @@
 import "std/strings"
 import "std/fs"
 import "std/os"
+import "std/collections"
 
 string path = "."
-list[string] entries = fs::list_dir(path)
-for int i = 0; i < len(entries); i++:
-    string name = entries[i]
+collections::StringArrayList entries = fs::list_dir(path)
+
+for i = 0 to entries.get_size() - 1:
+    string name = entries.get_element(i)
     if strings::ends_with(name, ".scar"):
         print "Running scardoc on %s" | name
         os::exec(fmt!("scardoc %s", name))

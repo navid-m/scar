@@ -226,15 +226,15 @@ fs::remove("output.txt")
 fs::make_dir("test_dir")
 write("test1.txt", "test_dir/test1.txt", overwrite!)
 write("test2.txt", "test_dir/test2.txt", overwrite!)
-list[string] dir_contents = fs::list_dir("test_dir")
+collections::StringArrayList dir_contents = fs::list_dir("test_dir")
 
 bool found_test1 = false
 bool found_test2 = false
 
-for i = 0 to len(dir_contents) - 1:
-    if strings::compare(dir_contents[i], "test1.txt") == 0:
+for i = 0 to dir_contents.get_size() - 1:
+    if strings::compare(collections::StringArrayList::get_element(dir_contents, i), "test1.txt") == 0:
         found_test1 = true
-    if strings::compare(dir_contents[i], "test2.txt") == 0:
+    if strings::compare(collections::StringArrayList::get_element(dir_contents, i), "test2.txt") == 0:
         found_test2 = true
 
 t.assert_equals(true, found_test1, "Should find test1.txt in directory")
