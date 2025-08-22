@@ -1,4 +1,6 @@
 import "std/strings"
+import "std/io"
+import "std/collections"
 
 platform (Posix):
     external import "dirent.h"
@@ -17,53 +19,28 @@ pub fn remove_dir(string path) -> bool:
         return rmdir(path) == 0;
     )
     
-## Read entire file as bytes. Returns list of byte values (0-255).
-pub fn read_bytes(string filename) -> list[int]:
-    $raw (
-        FILE* file = fopen(filename, "rb");
-        if (file == NULL) {
-            return 0;
-        }
-        
-        fseek(file, 0, SEEK_END);
-        long file_size = ftell(file);
-        fseek(file, 0, SEEK_SET);
-        
-        if (file_size > _max_size) {
-            file_size = _max_size;
-        }
-        
-        unsigned char* buffer = malloc(file_size);
-        size_t bytes_read = fread(buffer, 1, file_size, file);
-        fclose(file);
-        
-        for (int _i = 0; _i < bytes_read; _i++) {
-            _output_array[_i] = (int)buffer[_i];
-        }
-        
-        free(buffer);
-        return (int)bytes_read;
-    )
+## Read entire file as bytes. Returns ByteArrayList of u8 values.
+pub fn read_bytes(string filename) -> collections::ByteArrayList:
+    var result = new collections::ByteArrayList(16)
+    lstring content = io::read_file(filename)
+    i32 n = strings::length(content)
+    i32 i = 0
+    while i < n:
+        string ch = strings::get_char_at_lstr(content, i)
+        i32 b = strings::ord(ch)
+        result.add_element((u8)(b))
+        i = i + 1
+    return result
 
 ## Write bytes to a file. Overwrites existing file. Returns true on success.
-pub fn write_bytes(string filename, list[int] data) -> bool:
-    $raw (
-        FILE* file = fopen(filename, "wb");
-        if (file == NULL) {
-            return 0;
-        }
-        
-        for (int i = 0; i < len(data); i++) {
-            unsigned char byte = (unsigned char)data[i];
-            if (fwrite(&byte, 1, 1, file) != 1) {
-                fclose(file);
-                return 0;
-            }
-        }
-        
-        fclose(file);
-        return 1;
-    )
+pub fn write_bytes(string filename, collections::ArrayList data) -> bool:
+    string out = ""
+    i32 n = data.get_size()
+    for i = 0 to n - 1:
+        i32 v = data.get_element(i)
+        string ch = strings::chr(v)
+        out = fmt!("%s%s", out, ch)
+    return io::write_file(filename, out)
 
 ## Check if a file or directory exists at path.
 pub fn exists(string path) -> bool:

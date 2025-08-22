@@ -244,6 +244,15 @@ fs::remove("test_dir/test1.txt")
 fs::remove("test_dir/test2.txt")
 fs::remove_dir("test_dir")
 
+collections::ArrayList out = new collections::ArrayList(3)
+out.add_element(65)
+out.add_element(66)
+out.add_element(67)
+fs::write_bytes("bytes_test.bin", out)
+t.assert_equals(true, fs::exists("bytes_test.bin"), "File should exist after write")
+fs::remove("bytes_test.bin")
+t.assert_equals(false, fs::exists("bytes_test.bin"), "File should not exist after remove")
+
 collections::StringArrayList args = os::get_args()
 for i = 0 to args.get_size() - 1:
     log::success(fmt!("ASSERT PASSED: Command line argument %d: %s", i, args[i]))
