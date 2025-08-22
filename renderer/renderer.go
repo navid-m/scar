@@ -4147,8 +4147,10 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 
 			if len(stmt.MapDecl.Pairs) > 0 {
 				for i, pair := range stmt.MapDecl.Pairs {
-					key := pair.Key
-					value := pair.Value
+					var (
+						key   = pair.Key
+						value = pair.Value
+					)
 
 					if keyType == "string" {
 						if !strings.HasPrefix(key, "\"") && !strings.HasSuffix(key, "\"") {
