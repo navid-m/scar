@@ -231,33 +231,45 @@ pub fn http_parse_request(cstring raw_data) -> net::HttpRequest:
         if (!line_end) return request;
         int line_len = line_end - raw_data;
         char* first_line = (char*)malloc(line_len + 1);
-        strncpy(first_line, raw_data, line_len);
-        first_line[line_len] = '\0';
+        if (first_line) {
+            memcpy(first_line, raw_data, line_len);
+            first_line[line_len] = '\0';
+        }
         char* token = strtok(first_line, " ");
         if (token) {
-            strncpy(request->method, token, 15);
-            request->method[15] = '\0';
+            size_t n = strlen(token);
+            if (n > 15) n = 15;
+            memcpy(request->method, token, n);
+            request->method[n] = '\0';
             
             token = strtok(NULL, " ");
             if (token) {
                 char* query_start = strchr(token, '?');
                 if (query_start) {
                     *query_start = '\0';
-                    strncpy(request->path, token, 255);
-                    request->path[255] = '\0';
+                    size_t n1 = strlen(token);
+                    if (n1 > 255) n1 = 255;
+                    memcpy(request->path, token, n1);
+                    request->path[n1] = '\0';
                     
                     query_start++;
-                    strncpy(request->query_string, query_start, 255);
-                    request->query_string[255] = '\0';
+                    size_t n2 = strlen(query_start);
+                    if (n2 > 255) n2 = 255;
+                    memcpy(request->query_string, query_start, n2);
+                    request->query_string[n2] = '\0';
                 } else {
-                    strncpy(request->path, token, 255);
-                    request->path[255] = '\0';
+                    size_t n3 = strlen(token);
+                    if (n3 > 255) n3 = 255;
+                    memcpy(request->path, token, n3);
+                    request->path[n3] = '\0';
                 }
                 
                 token = strtok(NULL, " ");
                 if (token) {
-                    strncpy(request->version, token, 15);
-                    request->version[15] = '\0';
+                    size_t n4 = strlen(token);
+                    if (n4 > 15) n4 = 15;
+                    memcpy(request->version, token, n4);
+                    request->version[n4] = '\0';
                 }
             }
         }
@@ -265,14 +277,18 @@ pub fn http_parse_request(cstring raw_data) -> net::HttpRequest:
         char* body_start = strstr(raw_data, "\r\n\r\n");
         if (body_start) {
             body_start += 4;
-            strncpy(request->body, body_start, 1023);
-            request->body[1023] = '\0';
+            size_t nb = strlen(body_start);
+            if (nb > 1023) nb = 1023;
+            memcpy(request->body, body_start, nb);
+            request->body[nb] = '\0';
         } else {
             body_start = strstr(raw_data, "\n\n");
             if (body_start) {
                 body_start += 2;
-                strncpy(request->body, body_start, 1023);
-                request->body[1023] = '\0';
+                size_t nb2 = strlen(body_start);
+                if (nb2 > 1023) nb2 = 1023;
+                memcpy(request->body, body_start, nb2);
+                request->body[nb2] = '\0';
             }
         }
         
@@ -457,21 +473,28 @@ pub fn http_get(char* url) -> net::HttpResponse:
             res = curl_easy_perform(curl);
             if (res != CURLE_OK) {
                 const char* err = curl_easy_strerror(res);
-                strncpy(response->error, err, 255);
-                response->error[255] = '\0';
+                size_t ne = strlen(err);
+                if (ne > 255) ne = 255;
+                memcpy(response->error, err, ne);
+                response->error[ne] = '\0';
             } else {
                 long http_code = 0;
                 curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
                 response->status_code = (int)http_code;
                 if (chunk.size > 0 && chunk.data) {
-                    strncpy(response->body, chunk.data, 255);
-                    response->body[255] = '\0';
+                    size_t nb = strlen(chunk.data);
+                    if (nb > 255) nb = 255;
+                    memcpy(response->body, chunk.data, nb);
+                    response->body[nb] = '\0';
                 }
             }
             curl_easy_cleanup(curl);
         } else {
-            strncpy(response->error, "curl_easy_init failed", 255);
-            response->error[255] = '\0';
+            const char* msg = "curl_easy_init failed";
+            size_t nm = strlen(msg);
+            if (nm > 255) nm = 255;
+            memcpy(response->error, msg, nm);
+            response->error[nm] = '\0';
         }
 
         if (chunk.data) free(chunk.data);
@@ -522,21 +545,28 @@ pub fn http_post(char* url, char* data) -> net::HttpResponse:
             res = curl_easy_perform(curl);
             if (res != CURLE_OK) {
                 const char* err = curl_easy_strerror(res);
-                strncpy(response->error, err, 255);
-                response->error[255] = '\0';
+                size_t ne = strlen(err);
+                if (ne > 255) ne = 255;
+                memcpy(response->error, err, ne);
+                response->error[ne] = '\0';
             } else {
                 long http_code = 0;
                 curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
                 response->status_code = (int)http_code;
                 if (chunk.size > 0 && chunk.data) {
-                    strncpy(response->body, chunk.data, 255);
-                    response->body[255] = '\0';
+                    size_t nb = strlen(chunk.data);
+                    if (nb > 255) nb = 255;
+                    memcpy(response->body, chunk.data, nb);
+                    response->body[nb] = '\0';
                 }
             }
             curl_easy_cleanup(curl);
         } else {
-            strncpy(response->error, "curl_easy_init failed", 255);
-            response->error[255] = '\0';
+            const char* msg = "curl_easy_init failed";
+            size_t nm = strlen(msg);
+            if (nm > 255) nm = 255;
+            memcpy(response->error, msg, nm);
+            response->error[nm] = '\0';
         }
 
         if (chunk.data) free(chunk.data);
@@ -590,21 +620,28 @@ pub fn http_put(cstring url, cstring data) -> net::HttpResponse:
             res = curl_easy_perform(curl);
             if (res != CURLE_OK) {
                 const char* err = curl_easy_strerror(res);
-                strncpy(response->error, err, 255);
-                response->error[255] = '\0';
+                size_t ne = strlen(err);
+                if (ne > 255) ne = 255;
+                memcpy(response->error, err, ne);
+                response->error[ne] = '\0';
             } else {
                 long http_code = 0;
                 curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
                 response->status_code = (int)http_code;
                 if (chunk.size > 0 && chunk.data) {
-                    strncpy(response->body, chunk.data, 255);
-                    response->body[255] = '\0';
+                    size_t nb = strlen(chunk.data);
+                    if (nb > 255) nb = 255;
+                    memcpy(response->body, chunk.data, nb);
+                    response->body[nb] = '\0';
                 }
             }
             curl_easy_cleanup(curl);
         } else {
-            strncpy(response->error, "curl_easy_init failed", 255);
-            response->error[255] = '\0';
+            const char* msg = "curl_easy_init failed";
+            size_t nm = strlen(msg);
+            if (nm > 255) nm = 255;
+            memcpy(response->error, msg, nm);
+            response->error[nm] = '\0';
         }
 
         if (chunk.data) free(chunk.data);
@@ -655,21 +692,28 @@ pub fn http_delete(cstring url) -> net::HttpResponse:
             res = curl_easy_perform(curl);
             if (res != CURLE_OK) {
                 const char* err = curl_easy_strerror(res);
-                strncpy(response->error, err, 255);
-                response->error[255] = '\0';
+                size_t ne = strlen(err);
+                if (ne > 255) ne = 255;
+                memcpy(response->error, err, ne);
+                response->error[ne] = '\0';
             } else {
                 long http_code = 0;
                 curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
                 response->status_code = (int)http_code;
                 if (chunk.size > 0 && chunk.data) {
-                    strncpy(response->body, chunk.data, 255);
-                    response->body[255] = '\0';
+                    size_t nb = strlen(chunk.data);
+                    if (nb > 255) nb = 255;
+                    memcpy(response->body, chunk.data, nb);
+                    response->body[nb] = '\0';
                 }
             }
             curl_easy_cleanup(curl);
         } else {
-            strncpy(response->error, "curl_easy_init failed", 255);
-            response->error[255] = '\0';
+            const char* msg = "curl_easy_init failed";
+            size_t nm = strlen(msg);
+            if (nm > 255) nm = 255;
+            memcpy(response->error, msg, nm);
+            response->error[nm] = '\0';
         }
 
         if (chunk.data) free(chunk.data);

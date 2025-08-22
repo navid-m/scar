@@ -519,13 +519,13 @@ bool __check_key_exists(int* keys, int size, int key) {
 				value = fmt.Sprintf("\"%s\"", value)
 			}
 			fmt.Fprintf(&b, "char %s[256];\n", varName)
-			fmt.Fprintf(&b, "void init_%s() { strncpy(%s, %s, 255); %s[255] = '\\0'; }\n", varName, varName, value, varName)
+			fmt.Fprintf(&b, "void init_%s() { size_t n = strlen(%s); if (n > 255) n = 255; memcpy(%s, %s, n); %s[n] = '\\0'; }\n", varName, value, varName, value, varName)
 		case "lstring":
 			if !strings.HasPrefix(value, "\"") {
 				value = fmt.Sprintf("\"%s\"", value)
 			}
 			fmt.Fprintf(&b, "char %s[10000];\n", varName)
-			fmt.Fprintf(&b, "void init_%s() { strncpy(%s, %s, 9999); %s[9999] = '\\0'; }\n", varName, varName, value, varName)
+			fmt.Fprintf(&b, "void init_%s() { size_t n = strlen(%s); if (n > 9999) n = 9999; memcpy(%s, %s, n); %s[n] = '\\0'; }\n", varName, value, varName, value, varName)
 		case "string":
 			fmt.Fprintf(&b, "char* %s;\n", varName)
 			fmt.Fprintf(&b, "void init_%s() { %s = %s; }\n", varName, varName, value)
@@ -594,13 +594,13 @@ bool __check_key_exists(int* keys, int size, int key) {
 					value = fmt.Sprintf("\"%s\"", value)
 				}
 				fmt.Fprintf(&b, "char %s[256];\n", uniqueName)
-				fmt.Fprintf(&b, "void init_%s() { strncpy(%s, %s, 255); %s[255] = '\\0'; }\n", uniqueName, uniqueName, value, uniqueName)
+				fmt.Fprintf(&b, "void init_%s() { size_t n = strlen(%s); if (n > 255) n = 255; memcpy(%s, %s, n); %s[n] = '\\0'; }\n", uniqueName, value, uniqueName, value, uniqueName)
 			case "lstring":
 				if !strings.HasPrefix(value, "\"") {
 					value = fmt.Sprintf("\"%s\"", value)
 				}
 				fmt.Fprintf(&b, "char %s[10000];\n", uniqueName)
-				fmt.Fprintf(&b, "void init_%s() { strncpy(%s, %s, 9999); %s[9999] = '\\0'; }\n", uniqueName, uniqueName, value, uniqueName)
+				fmt.Fprintf(&b, "void init_%s() { size_t n = strlen(%s); if (n > 9999) n = 9999; memcpy(%s, %s, n); %s[n] = '\\0'; }\n", uniqueName, value, uniqueName, value, uniqueName)
 			case "string":
 				fmt.Fprintf(&b, "char* %s;\n", uniqueName)
 				fmt.Fprintf(&b, "void init_%s() { %s = %s; }\n", uniqueName, uniqueName, value)

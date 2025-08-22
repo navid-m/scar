@@ -202,8 +202,12 @@ pub fn base64_encode(string data) -> string:
             if (mod == 1) out[out_len-2] = '=';
         }
         out[out_len] = '\0';
-        strncpy(_output_buffer, out, 24920);
-        _output_buffer[24920] = '\0';
+        {
+            size_t n = strlen(out);
+            if (n > 24920) n = 24920;
+            memcpy(_output_buffer, out, n);
+            _output_buffer[n] = '\0';
+        }
         free(out);
     )
 
@@ -237,8 +241,12 @@ pub fn base64_decode(string b64) -> string:
             }
         }
         out[j] = '\0';
-        strncpy(_output_buffer, out, 24920);
-        _output_buffer[24920] = '\0';
+        {
+            size_t n = strlen(out);
+            if (n > 24920) n = 24920;
+            memcpy(_output_buffer, out, n);
+            _output_buffer[n] = '\0';
+        }
         free(out);
     )
 
@@ -348,6 +356,10 @@ pub fn sha256(string input) -> string:
             hex[j*2+1] = hexd[digest[j] & 0xF];
         }
         hex[64] = '\0';
-        strncpy(_output_buffer, hex, 25402 - 1);
-        _output_buffer[25402 - 1] = '\0';
+        {
+            size_t n = strlen(hex);
+            if (n > (25402 - 1)) n = (25402 - 1);
+            memcpy(_output_buffer, hex, n);
+            _output_buffer[n] = '\0';
+        }
     )

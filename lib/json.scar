@@ -40,8 +40,10 @@ pub fn to_string(void* json_obj) -> string:
         }
         char *json_string = json_dumps((json_t*)json_obj, JSON_COMPACT);
         if (json_string) {
-            strncpy(_output_buffer, json_string, 4095);
-            _output_buffer[4095] = '\0';
+            size_t n = strlen(json_string);
+            if (n > 4095) n = 4095;
+            memcpy(_output_buffer, json_string, n);
+            _output_buffer[n] = '\0';
             free(json_string);
         } else {
             strcpy(_output_buffer, "");
@@ -57,8 +59,10 @@ pub fn to_string_pretty(void* json_obj) -> string:
         }
         char *json_string = json_dumps((json_t*)json_obj, JSON_INDENT(2));
         if (json_string) {
-            strncpy(_output_buffer, json_string, 4095);
-            _output_buffer[4095] = '\0';
+            size_t n = strlen(json_string);
+            if (n > 4095) n = 4095;
+            memcpy(_output_buffer, json_string, n);
+            _output_buffer[n] = '\0';
             free(json_string);
         } else {
             strcpy(_output_buffer, "");
@@ -203,8 +207,10 @@ pub fn get_string_value(void* json_obj) -> string:
         }
         const char* str = json_string_value((json_t*)json_obj);
         if (str) {
-            strncpy(_output_buffer, str, 4095);
-            _output_buffer[4095] = '\0';
+            size_t n = strlen(str);
+            if (n > 4095) n = 4095;
+            memcpy(_output_buffer, str, n);
+            _output_buffer[n] = '\0';
         } else {
             strcpy(_output_buffer, "");
         }
@@ -431,8 +437,10 @@ pub fn get_object_string(void* json_obj, string key) -> string:
         }
         const char* str = json_string_value(value);
         if (str) {
-            strncpy(_output_buffer, str, 4095);
-            _output_buffer[4095] = '\0';
+            size_t n = strlen(str);
+            if (n > 4095) n = 4095;
+            memcpy(_output_buffer, str, n);
+            _output_buffer[n] = '\0';
         } else {
             strcpy(_output_buffer, "");
         }
