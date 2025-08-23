@@ -5911,7 +5911,6 @@ func isValidIdentifier(s string) bool {
 	return true
 }
 
-// Type checking functions
 func isStringLiteral(value string) bool {
 	return strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"")
 }
