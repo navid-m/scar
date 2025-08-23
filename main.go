@@ -38,9 +38,9 @@ func main() {
 		opt     = flag.Bool("opt", false, "optimise for performance")
 		asan    = flag.Bool("asan", false, "enable Address/Undefined Sanitizers (non-Windows)")
 		version = flag.Bool("v", false, "show version")
+		nowin   *bool
 	)
 
-	var nowin *bool
 	if runtime.GOOS == "windows" {
 		nowin = flag.Bool("nowin", false, "disable native windows headers")
 	}
