@@ -139,7 +139,6 @@ func (ls *LanguageServer) handleDidOpenWithDiagnostics(message *Message) *Messag
 	return nil
 }
 
-// Enhanced handleDidChange to include diagnostics
 func (ls *LanguageServer) handleDidChangeWithDiagnostics(message *Message) *Message {
 	var params DidChangeTextDocumentParams
 	if err := mapToStruct(message.Params, &params); err != nil {

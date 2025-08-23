@@ -11,12 +11,11 @@ type HoverParams struct {
 	Position     Position               `json:"position"`
 }
 
-// Enhanced hover with symbol information
 func (ls *LanguageServer) handleEnhancedHover(message *Message) *Message {
 	var params HoverParams
 	if err := mapToStruct(message.Params, &params); err != nil {
 		log.Printf("Error parsing hover params: %v", err)
-		return ls.handleHover(message) // Fallback to basic hover
+		return ls.handleHover(message)
 	}
 
 	doc := ls.documents[params.TextDocument.URI]
@@ -34,13 +33,11 @@ func (ls *LanguageServer) handleEnhancedHover(message *Message) *Message {
 		return ls.handleHover(message)
 	}
 
-	// Get word at cursor position
 	word := getWordAtPosition(currentLine, params.Position.Character)
 	if word == "" {
 		return nil
 	}
 
-	// Get hover information based on word
 	hoverInfo := getHoverInfo(word, doc.Program, lines, params.Position.Line)
 
 	if hoverInfo == "" {
@@ -66,16 +63,13 @@ func getWordAtPosition(line string, character int) string {
 		return ""
 	}
 
-	// Find word boundaries
 	start := character
 	end := character
 
-	// Move start backward
 	for start > 0 && isWordChar(rune(line[start-1])) {
 		start--
 	}
 
-	// Move end forward
 	for end < len(line) && isWordChar(rune(line[end])) {
 		end++
 	}
@@ -92,22 +86,18 @@ func isWordChar(r rune) bool {
 }
 
 func getHoverInfo(word string, program *lexer.Program, lines []string, lineNum int) string {
-	// Check for built-in types
 	if info := getBuiltinTypeInfo(word); info != "" {
 		return info
 	}
 
-	// Check for keywords
 	if info := getKeywordInfo(word); info != "" {
 		return info
 	}
 
-	// Check for standard library functions
 	if info := getStdLibInfo(word, lines, lineNum); info != "" {
 		return info
 	}
 
-	// Check in parsed program
 	if program != nil {
 		if info := getUserDefinedSymbolInfo(word, program); info != "" {
 			return info
@@ -186,21 +176,20 @@ func getKeywordInfo(word string) string {
 }
 
 func getStdLibInfo(word string, lines []string, lineNum int) string {
-	// Check imports to see what standard library modules are available
 	imports := extractImports(lines)
-	
+
 	for _, imp := range imports {
 		if strings.Contains(imp, "std/") {
 			module := strings.TrimPrefix(imp, "std/")
 			module = strings.Trim(module, "\"")
-			
+
 			info := getStdLibFunctionInfo(word, module)
 			if info != "" {
 				return info
 			}
 		}
 	}
-	
+
 	return ""
 }
 
@@ -208,8 +197,8 @@ func extractImports(lines []string) []string {
 	var imports []string
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "import ") {
-			import_part := strings.TrimPrefix(trimmed, "import ")
+		if after, ok := strings.CutPrefix(trimmed, "import "); ok {
+			import_part := after
 			imports = append(imports, import_part)
 		}
 	}

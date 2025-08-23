@@ -20,7 +20,6 @@ import (
 	"strings"
 )
 
-// LSP message structures
 type Message struct {
 	JSONRPC string    `json:"jsonrpc"`
 	ID      any       `json:"id,omitempty"`
@@ -36,7 +35,6 @@ type RPCError struct {
 	Data    any    `json:"data,omitempty"`
 }
 
-// LSP structures for initialization
 type InitializeParams struct {
 	ProcessID             int                `json:"processId"`
 	RootPath              string             `json:"rootPath"`
@@ -92,7 +90,6 @@ type CompletionOptions struct {
 	TriggerCharacters []string `json:"triggerCharacters,omitempty"`
 }
 
-// Text Document structures
 type TextDocumentItem struct {
 	URI        string `json:"uri"`
 	LanguageID string `json:"languageId"`
@@ -176,7 +173,7 @@ func (ls *LanguageServer) processMessage(message *Message) *Message {
 func (ls *LanguageServer) handleInitialize(message *Message) *Message {
 	result := InitializeResult{
 		Capabilities: ServerCapabilities{
-			TextDocumentSync: 1, // Full sync
+			TextDocumentSync: 1,
 			CompletionProvider: &CompletionOptions{
 				TriggerCharacters: []string{".", ":", " "},
 			},
@@ -205,7 +202,6 @@ func (ls *LanguageServer) handleDidOpen(message *Message) *Message {
 		Version: params.TextDocument.Version,
 	}
 
-	// Parse the document
 	if program, err := lexer.InnerParseWithIndentation(doc.Text, doc.URI); err == nil {
 		doc.Program = program
 	} else {
@@ -243,7 +239,6 @@ func (ls *LanguageServer) handleDidChange(message *Message) *Message {
 }
 
 func (ls *LanguageServer) handleCompletion(message *Message) *Message {
-	// Basic completion - return Scar keywords and types
 	completionItems := []CompletionItem{
 		{Label: "fn", Kind: 3},        // Function
 		{Label: "class", Kind: 7},     // Class
@@ -281,7 +276,6 @@ func (ls *LanguageServer) handleCompletion(message *Message) *Message {
 }
 
 func (ls *LanguageServer) handleHover(message *Message) *Message {
-	// Basic hover - could be enhanced with actual symbol information
 	hover := Hover{
 		Contents: MarkupContent{
 			Kind:  "markdown",
@@ -296,7 +290,6 @@ func (ls *LanguageServer) handleHover(message *Message) *Message {
 	}
 }
 
-// Completion structures
 type CompletionList struct {
 	IsIncomplete bool             `json:"isIncomplete"`
 	Items        []CompletionItem `json:"items"`
@@ -308,7 +301,6 @@ type CompletionItem struct {
 	Detail string `json:"detail,omitempty"`
 }
 
-// Hover structures
 type Hover struct {
 	Contents MarkupContent `json:"contents"`
 	Range    *Range        `json:"range,omitempty"`
@@ -319,7 +311,6 @@ type MarkupContent struct {
 	Value string `json:"value"`
 }
 
-// Utility functions
 func mapToStruct(data interface{}, target interface{}) error {
 	bytes, err := json.Marshal(data)
 	if err != nil {
@@ -328,9 +319,7 @@ func mapToStruct(data interface{}, target interface{}) error {
 	return json.Unmarshal(bytes, target)
 }
 
-// LSP Transport layer
 func readMessage(reader *bufio.Reader) (*Message, error) {
-	// Read headers
 	contentLength := 0
 	for {
 		line, err := reader.ReadString('\n')
@@ -350,7 +339,6 @@ func readMessage(reader *bufio.Reader) (*Message, error) {
 		}
 	}
 
-	// Read content
 	if contentLength == 0 {
 		return nil, fmt.Errorf("no Content-Length header")
 	}
@@ -386,7 +374,6 @@ func writeMessage(writer io.Writer, message *Message) error {
 }
 
 func main() {
-	// Setup logging to stderr
 	logFile, err := os.OpenFile(filepath.Join(os.TempDir(), "scar-lsp.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
 	if err != nil {
 		log.SetOutput(os.Stderr)

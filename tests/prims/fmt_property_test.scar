@@ -3,7 +3,7 @@ class Person:
         string this.name = n
         int this.age = a
     
-    fn print_info():
+    fn print_info() -> void:
         print "%s" | fmt!("Name: %s, Age: %d", this.name, this.age)
         print "%s" | fmt!("Person: %s is %d years old", this.name, this.age)
 

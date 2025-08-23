@@ -6,17 +6,16 @@ import (
 	"strings"
 )
 
-// Enhanced completion with context-aware suggestions
 func (ls *LanguageServer) handleAdvancedCompletion(message *Message) *Message {
 	var params CompletionParams
 	if err := mapToStruct(message.Params, &params); err != nil {
 		log.Printf("Error parsing completion params: %v", err)
-		return ls.handleCompletion(message) // Fallback to basic completion
+		return ls.handleCompletion(message)
 	}
 
 	doc := ls.documents[params.TextDocument.URI]
 	if doc == nil {
-		return ls.handleCompletion(message) // Fallback to basic completion
+		return ls.handleCompletion(message)
 	}
 	lines := strings.Split(doc.Text, "\n")
 	if params.Position.Line >= len(lines) {
@@ -46,8 +45,6 @@ func (ls *LanguageServer) handleAdvancedCompletion(message *Message) *Message {
 	default:
 		completionItems = append(completionItems, getGeneralCompletions()...)
 	}
-
-	// Add symbols from current document
 	if doc.Program != nil {
 		completionItems = append(completionItems, getSymbolCompletions(doc.Program)...)
 	}
@@ -88,17 +85,14 @@ type AnalysisContext struct {
 func analyzeCompletionContext(prefix string, lines []string, lineNum int) AnalysisContext {
 	trimmedPrefix := strings.TrimSpace(prefix)
 
-	// Import context
 	if strings.HasPrefix(trimmedPrefix, "import") {
 		return AnalysisContext{Type: "import"}
 	}
 
-	// Type annotation context
 	if strings.Contains(prefix, "->") || strings.Contains(prefix, ":") {
 		return AnalysisContext{Type: "type"}
 	}
 
-	// Method call context (after dot)
 	if strings.Contains(prefix, ".") {
 		parts := strings.Split(prefix, ".")
 		if len(parts) >= 2 {
@@ -107,7 +101,6 @@ func analyzeCompletionContext(prefix string, lines []string, lineNum int) Analys
 		}
 	}
 
-	// Analyze surrounding context
 	for i := lineNum - 1; i >= 0; i-- {
 		line := strings.TrimSpace(lines[i])
 		if line == "" {
@@ -139,6 +132,14 @@ func getImportCompletions() []CompletionItem {
 		{Label: "\"std/time\"", Kind: 9, Detail: "Time utilities module"},
 		{Label: "\"std/net\"", Kind: 9, Detail: "Networking module"},
 		{Label: "\"std/json\"", Kind: 9, Detail: "JSON handling module"},
+		{Label: "\"std/sort\"", Kind: 9, Detail: "Sort algorithms module"},
+		{Label: "\"std/random\"", Kind: 9, Detail: "Random module"},
+		{Label: "\"std/test\"", Kind: 9, Detail: "Unit testing module"},
+		{Label: "\"std/path\"", Kind: 9, Detail: "Path handling module"},
+		{Label: "\"std/threads\"", Kind: 9, Detail: "Multithreading module"},
+		{Label: "\"std/uri\"", Kind: 9, Detail: "URI handling module"},
+		{Label: "\"std/hash\"", Kind: 9, Detail: "Hashing module"},
+		{Label: "\"std/crypto\"", Kind: 9, Detail: "Cryptography module"},
 	}
 }
 
@@ -189,8 +190,7 @@ func getClassBodyCompletions() []CompletionItem {
 	}
 }
 
-func getMethodCompletions(object string) []CompletionItem {
-	// Basic method completions - could be enhanced with type analysis
+func getMethodCompletions(_ string) []CompletionItem {
 	return []CompletionItem{
 		{Label: "length()", Kind: 2, Detail: "Get length"},
 		{Label: "append()", Kind: 2, Detail: "Append element"},
@@ -237,7 +237,6 @@ func getGeneralCompletions() []CompletionItem {
 func getSymbolCompletions(program *lexer.Program) []CompletionItem {
 	items := []CompletionItem{}
 
-	// Extract symbols from the parsed program
 	for _, stmt := range program.Statements {
 		if stmt.TopLevelFuncDecl != nil {
 			items = append(items, CompletionItem{
