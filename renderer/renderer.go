@@ -6303,8 +6303,10 @@ func mapBasicTypeToCType(mapType string) string {
 func mapTypeToCType(mapType string) string {
 	logger.Debug("mapTypeToCType called with: '%s'\n", mapType)
 	if after, ok := strings.CutPrefix(mapType, "ref "); ok {
-		baseType := after
-		cType := mapTypeToCType(baseType)
+		var (
+			baseType = after
+			cType    = mapTypeToCType(baseType)
+		)
 		if strings.HasSuffix(cType, "*") {
 			logger.Debug("ref type '%s' -> '%s' (already pointer)\n", mapType, cType)
 			return cType
