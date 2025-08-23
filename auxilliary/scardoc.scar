@@ -45,7 +45,6 @@ fn extract_function_name(string line) -> string:
     
     return ""
 
-
 class MacroParts:
     init:
         this.part_one = ""
