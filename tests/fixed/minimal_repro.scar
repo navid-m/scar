@@ -14,7 +14,7 @@ pub class WithBuffer:
         int this.size = size
         ref void this.buffer = nil
         $raw (
-            this->buffer = malloc(size * sizeof(int));
+            this->buffer = scar_malloc(size * sizeof(int));
         )
         
     fn store(int index, int value) -> void:

@@ -547,14 +547,14 @@ bool __check_key_exists(int* keys, int size, int key) {
 			if useGC {
 				fmt.Fprintf(&b, "void init_%s() { %s = (%s)GC_malloc(%s * sizeof(%s)); }\n", varName, varName, cType, size, strings.TrimSuffix(cType, "*"))
 			} else {
-				fmt.Fprintf(&b, "void init_%s() { %s = (%s)malloc(%s * sizeof(%s)); }\n", varName, varName, cType, size, strings.TrimSuffix(cType, "*"))
+				fmt.Fprintf(&b, "void init_%s() { %s = (%s)scar_malloc(%s * sizeof(%s)); }\n", varName, varName, cType, size, strings.TrimSuffix(cType, "*"))
 			}
 		} else {
 			fmt.Fprintf(&b, "%s* %s;\n", cType, varName)
 			if useGC {
 				fmt.Fprintf(&b, "void init_%s() { %s = (%s*)GC_malloc(%s * sizeof(%s)); }\n", varName, varName, cType, size, cType)
 			} else {
-				fmt.Fprintf(&b, "void init_%s() { %s = (%s*)malloc(%s * sizeof(%s)); }\n", varName, varName, cType, size, cType)
+				fmt.Fprintf(&b, "void init_%s() { %s = (%s*)scar_malloc(%s * sizeof(%s)); }\n", varName, varName, cType, size, cType)
 			}
 		}
 	}
@@ -1682,7 +1682,7 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 	if useGC {
 		fmt.Fprintf(b, "    %s* this = (%s*)GC_malloc(sizeof(%s));\n", className, className, className)
 	} else {
-		fmt.Fprintf(b, "    %s* this = malloc(sizeof(%s));\n", className, className)
+		fmt.Fprintf(b, "    %s* this = scar_malloc(sizeof(%s));\n", className, className)
 	}
 
 	if classInfo, exists := globalClasses[className]; exists {
@@ -3927,7 +3927,7 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			if useGC {
 				fmt.Fprintf(b, "%s%s = GC_malloc(size + 1);\n", indent+"    ", varName)
 			} else {
-				fmt.Fprintf(b, "%s%s = malloc(size + 1);\n", indent+"    ", varName)
+				fmt.Fprintf(b, "%s%s = scar_malloc(size + 1);\n", indent+"    ", varName)
 			}
 			fmt.Fprintf(b, "%sfread(%s, 1, size, %s);\n", indent+"    ", varName, fpVarName)
 			fmt.Fprintf(b, "%s%s[size] = '\\0';\n", indent+"    ", varName)
@@ -4519,14 +4519,14 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				if useGC {
 					fmt.Fprintf(b, "%s%s = (%s*)GC_malloc(%s * sizeof(%s));\n", indent, varName, cType, size, cType)
 				} else {
-					fmt.Fprintf(b, "%s%s = (%s*)malloc(%s * sizeof(%s));\n", indent, varName, cType, size, cType)
+					fmt.Fprintf(b, "%s%s = (%s*)scar_malloc(%s * sizeof(%s));\n", indent, varName, cType, size, cType)
 				}
 			} else {
 				logger.Debug("Local variable allocation: %s\n", varName)
 				if useGC {
 					fmt.Fprintf(b, "%s%s* %s = (%s*)GC_malloc(%s * sizeof(%s));\n", indent, cType, varName, cType, size, cType)
 				} else {
-					fmt.Fprintf(b, "%s%s* %s = (%s*)malloc(%s * sizeof(%s));\n", indent, cType, varName, cType, size, cType)
+					fmt.Fprintf(b, "%s%s* %s = (%s*)scar_malloc(%s * sizeof(%s));\n", indent, cType, varName, cType, size, cType)
 				}
 			}
 
