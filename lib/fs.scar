@@ -4,6 +4,7 @@ import "std/collections"
 
 platform (Posix):
     external import "dirent.h"
+    external import "unistd.h"
     external import "sys/types.h"
     external import "sys/stat.h"
 
@@ -11,6 +12,8 @@ platform (Posix):
 pub fn make_dir(string path) -> bool:
     platform (Posix):
         $raw (
+            #include <sys/stat.h>
+            #include <sys/types.h>
             return mkdir(path, 0777) == 0;
         )
     platform (Windows):
