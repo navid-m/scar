@@ -36,13 +36,15 @@ func main() {
 		linker  = flag.String("l", "", "additional linker options (e.g., -lm -lpthread)")
 		outName = flag.String("o", "", "output binary name")
 		opt     = flag.Bool("opt", false, "optimise for performance")
-		asan    = flag.Bool("asan", false, "enable Address/Undefined Sanitizers (non-Windows)")
 		version = flag.Bool("v", false, "show version")
 		nowin   *bool
+		asan    *bool
 	)
 
 	if runtime.GOOS == "windows" {
 		nowin = flag.Bool("nowin", false, "disable native windows headers")
+	} else {
+		asan = flag.Bool("asan", false, "enable address/undefined sanitizers")
 	}
 
 	flag.Parse()

@@ -33,6 +33,8 @@ func ShowUsage() {
 
 	if runtime.GOOS == "windows" {
 		fmt.Printf("  %-10s %s\n", "-nowin", "Disable native windows headers")
+	} else {
+		fmt.Printf("  %-10s %s\n", "-asan", "Enable Address/Undefined Sanitizers")
 	}
 
 	fmt.Printf("  %-10s %s\n\n", "-h, --help", "Show this help message")
