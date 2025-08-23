@@ -831,7 +831,7 @@ func validateStatementRecursive(stmt *Statement, validator *ArgumentValidator, l
 
 	if stmt.VarAssign != nil {
 		if _, ok := varTypes[stmt.VarAssign.Name]; !ok {
-			if strings.Contains(stmt.VarAssign.Name, "this") || strings.Contains(stmt.VarAssign.Name, ".") || strings.Contains(stmt.VarAssign.Name, ":") || strings.Contains(stmt.VarAssign.Name, "~>") {
+			if strings.Contains(stmt.VarAssign.Name, "this") || strings.Contains(stmt.VarAssign.Name, ".") || strings.Contains(stmt.VarAssign.Name, ":") || strings.Contains(stmt.VarAssign.Name, "->>") {
 				return nil
 			}
 			if !slices.Contains(primitiveTypes, stmt.VarAssign.Name) {

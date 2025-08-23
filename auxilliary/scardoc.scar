@@ -67,8 +67,8 @@ fn extract_macro_parts(string line) -> ref MacroParts:
         string name = get_element(matches,1)
         string args = get_element(matches,2)
         ref MacroParts mp = new MacroParts()
-        mp~>part_one = fmt!("%s", name)
-        mp~>part_two = fmt!("%s", args)
+        mp->>part_one = fmt!("%s", name)
+        mp->>part_two = fmt!("%s", args)
         return mp
     return new MacroParts()
 
@@ -226,9 +226,9 @@ fn parse_file(string fpath, string module_name) -> ref ParsedDoc:
         
         if regex::matches("^(?:pub\\s+)?macro\\s+[a-zA-Z_][a-zA-Z0-9_]*\\s*\\(", trimmed):
             ref MacroParts mp = extract_macro_parts(trimmed)
-            if strings::length(mp~>part_one) > 0:
-                add_elem(doc.macros, mp~>part_one)
-                add_elem(doc.macro_sigs, fmt!("%s(%s)", mp~>part_one, mp~>part_two))
+            if strings::length(mp->>part_one) > 0:
+                add_elem(doc.macros, mp->>part_one)
+                add_elem(doc.macro_sigs, fmt!("%s(%s)", mp->>part_one, mp->>part_two))
                 int mj = i - 1
                 int mstart = mj
                 while mstart >= 0:

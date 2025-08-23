@@ -6675,7 +6675,6 @@ func intermediatePostProcessC(csrc string) string {
 			}
 		}
 	}
-	// Translate Scar's '~>' operator to C's '->' outside of string and char literals
 	csrc = replaceTildeArrowOutsideStrings(csrc)
 	return csrc
 }
@@ -6713,10 +6712,10 @@ func replaceTildeArrowOutsideStrings(s string) string {
 			b.WriteByte(ch)
 			continue
 		}
-		if ch == '~' && i+1 < len(s) && s[i+1] == '>' {
+		if ch == '-' && i+2 < len(s) && s[i+1] == '>' && s[i+2] == '>' {
 			b.WriteByte('-')
 			b.WriteByte('>')
-			i++
+			i += 2
 			continue
 		}
 		b.WriteByte(ch)
