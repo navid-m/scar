@@ -94,6 +94,18 @@ fn extract_import(string line) -> string:
     
     return ""
 
+fn extract_return_type_from_signature(string line) -> string:
+    int arrow_pos = strings::index_of(line, "->")
+    if arrow_pos == -1:
+        return ""
+    
+    int last_colon = strings::last_index_of(line, ":")
+    if last_colon == -1 or last_colon <= arrow_pos:
+        return ""
+    
+    string return_part = strings::substring(line, arrow_pos + 2, last_colon)
+    return strings::trim_space(return_part)
+
 fn parse_file(string fpath, string module_name) -> ref ParsedDoc:
     ref ParsedDoc doc = new ParsedDoc()
     doc.filepath = fpath
@@ -254,20 +266,19 @@ fn parse_file(string fpath, string module_name) -> ref ParsedDoc:
                         if get_size(im) >= 2:
                             msig = fmt!("%s(%s)", mname, get_element(im,1))
                     else:
-                        string fpat = fmt!("^(?:pub\\s+)?fn\\s+%s\\s*\\(([^)]*)\\)\\s*(?:->\\s*([^:]+))?\\s*:", mname)
+                        string fpat = fmt!("^(?:pub\\s+)?fn\\s+%s\\s*\\(([^)]*)\\)", mname)
                         collections::StringArrayList fm = regex::find(fpat, trimmed)
-                        if get_size(fm) >= 1:
-                            string args = ""
-                            string ret  = ""
-                            if get_size(fm) >= 2:
-                                args = get_element(fm,1)
-                            if get_size(fm) >= 3:
-                                ret = get_element(fm,2)
-                            if strings::length(ret) > 0:
-                                ret = format_return_for_doc(ret)
-                                msig = fmt!("%s(%s) -> %s", mname, args, ret)
-                            else:
-                                msig = fmt!("%s(%s)", mname, args)
+                        string args = ""
+                        if get_size(fm) >= 2:
+                            args = get_element(fm,1)
+                        
+                        string ret = extract_return_type_from_signature(trimmed)
+                        
+                        if strings::length(ret) > 0:
+                            ret = format_return_for_doc(ret)
+                            msig = fmt!("%s(%s) -> %s", mname, args, ret)
+                        else:
+                            msig = fmt!("%s(%s)", mname, args)
                     add_elem(doc.method_sigs, msig)
                     int mj = i - 1
                     int mstart = mj
@@ -297,21 +308,20 @@ fn parse_file(string fpath, string module_name) -> ref ParsedDoc:
             if strings::length(func_name) > 0:
                 add_elem(doc.functions, func_name)
 
-                string fpat = fmt!("^(?:pub\\s+)?fn\\s+%s\\s*\\(([^)]*)\\)\\s*(?:->\\s*([^:]+))?\\s*:", func_name)
+                string fpat = fmt!("^(?:pub\\s+)?fn\\s+%s\\s*\\(([^)]*)\\)", func_name)
                 collections::StringArrayList fm = regex::find(fpat, trimmed)
                 string fsig = ""
-                if get_size(fm) >= 1:
-                    string args = ""
-                    string ret  = ""
-                    if get_size(fm) >= 2:
-                        args = get_element(fm,1)
-                    if get_size(fm) >= 3:
-                        ret = get_element(fm,2)
-                    if strings::length(ret) > 0:
-                        ret = format_return_for_doc(ret)
-                        fsig = fmt!("%s(%s) -> %s", func_name, args, ret)
-                    else:
-                        fsig = fmt!("%s(%s)", func_name, args)
+                string args = ""
+                if get_size(fm) >= 2:
+                    args = get_element(fm,1)
+                
+                string ret = extract_return_type_from_signature(trimmed)
+                
+                if strings::length(ret) > 0:
+                    ret = format_return_for_doc(ret)
+                    fsig = fmt!("%s(%s) -> %s", func_name, args, ret)
+                else:
+                    fsig = fmt!("%s(%s)", func_name, args)
 
                 add_elem(doc.function_sigs, fsig)
                 int j2 = i - 1
