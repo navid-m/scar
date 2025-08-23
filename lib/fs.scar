@@ -13,7 +13,6 @@ pub fn make_dir(string path) -> bool:
     platform (Posix):
         $raw (
             #include <sys/stat.h>
-            #include <sys/types.h>
             return mkdir(path, 0777) == 0;
         )
     platform (Windows):
