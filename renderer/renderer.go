@@ -6508,10 +6508,12 @@ func renderComplexListDecl(b *strings.Builder, listDecl *lexer.ListDeclStmt, ind
 }
 
 func parseListElements(elementsStr string) []string {
-	var elements []string
-	var current strings.Builder
-	inQuotes := false
-	bracketDepth := 0
+	var (
+		elements     []string
+		current      strings.Builder
+		inQuotes     = false
+		bracketDepth = 0
+	)
 
 	for i, char := range elementsStr {
 		switch char {
