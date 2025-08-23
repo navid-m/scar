@@ -5621,13 +5621,11 @@ func convertSingleMethodCall(expr string) string {
 			}
 		} else {
 			// For other __ARROW__ patterns (like object__ARROW__method), treat as normal object method call
-
 			resolvedObjectName = strings.ReplaceAll(objectName, "__ARROW__", "->")
 			baseObjectName := objectName
 			if arrowIndex := strings.Index(baseObjectName, "__ARROW__"); arrowIndex != -1 {
 				baseObjectName = baseObjectName[:arrowIndex]
 			}
-
 			logger.Debug("Looking for object '%s' in globalObjects\n", baseObjectName)
 			for objName, obj := range globalObjects {
 				if objName == baseObjectName {
@@ -5760,7 +5758,6 @@ func generateTopLevelFunctionImplementation(b *strings.Builder, funcDecl *lexer.
 	currentFunction = funcDecl
 	defer func() { currentFunction = nil }()
 
-	// Clear local variables map for this function
 	for k := range localVars {
 		delete(localVars, k)
 	}
@@ -6679,7 +6676,6 @@ func intermediatePostProcessC(csrc string) string {
 	return csrc
 }
 
-// This maps Scar's custom member access operator to C's pointer member access.
 func replaceTildeArrowOutsideStrings(s string) string {
 	if s == "" {
 		return s
