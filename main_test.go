@@ -63,6 +63,10 @@ print "done..."`
 #include <stdlib.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <signal.h>
+#if defined(__unix__) || defined(__APPLE__)
+#include <execinfo.h>
+#endif
 
 #ifdef _WIN32
 #include <windows.h>
