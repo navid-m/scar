@@ -6,7 +6,6 @@ import (
 	"strings"
 )
 
-// Diagnostic structures
 type Diagnostic struct {
 	Range    Range  `json:"range"`
 	Severity int    `json:"severity"`
@@ -19,7 +18,6 @@ type PublishDiagnosticsParams struct {
 	Diagnostics []Diagnostic `json:"diagnostics"`
 }
 
-// Severity levels
 const (
 	DiagnosticSeverityError       = 1
 	DiagnosticSeverityWarning     = 2
@@ -27,13 +25,10 @@ const (
 	DiagnosticSeverityHint        = 4
 )
 
-// Enhanced Document with diagnostics
 func (ls *LanguageServer) updateDiagnostics(doc *Document) {
 	diagnostics := []Diagnostic{}
 
-	// Parse the document and collect errors
 	if doc.Program == nil {
-		// Try to parse again and capture errors
 		_, err := lexer.InnerParseWithIndentation(doc.Text, doc.URI)
 		if err != nil {
 			diagnostic := Diagnostic{
@@ -48,7 +43,6 @@ func (ls *LanguageServer) updateDiagnostics(doc *Document) {
 			diagnostics = append(diagnostics, diagnostic)
 		}
 	} else {
-		// Validate the parsed program
 		validationErrors := lexer.ValidateProgram(doc.Program)
 		for _, validationError := range validationErrors {
 			diagnostic := Diagnostic{
@@ -64,12 +58,9 @@ func (ls *LanguageServer) updateDiagnostics(doc *Document) {
 		}
 	}
 
-	// Add basic syntax warnings
 	lines := strings.Split(doc.Text, "\n")
 	for i, line := range lines {
 		trimmed := strings.TrimSpace(line)
-		
-		// Check for common issues
 		if strings.Contains(line, "\t") && strings.Contains(line, "    ") {
 			diagnostic := Diagnostic{
 				Range: Range{
@@ -82,10 +73,7 @@ func (ls *LanguageServer) updateDiagnostics(doc *Document) {
 			}
 			diagnostics = append(diagnostics, diagnostic)
 		}
-
-		// Check for deprecated syntax patterns
 		if strings.HasPrefix(trimmed, "fn ") && !strings.Contains(trimmed, "->") && strings.HasSuffix(trimmed, ":") {
-			// This is likely a function without return type - suggest void
 			if !containsReturnType(trimmed) {
 				diagnostic := Diagnostic{
 					Range: Range{
@@ -101,7 +89,6 @@ func (ls *LanguageServer) updateDiagnostics(doc *Document) {
 		}
 	}
 
-	// Publish diagnostics
 	params := PublishDiagnosticsParams{
 		URI:         doc.URI,
 		Diagnostics: diagnostics,
@@ -126,7 +113,6 @@ func containsReturnType(line string) bool {
 		strings.Contains(line, "-> ref")
 }
 
-// Enhanced handleDidOpen to include diagnostics
 func (ls *LanguageServer) handleDidOpenWithDiagnostics(message *Message) *Message {
 	var params DidOpenTextDocumentParams
 	if err := mapToStruct(message.Params, &params); err != nil {
@@ -140,7 +126,6 @@ func (ls *LanguageServer) handleDidOpenWithDiagnostics(message *Message) *Messag
 		Version: params.TextDocument.Version,
 	}
 
-	// Parse the document
 	if program, err := lexer.InnerParseWithIndentation(doc.Text, doc.URI); err == nil {
 		doc.Program = program
 	} else {
@@ -148,10 +133,9 @@ func (ls *LanguageServer) handleDidOpenWithDiagnostics(message *Message) *Messag
 	}
 
 	ls.documents[doc.URI] = doc
-	
-	// Update diagnostics
+
 	ls.updateDiagnostics(doc)
-	
+
 	return nil
 }
 
@@ -168,20 +152,15 @@ func (ls *LanguageServer) handleDidChangeWithDiagnostics(message *Message) *Mess
 		return nil
 	}
 
-	// Apply changes (assuming full document sync for simplicity)
 	if len(params.ContentChanges) > 0 {
 		doc.Text = params.ContentChanges[0].Text
 		doc.Version = params.TextDocument.Version
-
-		// Re-parse the document
 		if program, err := lexer.InnerParseWithIndentation(doc.Text, doc.URI); err == nil {
 			doc.Program = program
 		} else {
 			log.Printf("Parse error for %s: %v", doc.URI, err)
 			doc.Program = nil
 		}
-
-		// Update diagnostics
 		ls.updateDiagnostics(doc)
 	}
 
