@@ -11,8 +11,8 @@ import "std/fs"
 import "std/collections"
 import "std/regex"
 
-unsafe alias add_elem = collections::StringArrayList::add_element
-unsafe alias get_size = collections::StringArrayList::get_size
+unsafe alias add_elem    = collections::StringArrayList::add_element
+unsafe alias get_size    = collections::StringArrayList::get_size
 unsafe alias get_element = collections::StringArrayList::get_element
 
 class ParsedDoc:
