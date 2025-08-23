@@ -293,7 +293,6 @@ func main() {
 			"-fopenmp",
 			"-g",
 			"-fno-omit-frame-pointer",
-			// -fstack-protector-strong is supported on many MinGW builds; keep it conservative
 			"-fstack-protector-strong",
 		}
 
@@ -314,7 +313,6 @@ func main() {
 			compileArgs = append(compileArgs, "-lws2_32")
 		}
 
-		// For Windows backtraces/symbolization
 		compileArgs = append(compileArgs, "-ldbghelp")
 
 		if *linker != "" {
