@@ -6675,5 +6675,51 @@ func intermediatePostProcessC(csrc string) string {
 			}
 		}
 	}
+	// Translate Scar's '~>' operator to C's '->' outside of string and char literals
+	csrc = replaceTildeArrowOutsideStrings(csrc)
 	return csrc
+}
+
+// This maps Scar's custom member access operator to C's pointer member access.
+func replaceTildeArrowOutsideStrings(s string) string {
+	if s == "" {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	inStr := false
+	var delim byte
+	esc := false
+	for i := 0; i < len(s); i++ {
+		ch := s[i]
+		if inStr {
+			b.WriteByte(ch)
+			if esc {
+				esc = false
+				continue
+			}
+			if ch == '\\' {
+				esc = true
+				continue
+			}
+			if ch == delim {
+				inStr = false
+			}
+			continue
+		}
+		if ch == '"' || ch == '\'' {
+			inStr = true
+			delim = ch
+			b.WriteByte(ch)
+			continue
+		}
+		if ch == '~' && i+1 < len(s) && s[i+1] == '>' {
+			b.WriteByte('-')
+			b.WriteByte('>')
+			i++
+			continue
+		}
+		b.WriteByte(ch)
+	}
+	return b.String()
 }
