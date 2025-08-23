@@ -1,4 +1,4 @@
-# Scar Language Server
+# `sls` - Scar Language Server
 
 A Language Server Protocol (LSP) implementation for the Scar programming language, providing IDE features like syntax highlighting, autocompletion, diagnostics, and more.
 
@@ -29,7 +29,7 @@ A Language Server Protocol (LSP) implementation for the Scar programming languag
 
 ```bash
 cd lsp
-go build -o scar-lsp .
+go build -o sls .
 ```
 
 ## Usage
@@ -42,7 +42,7 @@ Create a VS Code extension that launches the language server:
 
 ```typescript
 const serverOptions: ServerOptions = {
-   command: "path/to/scar-lsp",
+   command: "path/to/sls",
    args: [],
 };
 
@@ -57,7 +57,7 @@ Using `nvim-lspconfig`:
 
 ```lua
 require'lspconfig'.scar.setup{
-    cmd = {'path/to/scar-lsp'},
+    cmd = {'path/to/sls'},
     filetypes = {'scar'},
     root_dir = lspconfig.util.root_pattern('.git', 'go.mod'),
 }

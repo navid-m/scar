@@ -1,4 +1,4 @@
-module scar-lsp
+module sls
 
 go 1.24.5
 
