@@ -17,22 +17,22 @@ unsafe alias get_element = collections::StringArrayList::get_element
 
 class ParsedDoc:
     init:
-        var this.imports        = new collections::StringArrayList(100)
-        var this.functions      = new collections::StringArrayList(100)
-        var this.function_sigs  = new collections::StringArrayList(100)
-        var this.classes        = new collections::StringArrayList(100)
-        var this.function_docs  = new collections::StringArrayList(100)
-        var this.class_docs     = new collections::StringArrayList(100)
-        var this.methods        = new collections::StringArrayList(200)
-        var this.method_docs    = new collections::StringArrayList(200)
-        var this.method_parents = new collections::StringArrayList(200)
-        var this.method_sigs    = new collections::StringArrayList(200)
-        var this.structs        = new collections::StringArrayList(100)
-        var this.struct_docs    = new collections::StringArrayList(100)
-        var this.struct_fields  = new collections::StringArrayList(100)
-        var this.macros         = new collections::StringArrayList(100)
-        var this.macro_docs     = new collections::StringArrayList(100)
-        var this.macro_sigs     = new collections::StringArrayList(100)
+        var this.imports         = new collections::StringArrayList(100)
+        var this.functions       = new collections::StringArrayList(100)
+        var this.function_sigs   = new collections::StringArrayList(100)
+        var this.classes         = new collections::StringArrayList(100)
+        var this.function_docs   = new collections::StringArrayList(100)
+        var this.class_docs      = new collections::StringArrayList(100)
+        var this.methods         = new collections::StringArrayList(200)
+        var this.method_docs     = new collections::StringArrayList(200)
+        var this.method_parents  = new collections::StringArrayList(200)
+        var this.method_sigs     = new collections::StringArrayList(200)
+        var this.structs         = new collections::StringArrayList(100)
+        var this.struct_docs     = new collections::StringArrayList(100)
+        var this.struct_fields   = new collections::StringArrayList(100)
+        var this.macros          = new collections::StringArrayList(100)
+        var this.macro_docs      = new collections::StringArrayList(100)
+        var this.macro_sigs      = new collections::StringArrayList(100)
         cstring this.filepath    = ""
         cstring this.module_name = ""
 
