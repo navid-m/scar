@@ -257,7 +257,7 @@ pub fn sha256(string input) -> string:
         typedef unsigned int u32;
         typedef unsigned long long u64;
 
-        #define ROTR(x,n) (((x) >> (n)) | ((x) << (32 - (n))))
+        #define ROTR(x,n)  (((x) >> (n)) | ((x) << (32 - (n))))
         #define CH(x,y,z)  (((x) & (y)) ^ (~(x) & (z)))
         #define MAJ(x,y,z) (((x) & (y)) ^ ((x) & (z)) ^ ((y) & (z)))
         #define BSIG0(x)   (ROTR((x),2) ^ ROTR((x),13) ^ ROTR((x),22))
