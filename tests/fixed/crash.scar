@@ -1,6 +1,9 @@
 import "std/os"
-
+import "std/collections"
 collections::StringArrayList x = os::get_args()
 
 for i = 1 to x.get_size() - 1:
     print "%s" | x.get_element(i)
+
+if collections::StringArrayList::get_size(x) == 1:
+    print "Not enough args."
