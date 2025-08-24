@@ -1,4 +1,5 @@
 import "std/os"
+import "std/collections"
 import "std/math"
 
 fn A(int i, int j) -> f64:
@@ -30,9 +31,9 @@ fn mult_AtAv(ref f64 v, ref f64 outv, int n) -> void:
     mult_Atv(tmp, outv, n)
 
 int n = 100
-list[string] args = os::get_args()
-if len(args) > 1:
-    n = math::to_int(args[1])
+collections::StringArrayList args = os::get_args()
+if collections::StringArrayList::get_size(args) > 1:
+    n = math::to_int(collections::StringArrayList::get_element(args, 1))
 
 allocate f64 u = n
 allocate f64 v = n

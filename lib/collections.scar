@@ -1,4 +1,4 @@
-import "std/os"
+import "std/runtime"
 
 ## Define a new array type.
 pub macro new_array(class_name, field_type, elem_type, cType, d_return, alloc_expr, free_expr, copy_expr, get_check):
@@ -23,7 +23,7 @@ pub macro new_array(class_name, field_type, elem_type, cType, d_return, alloc_ex
         ## Get an element from the array.
         fn get_element(i32 index) -> elem_type:
             if index < 0 || index >= this.size:
-                os::runtime_error("index out of bounds")
+                runtime::error("index out of bounds")
             $raw (
                 get_check;
             )

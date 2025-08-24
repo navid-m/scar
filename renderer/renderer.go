@@ -6105,6 +6105,24 @@ func checkTypeCompatibility(varName, varType, value string) error {
 	}
 
 	if !areTypesCompatible(varType, valueType) {
+		if varType == "f64" && valueType == "f32" {
+			return nil
+		}
+		if varType == "f32" && valueType == "f64" {
+			return nil
+		}
+		if varType == "i32" && valueType == "i64" {
+			return nil
+		}
+		if varType == "i64" && valueType == "i32" {
+			return nil
+		}
+		if varType == "int" && valueType == "i32" {
+			return nil
+		}
+		if varType == "i32" && valueType == "int" {
+			return nil
+		}
 		logger.ErrorAndExit(
 			fmt.Sprintf(
 				"TypeError: Cannot assign value of type '%s' to variable '%s' of type '%s'", valueType, varName, varType,
