@@ -60,6 +60,7 @@ pub class UnitTest:
     fn assert_false(bool condition, string message) -> void:
         this.assert(!condition, message)
     
+    ## Assert that two ArrayLists of integers are equal.
     fn assert_int_arraylist_equals(ref collections::ArrayList expected, ref collections::ArrayList actual, string message) -> void:
         this.tests_run = this.tests_run + 1
         
