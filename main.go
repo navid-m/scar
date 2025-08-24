@@ -164,6 +164,7 @@ func main() {
 	if *opt {
 		compileArgs = append([]string{"-O2", "-fno-fast-math"}, compileArgs...)
 	}
+
 	if runtime.GOOS != "windows" {
 		if *asan {
 			compileArgs = append([]string{"-fsanitize=address,undefined"}, compileArgs...)
