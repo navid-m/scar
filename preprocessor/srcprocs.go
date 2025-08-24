@@ -10,6 +10,7 @@ package preprocessor
 import (
 	"bytes"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -131,9 +132,7 @@ type Macro struct {
 func ProcessMacros(source string) string {
 	macros := collectMacroDefinitions(source)
 	importedMacros := loadImportedMacros(source)
-	for name, macro := range importedMacros {
-		macros[name] = macro
-	}
+	maps.Copy(macros, importedMacros)
 
 	const maxIters = 10
 	prev := source
