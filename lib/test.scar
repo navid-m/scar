@@ -59,6 +59,26 @@ pub class UnitTest:
     ## Assert that a condition is false.
     fn assert_false(bool condition, string message) -> void:
         this.assert(!condition, message)
+    
+    fn assert_int_arraylist_equals(ref collections::ArrayList expected, ref collections::ArrayList actual, string message) -> void:
+        this.tests_run = this.tests_run + 1
+        
+        if collections::ArrayList::get_size(expected) != collections::ArrayList::get_size(actual):
+            this.tests_failed = this.tests_failed + 1
+            print "\033[0;31mASSERT FAILED: %s (Expected list length %d, got %d)\033[0m" | message, collections::ArrayList::get_size(expected), collections::ArrayList::get_size(actual)
+            return
+        
+        bool lists_equal = true
+        for i = 0 to collections::ArrayList::get_size(expected) - 1:
+            if collections::ArrayList::get_element(expected, i) != collections::ArrayList::get_element(actual, i):
+                lists_equal = false
+                break
+        
+        if !lists_equal:
+            this.tests_failed = this.tests_failed + 1
+            print "\033[0;31mASSERT FAILED: %s (Lists are not equal)\033[0m" | message
+        else:
+            print "\033[0;32mASSERT PASSED: %s\033[0m" | message
 
     ## Assert that two integer lists are equal.
     fn assert_int_list_equals(ref list[int] expected, ref list[int] actual, string message) -> void:

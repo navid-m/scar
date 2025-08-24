@@ -2,6 +2,7 @@
 ## Provides various sorting functions for different data types
 
 import "std/math"
+import "std/collections"
 
 ## Merge function for merge sort
 fn merge_int(ref i32 arr, i32 left, i32 mid, i32 right) -> void:
@@ -55,9 +56,13 @@ fn merge_int(ref i32 arr, i32 left, i32 mid, i32 right) -> void:
 
 ## Sort a list of integers and return the sorted list
 ## Uses bubble sort algorithm implemented in pure Scar
-pub fn sort_int_list(ref list[int] input_list) -> list[int]:
-    i32 n = len(input_list)
-    list[int] sorted_list = input_list
+pub fn sort_int_list(ref collections::ArrayList input_list) -> collections::ArrayList:
+    i32 n = collections::ArrayList::get_size(input_list)
+    ref collections::ArrayList sorted_list = new collections::ArrayList(n > 0 ? n : 1)
+    i32 k = 0
+    for k = 0 to n - 1:
+        collections::ArrayList::add_element(sorted_list, collections::ArrayList::get_element(input_list, k))
+
     i32 i = 0
     i32 j = 0
     i32 temp = 0
@@ -67,9 +72,9 @@ pub fn sort_int_list(ref list[int] input_list) -> list[int]:
         i32 end = n - i - 2
         if end >= 0:
             for j = 0 to end:
-                if sorted_list[j] > sorted_list[j + 1]:
-                    temp = sorted_list[j]
-                    sorted_list[j] = sorted_list[j + 1];
-                    sorted_list[j + 1] = temp;
+                if collections::ArrayList::get_element(sorted_list, j) > collections::ArrayList::get_element(sorted_list, j + 1):
+                    temp = collections::ArrayList::get_element(sorted_list, j)
+                    collections::ArrayList::set_element(sorted_list, j, collections::ArrayList::get_element(sorted_list, j + 1))
+                    collections::ArrayList::set_element(sorted_list, j + 1, temp)
                 
     return sorted_list

@@ -268,12 +268,26 @@ collections::StringArrayList args = os::get_args()
 for i = 0 to args.get_size() - 1:
     log::success(fmt!("ASSERT PASSED: Command line argument %d: %s", i, args[i]))
 
-list[int] nums = [5, 10, 2, 20, 14, 12]
-list[int] expected = [2, 5, 10, 12, 14, 20]
+ref collections::ArrayList nums = new collections::ArrayList(10)
+
+collections::ArrayList::add_element(nums, 5)
+collections::ArrayList::add_element(nums, 10)
+collections::ArrayList::add_element(nums, 2)
+collections::ArrayList::add_element(nums, 20)
+collections::ArrayList::add_element(nums, 14)
+collections::ArrayList::add_element(nums, 12)
+
+ref collections::ArrayList expected = new collections::ArrayList(6)
+collections::ArrayList::add_element(expected, 2)
+collections::ArrayList::add_element(expected, 5)
+collections::ArrayList::add_element(expected, 10)
+collections::ArrayList::add_element(expected, 12)
+collections::ArrayList::add_element(expected, 14)
+collections::ArrayList::add_element(expected, 20)
 
 nums = sort::sort_int_list(nums)
 
-t.assert_int_list_equals(expected, nums, "Sorted list should be [2, 5, 10, 12, 14, 20]")
+t.assert_int_arraylist_equals(expected, nums, "Sorted list should be [2, 5, 10, 12, 14, 20]")
 
 int x = strings::ord("H")
 t.assert_equals(72, x, "ord('H') should return 72")
