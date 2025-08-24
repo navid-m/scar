@@ -2091,6 +2091,15 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 		}
 
 		for i, param := range method.Parameters {
+			if param.IsVarargs {
+				if method.IsStatic && i == 0 {
+					fmt.Fprintf(b, "...")
+				} else {
+					fmt.Fprintf(b, ", ...")
+				}
+				continue
+			}
+
 			paramType := mapTypeToCType(param.Type)
 			// For ref parameters, don't add extra * since they should be handled as single pointers
 			if param.IsRef {
@@ -5876,6 +5885,11 @@ func generateTopLevelFunctionImplementation(b *strings.Builder, funcDecl *lexer.
 	}
 
 	for _, param := range funcDecl.Parameters {
+		if param.IsVarargs {
+			paramList = append(paramList, "...")
+			continue
+		}
+
 		paramName := param.Name
 
 		if param.IsList || strings.HasPrefix(param.Type, "list[") {
@@ -6265,14 +6279,17 @@ func generateMethodPrototype(className, methodName, returnType string, parameter
 	}
 
 	for _, param := range parameters {
+		if param.IsVarargs {
+			paramList = append(paramList, "...")
+			continue
+		}
+
 		paramType := mapTypeToCType(param.Type)
-		// For ref parameters, don't add extra * since they should be handled as single pointers
 		if param.IsRef {
 			if !strings.HasSuffix(paramType, "*") {
 				paramType = paramType + "*"
 			}
 		} else {
-			// For non-ref parameters, apply the normal rules
 			if _, isPrimitive := primitiveTypes[param.Type]; !isPrimitive && param.Type != "string" && !strings.HasSuffix(paramType, "*") {
 				paramType = paramType + "*"
 			} else if param.Type == "string" {
@@ -6314,6 +6331,10 @@ func generateFunctionPrototype(funcDecl *lexer.TopLevelFuncDeclStmt) string {
 	}
 
 	for _, param := range funcDecl.Parameters {
+		if param.IsVarargs {
+			paramList = append(paramList, "...")
+			continue
+		}
 		paramName := param.Name
 
 		if param.IsList || strings.HasPrefix(param.Type, "list[") {

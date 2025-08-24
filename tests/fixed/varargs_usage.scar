@@ -1,0 +1,21 @@
+# Demonstrates variadic parameter usage with '...'
+
+# Top-level function with a variadic tail parameter
+fn log_many(cstring prefix, ...):
+    # Implementation can ignore extras for now
+    print "%s\n" | prefix
+
+# Calls with zero and multiple extra arguments
+log_many("no extras")
+log_many("three extras", 1, 2, 3)
+
+# Class with a variadic method
+class Logger:
+    init:
+        pass
+
+    fn log(cstring prefix, ...):
+        print "%s\n" | prefix
+
+Logger l = new Logger()
+l.log("class call with extras", 42, true, 'x')

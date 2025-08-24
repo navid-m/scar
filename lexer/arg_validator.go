@@ -446,16 +446,19 @@ func (av *ArgumentValidator) ValidateFunctionCall(funcCall *FunctionCallStmt, li
 		return fmt.Errorf("line %d: function '%s' is not defined", line, funcName)
 	}
 
-	expectedCount := 0
-	for range signature.Parameters {
-		expectedCount++
-	}
-
+	params := signature.Parameters
 	actualCount := len(funcCall.Args)
-
-	if actualCount != expectedCount {
-		return fmt.Errorf("line %d: function '%s' expects %d arguments, but %d were provided",
-			line, funcName, expectedCount, actualCount)
+	hasVarargs := len(params) > 0 && params[len(params)-1] != nil && params[len(params)-1].IsVarargs
+	fixedCount := len(params)
+	if hasVarargs {
+		fixedCount = len(params) - 1
+	}
+	if (!hasVarargs && actualCount != fixedCount) || (hasVarargs && actualCount < fixedCount) {
+		suffix := ""
+		if hasVarargs {
+			suffix = "+"
+		}
+		return fmt.Errorf("line %d: function '%s' expects %d%s arguments, but %d were provided", line, funcName, fixedCount, suffix, actualCount)
 	}
 
 	for _, arg := range funcCall.Args {
@@ -489,8 +492,21 @@ func (av *ArgumentValidator) ValidateMethodCall(methodCall *MethodCallStmt, line
 		return fmt.Errorf("line %d: method '%s.%s' is not defined", line, recv, methodCall.Method)
 	}
 
-	if !av.looksLikeMacroName(methodCall.Method) && len(methodCall.Args) != len(sig.Parameters) {
-		return fmt.Errorf("line %d: method '%s.%s' expects %d arguments, but %d were provided", line, recv, methodCall.Method, len(sig.Parameters), len(methodCall.Args))
+	if !av.looksLikeMacroName(methodCall.Method) {
+		params := sig.Parameters
+		actual := len(methodCall.Args)
+		hasVarargs := len(params) > 0 && params[len(params)-1] != nil && params[len(params)-1].IsVarargs
+		fixed := len(params)
+		if hasVarargs {
+			fixed = len(params) - 1
+		}
+		if (!hasVarargs && actual != fixed) || (hasVarargs && actual < fixed) {
+			suffix := ""
+			if hasVarargs {
+				suffix = "+"
+			}
+			return fmt.Errorf("line %d: method '%s.%s' expects %d%s arguments, but %d were provided", line, recv, methodCall.Method, fixed, suffix, actual)
+		}
 	}
 
 	for _, a := range methodCall.Args {
@@ -521,8 +537,21 @@ func (av *ArgumentValidator) ValidateStaticMethodCall(call *StaticMethodCallStmt
 	if !exists {
 		return fmt.Errorf("line %d: static method '%s.%s' is not defined", line, recv, call.Method)
 	}
-	if !av.looksLikeMacroName(call.Method) && len(call.Args) != len(sig.Parameters) {
-		return fmt.Errorf("line %d: static method '%s.%s' expects %d arguments, but %d were provided", line, recv, call.Method, len(sig.Parameters), len(call.Args))
+	if !av.looksLikeMacroName(call.Method) {
+		params := sig.Parameters
+		actual := len(call.Args)
+		hasVarargs := len(params) > 0 && params[len(params)-1] != nil && params[len(params)-1].IsVarargs
+		fixed := len(params)
+		if hasVarargs {
+			fixed = len(params) - 1
+		}
+		if (!hasVarargs && actual != fixed) || (hasVarargs && actual < fixed) {
+			suffix := ""
+			if hasVarargs {
+				suffix = "+"
+			}
+			return fmt.Errorf("line %d: static method '%s.%s' expects %d%s arguments, but %d were provided", line, recv, call.Method, fixed, suffix, actual)
+		}
 	}
 	return nil
 }

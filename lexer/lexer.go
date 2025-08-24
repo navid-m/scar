@@ -444,6 +444,7 @@ type MethodParameter struct {
 	ListType string
 	Name     string
 	IsRef    bool
+	IsVarargs bool
 }
 
 type MethodDeclStmt struct {

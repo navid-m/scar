@@ -106,10 +106,10 @@ func parseAllImports(lines []string, startLine int) ([]*ImportStmt, error) {
 	if strings.Contains(line, ",") {
 		var (
 			importLine  = strings.TrimSpace(line[6:])
-			moduleNames = strings.SplitSeq(importLine, ",")
+			moduleNames = strings.Split(importLine, ",")
 		)
 
-		for moduleName := range moduleNames {
+		for _, moduleName := range moduleNames {
 			moduleName = strings.TrimSpace(strings.Trim(moduleName, "\""))
 			if moduleName != "" {
 				imports = append(imports, &ImportStmt{Module: moduleName})
@@ -132,8 +132,8 @@ func parseAllImports(lines []string, startLine int) ([]*ImportStmt, error) {
 				break
 			}
 
-			moduleNames := strings.SplitSeq(trimmed, ",")
-			for moduleName := range moduleNames {
+			moduleNames := strings.Split(trimmed, ",")
+			for _, moduleName := range moduleNames {
 				moduleName = strings.TrimSpace(strings.Trim(moduleName, "\""))
 				if moduleName != "" {
 					imports = append(imports, &ImportStmt{Module: moduleName})
@@ -416,8 +416,8 @@ func parsePubClassStatement(lines []string, lineNum, currentIndent int) (*Statem
 				if parenStart != -1 && parenEnd != -1 && parenEnd > parenStart {
 					paramsStr := strings.TrimSpace(trimmed[parenStart+1 : parenEnd])
 					if paramsStr != "" {
-						paramList := strings.SplitSeq(paramsStr, ",")
-						for paramStr := range paramList {
+						paramList := strings.Split(paramsStr, ",")
+						for _, paramStr := range paramList {
 							paramStr = strings.TrimSpace(paramStr)
 							paramParts := strings.Fields(paramStr)
 
@@ -623,8 +623,8 @@ func parseClassStatement(lines []string, lineNum, currentIndent int) (*Statement
 				if parenStart != -1 && parenEnd != -1 && parenEnd > parenStart {
 					paramsStr := strings.TrimSpace(trimmed[parenStart+1 : parenEnd])
 					if paramsStr != "" {
-						paramList := strings.SplitSeq(paramsStr, ",")
-						for paramStr := range paramList {
+						paramList := strings.Split(paramsStr, ",")
+						for _, paramStr := range paramList {
 							paramStr = strings.TrimSpace(paramStr)
 							paramParts := strings.Fields(paramStr)
 
@@ -801,12 +801,20 @@ func parseTopLevelFunctionStatement(lines []string, lineNum, currentIndent int) 
 	paramsStr := strings.TrimSpace(line[parenStart+1 : parenEnd])
 	var parameters []*MethodParameter
 	if paramsStr != "" {
-		paramList := strings.Split(paramsStr, ",")
-		for _, param := range paramList {
-			param = strings.TrimSpace(param)
+		rawParams := strings.Split(paramsStr, ",")
+		for i, raw := range rawParams {
+			param := strings.TrimSpace(raw)
 			if param == "" {
 				continue
 			}
+			if param == "..." {
+				if i != len(rawParams)-1 {
+					return nil, lineNum + 1, fmt.Errorf("variadic marker '...' must be the last parameter at line %d", lineNum+1)
+				}
+				parameters = append(parameters, &MethodParameter{IsVarargs: true})
+				continue
+			}
+
 			paramParts := strings.Fields(param)
 
 			var paramType, paramName string
@@ -924,9 +932,20 @@ func parseMethodStatement(lines []string, lineNum, currentIndent int) (*MethodDe
 	paramsStr := strings.TrimSpace(signature[parenStart+1 : parenEnd])
 	var parameters []*MethodParameter
 	if paramsStr != "" {
-		paramList := strings.SplitSeq(paramsStr, ",")
-		for paramStr := range paramList {
-			paramStr = strings.TrimSpace(paramStr)
+		parts := strings.Split(paramsStr, ",")
+		for i, raw := range parts {
+			paramStr := strings.TrimSpace(raw)
+			if paramStr == "" {
+				continue
+			}
+			if paramStr == "..." {
+				if i != len(parts)-1 {
+					return nil, lineNum + 1, fmt.Errorf("variadic marker '...' must be the last parameter at line %d", lineNum+1)
+				}
+				parameters = append(parameters, &MethodParameter{IsVarargs: true})
+				continue
+			}
+
 			paramParts := strings.Fields(paramStr)
 
 			param := &MethodParameter{}
@@ -946,6 +965,8 @@ func parseMethodStatement(lines []string, lineNum, currentIndent int) (*MethodDe
 				param.Name = paramParts[0]
 				param.IsRef = false
 				parameters = append(parameters, param)
+			} else {
+				return nil, lineNum + 1, fmt.Errorf("invalid parameter format at line %d", lineNum+1)
 			}
 		}
 	}
@@ -1329,9 +1350,20 @@ func parsePubFunctionStatement(lines []string, lineNum, currentIndent int) (*Sta
 	paramsStr := strings.TrimSpace(signature[parenStart+1 : parenEnd])
 	var parameters []*MethodParameter
 	if paramsStr != "" {
-		paramList := strings.SplitSeq(paramsStr, ",")
-		for paramStr := range paramList {
-			paramStr = strings.TrimSpace(paramStr)
+		rawParams := strings.Split(paramsStr, ",")
+		for i, raw := range rawParams {
+			paramStr := strings.TrimSpace(raw)
+			if paramStr == "" {
+				continue
+			}
+			if paramStr == "..." {
+				if i != len(rawParams)-1 {
+					return nil, lineNum + 1, fmt.Errorf("variadic marker '...' must be the last parameter at line %d", lineNum+1)
+				}
+				parameters = append(parameters, &MethodParameter{IsVarargs: true})
+				continue
+			}
+
 			paramParts := strings.Fields(paramStr)
 
 			param := &MethodParameter{}
@@ -1351,6 +1383,8 @@ func parsePubFunctionStatement(lines []string, lineNum, currentIndent int) (*Sta
 				param.Name = paramParts[0]
 				param.IsRef = false
 				parameters = append(parameters, param)
+			} else {
+				return nil, lineNum + 1, fmt.Errorf("invalid parameter format at line %d", lineNum+1)
 			}
 		}
 	}
@@ -1452,8 +1486,8 @@ func parseBulkImport(lines []string, lineNum int) (*Statement, int, error) {
 		if getIndentation(line) == 0 {
 			break
 		}
-		moduleNames := strings.SplitSeq(trimmed, ",")
-		for moduleName := range moduleNames {
+		moduleNames := strings.Split(trimmed, ",")
+		for _, moduleName := range moduleNames {
 			moduleName = strings.TrimSpace(strings.Trim(moduleName, "\""))
 			if moduleName != "" {
 				imports = append(imports, &ImportStmt{Module: moduleName})
