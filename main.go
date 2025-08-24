@@ -111,7 +111,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	validationErrors := lexer.ValidateProgram(program)
+	macros := preprocessor.MacroNames(input)
+	validationErrors := lexer.ValidateProgramWithMacros(program, macros)
 	if len(validationErrors) > 0 {
 		for _, err := range validationErrors {
 			fmt.Fprintf(os.Stderr, "\033[31mComptimeError: %v\033[0m\n", err)

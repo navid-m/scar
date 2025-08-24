@@ -28,6 +28,18 @@ func ProcessSourceLevelMacros(source string) string {
 	return source
 }
 
+func MacroNames(source string) []string {
+	macros := collectMacroDefinitions(source)
+	importedMacros := loadImportedMacros(source)
+	maps.Copy(macros, importedMacros)
+
+	names := make([]string, 0, len(macros))
+	for name := range macros {
+		names = append(names, name)
+	}
+	return names
+}
+
 func ProcessUnsafeAliases(source string) string {
 	lines := strings.Split(source, "\n")
 	var result []string

@@ -21,6 +21,200 @@ type FunctionSignature struct {
 	Module     string
 }
 
+func isBuiltinFunction(name string) bool {
+	switch strings.TrimSpace(name) {
+	case "fmt!", "cat!", "has!", "put!", "len":
+		return true
+	default:
+		return false
+	}
+}
+
+func resolveReceiverType(object string, varTypes map[string]string) (string, bool) {
+	s := strings.TrimSpace(object)
+	if s == "" {
+		return "", false
+	}
+	if strings.ContainsAny(s, ".() ") {
+		return "", false
+	}
+	if t, ok := varTypes[s]; ok {
+		t = normalizeTypeName(strings.TrimSpace(t))
+		if after, has := strings.CutPrefix(t, "ref "); has {
+			t = strings.TrimSpace(after)
+		}
+		if t == "" {
+			return "", false
+		}
+		if strings.Contains(t, "::") {
+			parts := strings.Split(t, "::")
+			t = parts[len(parts)-1]
+		}
+		return t, true
+	}
+	if strings.Contains(s, "::") {
+		parts := strings.Split(s, "::")
+		cls := parts[len(parts)-1]
+		if cls != "" {
+			return cls, true
+		}
+	}
+	if len(s) > 0 {
+		c := s[0]
+		if c >= 'A' && c <= 'Z' {
+			return s, true
+		}
+	}
+	return "", false
+}
+
+func isNewExpression(expr string) bool {
+	return strings.HasPrefix(strings.TrimSpace(expr), "new ")
+}
+
+func isMethodCall(expr string) bool {
+	s := strings.TrimSpace(expr)
+	if !strings.Contains(s, "(") {
+		return false
+	}
+	open := findFirstParenOutsideString(s)
+	if open == -1 {
+		return false
+	}
+	head := strings.TrimSpace(s[:open])
+	return strings.Contains(head, ".")
+}
+
+func findMatchingParen(s string, open int) int {
+	depth := 0
+	inString := false
+	var q byte
+	escape := false
+	for i := open; i < len(s); i++ {
+		ch := s[i]
+		if inString {
+			if escape {
+				escape = false
+				continue
+			}
+			if ch == '\\' {
+				escape = true
+				continue
+			}
+			if ch == q {
+				inString = false
+			}
+			continue
+		}
+		switch ch {
+		case '\'', '"':
+			inString = true
+			q = ch
+		case '(':
+			depth++
+		case ')':
+			depth--
+			if depth == 0 {
+				return i
+			}
+		}
+	}
+	return -1
+}
+
+type ArgumentValidator struct {
+	functions     map[string]*FunctionSignature
+	excludedBases map[string]bool
+	macros        []string
+}
+
+func NewArgumentValidator() *ArgumentValidator {
+	av := &ArgumentValidator{
+		functions:     make(map[string]*FunctionSignature),
+		excludedBases: make(map[string]bool),
+		macros:        nil,
+	}
+
+	builtins := []string{"fmt!", "cat!", "has!", "put!", "len"}
+	for _, builtin := range builtins {
+		ret := "void"
+		switch builtin {
+		case "fmt!":
+			ret = "string"
+		case "len":
+			ret = "int"
+		}
+		av.functions[builtin] = &FunctionSignature{
+			Name:       builtin,
+			Parameters: []*MethodParameter{},
+			ReturnType: ret,
+			Module:     "",
+		}
+	}
+
+	return av
+}
+
+func (av *ArgumentValidator) SetMacros(names []string) {
+	av.macros = append(av.macros[:0], names...)
+}
+
+func (av *ArgumentValidator) looksLikeMacroName(name string) bool {
+	if name == "" || len(av.macros) == 0 {
+		return false
+	}
+	low := strings.ToLower(name)
+	for _, m := range av.macros {
+		if m == "" {
+			continue
+		}
+		if strings.Contains(low, strings.ToLower(m)) {
+			return true
+		}
+	}
+	return false
+}
+
+func (av *ArgumentValidator) RegisterMethod(
+	className string,
+	name string,
+	params []*MethodParameter,
+	returnType string,
+	module string,
+) {
+	if className == "" || name == "" {
+		return
+	}
+	key := className + "." + name
+	sig := &FunctionSignature{Name: key, Parameters: params, ReturnType: returnType, Module: module}
+	av.functions[key] = sig
+	if module != "" {
+		modKey := module + "::" + className + "." + name
+		av.functions[modKey] = sig
+		usKey := module + "_" + className + "_" + name
+		av.functions[usKey] = sig
+	}
+}
+
+func (av *ArgumentValidator) RegisterFunction(
+	name string,
+	params []*MethodParameter,
+	returnType string,
+	module string,
+) {
+	if name == "" {
+		return
+	}
+	sig := &FunctionSignature{Name: name, Parameters: params, ReturnType: returnType, Module: module}
+	av.functions[name] = sig
+	if module != "" {
+		modKey := module + "::" + name
+		av.functions[modKey] = sig
+		usKey := module + "_" + name
+		av.functions[usKey] = sig
+	}
+}
+
 func preRegisterVars(stmts []*Statement, varTypes map[string]string) {
 	for _, stmt := range stmts {
 		if stmt == nil {
@@ -196,107 +390,15 @@ func normalizeTypeName(t string) string {
 	return s
 }
 
-func (av *ArgumentValidator) RegisterMethod(
-	className string,
-	name string,
-	params []*MethodParameter,
-	returnType string,
-	module string,
-) {
-	if className != "" {
-		key := className + "." + name
-		sig := &FunctionSignature{Name: key, Parameters: params, ReturnType: returnType, Module: module}
-		av.functions[key] = sig
-		if module != "" {
-			modKey := module + "::" + className + "." + name
-			av.functions[modKey] = sig
-			usKey := module + "_" + className + "_" + name
-			av.functions[usKey] = sig
-		}
-		av.functions[className+"_"+name] = sig
-	}
-}
-
-type ArgumentValidator struct {
-	functions     map[string]*FunctionSignature
-	excludedBases map[string]bool
-}
-
-func NewArgumentValidator() *ArgumentValidator {
-	av := &ArgumentValidator{
-		functions:     make(map[string]*FunctionSignature),
-		excludedBases: make(map[string]bool),
-	}
-
-	builtins := []string{"fmt!", "cat!", "has!", "put!", "len"}
-	for _, builtin := range builtins {
-		ret := "void"
-		switch builtin {
-		case "fmt!":
-			ret = "string"
-		case "len":
-			ret = "int"
-		}
-		av.functions[builtin] = &FunctionSignature{
-			Name:       builtin,
-			Parameters: []*MethodParameter{},
-			ReturnType: ret,
-			Module:     "",
-		}
-	}
-
-	return av
-}
-
-func (av *ArgumentValidator) RegisterFunction(
-	name string,
-	params []*MethodParameter,
-	returnType string,
-	module string,
-) {
-	signature := &FunctionSignature{
-		Name:       name,
-		Parameters: params,
-		ReturnType: returnType,
-		Module:     module,
-	}
-	av.functions[name] = signature
-	if module != "" {
-		av.functions[module+"_"+name] = signature
-		av.functions[module+"::"+name] = signature
-	}
-}
-
-func isBuiltinFunction(name string) bool {
-	builtins := []string{"fmt!", "cat!", "has!", "put!", "len"}
-	for _, builtin := range builtins {
-		if name == builtin {
-			return true
-		}
-	}
-	return false
-}
-
-func isMethodCall(expr string) bool {
-	s := strings.TrimSpace(expr)
-	parenIdx := strings.Index(s, "(")
-	if parenIdx == -1 {
-		return false
-	}
-	beforeParen := s[:parenIdx]
-	return strings.Contains(beforeParen, ".")
-}
-
-func isNewExpression(expr string) bool {
-	s := strings.TrimSpace(expr)
-	return strings.HasPrefix(s, "new ")
-}
-
 func (av *ArgumentValidator) ValidateFunctionCall(funcCall *FunctionCallStmt, line int) error {
 	var (
 		funcName          = funcCall.Name
 		signature, exists = av.functions[funcName]
 	)
+
+	if av.looksLikeMacroName(funcName) {
+		return nil
+	}
 
 	if isBuiltinFunction(funcName) {
 		return nil
@@ -338,6 +440,9 @@ func (av *ArgumentValidator) ValidateFunctionCall(funcCall *FunctionCallStmt, li
 		if funcName == "" {
 			return nil
 		}
+		if strings.Contains(funcName, "_") { //TODO: REPLACE LATER WITH MACRO DETECTION
+			return nil
+		}
 		return fmt.Errorf("line %d: function '%s' is not defined", line, funcName)
 	}
 
@@ -362,44 +467,6 @@ func (av *ArgumentValidator) ValidateFunctionCall(funcCall *FunctionCallStmt, li
 	return nil
 }
 
-// Resolve the receiver class/type name from an object token and scope map.
-//
-// Supports:
-//   - variable with known type in varTypes
-//   - temporary constructor form: new_ClassName(...)
-func resolveReceiverType(object string, varTypes map[string]string) (string, bool) {
-	s := strings.TrimSpace(object)
-	if s == "" {
-		return "", false
-	}
-	// new_Class(args)
-	if strings.HasPrefix(s, "new_") {
-		rest := s[len("new_"):]
-		if idx := strings.Index(rest, "("); idx != -1 {
-			cls := strings.TrimSpace(rest[:idx])
-			if cls != "" {
-				return cls, true
-			}
-		}
-	}
-	if t, ok := varTypes[s]; ok {
-		t = normalizeTypeName(strings.TrimSpace(t))
-		if strings.Contains(t, "::") {
-			parts := strings.Split(t, "::")
-			t = parts[len(parts)-1]
-		}
-		switch t {
-		case "int", "float", "bool", "string":
-			return "", false
-		}
-		if strings.HasPrefix(t, "list[") || strings.HasPrefix(t, "map[") {
-			return "", false
-		}
-		return t, true
-	}
-	return "", false
-}
-
 func (av *ArgumentValidator) ValidateMethodCall(methodCall *MethodCallStmt, line int, varTypes map[string]string) error {
 	recv, ok := resolveReceiverType(methodCall.Object, varTypes)
 	if !ok {
@@ -422,7 +489,7 @@ func (av *ArgumentValidator) ValidateMethodCall(methodCall *MethodCallStmt, line
 		return fmt.Errorf("line %d: method '%s.%s' is not defined", line, recv, methodCall.Method)
 	}
 
-	if len(methodCall.Args) != len(sig.Parameters) {
+	if !av.looksLikeMacroName(methodCall.Method) && len(methodCall.Args) != len(sig.Parameters) {
 		return fmt.Errorf("line %d: method '%s.%s' expects %d arguments, but %d were provided", line, recv, methodCall.Method, len(sig.Parameters), len(methodCall.Args))
 	}
 
@@ -454,29 +521,10 @@ func (av *ArgumentValidator) ValidateStaticMethodCall(call *StaticMethodCallStmt
 	if !exists {
 		return fmt.Errorf("line %d: static method '%s.%s' is not defined", line, recv, call.Method)
 	}
-	if len(call.Args) != len(sig.Parameters) {
+	if !av.looksLikeMacroName(call.Method) && len(call.Args) != len(sig.Parameters) {
 		return fmt.Errorf("line %d: static method '%s.%s' expects %d arguments, but %d were provided", line, recv, call.Method, len(sig.Parameters), len(call.Args))
 	}
 	return nil
-}
-
-func findMatchingParen(expr string, openPos int) int {
-	if openPos >= len(expr) || expr[openPos] != '(' {
-		return -1
-	}
-	parenCount := 1
-	for i := openPos + 1; i < len(expr); i++ {
-		switch expr[i] {
-		case '(':
-			parenCount++
-		case ')':
-			parenCount--
-			if parenCount == 0 {
-				return i
-			}
-		}
-	}
-	return -1
 }
 
 func (av *ArgumentValidator) ValidateStringFunctionCall(expr string, line int) error {
@@ -1053,9 +1101,24 @@ func ValidateProgram(program *Program) []error {
 	if program == nil {
 		return []error{fmt.Errorf("nil program")}
 	}
+	return validateProgramInternal(program, nil)
+}
+
+func ValidateProgramWithMacros(program *Program, macros []string) []error {
+	if program == nil {
+		return []error{fmt.Errorf("nil program")}
+	}
+	return validateProgramInternal(program, macros)
+}
+
+func validateProgramInternal(program *Program, macros []string) []error {
 	validator := NewArgumentValidator()
 	varTypes := make(map[string]string)
 	preRegisterVars(program.Statements, varTypes)
+
+	if len(macros) > 0 {
+		validator.SetMacros(macros)
+	}
 
 	if len(program.Imports) > 0 {
 		baseDir := filepath.Dir(CurrentSourceFile)
