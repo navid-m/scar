@@ -4,3 +4,16 @@ pub fn error(string msg):
     $raw (
         exit(1);
     )
+    
+## Get the native pointer width in bits (e.g., 32 or 64).
+pub fn pointer_width() -> int:
+    $raw (
+        return (int)(sizeof(void*) * 8);
+    )
+
+## Determine if the machine is little-endian.
+pub fn is_little_endian() -> bool:
+    $raw (
+        unsigned int x = 1;
+        return (*(unsigned char*)&x) == 1;
+    )

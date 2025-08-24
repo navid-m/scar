@@ -13,6 +13,7 @@ import "std/sort"
 import "std/io"
 import "std/json"
 import "std/uri"
+import "std/runtime"
 
 platform (Windows):
     import "std/net"
@@ -184,6 +185,16 @@ t.assert_string_equals("cherry", split_result1.get_element(2), "Third part shoul
 log::success(fmt!("ASSERT PASSED: Currently directory correctly detected as: %s", os::cwd()))
 log::success(fmt!("ASSERT PASSED: Home directory detected as: %s", os::homedir()))
 log::success(fmt!("ASSERT PASSED: Temporary directory detected as: %s", os::tempdir()))
+
+# Runtime Tests
+int pw = runtime::pointer_width()
+t.assert_true(pw == 32 || pw == 64, fmt!("pointer_width should be 32 or 64, got %d", pw))
+
+bool le = runtime::is_little_endian()
+platform (Windows):
+    t.assert_equals(true, le, "Windows should be little-endian")
+platform (Posix):
+    log::success(fmt!("ASSERT PASSED: Endianness detected as: %s", le ? "little" : "big"))
 
 # Path Tests
 t.assert_equals(true, path::is_absolute_path("/absolute/path"), "Path should be absolute")
