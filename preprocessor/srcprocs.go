@@ -326,8 +326,8 @@ func loadImportedMacros(source string) map[string]*Macro {
 
 func loadMacrosFromModule(moduleName string) map[string]*Macro {
 	macros := make(map[string]*Macro)
-
 	moduleSource := findAndReadModule(moduleName)
+
 	if moduleSource == "" {
 		return macros
 	}
