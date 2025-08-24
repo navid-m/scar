@@ -1,5 +1,6 @@
+fixed int limit = 400
+
 int counter = 0
-int limit = 400
 
 parallel while counter < limit:
     print "Parallel counter: %d" | counter
