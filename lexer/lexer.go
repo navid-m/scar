@@ -236,6 +236,7 @@ type PubVarDeclStmt struct {
 	Name    string
 	Value   string
 	IsConst bool
+	IsFixed bool
 }
 
 type EnumDeclStmt struct {
@@ -391,6 +392,7 @@ type VarDeclStmt struct {
 	Value   string
 	IsRef   bool
 	IsConst bool
+	IsFixed bool
 }
 
 type VarAssignStmt struct {

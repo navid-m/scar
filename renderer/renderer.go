@@ -518,22 +518,42 @@ bool __check_key_exists(int* keys, int size, int key) {
 			if !strings.HasPrefix(value, "\"") {
 				value = fmt.Sprintf("\"%s\"", value)
 			}
-			fmt.Fprintf(&b, "char %s[256];\n", varName)
+			if varDecl.IsFixed {
+				fmt.Fprintf(&b, "static char %s[256];\n", varName)
+			} else {
+				fmt.Fprintf(&b, "char %s[256];\n", varName)
+			}
 			fmt.Fprintf(&b, "void init_%s() { size_t n = strlen(%s); if (n > 255) n = 255; memcpy(%s, %s, n); %s[n] = '\\0'; }\n", varName, value, varName, value, varName)
 		case "lstring":
 			if !strings.HasPrefix(value, "\"") {
 				value = fmt.Sprintf("\"%s\"", value)
 			}
-			fmt.Fprintf(&b, "char %s[10000];\n", varName)
+			if varDecl.IsFixed {
+				fmt.Fprintf(&b, "static char %s[10000];\n", varName)
+			} else {
+				fmt.Fprintf(&b, "char %s[10000];\n", varName)
+			}
 			fmt.Fprintf(&b, "void init_%s() { size_t n = strlen(%s); if (n > 9999) n = 9999; memcpy(%s, %s, n); %s[n] = '\\0'; }\n", varName, value, varName, value, varName)
 		case "string":
-			fmt.Fprintf(&b, "char* %s;\n", varName)
+			if varDecl.IsFixed {
+				fmt.Fprintf(&b, "static char* %s;\n", varName)
+			} else {
+				fmt.Fprintf(&b, "char* %s;\n", varName)
+			}
 			fmt.Fprintf(&b, "void init_%s() { %s = %s; }\n", varName, varName, value)
 		default:
 			if varDecl.IsConst {
-				fmt.Fprintf(&b, "const %s %s = %s;\n", cType, varName, value)
+				if varDecl.IsFixed {
+					fmt.Fprintf(&b, "static const %s %s = %s;\n", cType, varName, value)
+				} else {
+					fmt.Fprintf(&b, "const %s %s = %s;\n", cType, varName, value)
+				}
 			} else {
-				fmt.Fprintf(&b, "%s %s = %s;\n", cType, varName, value)
+				if varDecl.IsFixed {
+					fmt.Fprintf(&b, "static %s %s = %s;\n", cType, varName, value)
+				} else {
+					fmt.Fprintf(&b, "%s %s = %s;\n", cType, varName, value)
+				}
 			}
 		}
 	}
@@ -564,6 +584,10 @@ bool __check_key_exists(int* keys, int size, int key) {
 		for varName, varDecl := range module.PublicVars {
 			cType := mapTypeToCType(varDecl.Type)
 			uniqueName := lexer.GenerateUniqueSymbol(varName, module.Name)
+			// Do not emit extern for fixed (static) variables
+			if varDecl.IsFixed {
+				continue
+			}
 			switch varDecl.Type {
 			case "cstring":
 				fmt.Fprintf(&b, "extern char %s[256];\n", uniqueName)
@@ -593,22 +617,42 @@ bool __check_key_exists(int* keys, int size, int key) {
 				if !strings.HasPrefix(value, "\"") {
 					value = fmt.Sprintf("\"%s\"", value)
 				}
-				fmt.Fprintf(&b, "char %s[256];\n", uniqueName)
+				if varDecl.IsFixed {
+					fmt.Fprintf(&b, "static char %s[256];\n", uniqueName)
+				} else {
+					fmt.Fprintf(&b, "char %s[256];\n", uniqueName)
+				}
 				fmt.Fprintf(&b, "void init_%s() { size_t n = strlen(%s); if (n > 255) n = 255; memcpy(%s, %s, n); %s[n] = '\\0'; }\n", uniqueName, value, uniqueName, value, uniqueName)
 			case "lstring":
 				if !strings.HasPrefix(value, "\"") {
 					value = fmt.Sprintf("\"%s\"", value)
 				}
-				fmt.Fprintf(&b, "char %s[10000];\n", uniqueName)
+				if varDecl.IsFixed {
+					fmt.Fprintf(&b, "static char %s[10000];\n", uniqueName)
+				} else {
+					fmt.Fprintf(&b, "char %s[10000];\n", uniqueName)
+				}
 				fmt.Fprintf(&b, "void init_%s() { size_t n = strlen(%s); if (n > 9999) n = 9999; memcpy(%s, %s, n); %s[n] = '\\0'; }\n", uniqueName, value, uniqueName, value, uniqueName)
 			case "string":
-				fmt.Fprintf(&b, "char* %s;\n", uniqueName)
+				if varDecl.IsFixed {
+					fmt.Fprintf(&b, "static char* %s;\n", uniqueName)
+				} else {
+					fmt.Fprintf(&b, "char* %s;\n", uniqueName)
+				}
 				fmt.Fprintf(&b, "void init_%s() { %s = %s; }\n", uniqueName, uniqueName, value)
 			default:
 				if varDecl.IsConst {
-					fmt.Fprintf(&b, "const %s %s = %s;\n", cType, uniqueName, value)
+					if varDecl.IsFixed {
+						fmt.Fprintf(&b, "static const %s %s = %s;\n", cType, uniqueName, value)
+					} else {
+						fmt.Fprintf(&b, "const %s %s = %s;\n", cType, uniqueName, value)
+					}
 				} else {
-					fmt.Fprintf(&b, "%s %s = %s;\n", cType, uniqueName, value)
+					if varDecl.IsFixed {
+						fmt.Fprintf(&b, "static %s %s = %s;\n", cType, uniqueName, value)
+					} else {
+						fmt.Fprintf(&b, "%s %s = %s;\n", cType, uniqueName, value)
+					}
 				}
 			}
 		}

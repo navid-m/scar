@@ -1171,6 +1171,49 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 		// For inferred 'val', mark as const so codegen can emit C 'const'.
 		return &Statement{VarDeclInferred: &VarDeclInferredStmt{Name: varName, Value: value, IsConst: true}}, lineNum + 1, nil
 
+	case "fixed":
+		// Supported local forms:
+		//
+		// - fixed val <type> <name> = <value>
+		// - fixed val <name> = <value> (infer type)
+		// - fixed <type> <name> = <value>
+		// - fixed ref <type> <name> = <value>
+		if len(parts) >= 5 && parts[1] == "val" {
+			if len(parts) >= 6 && parts[3] == "=" && isValidType(parts[2]) {
+				// fixed val <type> <name> = <value>
+				varType := parts[2]
+				varName := parts[3]
+				value := strings.Join(parts[4:], " ")
+				return &Statement{VarDecl: &VarDeclStmt{Type: varType, Name: varName, Value: value, IsConst: true, IsFixed: true}}, lineNum + 1, nil
+			}
+			if len(parts) >= 4 && parts[2] != "=" && parts[3] == "=" {
+				// fixed val <name> = <value>
+				varName := parts[2]
+				value := strings.Join(parts[4:], " ")
+				varType := inferBasicTypeFromValue(value)
+				if varType == "string" && !(strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"")) {
+					value = fmt.Sprintf("\"%s\"", value)
+				}
+				return &Statement{VarDecl: &VarDeclStmt{Type: varType, Name: varName, Value: value, IsConst: true, IsFixed: true}}, lineNum + 1, nil
+			}
+			return nil, lineNum + 1, fmt.Errorf("fixed val declaration format error at line %d", lineNum+1)
+		}
+		if len(parts) >= 5 && parts[1] == "ref" && parts[4] == "=" {
+			// fixed ref <type> <name> = <value>
+			varType := parts[2]
+			varName := parts[3]
+			value := strings.Join(parts[5:], " ")
+			return &Statement{VarDecl: &VarDeclStmt{Type: varType, Name: varName, Value: value, IsRef: true, IsFixed: true}}, lineNum + 1, nil
+		}
+		if len(parts) >= 4 && parts[3] == "=" && isValidType(parts[1]) {
+			// fixed <type> <name> = <value>
+			varType := parts[1]
+			varName := parts[2]
+			value := strings.Join(parts[4:], " ")
+			return &Statement{VarDecl: &VarDeclStmt{Type: varType, Name: varName, Value: value, IsFixed: true}}, lineNum + 1, nil
+		}
+		return nil, lineNum + 1, fmt.Errorf("fixed declaration format error at line %d", lineNum+1)
+
 	case "pub":
 		return parsePubStatement(lines, lineNum, currentIndent)
 

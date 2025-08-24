@@ -255,6 +255,43 @@ func parsePubStatement(lines []string, lineNum, currentIndent int) (*Statement, 
 		size = strings.Join(parts[equalIndex+1:], " ")
 		return &Statement{PubAllocate: &PubAllocateStmt{Type: varType, Name: varName, Size: size}}, lineNum + 1, nil
 	default:
+		if parts[1] == "fixed" {
+			// Supported forms:
+			//
+			// - pub fixed val <type> <name> = <value>
+			// - pub fixed val <name> = <value>  (type inferred)
+			// - pub fixed <type> <name> = <value>
+			if len(parts) >= 7 && parts[2] == "val" && parts[4] == "=" && isValidType(parts[3]) {
+				var (
+					varType = parts[3]
+					varName = parts[5]
+					value   = strings.Join(parts[6:], " ")
+				)
+				return &Statement{PubVarDecl: &PubVarDeclStmt{Type: varType, Name: varName, Value: value, IsConst: true, IsFixed: true}}, lineNum + 1, nil
+			}
+			if len(parts) >= 5 && parts[2] == "val" && parts[3] != "=" && parts[4] == "=" {
+				// pub fixed val <name> = <value>
+				var (
+					varName = parts[3]
+					value   = strings.Join(parts[5:], " ")
+					varType = inferBasicTypeFromValue(value)
+				)
+				if varType == "string" && !(strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"")) {
+					value = fmt.Sprintf("\"%s\"", value)
+				}
+				return &Statement{PubVarDecl: &PubVarDeclStmt{Type: varType, Name: varName, Value: value, IsConst: true, IsFixed: true}}, lineNum + 1, nil
+			}
+			if len(parts) >= 5 && parts[3] == "=" && isValidType(parts[2]) {
+				// pub fixed <type> <name> = <value>
+				var (
+					varType = parts[2]
+					varName = parts[3]
+					value   = strings.Join(parts[4:], " ")
+				)
+				return &Statement{PubVarDecl: &PubVarDeclStmt{Type: varType, Name: varName, Value: value, IsFixed: true}}, lineNum + 1, nil
+			}
+			return nil, lineNum + 1, fmt.Errorf("invalid pub fixed declaration at line %d", lineNum+1)
+		}
 		// "pub val <name> = <value>" (inferred) and "pub val <type> <name> = <value>"
 		if parts[1] == "val" {
 			if len(parts) >= 6 && parts[4] == "=" && isValidType(parts[2]) {
