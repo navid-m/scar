@@ -402,6 +402,6 @@ t.assert_string_equals("https://example.com/some thing", uri::decode_url("https:
 
 t.test_summary()
 
-fixed i32 asdfasdasd = 10
+fixed i32 some_fixed_integer = 10
 
 os::exit(0)

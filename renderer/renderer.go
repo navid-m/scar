@@ -507,6 +507,40 @@ bool __check_key_exists(int* keys, int size, int key) {
 		b.WriteString(fmt.Sprintf("%s;\n", prototype))
 	}
 	b.WriteString("\n")
+
+	for _, stmt := range program.Statements {
+		if stmt.VarDecl != nil && stmt.VarDecl.IsFixed {
+			var (
+				cType = mapTypeToCType(stmt.VarDecl.Type)
+				name  = stmt.VarDecl.Name
+				value = stmt.VarDecl.Value
+			)
+
+			switch stmt.VarDecl.Type {
+			case "cstring":
+				if !strings.HasPrefix(value, "\"") {
+					value = fmt.Sprintf("\"%s\"", value)
+				}
+				fmt.Fprintf(&b, "static char %s[256];\n", name)
+				fmt.Fprintf(&b, "void init_%s() { size_t n = strlen(%s); if (n > 255) n = 255; memcpy(%s, %s, n); %s[n] = '\\0'; }\n", name, value, name, value, name)
+			case "lstring":
+				if !strings.HasPrefix(value, "\"") {
+					value = fmt.Sprintf("\"%s\"", value)
+				}
+				fmt.Fprintf(&b, "static char %s[10000];\n", name)
+				fmt.Fprintf(&b, "void init_%s() { size_t n = strlen(%s); if (n > 9999) n = 9999; memcpy(%s, %s, n); %s[n] = '\\0'; }\n", name, value, name, value, name)
+			case "string":
+				fmt.Fprintf(&b, "static char* %s;\n", name)
+				fmt.Fprintf(&b, "void init_%s() { %s = %s; }\n", name, name, value)
+			default:
+				if stmt.VarDecl.IsConst {
+					fmt.Fprintf(&b, "static const %s %s = %s;\n", cType, name, value)
+				} else {
+					fmt.Fprintf(&b, "static %s %s = %s;\n", cType, name, value)
+				}
+			}
+		}
+	}
 	for varName, varDecl := range globalVars {
 		var (
 			cType = mapTypeToCType(varDecl.Type)
@@ -726,6 +760,9 @@ bool __check_key_exists(int* keys, int size, int key) {
 	var mainStatements []*lexer.Statement
 	for _, stmt := range program.Statements {
 		if stmt.ClassDecl == nil && stmt.PubClassDecl == nil && stmt.StructDecl == nil && stmt.PubStructDecl == nil && stmt.PubVarDecl == nil && stmt.PubAllocate == nil && stmt.TopLevelFuncDecl == nil && stmt.PubTopLevelFuncDecl == nil {
+			if stmt.VarDecl != nil && stmt.VarDecl.IsFixed {
+				continue
+			}
 			mainStatements = append(mainStatements, stmt)
 		}
 	}
