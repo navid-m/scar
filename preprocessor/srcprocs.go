@@ -136,7 +136,7 @@ func ProcessMacros(source string) string {
 
 	const maxIters = 10
 	prev := source
-	for i := 0; i < maxIters; i++ {
+	for range maxIters {
 		next := expandMacros(prev, macros)
 		if next == prev {
 			return next
