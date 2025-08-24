@@ -175,6 +175,7 @@ func RenderC(program *lexer.Program, baseDir string, gcFlag bool) string {
 #include <stdbool.h>
 #include <stdint.h>
 #include <signal.h>
+#include <stdarg.h>
 #if defined(__unix__) || defined(__APPLE__)
 #include <execinfo.h>
 #endif
@@ -2093,9 +2094,9 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 		for i, param := range method.Parameters {
 			if param.IsVarargs {
 				if method.IsStatic && i == 0 {
-					fmt.Fprintf(b, "...")
+					fmt.Fprintf(b, "int _va_count, ...")
 				} else {
-					fmt.Fprintf(b, ", ...")
+					fmt.Fprintf(b, ", int _va_count, ...")
 				}
 				continue
 			}
@@ -2124,6 +2125,11 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 
 		b.WriteString(") {\n")
 
+		if hasVarargs(method.Parameters) {
+			b.WriteString("    va_list _va;\n")
+			b.WriteString("    va_start(_va, _va_count);\n")
+		}
+
 		for _, param := range method.Parameters {
 			paramType := param.Type
 			if param.IsRef && strings.HasPrefix(paramType, "ref ") {
@@ -2139,6 +2145,9 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 			delete(localVars, param.Name)
 		}
 
+		if hasVarargs(method.Parameters) {
+			b.WriteString("    va_end(_va);\n")
+		}
 		b.WriteString("}\n\n")
 	}
 }
@@ -5886,7 +5895,8 @@ func generateTopLevelFunctionImplementation(b *strings.Builder, funcDecl *lexer.
 
 	for _, param := range funcDecl.Parameters {
 		if param.IsVarargs {
-			paramList = append(paramList, "...")
+			// Insert hidden count before ellipsis
+			paramList = append(paramList, "int _va_count, ...")
 			continue
 		}
 
@@ -5922,6 +5932,11 @@ func generateTopLevelFunctionImplementation(b *strings.Builder, funcDecl *lexer.
 
 	b.WriteString(strings.Join(paramList, ", "))
 	b.WriteString(") {\n")
+
+	if hasVarargs(funcDecl.Parameters) {
+		b.WriteString("    va_list _va;\n")
+		b.WriteString("    va_start(_va, _va_count);\n")
+	}
 
 	if funcDecl.ReturnType == "string" {
 		for _, stmt := range funcDecl.Body {
@@ -5975,7 +5990,20 @@ func generateTopLevelFunctionImplementation(b *strings.Builder, funcDecl *lexer.
 		renderStatements(b, funcDecl.Body, "    ", "", program, funcDecl.ReturnType)
 	}
 
+	if hasVarargs(funcDecl.Parameters) {
+		b.WriteString("    va_end(_va);\n")
+	}
+
 	b.WriteString("}\n\n")
+}
+
+func hasVarargs(parameters []*lexer.MethodParameter) bool {
+	for _, param := range parameters {
+		if param.IsVarargs {
+			return true
+		}
+	}
+	return false
 }
 
 func isNumericOrBoolean(s string) bool {
@@ -6280,7 +6308,8 @@ func generateMethodPrototype(className, methodName, returnType string, parameter
 
 	for _, param := range parameters {
 		if param.IsVarargs {
-			paramList = append(paramList, "...")
+			// Insert hidden count before ellipsis
+			paramList = append(paramList, "int _va_count, ...")
 			continue
 		}
 
@@ -6308,7 +6337,6 @@ func generateFunctionPrototype(funcDecl *lexer.TopLevelFuncDeclStmt) string {
 
 	var paramList []string
 
-	// Handle functions that return lists
 	if strings.HasPrefix(funcDecl.ReturnType, "list[") && strings.HasSuffix(funcDecl.ReturnType, "]") {
 		innerType := strings.TrimPrefix(strings.TrimSuffix(funcDecl.ReturnType, "]"), "list[")
 		if innerType == "string" {
@@ -6332,9 +6360,11 @@ func generateFunctionPrototype(funcDecl *lexer.TopLevelFuncDeclStmt) string {
 
 	for _, param := range funcDecl.Parameters {
 		if param.IsVarargs {
-			paramList = append(paramList, "...")
+			// Insert hidden count before ellipsis
+			paramList = append(paramList, "int _va_count, ...")
 			continue
 		}
+
 		paramName := param.Name
 
 		if param.IsList || strings.HasPrefix(param.Type, "list[") {
@@ -6364,6 +6394,7 @@ func generateFunctionPrototype(funcDecl *lexer.TopLevelFuncDeclStmt) string {
 			paramList = append(paramList, fmt.Sprintf("%s %s", paramType, paramName))
 		}
 	}
+
 	if funcDecl.Name == "main" && len(funcDecl.Parameters) == 0 {
 		return "int main(int argc, char** argv)"
 	}
