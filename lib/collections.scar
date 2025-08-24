@@ -47,7 +47,7 @@ pub macro new_array(class_name, field_type, elem_type, cType, d_return, alloc_ex
                 this->data = realloc(this->data, this->capacity * sizeof(cType));
             )
 
-## Convenience macro to define an ArrayList without C snippets.
+## Convenience macro to define an ArrayList for a custom type.
 ##
 ## Usage: define_arraylist(MyList, MyType, default_value)
 ##
