@@ -367,10 +367,28 @@ json::dec_ref(config)
 fs::remove("user.json")
 fs::remove("settings.json")
 
+collections::define_arraylist(LongArrayList, i64, 0)
+
+ref LongArrayList longs = new collections::LongArrayList(4)
+LongArrayList::add_element(longs, 10000000000)
+LongArrayList::add_element(longs, 20000000000)
+LongArrayList::add_element(longs, 30000000000)
+
+i64 sz = longs.get_size()
+i64 first = longs.get_element(0)
+
+t.assert_equals(3, sz, "LongArrayList size should be 3")
+t.assert_equals(10000000000, first, "First element should be 10000000000")
+
+LongArrayList::set_element(longs, 1, 22222222222)
+t.assert_equals(22222222222, longs.get_element(1), "Updated second element")
+
+
 uri::encode_url("https://example.com/some thing")
 
 t.assert_string_equals("https://example.com/some%20thing", uri::encode_url("https://example.com/some thing"), "URL encoding should work")
 t.assert_string_equals("https://example.com/some thing", uri::decode_url("https://example.com/some%20thing"), "URL decoding should work")
+
 t.test_summary()
 
 os::exit(0)

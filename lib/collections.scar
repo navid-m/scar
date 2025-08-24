@@ -47,6 +47,19 @@ pub macro new_array(class_name, field_type, elem_type, cType, d_return, alloc_ex
                 this->data = realloc(this->data, this->capacity * sizeof(cType));
             )
 
+## Convenience macro to define an ArrayList without C snippets.
+##
+## Usage: define_arraylist(MyList, MyType, default_value)
+##
+## Notes:
+##
+##  - For most value types (including user-defined structs/classes that map to a C type),
+##    this will Just Work (TM) by using sizeof(elem_type) and plain assignment.
+##
+##  - For strings, prefer the existing `StringArrayList` specialization.
+pub macro define_arraylist(class_name, elem_type, default_value):
+    collections::new_array(class_name, elem_type, elem_type, elem_type, default_value, malloc(this->capacity * sizeof(elem_type)),/* free_expr */,value,return ((elem_type*)this->data)[index];)
+
 new_array(ArrayList, i32, i32, int, -1,malloc(this->capacity * sizeof(int)), /* free_expr */, value,  return ((i32*)this->data)[index];)
 new_array(FloatArrayList, f32, f32, float, 0.0, malloc(this->capacity * sizeof(float)), /* free_expr */, value, return ((f32*)this->data)[index];)
 new_array(CharArrayList, char, char, char, '\0', malloc(this->capacity * sizeof(char)),  /* free_expr */, value,return ((char*)this->data)[index];)

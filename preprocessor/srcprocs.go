@@ -9,6 +9,7 @@ package preprocessor
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -134,7 +135,16 @@ func ProcessMacros(source string) string {
 		macros[name] = macro
 	}
 
-	return expandMacros(source, macros)
+	const maxIters = 10
+	prev := source
+	for i := 0; i < maxIters; i++ {
+		next := expandMacros(prev, macros)
+		if next == prev {
+			return next
+		}
+		prev = next
+	}
+	return prev
 }
 
 func collectMacroDefinitions(source string) map[string]*Macro {
@@ -186,9 +196,10 @@ func parseMacroDefinition(lines []string, startLine int) (*Macro, int) {
 	}
 
 	var (
-		body        []string
-		currentLine = startLine + 1
-		macroIndent = -1
+		body           []string
+		currentLine    = startLine + 1
+		macroIndent    = -1
+		macroIndentStr string
 	)
 
 	for currentLine < len(lines) {
@@ -204,13 +215,34 @@ func parseMacroDefinition(lines []string, startLine int) (*Macro, int) {
 
 		if macroIndent == -1 {
 			macroIndent = indent
+			macroIndentStr = getLineIndentation(bodyLine)
 		}
 
 		if indent < macroIndent {
 			break
 		}
 
-		body = append(body, trimmed)
+		stripped := bodyLine
+		if strings.HasPrefix(stripped, macroIndentStr) {
+			stripped = stripped[len(macroIndentStr):]
+		} else {
+			i := 0
+			width := 0
+			for i < len(stripped) && width < macroIndent {
+				if stripped[i] == ' ' {
+					width += 1
+					i++
+				} else if stripped[i] == '\t' {
+					width += 4
+					i++
+				} else {
+					break
+				}
+			}
+			stripped = stripped[i:]
+		}
+		stripped = strings.TrimRight(stripped, " \t")
+		body = append(body, stripped)
 		currentLine++
 	}
 
@@ -260,8 +292,8 @@ func expandMacros(source string, macros map[string]*Macro) string {
 
 		expandedLine := expandMacroCallsInLine(line, macros)
 		if expandedLine != line {
-			expandedLines := strings.SplitSeq(expandedLine, "\n")
-			for expLine := range expandedLines {
+			expandedLines := strings.Split(expandedLine, "\n")
+			for _, expLine := range expandedLines {
 				if strings.TrimSpace(expLine) != "" {
 					result = append(result, expLine)
 				}
@@ -270,7 +302,7 @@ func expandMacros(source string, macros map[string]*Macro) string {
 			result = append(result, line)
 		}
 	}
-
+	fmt.Println("AFTER MACRO PROCESSING: ", strings.Join(result, "\n"))
 	return strings.Join(result, "\n")
 }
 
@@ -321,26 +353,19 @@ func loadMacrosFromModule(moduleName string) map[string]*Macro {
 func findAndReadModule(moduleName string) string {
 	var possiblePaths []string
 
-	if strings.HasPrefix(moduleName, "std/") {
-		return ""
-	} else {
-		possiblePaths = []string{
-			moduleName + ".scar",                       // Direct path
-			filepath.Join(".", moduleName+".scar"),     // Current dir
-			filepath.Join("tests", moduleName+".scar"), // In tests dir
-			filepath.Clean(moduleName + ".scar"),       // Clean relative path
-		}
+	resolved := resolveImportPath(moduleName, "")
+	possiblePaths = append(possiblePaths, resolved)
 
-		if strings.Contains(moduleName, "/") || strings.Contains(moduleName, "..") {
-			possiblePaths = append(possiblePaths,
-				filepath.Clean(moduleName+".scar"),
-				filepath.Join("tests", "prims", moduleName+".scar"),
-			)
-		}
-	}
+	possiblePaths = append(possiblePaths,
+		moduleName+".scar",                                  // Direct path
+		filepath.Join(".", moduleName+".scar"),              // Current dir
+		filepath.Join("tests", moduleName+".scar"),          // In tests dir root
+		filepath.Join("tests", "prims", moduleName+".scar"), // In tests/prims
+		filepath.Clean(moduleName+".scar"),
+	)
 
-	for _, path := range possiblePaths {
-		if data, err := os.ReadFile(path); err == nil {
+	for _, p := range possiblePaths {
+		if data, err := os.ReadFile(p); err == nil {
 			return string(data)
 		}
 	}
@@ -356,50 +381,65 @@ func getModuleShortName(moduleName string) string {
 func expandMacroCallsInLine(line string, macros map[string]*Macro) string {
 	result := line
 
-	result = strings.ReplaceAll(result, "::", "_")
+	const maxLineIters = 5
+	for iter := 0; iter < maxLineIters; iter++ {
+		changed := false
+		result = strings.ReplaceAll(result, "::", "_")
 
-	for macroName, macro := range macros {
-		pattern := macroName + "("
+		for macroName, macro := range macros {
+			pattern := macroName + "("
 
-		for strings.Contains(result, pattern) {
-			start := strings.Index(result, pattern)
-			if start == -1 {
-				break
-			}
-			parenCount := 0
-			end := start + len(pattern) - 1
-
-			for end < len(result) {
-				if result[end] == '(' {
-					parenCount++
-				} else if result[end] == ')' {
-					parenCount--
-					if parenCount == 0 {
-						break
-					}
+			for strings.Contains(result, pattern) {
+				start := strings.Index(result, pattern)
+				if start == -1 {
+					break
 				}
-				end++
+				parenCount := 0
+				end := start + len(pattern) - 1
+
+				for end < len(result) {
+					if result[end] == '(' {
+						parenCount++
+					} else if result[end] == ')' {
+						parenCount--
+						if parenCount == 0 {
+							break
+						}
+					}
+					end++
+				}
+
+				if parenCount != 0 {
+					break
+				}
+
+				argsStr := result[start+len(pattern) : end]
+				args := parseArguments(argsStr)
+
+				expanded := expandMacro(macro, args)
+
+				before := result[:start]
+				after := result[end+1:]
+
+				indent := getLineIndentation(result[:start])
+				indentedExpanded := addIndentationToExpansion(expanded, indent)
+
+				newResult := before + indentedExpanded + after
+				if newResult != result {
+					result = newResult
+					changed = true
+				} else {
+					break
+				}
 			}
+		}
 
-			if parenCount != 0 {
-				break
-			}
-
-			argsStr := result[start+len(pattern) : end]
-			args := parseArguments(argsStr)
-
-			expanded := expandMacro(macro, args)
-
-			before := result[:start]
-			after := result[end+1:]
-
-			indent := getLineIndentation(result[:start])
-			indentedExpanded := addIndentationToExpansion(expanded, indent)
-
-			result = before + indentedExpanded + after
+		if !changed {
+			break
 		}
 	}
 
+	result = strings.ReplaceAll(result, "::", "_")
 	return result
 }
 
@@ -491,10 +531,13 @@ func getIndentation(line string) int {
 }
 
 func getLineIndentation(text string) string {
+	lastNL := strings.LastIndex(text, "\n")
+	start := lastNL + 1
 	var indent strings.Builder
-	for _, char := range text {
-		if char == ' ' || char == '\t' {
-			indent.WriteRune(char)
+	for i := start; i < len(text); i++ {
+		ch := text[i]
+		if ch == ' ' || ch == '\t' {
+			indent.WriteByte(ch)
 		} else {
 			break
 		}
@@ -506,12 +549,8 @@ func addIndentationToExpansion(expanded, indent string) string {
 	lines := strings.Split(expanded, "\n")
 	var result []string
 
-	for i, line := range lines {
-		if i == 0 {
-			result = append(result, line)
-		} else {
-			result = append(result, indent+line)
-		}
+	for _, line := range lines {
+		result = append(result, indent+line)
 	}
 
 	return strings.Join(result, "\n")
