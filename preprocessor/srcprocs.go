@@ -53,6 +53,7 @@ func ProcessNamespaceAliases(source string) string {
 	for aliasName, target := range lexer.NamespaceAliases {
 		output = replaceOutsideStringsWithBoundary(output, aliasName+"::", target+"::", len(aliasName))
 		output = replaceOutsideStringsWithBoundary(output, aliasName+"(", target+"(", len(aliasName))
+		output = replaceOutsideStringsWholeIdent(output, aliasName, target)
 	}
 
 	return output
@@ -95,6 +96,7 @@ func ProcessUnsafeAliases(source string) string {
 	for aliasName, target := range lexer.UnsafeAliases {
 		output = replaceOutsideStringsWithBoundary(output, aliasName+"::", target+"::", len(aliasName))
 		output = replaceOutsideStringsWithBoundary(output, aliasName+"(", target+"(", len(aliasName))
+		output = replaceOutsideStringsWholeIdent(output, aliasName, target)
 	}
 
 	return output
@@ -148,6 +150,53 @@ func replaceOutsideStringsWithBoundary(text, needle, replacement string, aliasLe
 
 func isIdentChar(ch byte) bool {
 	return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '_'
+}
+
+func replaceOutsideStringsWholeIdent(text, ident, replacement string) string {
+	if ident == "" {
+		return text
+	}
+	var (
+		b       bytes.Buffer
+		i       = 0
+		inStr   = false
+		escaped = false
+		nlen    = len(ident)
+	)
+	for i < len(text) {
+		ch := text[i]
+		if inStr {
+			b.WriteByte(ch)
+			if !escaped && ch == '\\' {
+				escaped = true
+			} else if !escaped && ch == '"' {
+				inStr = false
+			} else if escaped {
+				escaped = false
+			}
+			i++
+			continue
+		}
+		if ch == '"' {
+			inStr = true
+			b.WriteByte(ch)
+			i++
+			continue
+		}
+		if i+nlen <= len(text) && text[i:i+nlen] == ident {
+			prevOK := i == 0 || !isIdentChar(text[i-1])
+			nextIdx := i + nlen
+			nextOK := nextIdx >= len(text) || !isIdentChar(text[nextIdx])
+			if prevOK && nextOK {
+				b.WriteString(replacement)
+				i += nlen
+				continue
+			}
+		}
+		b.WriteByte(ch)
+		i++
+	}
+	return b.String()
 }
 
 func ProcessAppendExpressions(source string) string {
