@@ -9,7 +9,6 @@ package preprocessor
 
 import (
 	"bytes"
-	"fmt"
 	"maps"
 	"os"
 	"path/filepath"
@@ -314,7 +313,6 @@ func expandMacros(source string, macros map[string]*Macro) string {
 			result = append(result, line)
 		}
 	}
-	fmt.Println("AFTER MACRO PROCESSING: ", strings.Join(result, "\n"))
 	return strings.Join(result, "\n")
 }
 
