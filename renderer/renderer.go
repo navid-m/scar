@@ -59,6 +59,8 @@ var (
 	}
 )
 
+const defaultStringBufSize = 4096
+
 func RenderC(program *lexer.Program, baseDir string, gcFlag bool) string {
 	useGC = gcFlag
 	var b strings.Builder
@@ -347,7 +349,7 @@ int _exception = 0;
 int __global_argc = 0;
 char** __global_argv = NULL;
 
-bool __check_string_key_exists(char keys[][256], int size, char* key) {
+bool __check_string_key_exists(char keys[][4096], int size, char* key) {
     for (int i = 0; i < size; i++) {
         if (strcmp(keys[i], key) == 0) {
             return true;
@@ -522,8 +524,8 @@ bool __check_key_exists(int* keys, int size, int key) {
 				if !strings.HasPrefix(value, "\"") {
 					value = fmt.Sprintf("\"%s\"", value)
 				}
-				fmt.Fprintf(&b, "static char %s[256];\n", name)
-				fmt.Fprintf(&b, "void init_%s() { size_t n = strlen(%s); if (n > 255) n = 255; memcpy(%s, %s, n); %s[n] = '\\0'; }\n", name, value, name, value, name)
+				fmt.Fprintf(&b, "static char %s[%d];\n", name, defaultStringBufSize)
+				fmt.Fprintf(&b, "void init_%s() { size_t n = strlen(%s); if (n > %d) n = %d; memcpy(%s, %s, n); %s[n] = '\\0'; }\n", name, value, defaultStringBufSize-1, defaultStringBufSize-1, name, value, name)
 			case "lstring":
 				if !strings.HasPrefix(value, "\"") {
 					value = fmt.Sprintf("\"%s\"", value)
@@ -554,11 +556,11 @@ bool __check_key_exists(int* keys, int size, int key) {
 				value = fmt.Sprintf("\"%s\"", value)
 			}
 			if varDecl.IsFixed {
-				fmt.Fprintf(&b, "static char %s[256];\n", varName)
+				fmt.Fprintf(&b, "static char %s[%d];\n", varName, defaultStringBufSize)
 			} else {
-				fmt.Fprintf(&b, "char %s[256];\n", varName)
+				fmt.Fprintf(&b, "char %s[%d];\n", varName, defaultStringBufSize)
 			}
-			fmt.Fprintf(&b, "void init_%s() { size_t n = strlen(%s); if (n > 255) n = 255; memcpy(%s, %s, n); %s[n] = '\\0'; }\n", varName, value, varName, value, varName)
+			fmt.Fprintf(&b, "void init_%s() { size_t n = strlen(%s); if (n > %d) n = %d; memcpy(%s, %s, n); %s[n] = '\\0'; }\n", varName, value, defaultStringBufSize-1, defaultStringBufSize-1, varName, value, varName)
 		case "lstring":
 			if !strings.HasPrefix(value, "\"") {
 				value = fmt.Sprintf("\"%s\"", value)
@@ -625,7 +627,7 @@ bool __check_key_exists(int* keys, int size, int key) {
 			}
 			switch varDecl.Type {
 			case "cstring":
-				fmt.Fprintf(&b, "extern char %s[256];\n", uniqueName)
+				fmt.Fprintf(&b, "extern char %s[%d];\n", uniqueName, defaultStringBufSize)
 			case "lstring":
 				fmt.Fprintf(&b, "extern char %s[10000];\n", uniqueName)
 			case "string":
@@ -653,11 +655,11 @@ bool __check_key_exists(int* keys, int size, int key) {
 					value = fmt.Sprintf("\"%s\"", value)
 				}
 				if varDecl.IsFixed {
-					fmt.Fprintf(&b, "static char %s[256];\n", uniqueName)
+					fmt.Fprintf(&b, "static char %s[%d];\n", uniqueName, defaultStringBufSize)
 				} else {
-					fmt.Fprintf(&b, "char %s[256];\n", uniqueName)
+					fmt.Fprintf(&b, "char %s[%d];\n", uniqueName, defaultStringBufSize)
 				}
-				fmt.Fprintf(&b, "void init_%s() { size_t n = strlen(%s); if (n > 255) n = 255; memcpy(%s, %s, n); %s[n] = '\\0'; }\n", uniqueName, value, uniqueName, value, uniqueName)
+				fmt.Fprintf(&b, "void init_%s() { size_t n = strlen(%s); if (n > %d) n = %d; memcpy(%s, %s, n); %s[n] = '\\0'; }\n", uniqueName, value, defaultStringBufSize-1, defaultStringBufSize-1, uniqueName, value, uniqueName)
 			case "lstring":
 				if !strings.HasPrefix(value, "\"") {
 					value = fmt.Sprintf("\"%s\"", value)
@@ -1206,9 +1208,9 @@ func resolveFunctionCall(value string) string {
 
 		args := argsWithParens[1 : len(argsWithParens)-1] // Remove parentheses
 		if strings.TrimSpace(args) == "" {
-			return fmt.Sprintf("({ char %s[256]; %s(%s); %s; })", tempBufferName, resolvedFuncName, tempBufferName, tempBufferName)
+			return fmt.Sprintf("({ char %s[%d]; %s(%s); %s; })", tempBufferName, defaultStringBufSize, resolvedFuncName, tempBufferName, tempBufferName)
 		} else {
-			return fmt.Sprintf("({ char %s[256]; %s(%s, %s); %s; })", tempBufferName, resolvedFuncName, tempBufferName, args, tempBufferName)
+			return fmt.Sprintf("({ char %s[%d]; %s(%s, %s); %s; })", tempBufferName, defaultStringBufSize, resolvedFuncName, tempBufferName, args, tempBufferName)
 		}
 	}
 
@@ -1553,9 +1555,9 @@ func processStringFunctionArg(arg string) string {
 			argsStr := arg[parenIndex+1 : len(arg)-1]
 			tempBufferName := fmt.Sprintf("temp_str_buffer_%d", len(arg)*31%1000)
 			if strings.TrimSpace(argsStr) == "" {
-				return fmt.Sprintf("({ char %s[256]; %s(%s); %s; })", tempBufferName, resolvedFuncName, tempBufferName, tempBufferName)
+				return fmt.Sprintf("({ char %s[%d]; %s(%s); %s; })", tempBufferName, defaultStringBufSize, resolvedFuncName, tempBufferName, tempBufferName)
 			} else {
-				return fmt.Sprintf("({ char %s[256]; %s(%s, %s); %s; })", tempBufferName, resolvedFuncName, tempBufferName, argsStr, tempBufferName)
+				return fmt.Sprintf("({ char %s[%d]; %s(%s, %s); %s; })", tempBufferName, defaultStringBufSize, resolvedFuncName, tempBufferName, argsStr, tempBufferName)
 			}
 		}
 	}
@@ -1614,7 +1616,7 @@ func processCatExpression(expr string) string {
 
 func inferTypeFromValue(value string) string {
 	if strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"") {
-		if len(value) > 256 {
+		if len(value) > 4000 {
 			return "lstring"
 		}
 		return "string"
@@ -1707,7 +1709,7 @@ func generateStructDefinition(b *strings.Builder, classInfo *ClassInfo, structNa
 }
 
 func generateStructStructDefinition(b *strings.Builder, structInfo *StructInfo, structName string) {
-	fmt.Fprintf(b, "#define MAX_STRING_LENGTH 256\n")
+	fmt.Fprintf(b, "#define MAX_STRING_LENGTH %d\n", defaultStringBufSize)
 	fmt.Fprintf(b, "#define MAX_LSTRING_LENGTH 10000\n")
 	fmt.Fprintf(b, "typedef struct %s {\n", structName)
 
@@ -2420,7 +2422,7 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 
 			if funcName == "strings_split" {
 				if innerType == "string" {
-					fmt.Fprintf(b, "%schar %s[1000][256];\n", indent, listName)
+					fmt.Fprintf(b, "%schar %s[1000][%d];\n", indent, listName, defaultStringBufSize)
 					fmt.Fprintf(b, "%sint %s_len;\n", indent, listName)
 					fmt.Fprintf(b, "%scollections_StringArrayList* %s_result = %s(%s);\n", indent, listName, funcName, existingArgs)
 					fmt.Fprintf(b, "%s%s_len = %s_result->size;\n", indent, listName, listName)
@@ -2446,7 +2448,7 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				}
 
 				if innerType == "string" {
-					fmt.Fprintf(b, "%schar %s[1000][256];\n", indent, listName)
+					fmt.Fprintf(b, "%schar %s[1000][%d];\n", indent, listName, defaultStringBufSize)
 					fmt.Fprintf(b, "%sint %s_len;\n", indent, listName)
 					fmt.Fprintf(b, "%s%s_len = %s;\n", indent, listName, newCall)
 				} else {
@@ -2511,7 +2513,7 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				targetVarLen := targetVar + "_len"
 
 				if listType == "string" {
-					fmt.Fprintf(b, "%schar %s[1000][256];\n", indent, tempVarName)
+					fmt.Fprintf(b, "%schar %s[1000][%d];\n", indent, tempVarName, defaultStringBufSize)
 					fmt.Fprintf(b, "%sint %s_len = 0;\n", indent, tempVarName)
 				} else {
 					cType := mapTypeToCType(listType)
@@ -2687,7 +2689,7 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				value = convertThisReferencesGranular(value)
 			}
 			tempVar := fmt.Sprintf("_temp_list_%d", len(b.String())%1000)
-			fmt.Fprintf(b, "%schar %s[1][256];\n", indent, tempVar)
+			fmt.Fprintf(b, "%schar %s[1][%d];\n", indent, tempVar, defaultStringBufSize)
 			fmt.Fprintf(b, "%sint %s_len = 1;\n", indent, tempVar)
 			if strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"") {
 				fmt.Fprintf(b, "%sstrcpy(%s[0], %s);\n", indent, tempVar, value)
@@ -2710,7 +2712,7 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			}
 
 			if listType == "string" {
-				fmt.Fprintf(b, "%schar %s[1000][256];\n", indent, listName)
+				fmt.Fprintf(b, "%schar %s[1000][%d];\n", indent, listName, defaultStringBufSize)
 				fmt.Fprintf(b, "%sint %s_len = 1;\n", indent, listName)
 				if strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"") {
 					fmt.Fprintf(b, "%sstrcpy(%s[0], %s);\n", indent, listName, value)
@@ -2831,7 +2833,7 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 						if specifierCount == len(parts)-1 {
 							args := strings.Join(parts[1:], ", ")
 							tempVar := "_temp_ret_" + strconv.Itoa(len(b.String())%1000)
-							fmt.Fprintf(b, "%schar %s[256];\n", indent, tempVar)
+							fmt.Fprintf(b, "%schar %s[%d];\n", indent, tempVar, defaultStringBufSize)
 							fmt.Fprintf(b, "%ssprintf(%s, \"%s\", %s);\n", indent, tempVar, format, args)
 							fmt.Fprintf(b, "%sreturn %s;\n", indent, tempVar)
 							break
@@ -3213,9 +3215,9 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 					if stmt.VarDecl.IsConst && strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"") {
 						fmt.Fprintf(b, "%sconst char* %s = %s;\n", indent, varName, value)
 					} else {
-						fmt.Fprintf(b, "%schar %s[256];\n", indent, varName)
+						fmt.Fprintf(b, "%schar %s[%d];\n", indent, varName, defaultStringBufSize)
 						if value == "" || value == "\"\"" {
-							fmt.Fprintf(b, "%sstrcpy(%s, \"\");\n", indent, varName)
+							fmt.Fprintf(b, "%ssnprintf(%s, %d, \"%s\", \"\");\n", indent, varName, defaultStringBufSize, "%s")
 						} else if isFunctionCall(value) {
 							funcName, args := parseFunctionCall(value)
 							resolvedFuncName := lexer.ResolveSymbol(funcName, currentModule)
@@ -3232,7 +3234,7 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 								}
 							} else {
 								resolvedCall := resolveFunctionCall(value)
-								fmt.Fprintf(b, "%sstrcpy(%s, %s);\n", indent, varName, resolvedCall)
+								fmt.Fprintf(b, "%ssnprintf(%s, %d, \"%s\", %s);\n", indent, varName, defaultStringBufSize, "%s", resolvedCall)
 							}
 						} else {
 							if !strings.HasPrefix(value, "\"") && !strings.HasSuffix(value, "\"") {
@@ -3240,19 +3242,19 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 									if strings.Contains(value, ".") && !strings.Contains(value, "->") {
 										value = convertPropertyAccess(value)
 									}
-									fmt.Fprintf(b, "%sstrcpy(%s, %s);\n", indent, varName, value)
+									fmt.Fprintf(b, "%ssnprintf(%s, %d, \"%s\", %s);\n", indent, varName, defaultStringBufSize, "%s", value)
 								} else if _, isLocal := localVars[value]; isLocal {
-									fmt.Fprintf(b, "%sstrcpy(%s, %s);\n", indent, varName, value)
+									fmt.Fprintf(b, "%ssnprintf(%s, %d, \"%s\", %s);\n", indent, varName, defaultStringBufSize, "%s", value)
 								} else if _, isGlobal := globalVars[value]; isGlobal {
-									fmt.Fprintf(b, "%sstrcpy(%s, %s);\n", indent, varName, value)
+									fmt.Fprintf(b, "%ssnprintf(%s, %d, \"%s\", %s);\n", indent, varName, defaultStringBufSize, "%s", value)
 								} else if strings.Contains(value, "[") && strings.Contains(value, "]") {
-									fmt.Fprintf(b, "%sstrcpy(%s, %s);\n", indent, varName, value)
+									fmt.Fprintf(b, "%ssnprintf(%s, %d, \"%s\", %s);\n", indent, varName, defaultStringBufSize, "%s", value)
 								} else {
 									value = fmt.Sprintf("\"%s\"", value)
-									fmt.Fprintf(b, "%sstrcpy(%s, %s);\n", indent, varName, value)
+									fmt.Fprintf(b, "%ssnprintf(%s, %d, \"%s\", %s);\n", indent, varName, defaultStringBufSize, "%s", value)
 								}
 							} else {
-								fmt.Fprintf(b, "%sstrcpy(%s, %s);\n", indent, varName, value)
+								fmt.Fprintf(b, "%ssnprintf(%s, %d, \"%s\", %s);\n", indent, varName, defaultStringBufSize, "%s", value)
 							}
 						}
 					}
@@ -3311,7 +3313,7 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 
 					if listType == "string" {
 						fmt.Fprintf(b, "%s// Create temporary list for concatenation\n", indent)
-						fmt.Fprintf(b, "%schar %s[1000][256];\n", indent, tempVar)
+						fmt.Fprintf(b, "%schar %s[1000][%d];\n", indent, tempVar, defaultStringBufSize)
 						fmt.Fprintf(b, "%sint %s_len = 0;\n", indent, tempVar)
 						fmt.Fprintf(b, "%s// Copy existing list\n", indent)
 						fmt.Fprintf(b, "%sfor (int __i = 0; __i < %s && %s_len < 1000; __i++) {\n", indent, sourceListLen, tempVar)
@@ -3693,7 +3695,7 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 					sourceVar := lexer.ResolveSymbol(stmt.ListDecl.Elements[0], currentModule)
 
 					if innerType == "string" {
-						fmt.Fprintf(b, "%s%s %s[1000][256];\n", indent, "char", listName)
+						fmt.Fprintf(b, "%s%s %s[1000][%d];\n", indent, "char", listName, defaultStringBufSize)
 						fmt.Fprintf(b, "%sint %s_len = %s_len;\n", indent, listName, sourceVar)
 						fmt.Fprintf(b, "%sfor (int i = 0; i < %s_len; i++) {\n", indent, sourceVar)
 						fmt.Fprintf(b, "%s    strcpy(%s[i], %s[i]);\n", indent, listName, sourceVar)
@@ -3707,7 +3709,7 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 					}
 				} else {
 					if innerType == "string" {
-						fmt.Fprintf(b, "%s%s %s[%d][256];\n", indent, "char", listName, len(stmt.ListDecl.Elements))
+						fmt.Fprintf(b, "%s%s %s[%d][%d];\n", indent, "char", listName, len(stmt.ListDecl.Elements), defaultStringBufSize)
 					} else {
 						fmt.Fprintf(b, "%s%s %s[%d];\n", indent, cListType, listName, len(stmt.ListDecl.Elements))
 					}
@@ -3963,7 +3965,7 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 
 			switch varType {
 			case "string":
-				fmt.Fprintf(b, "%s%s %s[256];\n", indent, cType, varName)
+				fmt.Fprintf(b, "%s%s %s[%d];\n", indent, cType, varName, defaultStringBufSize)
 			case "lstring":
 				fmt.Fprintf(b, "%s%s %s[10000];\n", indent, cType, varName)
 			}
@@ -4304,7 +4306,7 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				fmt.Fprintf(b, "%s%s_new();\n", indent, funcName)
 			} else if functionReturnsString(funcName) {
 				fmt.Fprintf(b, "%s{\n", indent)
-				fmt.Fprintf(b, "%s    char temp_buffer[256];\n", indent)
+				fmt.Fprintf(b, "%s    char temp_buffer[%d];\n", indent, defaultStringBufSize)
 				fmt.Fprintf(b, "%s    %s(temp_buffer", indent, funcName)
 				for _, arg := range stmt.FunctionCall.Args {
 					resolvedArg := lexer.ResolveSymbol(arg, currentModule)
@@ -4350,13 +4352,13 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			}
 
 			if keyType == "string" {
-				fmt.Fprintf(b, "%schar %s_keys[%d][256];\n", indent, mapName, initialSize)
+				fmt.Fprintf(b, "%schar %s_keys[%d][%d];\n", indent, mapName, initialSize, defaultStringBufSize)
 			} else {
 				fmt.Fprintf(b, "%s %s_keys[%d];\n", cKeyType, mapName, initialSize)
 			}
 
 			if valueType == "string" {
-				fmt.Fprintf(b, "%schar %s_values[%d][256];\n", indent, mapName, initialSize)
+				fmt.Fprintf(b, "%schar %s_values[%d][%d];\n", indent, mapName, initialSize, defaultStringBufSize)
 			} else {
 				fmt.Fprintf(b, "%s %s_values[%d];\n", cValueType, mapName, initialSize)
 			}
@@ -5883,7 +5885,7 @@ func generateTopLevelFunctionImplementation(b *strings.Builder, funcDecl *lexer.
 	if strings.HasPrefix(funcDecl.ReturnType, "list[") && strings.HasSuffix(funcDecl.ReturnType, "]") {
 		innerType := strings.TrimPrefix(strings.TrimSuffix(funcDecl.ReturnType, "]"), "list[")
 		if innerType == "string" {
-			paramList = append(paramList, "char _output_array[][256]")
+			paramList = append(paramList, fmt.Sprintf("char _output_array[][][%d]", defaultStringBufSize))
 		} else {
 			cType := mapTypeToCType(innerType)
 			paramList = append(paramList, fmt.Sprintf("%s _output_array[]", cType))
@@ -5906,13 +5908,13 @@ func generateTopLevelFunctionImplementation(b *strings.Builder, funcDecl *lexer.
 			if strings.HasPrefix(param.Type, "list[") && strings.HasSuffix(param.Type, "]") {
 				innerType := strings.TrimPrefix(strings.TrimSuffix(param.Type, "]"), "list[")
 				if innerType == "string" {
-					paramList = append(paramList, fmt.Sprintf("char %s[][256]", paramName))
+					paramList = append(paramList, fmt.Sprintf("char %s[][%d]", paramName, defaultStringBufSize))
 				} else {
 					cType := mapTypeToCType(innerType)
 					paramList = append(paramList, fmt.Sprintf("%s %s[]", cType, paramName))
 				}
 			} else if param.Type == "string" {
-				paramList = append(paramList, fmt.Sprintf("char %s[][256]", paramName))
+				paramList = append(paramList, fmt.Sprintf("char %s[][%d]", paramName, defaultStringBufSize))
 			} else {
 				paramType := mapTypeToCType(param.Type)
 				paramList = append(paramList, fmt.Sprintf("%s %s[]", paramType, paramName))
@@ -6340,7 +6342,7 @@ func generateFunctionPrototype(funcDecl *lexer.TopLevelFuncDeclStmt) string {
 	if strings.HasPrefix(funcDecl.ReturnType, "list[") && strings.HasSuffix(funcDecl.ReturnType, "]") {
 		innerType := strings.TrimPrefix(strings.TrimSuffix(funcDecl.ReturnType, "]"), "list[")
 		if innerType == "string" {
-			paramList = append(paramList, "char _output_array[][256]")
+			paramList = append(paramList, fmt.Sprintf("char _output_array[][][%d]", defaultStringBufSize))
 		} else {
 			cType := mapTypeToCType(innerType)
 			paramList = append(paramList, fmt.Sprintf("%s _output_array[]", cType))
@@ -6371,13 +6373,13 @@ func generateFunctionPrototype(funcDecl *lexer.TopLevelFuncDeclStmt) string {
 			if strings.HasPrefix(param.Type, "list[") && strings.HasSuffix(param.Type, "]") {
 				innerType := strings.TrimPrefix(strings.TrimSuffix(param.Type, "]"), "list[")
 				if innerType == "string" {
-					paramList = append(paramList, fmt.Sprintf("char %s[][256]", paramName))
+					paramList = append(paramList, fmt.Sprintf("char %s[][][%d]", paramName, defaultStringBufSize))
 				} else {
 					cType := mapTypeToCType(innerType)
 					paramList = append(paramList, fmt.Sprintf("%s %s[]", cType, paramName))
 				}
 			} else if param.Type == "string" {
-				paramList = append(paramList, fmt.Sprintf("char %s[][256]", paramName))
+				paramList = append(paramList, fmt.Sprintf("char %s[][%d]", paramName, defaultStringBufSize))
 			} else {
 				paramType := mapTypeToCType(param.Type)
 				paramList = append(paramList, fmt.Sprintf("%s %s[]", paramType, paramName))
@@ -6608,7 +6610,7 @@ func renderComplexListDecl(b *strings.Builder, listDecl *lexer.ListDeclStmt, ind
 		if innerType != "" {
 			innerInnerType := extractListInnerType(innerType)
 			if innerInnerType == "string" {
-				fmt.Fprintf(b, "%schar %s[%d][100][256];\n", indent, listName, len(listDecl.Elements))
+				fmt.Fprintf(b, "%schar %s[%d][500][%d];\n", indent, listName, len(listDecl.Elements), defaultStringBufSize)
 				fmt.Fprintf(b, "%sint %s_lengths[%d]; // Track length of each inner list\n", indent, listName, len(listDecl.Elements))
 				for i, elem := range listDecl.Elements {
 					if strings.HasPrefix(elem, "[") && strings.HasSuffix(elem, "]") {
