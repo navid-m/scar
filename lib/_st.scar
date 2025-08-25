@@ -414,6 +414,32 @@ uri::encode_url("https://example.com/some thing")
 t.assert_string_equals("https://example.com/some%20thing", uri::encode_url("https://example.com/some thing"), "URL encoding should work")
 t.assert_string_equals("https://example.com/some thing", uri::decode_url("https://example.com/some%20thing"), "URL decoding should work")
 
+ref collections::StringIntMap sim = new collections::StringIntMap(4)
+collections::StringIntMap::put(sim, "apple", 3)
+collections::StringIntMap::put(sim, "banana", 7)
+collections::StringIntMap::put(sim, "banana", 8)
+
+t.assert_equals(3, collections::StringIntMap::get(sim, "apple"), "StringIntMap get 'apple' = 3")
+t.assert_equals(8, collections::StringIntMap::get(sim, "banana"), "StringIntMap update works for 'banana'")
+t.assert_equals(true, collections::StringIntMap::contains_key(sim, "apple"), "StringIntMap contains_key true")
+t.assert_equals(false, collections::StringIntMap::contains_key(sim, "cherry"), "StringIntMap contains_key false")
+
+collections::StringIntMap::remove(sim, "apple")
+t.assert_equals(false, collections::StringIntMap::contains_key(sim, "apple"), "StringIntMap remove works")
+
+ref collections::StringFloatMap sfm = new collections::StringFloatMap(2)
+collections::StringFloatMap::put(sfm, "pi", 3.14)
+collections::StringFloatMap::put(sfm, "e", 2.71)
+
+t.assert_float_equals(3.14, collections::StringFloatMap::get(sfm, "pi"), 0.0001, "StringFloatMap get 'pi'")
+t.assert_float_equals(2.71, collections::StringFloatMap::get(sfm, "e"), 0.0001, "StringFloatMap get 'e'")
+
+ref collections::StringBoolMap sbm = new collections::StringBoolMap(2)
+collections::StringBoolMap::put(sbm, "flag", true)
+collections::StringBoolMap::put(sbm, "debug", false)
+
+t.assert_equals(true, collections::StringBoolMap::get(sbm, "flag"), "StringBoolMap get 'flag'")
+t.assert_equals(false, collections::StringBoolMap::get(sbm, "debug"), "StringBoolMap get 'debug'")
 t.test_summary()
 
 fixed i32 some_fixed_integer = 10
