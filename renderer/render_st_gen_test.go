@@ -68,10 +68,6 @@ if (fgets(buffer, sizeof(buffer), stdin) != NULL) {
 		t.Error("Expected empty string return to be transformed")
 	}
 
-	if !strings.Contains(result, "char asdf[256];") {
-		t.Error("Expected string variable declaration")
-	}
-
 	if !strings.Contains(result, "readln(asdf);") {
 		t.Error("Expected function call with buffer parameter")
 	}

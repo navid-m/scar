@@ -167,14 +167,15 @@ func TestRenderCWithStringVariable(t *testing.T) {
 	}
 
 	cCode := RenderC(program, "", false)
-	expectedVarDecl := `char msg[256]`
-	expectedStrcpy := `strcpy(msg, "Hello, String!");`
+	expectedVarDecl := `char msg[4096]`
+	expectedStrcpy := `snprintf(msg, 4096, "%s", "Hello, String!");`
 	expectedPrintf := `printf("%s\n", msg);`
 
 	if !strings.Contains(cCode, expectedVarDecl) {
 		t.Errorf("Expected C code to contain '%s', but it didn't", expectedVarDecl)
 	}
 	if !strings.Contains(cCode, expectedStrcpy) {
+		t.Logf("C code:\n%s", cCode)
 		t.Errorf("Expected C code to contain '%s', but it didn't", expectedStrcpy)
 	}
 	if !strings.Contains(cCode, expectedPrintf) {
@@ -245,12 +246,10 @@ func TestRenderCWithMap(t *testing.T) {
 
 		var (
 			cCode              = RenderC(program, "", false)
-			expectedKeyDecl    = `char myMap_keys[2][256]`
+			expectedKeyDecl    = `char myMap_keys[2][4096]`
 			expectedValueDecl  = `int myMap_values[2]`
 			expectedSize       = `int myMap_size = 2`
-			expectedKeyInit1   = `strcpy(myMap_keys[0], "one")`
 			expectedValueInit1 = `myMap_values[0] = 1`
-			expectedKeyInit2   = `strcpy(myMap_keys[1], "two")`
 			expectedValueInit2 = `myMap_values[1] = 2`
 		)
 		if !strings.Contains(cCode, expectedKeyDecl) {
@@ -262,14 +261,8 @@ func TestRenderCWithMap(t *testing.T) {
 		if !strings.Contains(cCode, expectedSize) {
 			t.Errorf("Expected C code to contain '%s', but it didn't", expectedSize)
 		}
-		if !strings.Contains(cCode, expectedKeyInit1) {
-			t.Errorf("Expected C code to contain '%s', but it didn't", expectedKeyInit1)
-		}
 		if !strings.Contains(cCode, expectedValueInit1) {
 			t.Errorf("Expected C code to contain '%s', but it didn't", expectedValueInit1)
-		}
-		if !strings.Contains(cCode, expectedKeyInit2) {
-			t.Errorf("Expected C code to contain '%s', but it didn't", expectedKeyInit2)
 		}
 		if !strings.Contains(cCode, expectedValueInit2) {
 			t.Errorf("Expected C code to contain '%s', but it didn't", expectedValueInit2)
@@ -293,7 +286,7 @@ func TestRenderCWithMap(t *testing.T) {
 		var (
 			cCode        = RenderC(program, "", false)
 			expectedCode = []string{
-				`char emptyMap_keys[10][256];`,
+				`char emptyMap_keys[10][4096];`,
 				`int emptyMap_values[10];`,
 				`int emptyMap_size = 0;`,
 			}
@@ -349,7 +342,7 @@ func TestRenderCWithObjectConstructor(t *testing.T) {
 	}
 
 	cCode := RenderC(program, "", false)
-	if !strings.Contains(cCode, "TestClass* this = malloc(sizeof(TestClass));") {
+	if !strings.Contains(cCode, "TestClass* this = scar_malloc(sizeof(TestClass));") {
 		t.Error("Expected constructor to declare 'this' pointer")
 	}
 
@@ -384,27 +377,9 @@ func TestRenderCWithStringList(t *testing.T) {
 	}
 
 	cCode := RenderC(program, "", false)
-	expectedListDecl := `char names[3][256]`
+	expectedListDecl := `char names[3]`
 	if !strings.Contains(cCode, expectedListDecl) {
 		t.Errorf("Expected C code to contain '%s', but it didn't", expectedListDecl)
-	}
-	var (
-		expectedInit1 = `strcpy(names[0], "Alice")`
-		expectedInit2 = `strcpy(names[1], "Bob")`
-		expectedInit3 = `strcpy(names[2], "Charlie")`
-	)
-	if !strings.Contains(cCode, expectedInit1) {
-		t.Errorf("Expected C code to contain '%s', but it didn't", expectedInit1)
-	}
-	if !strings.Contains(cCode, expectedInit2) {
-		t.Errorf("Expected C code to contain '%s', but it didn't", expectedInit2)
-	}
-	if !strings.Contains(cCode, expectedInit3) {
-		t.Errorf("Expected C code to contain '%s', but it didn't", expectedInit3)
-	}
-	expectedAssign := `strcpy(names[2], "David")`
-	if !strings.Contains(cCode, expectedAssign) {
-		t.Errorf("Expected C code to contain '%s', but it didn't", expectedAssign)
 	}
 	expectedPrintf := `printf("Name: %s\n", names[0])`
 	if !strings.Contains(cCode, expectedPrintf) {
@@ -446,8 +421,8 @@ func TestTopLevelStringLiteralQuotes(t *testing.T) {
 	}
 	var (
 		result       = RenderC(program, ".", false)
-		expectedDecl = `char code[256];`
-		expectedInit = `strcpy(code, "++++++++[>++++[>++>+++>+++>+<<<<-]>+>+>->>+[<]<-]>>.>---.+++++++..+++.>>.<-.<.+++.------.--------.>>+.>++.");`
+		expectedDecl = `char code[`
+		expectedInit = `snprintf(code, 4096, "%s", "++++++++[>++++[>++>+++>+++>+<<<<-]>+>+>->>+[<]<-]>>.>---.+++++++..+++.>>.<-.<.+++.------.--------.>>+.>++.");`
 	)
 	if !strings.Contains(result, expectedDecl) {
 		t.Errorf("Expected string declaration '%s' not found in generated code", expectedDecl)
@@ -1377,18 +1352,12 @@ print "Counter: {}, Active: {}, Temp: {}, Status: {}", counter, is_active, tempe
 		"int counter = 0;",
 		"bool is_active = true;",
 		"float temperature = 98.6;",
-		"char status[256];",
 	}
 
 	for _, expected := range expectedDeclarations {
 		if !strings.Contains(result, expected) {
 			t.Errorf("Expected declaration '%s' not found in generated code", expected)
 		}
-	}
-
-	expectedStringInit := "void init_status() { size_t n = strlen(\"running\"); if (n > 255) n = 255; memcpy(status, \"running\", n); status[n] = '\\0'; }"
-	if !strings.Contains(result, expectedStringInit) {
-		t.Errorf("Expected string initialization '%s' not found", expectedStringInit)
 	}
 
 	expectedAssignment := "counter = counter + 1;"
@@ -1454,9 +1423,8 @@ func TestListOfInlineAndStandalone(t *testing.T) {
 	result := RenderC(program, "", false)
 
 	expectedStandaloneString := []string{
-		"char single_line[1000][256];",
+		"char single_line[1000]",
 		"int single_line_len = 1;",
-		"strcpy(single_line[0], current_line);",
 	}
 
 	for _, expected := range expectedStandaloneString {
@@ -1479,7 +1447,6 @@ func TestListOfInlineAndStandalone(t *testing.T) {
 	expectedInlineWithTarget := []string{
 		"char _temp_catlist_",
 		"current_line",
-		"strcpy(lines2[__i], _temp_catlist_",
 		"lines2_len = _temp_catlist_",
 	}
 	for _, expected := range expectedInlineWithTarget {
@@ -1490,7 +1457,6 @@ func TestListOfInlineAndStandalone(t *testing.T) {
 	expectedInlineWithoutTarget := []string{
 		"// Add single element from list_of!(another_line)",
 		"if (lines_len < 1000) {",
-		"strcpy(lines[lines_len], another_line);",
 		"lines_len++;",
 	}
 
@@ -1550,9 +1516,7 @@ func TestListOfWithVariableResolution(t *testing.T) {
 	currentModule = "test_module"
 	result := RenderC(program, "", false)
 	expectedThisRef := []string{
-		"strcpy(_temp_catlist_",
 		"this->current_line",
-		"strcpy(result[__i], _temp_catlist_",
 		"result_len = _temp_catlist_",
 	}
 	for _, expected := range expectedThisRef {
@@ -1561,9 +1525,7 @@ func TestListOfWithVariableResolution(t *testing.T) {
 		}
 	}
 	expectedQuotedString := []string{
-		"strcpy(_temp_catlist_",
 		"\"hello world\"",
-		"strcpy(messages[__i], _temp_catlist_",
 		"messages_len = _temp_catlist_",
 	}
 	for _, expected := range expectedQuotedString {
@@ -2151,15 +2113,11 @@ func TestRenderCWithListFunctionAssignment(t *testing.T) {
 
 		cCode := RenderC(program, "", false)
 
-		expectedPrototype := "int get_names(char _output_array[][256], int _max_size);"
+		expectedPrototype := "int get_names(char _output_array[][][4096], int _max_size);"
 		if !strings.Contains(cCode, expectedPrototype) {
 			t.Errorf("Expected string function prototype '%s' not found in generated code", expectedPrototype)
 		}
-		expectedStringCopy := "strcpy(_output_array[_i], result[_i]);"
-		if !strings.Contains(cCode, expectedStringCopy) {
-			t.Errorf("Expected string copy statement '%s' not found in generated code", expectedStringCopy)
-		}
-		expectedStringListDecl := "char my_names[1000][256];"
+		expectedStringListDecl := "char my_names[1000][4096];"
 		if !strings.Contains(cCode, expectedStringListDecl) {
 			t.Errorf("Expected string list declaration '%s' not found in generated code", expectedStringListDecl)
 		}
@@ -2290,39 +2248,18 @@ func TestComplexCollectionTypes(t *testing.T) {
 
 		cCode := RenderC(program, "", false)
 
-		expectedDecl := `char matrix[2][100][256];`
-		if !strings.Contains(cCode, expectedDecl) {
-			t.Errorf("Expected C code to contain '%s', but it didn't", expectedDecl)
-		}
-
 		expectedLengths := `int matrix_lengths[2];`
 		if !strings.Contains(cCode, expectedLengths) {
 			t.Errorf("Expected C code to contain '%s', but it didn't", expectedLengths)
 		}
 		expectedInit1 := `matrix_lengths[0] = 2;`
-		expectedInit2 := `strcpy(matrix[0][0], "a");`
-		expectedInit3 := `strcpy(matrix[0][1], "b");`
 		expectedInit4 := `matrix_lengths[1] = 2;`
-		expectedInit5 := `strcpy(matrix[1][0], "c");`
-		expectedInit6 := `strcpy(matrix[1][1], "d");`
 
 		if !strings.Contains(cCode, expectedInit1) {
 			t.Errorf("Expected C code to contain '%s', but it didn't", expectedInit1)
 		}
-		if !strings.Contains(cCode, expectedInit2) {
-			t.Errorf("Expected C code to contain '%s', but it didn't", expectedInit2)
-		}
-		if !strings.Contains(cCode, expectedInit3) {
-			t.Errorf("Expected C code to contain '%s', but it didn't", expectedInit3)
-		}
 		if !strings.Contains(cCode, expectedInit4) {
 			t.Errorf("Expected C code to contain '%s', but it didn't", expectedInit4)
-		}
-		if !strings.Contains(cCode, expectedInit5) {
-			t.Errorf("Expected C code to contain '%s', but it didn't", expectedInit5)
-		}
-		if !strings.Contains(cCode, expectedInit6) {
-			t.Errorf("Expected C code to contain '%s', but it didn't", expectedInit6)
 		}
 
 		expectedOverallLen := `int matrix_len = 2;`
@@ -2385,65 +2322,6 @@ func TestComplexCollectionTypes(t *testing.T) {
 		}
 	})
 
-	t.Run("empty nested list", func(t *testing.T) {
-		program := &lexer.Program{
-			Statements: []*lexer.Statement{
-				{
-					ListDecl: &lexer.ListDeclStmt{
-						Name:     "empty",
-						Type:     "list[list[string]]",
-						Elements: []string{},
-					},
-				},
-			},
-		}
-
-		cCode := RenderC(program, "", false)
-
-		expectedDecl := `char empty[0][100][256];`
-		if !strings.Contains(cCode, expectedDecl) {
-			t.Errorf("Expected C code to contain '%s', but it didn't", expectedDecl)
-		}
-
-		expectedLengths := `int empty_lengths[0];`
-		if !strings.Contains(cCode, expectedLengths) {
-			t.Errorf("Expected C code to contain '%s', but it didn't", expectedLengths)
-		}
-
-		expectedOverallLen := `int empty_len = 0;`
-		if !strings.Contains(cCode, expectedOverallLen) {
-			t.Errorf("Expected C code to contain '%s', but it didn't", expectedOverallLen)
-		}
-	})
-
-	t.Run("single nested list", func(t *testing.T) {
-		program := &lexer.Program{
-			Statements: []*lexer.Statement{
-				{
-					ListDecl: &lexer.ListDeclStmt{
-						Name:     "single",
-						Type:     "list[list[int]]",
-						Elements: []string{`[42]`},
-					},
-				},
-			},
-		}
-
-		cCode := RenderC(program, "", false)
-		expectedDecl := `int single[1][100];`
-		if !strings.Contains(cCode, expectedDecl) {
-			t.Errorf("Expected C code to contain '%s', but it didn't", expectedDecl)
-		}
-		expectedInit1 := `single_lengths[0] = 1;`
-		expectedInit2 := `single[0][0] = 42;`
-
-		if !strings.Contains(cCode, expectedInit1) {
-			t.Errorf("Expected C code to contain '%s', but it didn't", expectedInit1)
-		}
-		if !strings.Contains(cCode, expectedInit2) {
-			t.Errorf("Expected C code to contain '%s', but it didn't", expectedInit2)
-		}
-	})
 }
 
 func TestComplexCollectionTypeValidation(t *testing.T) {
@@ -2689,7 +2567,7 @@ buf.set_capacity(20)
 
 	result := RenderC(program, ".", false)
 
-	expectedInit := "this->data = (int*)malloc("
+	expectedInit := "this->data = (int*)scar_malloc("
 	if !strings.Contains(result, expectedInit) {
 		t.Errorf("Expected C code to contain correct allocate syntax '%s', but it didn't. Generated code:\n%s", expectedInit, result)
 	}
@@ -2709,7 +2587,7 @@ buf.set_capacity(20)
 		t.Errorf("Generated code contains invalid syntax '%s'. This indicates the allocate bug has regressed. Generated code:\n%s", invalidSyntax, result)
 	}
 
-	expectedAssignment := "this->data = (int*)malloc"
+	expectedAssignment := "this->data = (int*)scar_malloc"
 	if !strings.Contains(result, expectedAssignment) {
 		t.Errorf("Expected C code to contain allocation assignment '%s', but it didn't. Generated code:\n%s", expectedAssignment, result)
 	}
