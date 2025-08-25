@@ -18,16 +18,13 @@ type functionNode struct {
 	name         string
 	dependencies map[string]bool
 	statement    *Statement
-	order        int // appearance order for deterministic sorting
+	order        int
 }
 
 // Analyzes a function body and extracts called function names
 func processFunctionDependencies(body []*Statement) map[string]bool {
 	deps := make(map[string]bool)
-
-	// Regex to find potential function calls like foo( ... )
 	callRe := regexp.MustCompile(`\b([A-Za-z_][A-Za-z0-9_]*)\s*\(`)
-
 	addCallsFromText := func(text string) {
 		if text == "" {
 			return
@@ -262,7 +259,6 @@ func buildDependencyGraph(statements []*Statement, aliases map[string]string) (m
 		}
 
 		for dep := range processFunctionDependencies(body) {
-			// resolve alias chains to real function name
 			real := dep
 			visited := make(map[string]bool)
 			for {
@@ -315,14 +311,12 @@ func topologicalSort(graph map[string]*functionNode) ([]*Statement, error) {
 			return fmt.Errorf("function not found: %s", name)
 		}
 
-		// visit dependencies in deterministic order (by original appearance)
 		deps := make([]*functionNode, 0, len(node.dependencies))
 		for dep := range node.dependencies {
 			if dn, ok := graph[dep]; ok {
 				deps = append(deps, dn)
 			}
 		}
-		// stable order by node.order, fallback to name
 		sort.Slice(deps, func(i, j int) bool {
 			if deps[i].order == deps[j].order {
 				return deps[i].name < deps[j].name
@@ -341,7 +335,6 @@ func topologicalSort(graph map[string]*functionNode) ([]*Statement, error) {
 		return nil
 	}
 
-	// visit nodes in deterministic order
 	nodes := make([]*functionNode, 0, len(graph))
 	for _, n := range graph {
 		nodes = append(nodes, n)
@@ -366,7 +359,6 @@ func topologicalSort(graph map[string]*functionNode) ([]*Statement, error) {
 // Reorders function declarations to satisfy dependencies
 func HoistFunctions(statements []*Statement) ([]*Statement, error) {
 	var funcStmts, otherStmts []*Statement
-	// collect alias mapping (alias name -> target function name)
 	aliases := make(map[string]string)
 	for _, stmt := range statements {
 		if stmt.TopLevelFuncDecl != nil || stmt.PubTopLevelFuncDecl != nil {
@@ -389,8 +381,6 @@ func HoistFunctions(statements []*Statement) ([]*Statement, error) {
 	if err != nil {
 		return nil, err
 	}
-	// Keep other statements before functions (types/consts) while
-	// ensuring function order is deterministic and dependency-safe.
 	var result []*Statement
 	result = append(result, otherStmts...)
 	result = append(result, sortedFuncStmts...)

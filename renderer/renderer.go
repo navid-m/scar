@@ -61,77 +61,64 @@ var (
 	}
 )
 
-// orderedModules returns loaded modules in a deterministic, dependency-respecting order.
 // If module A imports B, then B appears before A. Lexicographic tie-breakers ensure stability.
 func orderedModules() []*lexer.ModuleInfo {
-    // Build name -> module map and indegree graph
-    modules := make(map[string]*lexer.ModuleInfo)
-    for name, m := range lexer.LoadedModules {
-        modules[name] = m
-    }
-    // indegree[A] = number of dependencies that must come before A
-    indegree := make(map[string]int)
-    // reverse edges: dep -> list of dependents
-    edges := make(map[string][]string)
+	modules := make(map[string]*lexer.ModuleInfo)
+	for name, m := range lexer.LoadedModules {
+		modules[name] = m
+	}
+	indegree := make(map[string]int)
+	edges := make(map[string][]string)
 
-    // initialize indegree for all modules
-    for name := range modules {
-        indegree[name] = 0
-    }
-    // Build graph: for each module A and each import B, add edge B -> A
-    for aName, mod := range modules {
-        for _, dep := range mod.Imports {
-            if _, ok := modules[dep]; !ok {
-                // Dependency may be std or not loaded; skip
-                continue
-            }
-            edges[dep] = append(edges[dep], aName)
-            indegree[aName]++
-        }
-    }
+	for name := range modules {
+		indegree[name] = 0
+	}
+	for aName, mod := range modules {
+		for _, dep := range mod.Imports {
+			if _, ok := modules[dep]; !ok {
+				continue
+			}
+			edges[dep] = append(edges[dep], aName)
+			indegree[aName]++
+		}
+	}
 
-    // Queue of zero indegree modules, sorted for determinism
-    var zero []string
-    for name, d := range indegree {
-        if d == 0 {
-            zero = append(zero, name)
-        }
-    }
-    sort.Strings(zero)
+	var zero []string
+	for name, d := range indegree {
+		if d == 0 {
+			zero = append(zero, name)
+		}
+	}
+	sort.Strings(zero)
 
-    var order []string
-    for len(zero) > 0 {
-        // pop front
-        name := zero[0]
-        zero = zero[1:]
-        order = append(order, name)
-        for _, dep := range edges[name] {
-            indegree[dep]--
-            if indegree[dep] == 0 {
-                zero = append(zero, dep)
-            }
-        }
-        // keep zero list sorted after additions
-        sort.Strings(zero)
-    }
+	var order []string
+	for len(zero) > 0 {
+		name := zero[0]
+		zero = zero[1:]
+		order = append(order, name)
+		for _, dep := range edges[name] {
+			indegree[dep]--
+			if indegree[dep] == 0 {
+				zero = append(zero, dep)
+			}
+		}
+		sort.Strings(zero)
+	}
+	if len(order) != len(modules) {
+		order = order[:0]
+		for name := range modules {
+			order = append(order, name)
+		}
+		sort.Strings(order)
+	}
 
-    // If we couldn't place all modules (cycle), fall back to sorted names
-    if len(order) != len(modules) {
-        order = order[:0]
-        for name := range modules {
-            order = append(order, name)
-        }
-        sort.Strings(order)
-    }
-
-    // Map to slice
-    result := make([]*lexer.ModuleInfo, 0, len(order))
-    for _, name := range order {
-        if m, ok := modules[name]; ok {
-            result = append(result, m)
-        }
-    }
-    return result
+	result := make([]*lexer.ModuleInfo, 0, len(order))
+	for _, name := range order {
+		if m, ok := modules[name]; ok {
+			result = append(result, m)
+		}
+	}
+	return result
 }
 
 const defaultStringBufSize = 4096
@@ -139,19 +126,15 @@ const defaultStringBufSize = 4096
 func RenderC(program *lexer.Program, baseDir string, gcFlag bool) string {
 	useGC = gcFlag
 	var b strings.Builder
-	// Reset ordered function list for this render pass
 	orderedFunctions = nil
-	// Reset global state maps to avoid cross-run accumulation
 	globalClasses = make(map[string]*ClassInfo)
 	globalStructs = make(map[string]*StructInfo)
 	globalEnums = make(map[string]*EnumInfo)
 	globalObjects = make(map[string]*ObjectInfo)
 	globalFunctions = make(map[string]*lexer.TopLevelFuncDeclStmt)
-	globalArrays = make(map[string]string)
 	globalVars = make(map[string]*lexer.PubVarDeclStmt)
 	globalAllocations = make(map[string]*lexer.PubAllocateStmt)
 	localVars = make(map[string]string)
-	currentModule = ""
 	currentClassName = ""
 	currentFunction = nil
 
@@ -162,8 +145,6 @@ func RenderC(program *lexer.Program, baseDir string, gcFlag bool) string {
 			os.Exit(1)
 		}
 	}
-
-	// Hoist functions in the main program to ensure dependency-safe order
 	if hoisted, err := lexer.HoistFunctions(program.Statements); err == nil {
 		program.Statements = hoisted
 	} else {
@@ -616,44 +597,41 @@ bool __check_key_exists(int* keys, int size, int key) {
 		}
 	}
 
-    // Final dependency-safe hoist across all collected functions (program + modules)
-    if len(orderedFunctions) > 1 {
-        // Build synthetic statements from orderedFunctions
-        var synthetic []*lexer.Statement
-        for _, f := range orderedFunctions {
-            if f == nil { continue }
-            synthetic = append(synthetic, &lexer.Statement{TopLevelFuncDecl: f})
-        }
-        if hoisted, err := lexer.HoistFunctions(synthetic); err == nil {
-            // Rebuild orderedFunctions according to hoisted order
-            var newOrder []*lexer.TopLevelFuncDeclStmt
-            for _, s := range hoisted {
-                if s.TopLevelFuncDecl != nil {
-                    newOrder = append(newOrder, s.TopLevelFuncDecl)
-                } else if s.PubTopLevelFuncDecl != nil {
-                    // Normalize pub to TopLevel for emission
-                    newOrder = append(newOrder, &lexer.TopLevelFuncDeclStmt{
-                        Name:       s.PubTopLevelFuncDecl.Name,
-                        Parameters: s.PubTopLevelFuncDecl.Parameters,
-                        ReturnType: s.PubTopLevelFuncDecl.ReturnType,
-                        Body:       s.PubTopLevelFuncDecl.Body,
-                    })
-                }
-            }
-            orderedFunctions = newOrder
-        } else {
-            // On error, keep existing deterministic order
-            logger.Debug("Final hoist failed: %v\n", err)
-        }
-    }
+	if len(orderedFunctions) > 1 {
+		var synthetic []*lexer.Statement
+		for _, f := range orderedFunctions {
+			if f == nil {
+				continue
+			}
+			synthetic = append(synthetic, &lexer.Statement{TopLevelFuncDecl: f})
+		}
+		if hoisted, err := lexer.HoistFunctions(synthetic); err == nil {
+			var newOrder []*lexer.TopLevelFuncDeclStmt
+			for _, s := range hoisted {
+				if s.TopLevelFuncDecl != nil {
+					newOrder = append(newOrder, s.TopLevelFuncDecl)
+				} else if s.PubTopLevelFuncDecl != nil {
+					newOrder = append(newOrder, &lexer.TopLevelFuncDeclStmt{
+						Name:       s.PubTopLevelFuncDecl.Name,
+						Parameters: s.PubTopLevelFuncDecl.Parameters,
+						ReturnType: s.PubTopLevelFuncDecl.ReturnType,
+						Body:       s.PubTopLevelFuncDecl.Body,
+					})
+				}
+			}
+			orderedFunctions = newOrder
+		} else {
+			logger.Debug("Final hoist failed: %v\n", err)
+		}
+	}
 
-    for _, funcDecl := range orderedFunctions {
-        if funcDecl == nil || funcDecl.Name == "main" {
-            continue
-        }
-        prototype := generateFunctionPrototype(funcDecl)
-        b.WriteString(fmt.Sprintf("%s;\n", prototype))
-    }
+	for _, funcDecl := range orderedFunctions {
+		if funcDecl == nil || funcDecl.Name == "main" {
+			continue
+		}
+		prototype := generateFunctionPrototype(funcDecl)
+		b.WriteString(fmt.Sprintf("%s;\n", prototype))
+	}
 	b.WriteString("\n")
 
 	for _, stmt := range program.Statements {
