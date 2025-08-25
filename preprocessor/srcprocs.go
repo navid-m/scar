@@ -19,12 +19,43 @@ import (
 
 func ProcessSourceLevelMacros(source string) string {
 	source = lexer.RemoveComments(source)
+	source = ProcessNamespaceAliases(source)
 	source = ProcessUnsafeAliases(source)
 	source = ProcessMacros(source)
 	source = ProcessAppendExpressions(source)
 	source = ProcessDeleteExpressions(source)
 	source = lexer.ReplaceDoubleColonsOutsideStrings(source)
 	return source
+}
+
+func ProcessNamespaceAliases(source string) string {
+	lines := strings.Split(source, "\n")
+	var result []string
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "namespace alias ") {
+			aliasPart := strings.TrimSpace(trimmed[len("namespace alias "):])
+			parts := strings.SplitN(aliasPart, "=", 2)
+			if len(parts) == 2 {
+				aliasName := strings.TrimSpace(parts[0])
+				target := strings.TrimSpace(parts[1])
+				if strings.Contains(target, "::") {
+					lexer.NamespaceAliases[aliasName] = target
+					continue
+				}
+			}
+		}
+		result = append(result, line)
+	}
+
+	output := strings.Join(result, "\n")
+	for aliasName, target := range lexer.NamespaceAliases {
+		output = replaceOutsideStringsWithBoundary(output, aliasName+"::", target+"::", len(aliasName))
+		output = replaceOutsideStringsWithBoundary(output, aliasName+"(", target+"(", len(aliasName))
+	}
+
+	return output
 }
 
 func MacroNames(source string) []string {

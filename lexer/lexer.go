@@ -439,11 +439,11 @@ type ConstructorStmt struct {
 }
 
 type MethodParameter struct {
-	Type     string
-	IsList   bool
-	ListType string
-	Name     string
-	IsRef    bool
+	Type      string
+	IsList    bool
+	ListType  string
+	Name      string
+	IsRef     bool
 	IsVarargs bool
 }
 
@@ -516,6 +516,7 @@ var (
 	CurrentSourceFile string
 	RegisteredMacros  = make(map[string]bool)
 	Aliases           = make(map[string]string)
+	NamespaceAliases  = make(map[string]string)
 	UnsafeAliases     = make(map[string]string)
 )
 
