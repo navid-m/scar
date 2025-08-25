@@ -73,8 +73,11 @@ func RenderC(program *lexer.Program, baseDir string, gcFlag bool) string {
 		}
 	}
 
-	var externalImports []string
-	var localImports []string
+	var (
+		externalImports []string
+		localImports    []string
+	)
+
 	for _, stmt := range program.Statements {
 		if stmt.ExternalImport != nil {
 			externalImports = append(externalImports, stmt.ExternalImport.Header)
