@@ -1,5 +1,6 @@
 import "std/math"
 import "std/strings"
+import "std/collections"
 
 ## Unit testing related operations.
 pub class UnitTest:

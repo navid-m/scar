@@ -6,13 +6,11 @@ platform (Posix):
     external import "dirent.h"
     external import "unistd.h"
     external import "sys/types.h"
-    external import "sys/stat.h"
 
 ## Create a directory at the given path. Returns true on success.
 pub fn make_dir(string path) -> bool:
     platform (Posix):
         $raw (
-            #include <sys/stat.h>
             return mkdir(path, 0777) == 0;
         )
     platform (Windows):

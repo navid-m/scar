@@ -136,6 +136,7 @@ func reportCompilerErrors(stderrStr, cPath, scarPath, scarSource, cCode string) 
 	var (
 		cErrFile string
 		cErrLine int
+		cErrCol  int
 		cErrMsg  string
 	)
 	for _, l := range relevant {
@@ -145,6 +146,9 @@ func reportCompilerErrors(stderrStr, cPath, scarPath, scarSource, cCode string) 
 		}
 		cErrFile = m[1]
 		cErrLine = atoiSafe(m[2])
+		if len(m) > 3 {
+			cErrCol = atoiSafe(m[3])
+		}
 		cErrMsg = m[len(m)-1]
 		if strings.TrimSpace(cErrFile) != "" {
 			cPath = cErrFile
@@ -181,6 +185,13 @@ func reportCompilerErrors(stderrStr, cPath, scarPath, scarSource, cCode string) 
 		"\x1b[31mCompError: %s\x1b[0m\n",
 		strings.ReplaceAll(strings.TrimSpace(cErrMsg), "(first use in this function)", ""),
 	)
+	if cErrLine > 0 {
+		if cErrCol > 0 {
+			fmt.Fprintf(os.Stderr, "C at %s:%d:%d\n", cPath, cErrLine, cErrCol)
+		} else {
+			fmt.Fprintf(os.Stderr, "C at %s:%d\n", cPath, cErrLine)
+		}
+	}
 	if scarLine > 0 {
 		printScarContext(scarSource, scarPath, scarLine, 2)
 		return
