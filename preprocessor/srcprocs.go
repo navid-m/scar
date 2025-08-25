@@ -317,9 +317,10 @@ func expandMacros(source string, macros map[string]*Macro) string {
 }
 
 func loadImportedMacros(source string) map[string]*Macro {
-	macros := make(map[string]*Macro)
-	lines := strings.SplitSeq(source, "\n")
-
+	var (
+		macros = make(map[string]*Macro)
+		lines  = strings.SplitSeq(source, "\n")
+	)
 	for line := range lines {
 		trimmed := strings.TrimSpace(line)
 		if after, ok := strings.CutPrefix(trimmed, "import "); ok {
