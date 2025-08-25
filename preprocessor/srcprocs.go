@@ -325,9 +325,7 @@ func loadImportedMacros(source string) map[string]*Macro {
 		if after, ok := strings.CutPrefix(trimmed, "import "); ok {
 			moduleName := strings.Trim(after, "\"")
 			moduleMacros := loadMacrosFromModule(moduleName)
-			for name, macro := range moduleMacros {
-				macros[name] = macro
-			}
+			maps.Copy(macros, moduleMacros)
 		}
 	}
 
