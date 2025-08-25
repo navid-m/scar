@@ -1,0 +1,7 @@
+pub fn demo_top(...):
+    put "[demo_top] count=%d " | varargs_len()
+    if varargs_len() > 0 :
+        put "first=%s " | varargs_array[0]
+    print ""
+
+demo_top(4, "A", "B", "C", "D")

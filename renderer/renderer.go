@@ -2130,6 +2130,11 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 		if hasVarargs(method.Parameters) {
 			b.WriteString("    va_list _va;\n")
 			b.WriteString("    va_start(_va, _va_count);\n")
+			b.WriteString("    char* _va_array[1000];\n")
+			b.WriteString("    int _cap = (_va_count > 1000 ? 1000 : _va_count);\n")
+			b.WriteString("    for (int _i = 0; _i < _cap; ++_i) { _va_array[_i] = va_arg(_va, char*); }\n")
+			b.WriteString("    #define varargs_len() _va_count\n")
+			b.WriteString("    #define varargs_array _va_array\n")
 		}
 
 		for _, param := range method.Parameters {
@@ -2148,6 +2153,8 @@ func generateClassImplementation(b *strings.Builder, classDecl *lexer.ClassDeclS
 		}
 
 		if hasVarargs(method.Parameters) {
+			b.WriteString("    #undef varargs_len\n")
+			b.WriteString("    #undef varargs_array\n")
 			b.WriteString("    va_end(_va);\n")
 		}
 		b.WriteString("}\n\n")
@@ -5938,6 +5945,11 @@ func generateTopLevelFunctionImplementation(b *strings.Builder, funcDecl *lexer.
 	if hasVarargs(funcDecl.Parameters) {
 		b.WriteString("    va_list _va;\n")
 		b.WriteString("    va_start(_va, _va_count);\n")
+		b.WriteString("    char* _va_array[1000];\n")
+		b.WriteString("    int _cap = (_va_count > 1000 ? 1000 : _va_count);\n")
+		b.WriteString("    for (int _i = 0; _i < _cap; ++_i) { _va_array[_i] = va_arg(_va, char*); }\n")
+		b.WriteString("    #define varargs_len() _va_count\n")
+		b.WriteString("    #define varargs_array _va_array\n")
 	}
 
 	if funcDecl.ReturnType == "string" {
@@ -5993,6 +6005,8 @@ func generateTopLevelFunctionImplementation(b *strings.Builder, funcDecl *lexer.
 	}
 
 	if hasVarargs(funcDecl.Parameters) {
+		b.WriteString("    #undef varargs_len\n")
+		b.WriteString("    #undef varargs_array\n")
 		b.WriteString("    va_end(_va);\n")
 	}
 
