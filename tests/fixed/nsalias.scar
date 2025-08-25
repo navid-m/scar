@@ -6,4 +6,5 @@ var sfm = new Fmap(2)
 
 Fmap::put(sfm, "pi", 3.14)
 Fmap::put(sfm, "e", 2.71)
-Fmap::get(sfm, "pi")
+
+print "%f" | Fmap::get(sfm, "pi")
