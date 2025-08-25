@@ -183,6 +183,7 @@ func RenderC(program *lexer.Program, baseDir string, gcFlag bool) string {
 #include <stdarg.h>
 #if defined(__unix__) || defined(__APPLE__)
 #include <execinfo.h>
+int mkdir(const char *pathname, unsigned int mode);
 #endif
 `)
 	if runtime.GOOS == "windows" && comptime.WinEnabled {
