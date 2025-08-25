@@ -1165,6 +1165,7 @@ func LoadModuleWithCycleDetection(moduleName string, baseDir string, loadingStac
 		PublicMacros:    make(map[string]*MacroDeclStmt),
 		ExternalImports: []string{},
 		LocalImports:    []string{},
+		Imports:         []string{},
 	}
 
 	for _, stmt := range program.Statements {
@@ -1218,6 +1219,7 @@ func LoadModuleWithCycleDetection(moduleName string, baseDir string, loadingStac
 			if strings.HasPrefix(importStmt.Module, "std/") {
 				importBaseDir = baseDir
 			}
+			module.Imports = append(module.Imports, importStmt.Module)
 			_, err := LoadModuleWithCycleDetection(importStmt.Module, importBaseDir, loadingStack)
 			if err != nil {
 				return nil, fmt.Errorf("failed to load dependency '%s' for module '%s': %v", importStmt.Module, moduleName, err)
@@ -1290,6 +1292,7 @@ func LoadModuleWithCycleDetection(moduleName string, baseDir string, loadingStac
 				if loadingStack[ref] {
 					continue
 				}
+				module.Imports = append(module.Imports, ref)
 				if _, err := LoadModuleWithCycleDetection(ref, importBaseDir, loadingStack); err != nil {
 					// Non-fatal: continue loading other inferred modules
 					continue

@@ -13,6 +13,7 @@ import (
 	"runtime"
 	"runtime/debug"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"unicode"
@@ -28,6 +29,7 @@ var (
 	globalEnums       = make(map[string]*EnumInfo)
 	globalObjects     = make(map[string]*ObjectInfo)
 	globalFunctions   = make(map[string]*lexer.TopLevelFuncDeclStmt)
+	orderedFunctions  []*lexer.TopLevelFuncDeclStmt
 	globalArrays      = make(map[string]string)
 	globalVars        = make(map[string]*lexer.PubVarDeclStmt)
 	globalAllocations = make(map[string]*lexer.PubAllocateStmt)
@@ -59,11 +61,99 @@ var (
 	}
 )
 
+// orderedModules returns loaded modules in a deterministic, dependency-respecting order.
+// If module A imports B, then B appears before A. Lexicographic tie-breakers ensure stability.
+func orderedModules() []*lexer.ModuleInfo {
+    // Build name -> module map and indegree graph
+    modules := make(map[string]*lexer.ModuleInfo)
+    for name, m := range lexer.LoadedModules {
+        modules[name] = m
+    }
+    // indegree[A] = number of dependencies that must come before A
+    indegree := make(map[string]int)
+    // reverse edges: dep -> list of dependents
+    edges := make(map[string][]string)
+
+    // initialize indegree for all modules
+    for name := range modules {
+        indegree[name] = 0
+    }
+    // Build graph: for each module A and each import B, add edge B -> A
+    for aName, mod := range modules {
+        for _, dep := range mod.Imports {
+            if _, ok := modules[dep]; !ok {
+                // Dependency may be std or not loaded; skip
+                continue
+            }
+            edges[dep] = append(edges[dep], aName)
+            indegree[aName]++
+        }
+    }
+
+    // Queue of zero indegree modules, sorted for determinism
+    var zero []string
+    for name, d := range indegree {
+        if d == 0 {
+            zero = append(zero, name)
+        }
+    }
+    sort.Strings(zero)
+
+    var order []string
+    for len(zero) > 0 {
+        // pop front
+        name := zero[0]
+        zero = zero[1:]
+        order = append(order, name)
+        for _, dep := range edges[name] {
+            indegree[dep]--
+            if indegree[dep] == 0 {
+                zero = append(zero, dep)
+            }
+        }
+        // keep zero list sorted after additions
+        sort.Strings(zero)
+    }
+
+    // If we couldn't place all modules (cycle), fall back to sorted names
+    if len(order) != len(modules) {
+        order = order[:0]
+        for name := range modules {
+            order = append(order, name)
+        }
+        sort.Strings(order)
+    }
+
+    // Map to slice
+    result := make([]*lexer.ModuleInfo, 0, len(order))
+    for _, name := range order {
+        if m, ok := modules[name]; ok {
+            result = append(result, m)
+        }
+    }
+    return result
+}
+
 const defaultStringBufSize = 4096
 
 func RenderC(program *lexer.Program, baseDir string, gcFlag bool) string {
 	useGC = gcFlag
 	var b strings.Builder
+	// Reset ordered function list for this render pass
+	orderedFunctions = nil
+	// Reset global state maps to avoid cross-run accumulation
+	globalClasses = make(map[string]*ClassInfo)
+	globalStructs = make(map[string]*StructInfo)
+	globalEnums = make(map[string]*EnumInfo)
+	globalObjects = make(map[string]*ObjectInfo)
+	globalFunctions = make(map[string]*lexer.TopLevelFuncDeclStmt)
+	globalArrays = make(map[string]string)
+	globalVars = make(map[string]*lexer.PubVarDeclStmt)
+	globalAllocations = make(map[string]*lexer.PubAllocateStmt)
+	localVars = make(map[string]string)
+	currentModule = ""
+	currentClassName = ""
+	currentFunction = nil
 
 	for _, importStmt := range program.Imports {
 		_, err := lexer.LoadModule(importStmt.Module, baseDir)
@@ -73,10 +163,24 @@ func RenderC(program *lexer.Program, baseDir string, gcFlag bool) string {
 		}
 	}
 
+	// Hoist functions in the main program to ensure dependency-safe order
+	if hoisted, err := lexer.HoistFunctions(program.Statements); err == nil {
+		program.Statements = hoisted
+	} else {
+		fmt.Printf("\033[31mFailed to hoist functions in main program: %v\033[0m\n", err)
+		os.Exit(1)
+	}
+
 	var (
 		externalImports []string
 		localImports    []string
 	)
+
+	modules := orderedModules()
+	for _, module := range modules {
+		externalImports = append(externalImports, module.ExternalImports...)
+		localImports = append(localImports, module.LocalImports...)
+	}
 
 	for _, stmt := range program.Statements {
 		if stmt.ExternalImport != nil {
@@ -85,11 +189,6 @@ func RenderC(program *lexer.Program, baseDir string, gcFlag bool) string {
 		if stmt.LocalImport != nil {
 			localImports = append(localImports, stmt.LocalImport.Header)
 		}
-	}
-
-	for _, module := range lexer.LoadedModules {
-		externalImports = append(externalImports, module.ExternalImports...)
-		localImports = append(localImports, module.LocalImports...)
 	}
 
 	for _, stmt := range program.Statements {
@@ -129,6 +228,7 @@ func RenderC(program *lexer.Program, baseDir string, gcFlag bool) string {
 		}
 		if stmt.TopLevelFuncDecl != nil {
 			globalFunctions[stmt.TopLevelFuncDecl.Name] = stmt.TopLevelFuncDecl
+			orderedFunctions = append(orderedFunctions, stmt.TopLevelFuncDecl)
 		}
 		if stmt.PubTopLevelFuncDecl != nil {
 			topLevelFunc := &lexer.TopLevelFuncDeclStmt{
@@ -138,6 +238,7 @@ func RenderC(program *lexer.Program, baseDir string, gcFlag bool) string {
 				Body:       stmt.PubTopLevelFuncDecl.Body,
 			}
 			globalFunctions[stmt.PubTopLevelFuncDecl.Name] = topLevelFunc
+			orderedFunctions = append(orderedFunctions, topLevelFunc)
 		}
 		if stmt.EnumDecl != nil {
 			enumInfo := &EnumInfo{
@@ -155,7 +256,7 @@ func RenderC(program *lexer.Program, baseDir string, gcFlag bool) string {
 		}
 	}
 
-	for _, module := range lexer.LoadedModules {
+	for _, module := range modules {
 		for _, classDecl := range module.PublicClasses {
 			collectClassInfoWithModule(classDecl, module.Name)
 		}
@@ -386,7 +487,7 @@ bool __check_key_exists(int* keys, int size, int key) {
 		}
 	}
 
-	for _, module := range lexer.LoadedModules {
+	for _, module := range modules {
 		for _, classDecl := range module.PublicClasses {
 			moduleClassName := lexer.GenerateUniqueSymbol(classDecl.Name, module.Name)
 			populateClassInfo(classDecl, moduleClassName)
@@ -456,7 +557,7 @@ bool __check_key_exists(int* keys, int size, int key) {
 		}
 
 		if constructor == nil {
-			for _, module := range lexer.LoadedModules {
+			for _, module := range modules {
 				for originalClassName, classDecl := range module.PublicClasses {
 					moduleClassName := lexer.GenerateUniqueSymbol(originalClassName, module.Name)
 					if moduleClassName == className {
@@ -495,24 +596,64 @@ bool __check_key_exists(int* keys, int size, int key) {
 		b.WriteString("\n")
 	}
 
-	for _, module := range lexer.LoadedModules {
-		for funcName, funcDecl := range module.PublicFuncs {
+	for _, module := range modules {
+		var names []string
+		for name := range module.PublicFuncs {
+			names = append(names, name)
+		}
+		slices.Sort(names)
+		for _, name := range names {
+			funcDecl := module.PublicFuncs[name]
+			unique := lexer.GenerateUniqueSymbol(funcDecl.Name, module.Name)
 			topLevelFunc := &lexer.TopLevelFuncDeclStmt{
-				Name:       lexer.GenerateUniqueSymbol(funcName, module.Name),
+				Name:       unique,
 				Parameters: funcDecl.Parameters,
 				ReturnType: funcDecl.ReturnType,
 				Body:       funcDecl.Body,
 			}
-			globalFunctions[lexer.GenerateUniqueSymbol(funcName, module.Name)] = topLevelFunc
+			globalFunctions[unique] = topLevelFunc
+			orderedFunctions = append(orderedFunctions, topLevelFunc)
 		}
 	}
-	for _, funcDecl := range globalFunctions {
-		if funcDecl.Name == "main" {
-			continue
-		}
-		prototype := generateFunctionPrototype(funcDecl)
-		b.WriteString(fmt.Sprintf("%s;\n", prototype))
-	}
+
+    // Final dependency-safe hoist across all collected functions (program + modules)
+    if len(orderedFunctions) > 1 {
+        // Build synthetic statements from orderedFunctions
+        var synthetic []*lexer.Statement
+        for _, f := range orderedFunctions {
+            if f == nil { continue }
+            synthetic = append(synthetic, &lexer.Statement{TopLevelFuncDecl: f})
+        }
+        if hoisted, err := lexer.HoistFunctions(synthetic); err == nil {
+            // Rebuild orderedFunctions according to hoisted order
+            var newOrder []*lexer.TopLevelFuncDeclStmt
+            for _, s := range hoisted {
+                if s.TopLevelFuncDecl != nil {
+                    newOrder = append(newOrder, s.TopLevelFuncDecl)
+                } else if s.PubTopLevelFuncDecl != nil {
+                    // Normalize pub to TopLevel for emission
+                    newOrder = append(newOrder, &lexer.TopLevelFuncDeclStmt{
+                        Name:       s.PubTopLevelFuncDecl.Name,
+                        Parameters: s.PubTopLevelFuncDecl.Parameters,
+                        ReturnType: s.PubTopLevelFuncDecl.ReturnType,
+                        Body:       s.PubTopLevelFuncDecl.Body,
+                    })
+                }
+            }
+            orderedFunctions = newOrder
+        } else {
+            // On error, keep existing deterministic order
+            logger.Debug("Final hoist failed: %v\n", err)
+        }
+    }
+
+    for _, funcDecl := range orderedFunctions {
+        if funcDecl == nil || funcDecl.Name == "main" {
+            continue
+        }
+        prototype := generateFunctionPrototype(funcDecl)
+        b.WriteString(fmt.Sprintf("%s;\n", prototype))
+    }
 	b.WriteString("\n")
 
 	for _, stmt := range program.Statements {
@@ -621,7 +762,7 @@ bool __check_key_exists(int* keys, int size, int key) {
 	}
 
 	b.WriteString("\n")
-	for _, module := range lexer.LoadedModules {
+	for _, module := range modules {
 		for varName, varDecl := range module.PublicVars {
 			cType := mapTypeToCType(varDecl.Type)
 			uniqueName := lexer.GenerateUniqueSymbol(varName, module.Name)
@@ -646,7 +787,7 @@ bool __check_key_exists(int* keys, int size, int key) {
 		}
 	}
 
-	for _, module := range lexer.LoadedModules {
+	for _, module := range modules {
 		for varName, varDecl := range module.PublicVars {
 			var (
 				cType      = mapTypeToCType(varDecl.Type)
@@ -723,13 +864,13 @@ bool __check_key_exists(int* keys, int size, int key) {
 		}
 	}
 
-	for _, module := range lexer.LoadedModules {
+	for _, module := range modules {
 		for _, classDecl := range module.PublicClasses {
 			generateClassImplementation(&b, classDecl, module.Name, program)
 		}
 	}
 
-	for _, funcDecl := range globalFunctions {
+	for _, funcDecl := range orderedFunctions {
 		generateTopLevelFunctionImplementation(&b, funcDecl, program)
 	}
 
@@ -747,7 +888,7 @@ bool __check_key_exists(int* keys, int size, int key) {
 	b.WriteString("    __global_argc = argc;\n")
 	b.WriteString("    __global_argv = argv;\n")
 
-	for _, module := range lexer.LoadedModules {
+	for _, module := range modules {
 		for varName, varDecl := range module.PublicVars {
 			if varDecl.Type == "string" {
 				uniqueName := lexer.GenerateUniqueSymbol(varName, module.Name)
@@ -6837,6 +6978,41 @@ func intermediatePostProcessC(csrc string) string {
 		}
 	}
 	csrc = replaceTildeArrowOutsideStrings(csrc)
+
+	// Targeted safety fixes to avoid returning stack-allocated buffers in generated helpers
+	// 1) lstring io_readln(): ensure we return heap-allocated string
+	{
+		re := regexp.MustCompile(`(?s)\blstring\s+io_readln\s*\(\s*\)\s*\{.*?\}`)
+		csrc = re.ReplaceAllStringFunc(csrc, func(fn string) string {
+			body := fn
+			body = strings.ReplaceAll(body, "return buffer;", "return strdup(buffer);")
+			// Only replace empty string returns inside this function
+			body = strings.ReplaceAll(body, "return \"\";", "return strdup(\"\");")
+			return body
+		})
+	}
+	// 2) lstring strings_get_char_at_lstr(): ensure we return heap-allocated string
+	{
+		re := regexp.MustCompile(`(?s)\blstring\s+strings_get_char_at_lstr\s*\(.*?\)\s*\{.*?\}`)
+		csrc = re.ReplaceAllStringFunc(csrc, func(fn string) string {
+			body := fn
+			body = strings.ReplaceAll(body, "return \"\";", "return strdup(\"\");")
+			body = strings.ReplaceAll(body, "return result;", "return strdup(result);")
+			return body
+		})
+	}
+	// 3) char* path_resolve(): remove free on stack var and avoid returning stack var
+	{
+		re := regexp.MustCompile(`(?s)\bchar\*\s+path_resolve\s*\(.*?\)\s*\{.*?\}`)
+		csrc = re.ReplaceAllStringFunc(csrc, func(fn string) string {
+			body := fn
+			// If code built result in stack array and returns it, strdup it
+			body = strings.ReplaceAll(body, "return result;", "return strdup(result);")
+			// If it tries to free a stack buffer named 'joined', drop it
+			body = strings.ReplaceAll(body, "free(joined);", "/* dropped free of stack buffer */")
+			return body
+		})
+	}
 	return csrc
 }
 

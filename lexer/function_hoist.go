@@ -8,6 +8,8 @@ package lexer
 
 import (
 	"fmt"
+	"regexp"
+	"sort"
 	"strings"
 )
 
@@ -16,17 +18,43 @@ type functionNode struct {
 	name         string
 	dependencies map[string]bool
 	statement    *Statement
+	order        int // appearance order for deterministic sorting
 }
 
 // Analyzes a function body and extracts called function names
 func processFunctionDependencies(body []*Statement) map[string]bool {
 	deps := make(map[string]bool)
 
+	// Regex to find potential function calls like foo( ... )
+	callRe := regexp.MustCompile(`\b([A-Za-z_][A-Za-z0-9_]*)\s*\(`)
+
+	addCallsFromText := func(text string) {
+		if text == "" {
+			return
+		}
+		matches := callRe.FindAllStringSubmatch(text, -1)
+		for _, m := range matches {
+			if len(m) > 1 {
+				name := m[1]
+				if name != "" {
+					deps[name] = true
+				}
+			}
+		}
+	}
+
 	var processStmt func(*Statement)
 	processStmt = func(stmt *Statement) {
 		switch {
 		case stmt.FunctionCall != nil:
 			deps[stmt.FunctionCall.Name] = true
+
+		case stmt.ListDeclFunctionCall != nil:
+			// e.g. x := someFunc(...)
+			addCallsFromText(stmt.ListDeclFunctionCall.FunctionCall)
+
+		case stmt.Run != nil:
+			addCallsFromText(stmt.Run.FunctionCall)
 
 		case stmt.TopLevelFuncDecl != nil:
 			subDeps := processFunctionDependencies(stmt.TopLevelFuncDecl.Body)
@@ -41,10 +69,12 @@ func processFunctionDependencies(body []*Statement) map[string]bool {
 			}
 
 		case stmt.If != nil:
+			addCallsFromText(stmt.If.Condition)
 			for _, s := range stmt.If.Body {
 				processStmt(s)
 			}
 			for _, elif := range stmt.If.ElseIfs {
+				addCallsFromText(elif.Condition)
 				for _, s := range elif.Body {
 					processStmt(s)
 				}
@@ -56,31 +86,42 @@ func processFunctionDependencies(body []*Statement) map[string]bool {
 			}
 
 		case stmt.While != nil:
+			addCallsFromText(stmt.While.Condition)
 			for _, s := range stmt.While.Body {
 				processStmt(s)
 			}
 
 		case stmt.For != nil:
+			addCallsFromText(stmt.For.Start)
+			addCallsFromText(stmt.For.End)
 			for _, s := range stmt.For.Body {
 				processStmt(s)
 			}
 
 		case stmt.ReverseFor != nil:
+			addCallsFromText(stmt.ReverseFor.Start)
+			addCallsFromText(stmt.ReverseFor.End)
 			for _, s := range stmt.ReverseFor.Body {
 				processStmt(s)
 			}
 
 		case stmt.VerboseFor != nil:
+			addCallsFromText(stmt.VerboseFor.Init)
+			addCallsFromText(stmt.VerboseFor.Condition)
+			addCallsFromText(stmt.VerboseFor.Increment)
 			for _, s := range stmt.VerboseFor.Body {
 				processStmt(s)
 			}
 
 		case stmt.ParallelFor != nil:
+			addCallsFromText(stmt.ParallelFor.Start)
+			addCallsFromText(stmt.ParallelFor.End)
 			for _, s := range stmt.ParallelFor.Body {
 				processStmt(s)
 			}
 
 		case stmt.ParallelWhile != nil:
+			addCallsFromText(stmt.ParallelWhile.Condition)
 			for _, s := range stmt.ParallelWhile.Body {
 				processStmt(s)
 			}
@@ -90,12 +131,68 @@ func processFunctionDependencies(body []*Statement) map[string]bool {
 				processStmt(s)
 			}
 
+		case stmt.Platform != nil:
+			for _, s := range stmt.Platform.Body {
+				processStmt(s)
+			}
+
 		case stmt.TryCatch != nil:
 			for _, s := range stmt.TryCatch.TryBody {
 				processStmt(s)
 			}
 			for _, s := range stmt.TryCatch.CatchBody {
 				processStmt(s)
+			}
+
+		case stmt.VarDecl != nil:
+			addCallsFromText(stmt.VarDecl.Value)
+
+		case stmt.VarAssign != nil:
+			addCallsFromText(stmt.VarAssign.Value)
+
+		case stmt.IndexAssign != nil:
+			addCallsFromText(stmt.IndexAssign.Index)
+			addCallsFromText(stmt.IndexAssign.Value)
+
+		case stmt.Return != nil:
+			addCallsFromText(stmt.Return.Value)
+
+		case stmt.Foreach != nil:
+			addCallsFromText(stmt.Foreach.Collection)
+
+		case stmt.CatString != nil:
+			addCallsFromText(stmt.CatString.Value)
+
+		case stmt.CatList != nil:
+			for _, v := range stmt.CatList.Lists {
+				addCallsFromText(v)
+			}
+
+		case stmt.MapDecl != nil:
+			for _, p := range stmt.MapDecl.Pairs {
+				addCallsFromText(p.Key)
+				addCallsFromText(p.Value)
+			}
+
+		case stmt.MethodCall != nil:
+			addCallsFromText(stmt.MethodCall.Object)
+			for _, a := range stmt.MethodCall.Args {
+				addCallsFromText(a)
+			}
+
+		case stmt.StaticMethodCall != nil:
+			for _, a := range stmt.StaticMethodCall.Args {
+				addCallsFromText(a)
+			}
+
+		case stmt.ObjectDecl != nil:
+			for _, a := range stmt.ObjectDecl.Args {
+				addCallsFromText(a)
+			}
+
+		case stmt.ListDecl != nil:
+			for _, e := range stmt.ListDecl.Elements {
+				addCallsFromText(e)
 			}
 
 		case stmt.ClassDecl != nil:
@@ -124,8 +221,9 @@ func processFunctionDependencies(body []*Statement) map[string]bool {
 }
 
 // Builds a dependency graph of all functions in the program
-func buildDependencyGraph(statements []*Statement) (map[string]*functionNode, error) {
+func buildDependencyGraph(statements []*Statement, aliases map[string]string) (map[string]*functionNode, error) {
 	graph := make(map[string]*functionNode)
+	order := 0
 
 	for _, stmt := range statements {
 		if stmt.TopLevelFuncDecl != nil {
@@ -137,7 +235,9 @@ func buildDependencyGraph(statements []*Statement) (map[string]*functionNode, er
 				name:         name,
 				dependencies: make(map[string]bool),
 				statement:    stmt,
+				order:        order,
 			}
+			order++
 		} else if stmt.PubTopLevelFuncDecl != nil {
 			name := stmt.PubTopLevelFuncDecl.Name
 			if _, exists := graph[name]; exists {
@@ -147,7 +247,9 @@ func buildDependencyGraph(statements []*Statement) (map[string]*functionNode, er
 				name:         name,
 				dependencies: make(map[string]bool),
 				statement:    stmt,
+				order:        order,
 			}
+			order++
 		}
 	}
 
@@ -160,8 +262,19 @@ func buildDependencyGraph(statements []*Statement) (map[string]*functionNode, er
 		}
 
 		for dep := range processFunctionDependencies(body) {
-			if _, exists := graph[dep]; exists && dep != name {
-				node.dependencies[dep] = true
+			// resolve alias chains to real function name
+			real := dep
+			visited := make(map[string]bool)
+			for {
+				t, ok := aliases[real]
+				if !ok || visited[real] {
+					break
+				}
+				visited[real] = true
+				real = t
+			}
+			if _, exists := graph[real]; exists && real != name {
+				node.dependencies[real] = true
 			}
 		}
 	}
@@ -202,8 +315,22 @@ func topologicalSort(graph map[string]*functionNode) ([]*Statement, error) {
 			return fmt.Errorf("function not found: %s", name)
 		}
 
+		// visit dependencies in deterministic order (by original appearance)
+		deps := make([]*functionNode, 0, len(node.dependencies))
 		for dep := range node.dependencies {
-			if err := visit(dep); err != nil {
+			if dn, ok := graph[dep]; ok {
+				deps = append(deps, dn)
+			}
+		}
+		// stable order by node.order, fallback to name
+		sort.Slice(deps, func(i, j int) bool {
+			if deps[i].order == deps[j].order {
+				return deps[i].name < deps[j].name
+			}
+			return deps[i].order < deps[j].order
+		})
+		for _, dn := range deps {
+			if err := visit(dn.name); err != nil {
 				return err
 			}
 		}
@@ -214,9 +341,20 @@ func topologicalSort(graph map[string]*functionNode) ([]*Statement, error) {
 		return nil
 	}
 
-	for name := range graph {
-		if !visited[name] {
-			if err := visit(name); err != nil {
+	// visit nodes in deterministic order
+	nodes := make([]*functionNode, 0, len(graph))
+	for _, n := range graph {
+		nodes = append(nodes, n)
+	}
+	sort.Slice(nodes, func(i, j int) bool {
+		if nodes[i].order == nodes[j].order {
+			return nodes[i].name < nodes[j].name
+		}
+		return nodes[i].order < nodes[j].order
+	})
+	for _, n := range nodes {
+		if !visited[n.name] {
+			if err := visit(n.name); err != nil {
 				return nil, err
 			}
 		}
@@ -228,17 +366,22 @@ func topologicalSort(graph map[string]*functionNode) ([]*Statement, error) {
 // Reorders function declarations to satisfy dependencies
 func HoistFunctions(statements []*Statement) ([]*Statement, error) {
 	var funcStmts, otherStmts []*Statement
+	// collect alias mapping (alias name -> target function name)
+	aliases := make(map[string]string)
 	for _, stmt := range statements {
 		if stmt.TopLevelFuncDecl != nil || stmt.PubTopLevelFuncDecl != nil {
 			funcStmts = append(funcStmts, stmt)
 		} else {
 			otherStmts = append(otherStmts, stmt)
 		}
+		if stmt.Alias != nil {
+			aliases[stmt.Alias.AliasName] = stmt.Alias.Target
+		}
 	}
 	if len(funcStmts) <= 1 {
 		return statements, nil
 	}
-	graph, err := buildDependencyGraph(funcStmts)
+	graph, err := buildDependencyGraph(funcStmts, aliases)
 	if err != nil {
 		return nil, err
 	}
@@ -246,6 +389,8 @@ func HoistFunctions(statements []*Statement) ([]*Statement, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Keep other statements before functions (types/consts) while
+	// ensuring function order is deterministic and dependency-safe.
 	var result []*Statement
 	result = append(result, otherStmts...)
 	result = append(result, sortedFuncStmts...)

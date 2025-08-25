@@ -36,6 +36,7 @@ type ModuleInfo struct {
 	PublicMacros    map[string]*MacroDeclStmt
 	ExternalImports []string
 	LocalImports    []string
+	Imports         []string
 }
 
 type Program struct {
