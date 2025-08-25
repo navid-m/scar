@@ -1,0 +1,9 @@
+import "std/collections"
+
+namespace alias Fmap = collections::StringFloatMap
+
+var sfm = new Fmap(2)
+
+Fmap::put(sfm, "pi", 3.14)
+Fmap::put(sfm, "e", 2.71)
+Fmap::get(sfm, "pi")

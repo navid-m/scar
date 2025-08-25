@@ -62,12 +62,61 @@ func ProcessUnsafeAliases(source string) string {
 
 	output := strings.Join(result, "\n")
 	for aliasName, target := range lexer.UnsafeAliases {
-		pattern := aliasName + "("
-		replacement := target + "("
-		output = strings.ReplaceAll(output, pattern, replacement)
+		output = replaceOutsideStringsWithBoundary(output, aliasName+"::", target+"::", len(aliasName))
+		output = replaceOutsideStringsWithBoundary(output, aliasName+"(", target+"(", len(aliasName))
 	}
 
 	return output
+}
+
+func replaceOutsideStringsWithBoundary(text, needle, replacement string, aliasLen int) string {
+	if needle == "" {
+		return text
+	}
+	var (
+		b       bytes.Buffer
+		i       = 0
+		inStr   = false
+		escaped = false
+		nlen    = len(needle)
+	)
+	for i < len(text) {
+		ch := text[i]
+		if inStr {
+			b.WriteByte(ch)
+			if !escaped && ch == '\\' {
+				escaped = true
+			} else if !escaped && ch == '"' {
+				inStr = false
+			} else if escaped {
+				escaped = false
+			}
+			i++
+			continue
+		}
+		if ch == '"' {
+			inStr = true
+			b.WriteByte(ch)
+			i++
+			continue
+		}
+		if i+nlen <= len(text) && text[i:i+nlen] == needle {
+			startIdx := i
+			aliasStart := startIdx
+			if aliasStart == 0 || !isIdentChar(text[aliasStart-1]) {
+				b.WriteString(replacement)
+				i += nlen
+				continue
+			}
+		}
+		b.WriteByte(ch)
+		i++
+	}
+	return b.String()
+}
+
+func isIdentChar(ch byte) bool {
+	return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '_'
 }
 
 func ProcessAppendExpressions(source string) string {
