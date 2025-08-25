@@ -67,7 +67,6 @@ new_array(BooleanArrayList, bool, bool, bool, false, malloc(this->capacity * siz
 new_array(StringArrayList, char, string, char*, "",malloc(this->capacity * sizeof(char*)),free(((char**)this->data)[index]);,strdup(value),char* value = ((char**)this->data)[index];if (value == nil) {return ""; } return value;)
 new_array(ByteArrayList, u8, u8, unsigned char, (u8)0, malloc(this->capacity * sizeof(unsigned char)), /* free_expr */, value, return ((unsigned char*)this->data)[index];)
 
-
 ## Convenience macro to define a string-keyed map for a custom value type.
 ##
 ## Usage: define_map(MyMap, MyValueType, MyCType, default_value)
