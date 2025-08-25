@@ -230,7 +230,8 @@ write("Hello World", "output.txt", overwrite!)
 string data = read("output.txt")
 t.assert_string_equals("Hello World", data, "Read data should be 'Hello World'")
 collections::StringArrayList otherdata = fs::read_lines("output.txt")
-t.assert_string_equals("Hello World", otherdata.get_element(0), "First line should be 'Hello World'")
+t.assert_string_equals("Hello World", collections::StringArrayList::get_element(otherdata, 0), "First line should be 'Hello World'")
+
 fs::remove("output.txt")
 
 # Filesystem Tests

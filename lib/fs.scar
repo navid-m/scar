@@ -70,7 +70,7 @@ pub fn read_lines(string filename) -> collections::StringArrayList:
     for i = 0 to n - 1:
         string ln = lines.get_element(i)
         lstring clean = strings::trim_suffix(ln, "\r")
-        lines.set_element(i, clean)
+        collections::StringArrayList::set_element(lines, i, clean)
     return lines
 
 ## Internal helper: returns directory entries joined by newlines. Excludes . and ..

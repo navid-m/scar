@@ -32,8 +32,9 @@ pub macro new_array(class_name, field_type, elem_type, cType, d_return, alloc_ex
         fn set_element(i32 index, elem_type value) -> void:
             if index >= 0 && index < this.size:
                 $raw (
+                    cType __tmp_value = copy_expr;
                     free_expr
-                    ((cType*)this->data)[index] = copy_expr;
+                    ((cType*)this->data)[index] = __tmp_value;
                 )
 
         ## Get the size of the array.
