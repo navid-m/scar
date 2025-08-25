@@ -129,10 +129,12 @@ fn random_fasta(ref AminoAcid genelist, int genelist_len, int count) -> void:
         for i = 0 to (output_len - 1):
             print "%c" | wb[i]
 
-list[string] args = os::get_args()
-int n = 0
+import "std/collections"
+
+collections::StringArrayList args = os::get_args()
+i32 n = 0
 if len(args) > 1:
-    n = math::to_int(args[1])
+    n = math::to_int(collections::StringArrayList::get_element(args, 1))
 
 initialize_amino_acids()
 
