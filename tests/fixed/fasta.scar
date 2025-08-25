@@ -1,5 +1,6 @@
 import "std/os"
 import "std/math"
+import "std/collections"
 
 pub int WIDTH = 60
 pub int RANDOM_BUF_SIZE = 60000 
@@ -128,8 +129,6 @@ fn random_fasta(ref AminoAcid genelist, int genelist_len, int count) -> void:
         # Output the generated DNA
         for i = 0 to (output_len - 1):
             print "%c" | wb[i]
-
-import "std/collections"
 
 collections::StringArrayList args = os::get_args()
 i32 n = 0
