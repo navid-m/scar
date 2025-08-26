@@ -502,10 +502,34 @@ fn generate_documentation(string source_file):
 
 string current_dir = os::cwd()
 
+fn generate_documentation_for_dir(string dir_path):
+    if not fs::exists(dir_path):
+        print "Error: Directory %s not found." | dir_path
+        return
+    collections::StringArrayList entries = fs::list_dir(dir_path)
+    for i = 0 to get_size(entries) - 1:
+        string name = get_element(entries, i)
+        if strings::ends_with(name, ".scar"):
+            string full = fmt!("%s/%s", dir_path, name)
+            generate_documentation(full)
+
 collections::StringArrayList args = os::get_args()
 if get_size(args) < 2:
-    print "Usage: scardoc <file1> <file2> <file3>..."
+    print "Usage: scardoc <file1> <file2> ... scardoc -dir <folder>"
     os::exit(1)
 
-for i = 1 to get_size(args) - 1:
-    generate_documentation(fmt!("%s/%s", current_dir, get_element(args,i)))
+string first = get_element(args, 1)
+if strings::compare(first, "-dir") == 0 or strings::compare(first, "--dir") == 0:
+    if get_size(args) < 3:
+        print "Usage: scardoc -dir <folder>"
+        os::exit(1)
+    string dir_path = get_element(args, 2)
+    if not strings::starts_with(dir_path, "/"):
+        dir_path = fmt!("%s/%s", current_dir, dir_path)
+    generate_documentation_for_dir(dir_path)
+else:
+    for i = 1 to get_size(args) - 1:
+        string path = get_element(args, i)
+        if not strings::starts_with(path, "/"):
+            path = fmt!("%s/%s", current_dir, path)
+        generate_documentation(path)
