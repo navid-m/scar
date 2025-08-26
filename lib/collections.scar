@@ -213,3 +213,4 @@ define_vararg_array_init(init_array_f32, collections::FloatArrayList, f32, math:
 define_vararg_array_init(init_array_bool, collections::BooleanArrayList, bool, math::to_bool(s))
 define_vararg_array_init(init_array_byte, collections::ByteArrayList, u8, math::to_byte(s))
 define_vararg_array_init(init_array_char, collections::CharArrayList, char, s[0])
+define_vararg_array_init(init_array_f64, collections::FloatArrayList, f64, math::to_float(s))
