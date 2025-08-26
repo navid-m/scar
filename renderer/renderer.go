@@ -6601,11 +6601,20 @@ func mapBasicTypeToCType(mapType string) string {
 
 func mapTypeToCType(mapType string) string {
 	logger.Debug("mapTypeToCType called with: '%s'\n", mapType)
-	if after, ok := strings.CutPrefix(mapType, "ref "); ok {
+	if after, ok := strings.CutPrefix(mapType, "nonref "); ok {
 		var (
 			baseType = after
 			cType    = mapTypeToCType(baseType)
 		)
+
+		if strings.HasSuffix(cType, "*") {
+			return strings.TrimSuffix(cType, "*")
+		}
+		return cType
+	}
+	if after, ok := strings.CutPrefix(mapType, "ref "); ok {
+		baseType := after
+		cType := mapTypeToCType(baseType)
 		if strings.HasSuffix(cType, "*") {
 			logger.Debug("ref type '%s' -> '%s' (already pointer)\n", mapType, cType)
 			return cType
@@ -6655,6 +6664,7 @@ func mapTypeToCType(mapType string) string {
 		logger.Debug("custom class type '%s' -> '%s'\n", mapType, result)
 		return result
 	}
+
 	switch mapType {
 	case "int", "i32", "i32*":
 		return "int"
@@ -6702,7 +6712,6 @@ func mapTypeToCType(mapType string) string {
 	}
 }
 
-// Extracts the inner type from a list type, handling nested brackets
 func extractListInnerType(listType string) string {
 	if !strings.HasPrefix(listType, "list[") || !strings.HasSuffix(listType, "]") {
 		return ""
@@ -6862,6 +6871,14 @@ func intermediatePostProcessC(csrc string) string {
 	csrc = sanitizeModuleCalls(csrc)
 	if csrc != before {
 		logger.Debug("postProcessC: sanitizeModuleCalls modified output\n")
+	}
+	{
+		reNonref := regexp.MustCompile(`\bnonref\s+`)
+		cleaned := reNonref.ReplaceAllString(csrc, "")
+		if cleaned != csrc {
+			logger.Debug("postProcessC: stripped 'nonref' qualifiers from C output\n")
+			csrc = cleaned
+		}
 	}
 	reThisField := regexp.MustCompile(`\bthis\.([A-Za-z_][A-Za-z0-9_]*)\b`)
 	if locs := reThisField.FindAllStringSubmatchIndex(csrc, -1); len(locs) > 0 {
