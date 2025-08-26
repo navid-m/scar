@@ -1,4 +1,5 @@
 import "std/runtime"
+import "std/math"
 
 ## Define a new array type.
 pub macro new_array(class_name, field_type, elem_type, cType, d_return, alloc_expr, free_expr, copy_expr, get_check):
@@ -186,3 +187,26 @@ define_map(IntBoolMap, bool, bool, false)
 define_map(IntByteMap, u8, unsigned char, (u8)0)
 define_map(IntStringMap, string, char*, "")
 define_map(IntCharMap, char, char, '\0')
+
+## Macro to define typed varargs array initializers.
+##
+## Usage example:
+##
+## define_vararg_array_init(init_array_i32, collections::ArrayList, i32, math::to_int(s))
+pub macro define_vararg_array_init(func_name, list_class, elem_type, convert_expr):
+    pub fn func_name(i32 count, ...) -> list_class:
+        i32 init_cap = count > 0 ? count : 1
+        var result = new list_class(init_cap)
+        i32 available = varargs_len()
+        i32 n = count
+        if n > available:
+            n = available
+        for i = 0 to n - 1:
+            string s = varargs_array[i]
+            elem_type v = convert_expr
+            result.add_element(v)
+        return result
+
+define_vararg_array_init(init_array_i32, collections::ArrayList, i32, math::to_int(s))
+define_vararg_array_init(init_array_lstring, collections::StringArrayList, string, s)
+define_vararg_array_init(init_array_f32, collections::FloatArrayList, f32, math::to_float(s))
