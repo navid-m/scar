@@ -4409,8 +4409,27 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				}
 			}
 
-			if moduleName, exists := isImportedType(className, program.Imports); exists {
-				className = lexer.GenerateUniqueSymbol(className, moduleName)
+			if strings.Contains(className, "::") {
+				parts := strings.SplitN(className, "::", 2)
+				mod := strings.TrimSpace(parts[0])
+				cls := strings.TrimSpace(parts[1])
+				className = lexer.GenerateUniqueSymbol(cls, mod)
+			} else {
+				alreadyMangled := false
+				if idx := strings.Index(className, "_"); idx > 0 {
+					prefix := className[:idx]
+					for _, imp := range program.Imports {
+						if imp.Module == prefix {
+							alreadyMangled = true
+							break
+						}
+					}
+				}
+				if !alreadyMangled {
+					if moduleName, exists := isImportedType(className, program.Imports); exists {
+						className = lexer.GenerateUniqueSymbol(className, moduleName)
+					}
+				}
 			}
 
 			var args []string

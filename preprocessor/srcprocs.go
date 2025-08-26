@@ -94,9 +94,7 @@ func ProcessUnsafeAliases(source string) string {
 
 	output := strings.Join(result, "\n")
 	for aliasName, target := range lexer.UnsafeAliases {
-		output = replaceOutsideStringsWithBoundary(output, aliasName+"::", target+"::", len(aliasName))
 		output = replaceOutsideStringsWithBoundary(output, aliasName+"(", target+"(", len(aliasName))
-		output = replaceOutsideStringsWholeIdent(output, aliasName, target)
 	}
 
 	return output
