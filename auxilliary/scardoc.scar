@@ -11,35 +11,37 @@ import "std/fs"
 import "std/collections"
 import "std/regex"
 
-unsafe alias add_elem    = collections::StringArrayList::add_element
-unsafe alias get_size    = collections::StringArrayList::get_size
-unsafe alias get_element = collections::StringArrayList::get_element
+namespace alias SList = collections::StringArrayList
+
+unsafe alias add_elem    = SList::add_element
+unsafe alias get_size    = SList::get_size
+unsafe alias get_element = SList::get_element
 
 class ParsedDoc:
     init:
-        var this.imports         = new collections::StringArrayList(100)
-        var this.functions       = new collections::StringArrayList(100)
-        var this.function_sigs   = new collections::StringArrayList(100)
-        var this.classes         = new collections::StringArrayList(100)
-        var this.function_docs   = new collections::StringArrayList(100)
-        var this.class_docs      = new collections::StringArrayList(100)
-        var this.methods         = new collections::StringArrayList(200)
-        var this.method_docs     = new collections::StringArrayList(200)
-        var this.method_parents  = new collections::StringArrayList(200)
-        var this.method_sigs     = new collections::StringArrayList(200)
-        var this.structs         = new collections::StringArrayList(100)
-        var this.struct_docs     = new collections::StringArrayList(100)
-        var this.struct_fields   = new collections::StringArrayList(100)
-        var this.macros          = new collections::StringArrayList(100)
-        var this.macro_docs      = new collections::StringArrayList(100)
-        var this.macro_sigs      = new collections::StringArrayList(100)
+        var this.imports         = new SList(100)
+        var this.functions       = new SList(100)
+        var this.function_sigs   = new SList(100)
+        var this.classes         = new SList(100)
+        var this.function_docs   = new SList(100)
+        var this.class_docs      = new SList(100)
+        var this.methods         = new SList(200)
+        var this.method_docs     = new SList(200)
+        var this.method_parents  = new SList(200)
+        var this.method_sigs     = new SList(200)
+        var this.structs         = new SList(100)
+        var this.struct_docs     = new SList(100)
+        var this.struct_fields   = new SList(100)
+        var this.macros          = new SList(100)
+        var this.macro_docs      = new SList(100)
+        var this.macro_sigs      = new SList(100)
         cstring this.filepath    = ""
         cstring this.module_name = ""
 
 fn extract_function_name(string line) -> string:
     string pattern = "^(?:pub\\s+)?fn\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*\\("
     
-    collections::StringArrayList matches = regex::find(pattern, line)
+    SList matches = regex::find(pattern, line)
     if get_size(matches) >= 2:
         return get_element(matches,1)
     
@@ -53,7 +55,7 @@ class MacroParts:
 fn extract_struct_name(string line) -> string:
     string pattern = "^(?:pub\\s+)?struct\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*:"
     
-    collections::StringArrayList matches = regex::find(pattern, line)
+    SList matches = regex::find(pattern, line)
     if get_size(matches) >= 2:
         return get_element(matches,1)
     
@@ -61,7 +63,7 @@ fn extract_struct_name(string line) -> string:
 
 fn extract_macro_parts(string line) -> ref MacroParts:
     string pattern = "^(?:pub\\s+)?macro\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*\\(([^)]*)\\)\\s*:"
-    collections::StringArrayList matches = regex::find(pattern, line)
+    SList matches = regex::find(pattern, line)
     if get_size(matches) >= 3:
         string name = get_element(matches,1)
         string args = get_element(matches,2)
@@ -80,7 +82,7 @@ fn format_return_for_doc(string ret) -> string:
 fn extract_class_name(string line) -> string:
     string pattern = "^(?:pub\\s+)?class\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*:"
     
-    collections::StringArrayList matches = regex::find(pattern, line)
+    SList matches = regex::find(pattern, line)
     if get_size(matches) >= 2:
         return get_element(matches,1)
     
@@ -89,7 +91,7 @@ fn extract_class_name(string line) -> string:
 fn extract_import(string line) -> string:
     string pattern = "^import\\s+\"([^\"]+)\""
     
-    collections::StringArrayList matches = regex::find(pattern, line)
+    SList matches = regex::find(pattern, line)
     if get_size(matches) >= 2:
         return get_element(matches,1)
     
@@ -111,7 +113,7 @@ fn parse_file(string fpath, string module_name) -> ref ParsedDoc:
     ref ParsedDoc doc = new ParsedDoc()
     doc.filepath = fpath
     doc.module_name = module_name
-    collections::StringArrayList lines = fs::read_lines(fpath)
+    SList lines = fs::read_lines(fpath)
     string current_class = ""
     int class_indent = -1
     string current_struct = ""
@@ -263,12 +265,12 @@ fn parse_file(string fpath, string module_name) -> ref ParsedDoc:
                     string msig = ""
                     if strings::compare(mname, "init") == 0:
                         string ipat = "^init\\s*\\(([^)]*)\\)\\s*:"
-                        collections::StringArrayList im = regex::find(ipat, trimmed)
+                        SList im = regex::find(ipat, trimmed)
                         if get_size(im) >= 2:
                             msig = fmt!("%s(%s)", mname, get_element(im,1))
                     else:
                         string fpat = fmt!("^(?:pub\\s+)?fn\\s+%s\\s*\\(([^)]*)\\)", mname)
-                        collections::StringArrayList fm = regex::find(fpat, trimmed)
+                        SList fm = regex::find(fpat, trimmed)
                         string args = ""
                         if get_size(fm) >= 2:
                             args = get_element(fm,1)
@@ -310,7 +312,7 @@ fn parse_file(string fpath, string module_name) -> ref ParsedDoc:
                 add_elem(doc.functions, func_name)
 
                 string fpat = fmt!("^(?:pub\\s+)?fn\\s+%s\\s*\\(([^)]*)\\)", func_name)
-                collections::StringArrayList fm = regex::find(fpat, trimmed)
+                SList fm = regex::find(fpat, trimmed)
                 string fsig = ""
                 string args = ""
                 if get_size(fm) >= 2:
@@ -506,14 +508,14 @@ fn generate_documentation_for_dir(string dir_path):
     if not fs::exists(dir_path):
         print "Error: Directory %s not found." | dir_path
         return
-    collections::StringArrayList entries = fs::list_dir(dir_path)
+    SList entries = fs::list_dir(dir_path)
     for i = 0 to get_size(entries) - 1:
         string name = get_element(entries, i)
         if strings::ends_with(name, ".scar"):
             string full = fmt!("%s/%s", dir_path, name)
             generate_documentation(full)
 
-collections::StringArrayList args = os::get_args()
+SList args = os::get_args()
 if get_size(args) < 2:
     print "Usage: scardoc <file1> <file2> ... | scardoc -dir <folder>"
     os::exit(1)
