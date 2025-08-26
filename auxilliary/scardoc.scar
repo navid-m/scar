@@ -515,7 +515,7 @@ fn generate_documentation_for_dir(string dir_path):
 
 collections::StringArrayList args = os::get_args()
 if get_size(args) < 2:
-    print "Usage: scardoc <file1> <file2> ... scardoc -dir <folder>"
+    print "Usage: scardoc <file1> <file2> ... | scardoc -dir <folder>"
     os::exit(1)
 
 string first = get_element(args, 1)

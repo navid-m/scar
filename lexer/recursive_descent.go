@@ -118,6 +118,39 @@ func splitRespectingQuotes(input string) []string {
 	return result
 }
 
+func indexPipeOutsideStrings(input string) int {
+	inString := false
+	var delim byte
+	escape := false
+	for i := 0; i < len(input); i++ {
+		ch := input[i]
+		if inString {
+			if escape {
+				escape = false
+				continue
+			}
+			if ch == '\\' {
+				escape = true
+				continue
+			}
+			if ch == delim {
+				inString = false
+				continue
+			}
+			continue
+		}
+		if ch == '"' || ch == '\'' {
+			inString = true
+			delim = ch
+			continue
+		}
+		if ch == '|' {
+			return i
+		}
+	}
+	return -1
+}
+
 func parseMacroDeclaration(lines []string, lineNum, currentIndent int) (*Statement, int, error) {
 	line := strings.TrimSpace(lines[lineNum])
 
@@ -1242,9 +1275,9 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 			return nil, lineNum + 1, fmt.Errorf("print statement requires a string at line %d", lineNum+1)
 		}
 
-		if strings.Contains(line, "|") {
+		if idx := indexPipeOutsideStrings(line); idx != -1 {
 			var (
-				pipeIndex  = strings.Index(line, "|")
+				pipeIndex  = idx
 				formatPart = strings.TrimSpace(line[5:pipeIndex])
 				varPart    = strings.TrimSpace(line[pipeIndex+1:])
 			)
@@ -1757,9 +1790,9 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 			return nil, lineNum + 1, fmt.Errorf("put statement requires a string at line %d", lineNum+1)
 		}
 
-		if strings.Contains(line, "|") {
+		if idx := indexPipeOutsideStrings(line); idx != -1 {
 			var (
-				pipeIndex  = strings.Index(line, "|")
+				pipeIndex  = idx
 				formatPart = strings.TrimSpace(line[3:pipeIndex])
 				varPart    = strings.TrimSpace(line[pipeIndex+1:])
 			)
