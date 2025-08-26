@@ -1,0 +1,2 @@
+rm *.c
+go build
