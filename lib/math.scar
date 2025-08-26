@@ -134,6 +134,14 @@ pub fn min(i32 a, i32 b) -> i32:
         return a
     return b
 
+pub fn to_bool(string value) -> bool:
+    if value == "true" or value == "1":
+        return true
+    return false
+
+pub fn to_byte(string value) -> u8:
+    return (u8)math::to_int(value)
+
 ## Maximum of two 32-bit integers.
 pub fn max(i32 a, i32 b) -> i32:
     if a > b:
