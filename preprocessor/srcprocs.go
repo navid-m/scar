@@ -24,8 +24,44 @@ func ProcessSourceLevelMacros(source string) string {
 	source = ProcessMacros(source)
 	source = ProcessAppendExpressions(source)
 	source = ProcessDeleteExpressions(source)
+	source = ProcessNonrefImplicitConstructors(source)
 	source = lexer.ReplaceDoubleColonsOutsideStrings(source)
 	return source
+}
+
+func ProcessNonrefImplicitConstructors(source string) string {
+	lines := strings.Split(source, "\n")
+	reA := regexp.MustCompile(`^(?P<indent>[ \t]*)nonref\s+(?P<var>[A-Za-z_][A-Za-z0-9_]*)\s*=\s*(?P<typ>[A-Za-z_][A-Za-z0-9_]*)\s*\((?P<args>[^()]*)\)\s*$`)
+	reB := regexp.MustCompile(`^(?P<indent>[ \t]*)nonref\s+(?P<typ>[A-Za-z_][A-Za-z0-9_]*)\s+(?P<var>[A-Za-z_][A-Za-z0-9_]*)\s*=\s*(?P<call>[A-Za-z_][A-Za-z0-9_]*)\s*\((?P<args>[^()]*)\)\s*$`)
+
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		if strings.Contains(line, "\"") {
+			continue
+		}
+		if m := reB.FindStringSubmatch(line); m != nil {
+			typ := m[reB.SubexpIndex("typ")]
+			call := m[reB.SubexpIndex("call")]
+			if typ == call {
+				indent := m[reB.SubexpIndex("indent")]
+				variable := m[reB.SubexpIndex("var")]
+				args := m[reB.SubexpIndex("args")]
+				lines[i] = indent + "nonref " + typ + " " + variable + " = " + typ + "_new(" + args + ")"
+				continue
+			}
+		}
+		if m := reA.FindStringSubmatch(line); m != nil {
+			indent := m[reA.SubexpIndex("indent")]
+			variable := m[reA.SubexpIndex("var")]
+			typ := m[reA.SubexpIndex("typ")]
+			args := m[reA.SubexpIndex("args")]
+			lines[i] = indent + "nonref " + variable + " = " + typ + "_new(" + args + ")"
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 func ProcessNamespaceAliases(source string) string {

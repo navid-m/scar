@@ -659,6 +659,7 @@ bool __check_key_exists(int* keys, int size, int key) {
 				fmt.Fprintf(&b, "static char* %s;\n", name)
 				fmt.Fprintf(&b, "void init_%s() { %s = %s; }\n", name, name, value)
 			default:
+				value = convertNewToConstructor(value)
 				if stmt.VarDecl.IsConst {
 					fmt.Fprintf(&b, "static const %s %s = %s;\n", cType, name, value)
 				} else {
@@ -702,6 +703,7 @@ bool __check_key_exists(int* keys, int size, int key) {
 			}
 			fmt.Fprintf(&b, "void init_%s() { %s = %s; }\n", varName, varName, value)
 		default:
+			value = convertNewToConstructor(value)
 			if varDecl.IsConst {
 				if varDecl.IsFixed {
 					fmt.Fprintf(&b, "static const %s %s = %s;\n", cType, varName, value)
@@ -801,6 +803,7 @@ bool __check_key_exists(int* keys, int size, int key) {
 				}
 				fmt.Fprintf(&b, "void init_%s() { %s = %s; }\n", uniqueName, uniqueName, value)
 			default:
+				value = convertNewToConstructor(value)
 				if varDecl.IsConst {
 					if varDecl.IsFixed {
 						fmt.Fprintf(&b, "static const %s %s = %s;\n", cType, uniqueName, value)
@@ -3209,7 +3212,9 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 
 			logger.Debug("VarDecl: varType=%s, varName=%s, value=%s\n", varType, varName, value)
 
-			// Store the full type in localVars, including "ref " prefix for reference types
+			if value != "" {
+				value = convertNewToConstructor(strings.TrimSpace(value))
+			}
 			if stmt.VarDecl.IsRef {
 				localVars[varName] = "ref " + varType
 				logger.Debug("Added local variable '%s' of type 'ref %s' to localVars map\n", varName, varType)
@@ -4831,23 +4836,38 @@ func fixFloatCastGranular(expr string) string {
 	return re.ReplaceAllString(expr, "(float)(")
 }
 
-// Converts 'new ClassName(args)' to 'ClassName_new(args)'
 func convertNewToConstructor(expr string) string {
-	if !strings.HasPrefix(expr, "new ") {
+	if expr == "" {
 		return expr
 	}
 
-	src := strings.TrimSpace(expr[3:])
+	trimmedLeading := strings.TrimLeft(expr, " \t")
+	leadingWS := expr[:len(expr)-len(trimmedLeading)]
+	core := strings.TrimSpace(expr)
+	for {
+		if len(core) >= 2 && core[0] == '(' && core[len(core)-1] == ')' {
+			if findMatchingParen(core, 0) == len(core)-1 {
+				core = strings.TrimSpace(core[1 : len(core)-1])
+				continue
+			}
+		}
+		break
+	}
+
+	if !strings.HasPrefix(core, "new ") {
+		return expr
+	}
+
+	src := strings.TrimSpace(core[3:])
 	if src == "" {
-		return fmt.Sprintf("%s_new()", strings.TrimSpace(src))
+		return leadingWS + fmt.Sprintf("%s_new()", strings.TrimSpace(src))
 	}
 	parenPos := strings.Index(src, "(")
 	if parenPos == -1 {
-		return fmt.Sprintf("%s_new()", strings.TrimSpace(src))
+		return leadingWS + fmt.Sprintf("%s_new()", strings.TrimSpace(src))
 	}
 
 	className := strings.TrimSpace(src[:parenPos])
-	// Handle namespace-qualified class names (e.g., collections::StringArrayList -> collections_StringArrayList)
 	className = strings.ReplaceAll(className, "::", "_")
 	closeParen := findMatchingParen(src, parenPos)
 	if closeParen == -1 {
@@ -4855,7 +4875,7 @@ func convertNewToConstructor(expr string) string {
 	}
 	args := src[parenPos : closeParen+1]
 
-	return fmt.Sprintf("%s_new%s", className, args)
+	return leadingWS + fmt.Sprintf("%s_new%s", className, args)
 }
 
 func reconstructMethodCalls(variables []string) []string {
