@@ -1,3 +1,5 @@
+import "std/runtime"
+
 ## String builder for manual string concatenation, works on mutable strings.
 pub class Builder:
     init:
@@ -20,6 +22,19 @@ pub fn length(string str) -> int:
 pub fn compare(string a, string b) -> int:
     $raw (
         return strcmp(a, b);
+    )
+
+## Quickly constructs a new string by copying the input.
+##
+## If specific size is not needed, copy string using the fmt! builtin instead.
+pub fn new_string_w_size(string s, i32 size) -> string:
+    if size <= 0:
+        runtime::error("invalid size for new_string_w_size")
+    $raw (
+        if (s == NULL) {
+            s = "";
+        }
+        snprintf(_output_buffer, size, "%s", s);
     )
 
 ## Returns the ordinal value of the first character of a string.
