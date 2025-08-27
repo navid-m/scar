@@ -70,7 +70,7 @@ fn extract_macro_parts(string line) -> MacroParts:
         mp:part_one = fmt!("%s", name)
         mp:part_two = fmt!("%s", args)
         return mp
-    return new MacroParts()
+    return MacroParts()
 
 fn format_return_for_doc(string ret) -> string:
     string r = strings::trim_space(ret)
