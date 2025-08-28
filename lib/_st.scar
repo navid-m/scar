@@ -446,4 +446,6 @@ t.test_summary()
 
 fixed i32 some_fixed_integer = 10
 
+csv::read_file("test.csv")
+
 os::exit(0)

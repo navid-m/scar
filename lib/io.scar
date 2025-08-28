@@ -1,6 +1,7 @@
 import "std/math"
 import "std/collections"
 import "std/strings"
+import "std/runtime"
 
 ## Read a line from stdin without the trailing newline.
 pub fn readln() -> lstring:
@@ -94,7 +95,7 @@ pub fn read_file(string filepath) -> lstring:
         
         FILE* file = fopen(filepath, "r");
         if (file == NULL) {
-            return "";
+            runtime_error(fmt("Failed to open file %s", filepath));
         }
         
         fseek(file, 0, SEEK_END);
