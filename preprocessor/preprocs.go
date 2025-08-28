@@ -72,6 +72,7 @@ func InsertMacros(output string) string {
 	}
 
 	outp = ReplaceDoubleColonsOutsideStrings(outp)
+	outp = FixClosures(outp)
 	return outp
 }
 
@@ -114,6 +115,10 @@ func ReplaceDoubleColonsOutsideStrings(text string) string {
 		i++
 	}
 	return b.String()
+}
+
+func FixClosures(outp string) string {
+	return strings.ReplaceAll(outp, ", )", ")")
 }
 
 func fixPropertyAccess(outp string) string {

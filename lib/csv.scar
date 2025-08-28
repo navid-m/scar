@@ -1,5 +1,6 @@
 import "std/strings"
 import "std/collections"
+import "std/io"
 
 ## A CSV row represented as a string array.
 pub class CSVRow:
@@ -80,3 +81,108 @@ pub class CSV:
                 ((void**)this->rows)[i] = NULL;
             }
         )
+
+## Parse CSV content into a CSV document using a comma delimiter.
+pub fn parse(string content) -> ref csv::CSV:
+    return csv::parse_with(content, ",")
+
+## Parse CSV content with a custom single-character delimiter (use first char if longer).
+pub fn parse_with(string content, string delimiter) -> ref csv::CSV:
+    ref csv::CSV doc = new csv::CSV()
+    if strings::length(content) == 0:
+        return doc
+    lstring delim = strings::length(delimiter) > 0 ? strings::get_char_at_lstr(delimiter, 0) : ","
+    lstring quote = "\""
+    bool in_quote = false
+    lstring field = ""
+    ref csv::CSVRow row = new csv::CSVRow()
+    int n = strings::length(content)
+    int i = 0
+    while i < n:
+        lstring ch = strings::get_char_at_lstr(content, i)
+        if in_quote:
+            if strings::compare(ch, quote) == 0:
+                bool is_doubled = false
+                if i + 1 < n:
+                    lstring nextc = strings::get_char_at_lstr(content, i + 1)
+                    if strings::compare(nextc, quote) == 0:
+                        field = fmt!("%s%s", field, quote)
+                        i = i + 1
+                        is_doubled = true
+                if !is_doubled:
+                    in_quote = false
+            else:
+                field = fmt!("%s%s", field, ch)
+        else:
+            if strings::compare(ch, quote) == 0:
+                in_quote = true
+            elif strings::compare(ch, delim) == 0:
+                row.add_field(field)
+                field = ""
+            elif strings::compare(ch, "\n") == 0 || strings::compare(ch, "\r") == 0:
+                row.add_field(field)
+                field = ""
+                doc.add_row(row)
+                row = new csv::CSVRow()
+                if strings::compare(ch, "\r") == 0 && i + 1 < n:
+                    lstring nextn = strings::get_char_at_lstr(content, i + 1)
+                    if strings::compare(nextn, "\n") == 0:
+                        i = i + 1
+            else:
+                field = fmt!("%s%s", field, ch)
+        i = i + 1
+    if in_quote:
+        in_quote = false
+    row.add_field(field)
+    bool has_any = row.get_field_count() > 1 || (row.get_field_count() == 1 && strings::length(row.get_field(0)) > 0)
+    if has_any:
+        doc.add_row(row)
+    return doc
+
+## Convert a CSV document to string using comma delimiter and CRLF newlines.
+pub fn to_string(ref csv::CSV doc) -> string:
+    return csv::to_string_with(doc, ",")
+
+## Convert a CSV document to string using a custom delimiter.
+pub fn to_string_with(ref csv::CSV doc, string delimiter) -> string:
+    lstring delim = strings::length(delimiter) > 0 ? strings::get_char_at_lstr(delimiter, 0) : ","
+    lstring quote = "\""
+    string out = ""
+    int rows = doc.get_row_count()
+    for r = 0 to rows - 1:
+        ref csv::CSVRow row = doc.get_row(r)
+        int cols = row.get_field_count()
+        for c = 0 to cols - 1:
+            lstring val = row.get_field(c)
+            bool needs_quote = false
+            if strings::contains(val, delim) || strings::contains(val, quote) || strings::contains(val, "\n") || strings::contains(val, "\r"):
+                needs_quote = true
+            if needs_quote:
+                lstring esc = strings::replace(val, quote, fmt!("%s%s", quote, quote))
+                out = fmt!("%s\"%s\"", out, esc)
+            else:
+                out = fmt!("%s%s", out, val)
+            if c < cols - 1:
+                out = fmt!("%s%s", out, delim)
+        out = fmt!("%s\r\n", out)
+    return out
+
+## Read a CSV file (text) and parse it with comma delimiter.
+pub fn read_file(string filename) -> ref csv::CSV:
+    lstring content = io::read_file(filename)
+    return csv::parse(content)
+
+## Read a CSV file with a custom delimiter.
+pub fn read_file_with(string filename, string delimiter) -> ref csv::CSV:
+    lstring content = io::read_file(filename)
+    return csv::parse_with(content, delimiter)
+
+## Write a CSV document to a file using comma delimiter.
+pub fn write_file(string filename, ref csv::CSV doc) -> bool:
+    string content = csv::to_string(doc)
+    return io::write_file(filename, content)
+
+## Write a CSV document to a file with a custom delimiter.
+pub fn write_file_with(string filename, ref csv::CSV doc, string delimiter) -> bool:
+    string content = csv::to_string_with(doc, delimiter)
+    return io::write_file(filename, content)
