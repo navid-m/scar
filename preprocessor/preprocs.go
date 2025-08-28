@@ -71,12 +71,12 @@ func InsertMacros(output string) string {
 			"typedef double f64;\ntypedef float f32;\n" + outp
 	}
 
-	outp = ReplaceDoubleColonsOutsideStrings(outp)
-	outp = FixClosures(outp)
+	outp = replaceDoubleColonsOutsideStrings(outp)
+	outp = fixClosures(outp)
 	return outp
 }
 
-func ReplaceDoubleColonsOutsideStrings(text string) string {
+func replaceDoubleColonsOutsideStrings(text string) string {
 	if text == "" {
 		return text
 	}
@@ -117,7 +117,7 @@ func ReplaceDoubleColonsOutsideStrings(text string) string {
 	return b.String()
 }
 
-func FixClosures(outp string) string {
+func fixClosures(outp string) string {
 	return replaceOutsideStringLiterals(outp, ", )", ")")
 }
 
