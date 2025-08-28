@@ -8,6 +8,7 @@
 package preprocessor
 
 import (
+	"bytes"
 	"regexp"
 	"scar/lexer"
 	"strings"
@@ -42,6 +43,7 @@ func InsertMacros(output string) string {
 	}
 
 	// Don't convert this. to this-> for struct constructors since structs use value semantics
+	//
 	// The conversion will be handled by the renderer based on context
 
 	if strings.Contains(output, " and ") {
@@ -68,7 +70,50 @@ func InsertMacros(output string) string {
 			"typedef uint64_t u64;\ntypedef int16_t i16;\ntypedef uint16_t u16;\ntypedef uint8_t u8;\ntypedef int8_t i8;\n" +
 			"typedef double f64;\ntypedef float f32;\n" + outp
 	}
+
+	outp = ReplaceDoubleColonsOutsideStrings(outp)
 	return outp
+}
+
+func ReplaceDoubleColonsOutsideStrings(text string) string {
+	if text == "" {
+		return text
+	}
+	var (
+		b       bytes.Buffer
+		inStr   bool
+		escaped bool
+		i       int
+	)
+	for i < len(text) {
+		ch := text[i]
+		if inStr {
+			b.WriteByte(ch)
+			if !escaped && ch == '\\' {
+				escaped = true
+			} else if !escaped && ch == '"' {
+				inStr = false
+			} else if escaped {
+				escaped = false
+			}
+			i++
+			continue
+		}
+		if ch == '"' {
+			inStr = true
+			b.WriteByte(ch)
+			i++
+			continue
+		}
+		if i+2 <= len(text) && text[i:i+2] == "::" {
+			b.WriteByte('_')
+			i += 2
+			continue
+		}
+		b.WriteByte(ch)
+		i++
+	}
+	return b.String()
 }
 
 func fixPropertyAccess(outp string) string {

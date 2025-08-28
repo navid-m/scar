@@ -362,6 +362,32 @@ pub fn split(string str, string delimiter) -> collections::StringArrayList:
     result.add_element(current_part)
     return result
 
+pub fn trimc(cstring cstr) -> cstring:
+    $raw (
+        if (cstr == NULL) {
+            return "";
+        }
+        const char *start = cstr;
+        while (*start && isspace((unsigned char)*start)) {
+            start++;
+        }
+        if (*start == '\0') {
+            return "";
+        }
+        const char *end = cstr + strlen(cstr) - 1;
+        while (end > start && isspace((unsigned char)*end)) {
+            end--;
+        }
+        size_t len = end - start + 1;
+        char *result = (char *)malloc(len + 1);
+        if (!result) {
+            return "";
+        }
+        memcpy(result, start, len);
+        result[len] = '\0';
+        return result;
+    )
+    
 ## Trims leading and trailing whitespace from a string.
 pub fn trim(string str) -> string:
     $raw (

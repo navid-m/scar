@@ -25,7 +25,7 @@ func ProcessSourceLevelMacros(source string) string {
 	source = ProcessAppendExpressions(source)
 	source = ProcessDeleteExpressions(source)
 	source = ProcessNonrefImplicitConstructors(source)
-	source = lexer.ReplaceDoubleColonsOutsideStrings(source)
+	source = ReplaceDoubleColonsOutsideStrings(source)
 	return source
 }
 
@@ -554,9 +554,9 @@ func expandMacroCallsInLine(line string, macros map[string]*Macro) string {
 	result := line
 
 	const maxLineIters = 5
-	for iter := 0; iter < maxLineIters; iter++ {
+	for range maxLineIters {
 		changed := false
-		result = strings.ReplaceAll(result, "::", "_")
+		result = ReplaceDoubleColonsOutsideStrings(result)
 
 		for macroName, macro := range macros {
 			pattern := macroName + "("
@@ -611,7 +611,7 @@ func expandMacroCallsInLine(line string, macros map[string]*Macro) string {
 		}
 	}
 
-	result = strings.ReplaceAll(result, "::", "_")
+	result = ReplaceDoubleColonsOutsideStrings(result)
 	return result
 }
 

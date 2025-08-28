@@ -1,0 +1,82 @@
+import "std/strings"
+import "std/collections"
+
+## A CSV row represented as a string array.
+pub class CSVRow:
+    init:
+        collections::StringArrayList this.fields = new collections::StringArrayList(8)
+    
+    ## Add a field to the row.
+    fn add_field(string field) -> void:
+        collections::StringArrayList::add_element(this->>fields, field)
+    
+    ## Get a field by index.
+    fn get_field(i32 index) -> string:
+        if index < 0 || index >= collections::StringArrayList::get_size(this->>fields):
+            return ""
+        return collections::StringArrayList::get_element(this->>fields, index)
+    
+    ## Get the number of fields in the row.
+    fn get_field_count() -> i32:
+        return collections::StringArrayList::get_size(this->>fields)
+    
+    ## Set a field at a specific index.
+    fn set_field(i32 index, string value) -> void:
+        collections::StringArrayList::set_element(this->>fields, index, value)
+
+## A CSV document containing multiple rows.
+pub class CSV:
+    init:
+        i32 this.row_count = 0
+        i32 this.capacity = 16
+        ref void* this.rows = nil
+        $raw (
+            this->rows = malloc(this->capacity * sizeof(void*));
+            for (int i = 0; i < this->capacity; i++) {
+                ((void**)this->rows)[i] = NULL;
+            }
+        )
+    
+    ## Add a row to the CSV.
+    fn add_row(ref csv::CSVRow row) -> void:
+        if this.row_count >= this.capacity:
+            this.resize()
+        $raw (
+            ((void**)this->rows)[this->row_count] = row;
+        )
+        this.row_count = this.row_count + 1
+    
+    ## Get a row by index.
+    fn get_row(i32 index) -> ref csv::CSVRow:
+        if index < 0 || index >= this.row_count:
+            return nil
+        $raw (
+            return (csv_CSVRow*)((void**)this->rows)[index];
+        )
+    
+    ## Get the number of rows.
+    fn get_row_count() -> i32:
+        return this.row_count
+    
+    ## Get a specific cell value.
+    fn get_cell(i32 row, i32 col) -> string:
+        ref csv::CSVRow r = this.get_row(row)
+        if r == nil:
+            return ""
+        return csv::CSVRow::get_field(r, col)
+    
+    ## Set a specific cell value.
+    fn set_cell(i32 row, i32 col, string value) -> void:
+        ref csv::CSVRow r = this.get_row(row)
+        if r != nil:
+            r.set_field(col, value)
+    
+    ## Resize the internal row storage.
+    fn resize() -> void:
+        this.capacity = this.capacity * 2
+        $raw (
+            this->rows = realloc(this->rows, this->capacity * sizeof(void*));
+            for (int i = this->row_count; i < this->capacity; i++) {
+                ((void**)this->rows)[i] = NULL;
+            }
+        )

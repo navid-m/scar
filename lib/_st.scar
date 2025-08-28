@@ -14,6 +14,7 @@ import "std/io"
 import "std/json"
 import "std/uri"
 import "std/runtime"
+import "std/csv"
 
 platform (Windows):
     import "std/net"
