@@ -6,13 +6,15 @@ import "std/runtime"
 ## Read a line from stdin without the trailing newline.
 pub fn readln() -> lstring:
     $raw (
-        char buffer[1024];
+        char buffer[4096];
         if (fgets(buffer, sizeof(buffer), stdin) != NULL) {
             size_t len = strlen(buffer);
             if (len > 0 && buffer[len - 1] == '\n') {
                 buffer[len - 1] = '\0';
             }
-            return buffer;
+            lstring s;
+            strcpy(s, buffer);
+            return s;
         } else {
             return "";
         }
