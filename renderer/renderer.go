@@ -6398,6 +6398,10 @@ func checkTypeCompatibility(varName, varType, value string) error {
 			return nil
 		}
 
+		if strings.HasPrefix(value, "!") || strings.Contains(value, "not ") {
+			return nil
+		}
+
 		logger.ErrorAndExit(
 			fmt.Sprintf(
 				"TypeError: Unknown identifier or type for value '%s' when assigning to variable '%s' of type '%s'", value, varName, varType,
