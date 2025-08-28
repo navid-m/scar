@@ -11,7 +11,7 @@ import (
 	"runtime"
 )
 
-const Version = "v0.0.1-alpha.2"
+const Version = "v0.0.1-alpha.3"
 
 func ShowUsage() {
 	fmt.Printf("Scar %v - By Navid M (c) 2025\n\n", Version)
