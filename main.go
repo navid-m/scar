@@ -21,24 +21,26 @@ import (
 	"scar/meta"
 	"scar/preprocessor"
 	"scar/renderer"
+	"scar/repl"
 	"strings"
 )
 
 func main() {
 	flag.Usage = meta.ShowUsage
 	var (
-		asm     = flag.Bool("asm", false, "show assembly output")
-		c       = flag.Bool("c", false, "show c output")
-		debug   = flag.Bool("d", false, "enable verbose logging")
-		dll     = flag.Bool("dll", false, "compile as dynamic link library")
-		gc      = flag.Bool("gc", false, "use bdwgc garbage collector")
-		keepc   = flag.Bool("keepc", false, "keep generated c file")
-		linker  = flag.String("l", "", "additional linker options (e.g., -lm -lpthread)")
-		outName = flag.String("o", "", "output binary name")
-		opt     = flag.Bool("opt", false, "optimise for performance")
-		version = flag.Bool("v", false, "show version")
-		nowin   *bool
-		asan    *bool
+		asm      = flag.Bool("asm", false, "show assembly output")
+		c        = flag.Bool("c", false, "show c output")
+		debug    = flag.Bool("d", false, "enable verbose logging")
+		dll      = flag.Bool("dll", false, "compile as dynamic link library")
+		gc       = flag.Bool("gc", false, "use bdwgc garbage collector")
+		keepc    = flag.Bool("keepc", false, "keep generated c file")
+		linker   = flag.String("l", "", "additional linker options (e.g., -lm -lpthread)")
+		outName  = flag.String("o", "", "output binary name")
+		opt      = flag.Bool("opt", false, "optimise for performance")
+		version  = flag.Bool("v", false, "show version")
+		replMode = flag.Bool("repl", false, "run in repl mode")
+		nowin    *bool
+		asan     *bool
 	)
 
 	if runtime.GOOS == "windows" {
@@ -61,6 +63,11 @@ func main() {
 
 	if *version {
 		fmt.Println(meta.Version)
+		return
+	}
+
+	if *replMode {
+		repl.RunRepl()
 		return
 	}
 

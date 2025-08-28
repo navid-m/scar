@@ -4,11 +4,10 @@
 //
 // Scar REPL: compiles accumulated input to C and executes it per entry.
 
-package main
+package repl
 
 import (
 	"bufio"
-	"flag"
 	"fmt"
 	"io"
 	"log"
@@ -23,14 +22,7 @@ import (
 	"strings"
 )
 
-func main() {
-	var (
-		gcFlag  = flag.Bool("gc", false, "use Boehm GC in compiled snippets")
-		optFlag = flag.Bool("opt", false, "enable optimisations when compiling snippets")
-		keepc   = flag.Bool("keepc", false, "keep generated C file for last snippet")
-	)
-	flag.Parse()
-
+func RunRepl() {
 	fmt.Println("Scar REPL. Type :quit to exit, :reset to clear state.")
 
 	scanner := bufio.NewScanner(os.Stdin)
@@ -94,22 +86,12 @@ func main() {
 			outputBin += ".exe"
 		}
 
-		cCode := preprocessor.InsertMacros(renderer.RenderC(program, baseDir, *gcFlag))
+		cCode := preprocessor.InsertMacros(renderer.RenderC(program, baseDir, false))
 
 		cPath := filepath.Join(tmpDir, "repl_out.c")
 		if err := os.WriteFile(cPath, []byte(cCode), 0644); err != nil {
 			log.Printf("write c: %v", err)
 			continue
-		}
-		if *keepc {
-			if wd, err := os.Getwd(); err == nil {
-				dest := filepath.Join(wd, "repl_out.c")
-				if werr := os.WriteFile(dest, []byte(cCode), 0644); werr == nil {
-					fmt.Printf("C file kept as %s\n", dest)
-				} else {
-					fmt.Fprintf(os.Stderr, "failed to keep C file: %v\n", werr)
-				}
-			}
 		}
 
 		switch runtime.GOOS {
@@ -127,13 +109,6 @@ func main() {
 			compileArgs = []string{"-fopenmp", "-g", "-fno-omit-frame-pointer", "-fstack-protector-strong", "-w", cPath, "-o", outputBin, "-ldbghelp"}
 		default:
 			compileArgs = []string{"-w", "-g", cPath, "-o", outputBin}
-		}
-		if *optFlag {
-			compileArgs = append([]string{"-O2", "-fno-fast-math"}, compileArgs...)
-		}
-
-		if *gcFlag {
-			compileArgs = append(compileArgs, "-lgc")
 		}
 
 		if preprocessor.ContainsExternalCurl(processed) {

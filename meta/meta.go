@@ -29,6 +29,7 @@ func ShowUsage() {
 	fmt.Printf("  %-10s %s\n", "-l <opts>", "Additional linker options (e.g. -lm -lpthread)")
 	fmt.Printf("  %-10s %s\n", "-o <file>", "Output binary name")
 	fmt.Printf("  %-10s %s\n", "-opt", "Optimize for performance")
+	fmt.Printf("  %-10s %s\n", "-repl", "Run in REPL mode")
 	fmt.Printf("  %-10s %s\n", "-v", "Show version")
 
 	if runtime.GOOS == "windows" {
