@@ -118,7 +118,7 @@ func ReplaceDoubleColonsOutsideStrings(text string) string {
 }
 
 func FixClosures(outp string) string {
-	return strings.ReplaceAll(outp, ", )", ")")
+	return replaceOutsideStringLiterals(outp, ", )", ")")
 }
 
 func fixPropertyAccess(outp string) string {
