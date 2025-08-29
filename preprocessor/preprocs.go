@@ -263,7 +263,7 @@ func insertCat(output string) string {
 		"    buf[len - 1] = '\\0';\n" +
 		"    return buf;\n" +
 		"}\n" +
-		"#define cat(x, y) __scar_cat_alloc((x), (y))\n" + strings.ReplaceAll(output, "cat!(", "cat(")
+		"#define cat(x, y) __scar_cat_alloc((x), (y))\n" + replaceOutsideStringLiterals(output, "cat!(", "cat(")
 }
 
 func insertNilMacro(output string) string {
