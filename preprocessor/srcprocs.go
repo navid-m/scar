@@ -554,6 +554,7 @@ func expandMacroCallsInLine(line string, macros map[string]*Macro) string {
 	result := line
 
 	const maxLineIters = 5
+
 	for range maxLineIters {
 		changed := false
 		result = replaceDoubleColonsOutsideStrings(result)
