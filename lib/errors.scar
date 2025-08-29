@@ -2,7 +2,7 @@ import "std/runtime"
 
 pub class Error:
     init(cstring m):
-        bool this.fatal = false
+        bool this.fatal = true
         cstring this.msg = m
 
     fn raise():
@@ -12,3 +12,7 @@ pub class Error:
             $raw (
                 _exception = _exception + 1;
             )
+
+pub struct ErrorUnion:
+    int result
+    errors::Error error
