@@ -12,6 +12,7 @@ pub class Builder:
         this.buffer = cat!(this.buffer, str)
         this.length = this.length + strings::length(str)
     
+    ## Returns the string built by the builder.
     fn to_string() -> string:
         return strings::clone(this.buffer)
 
