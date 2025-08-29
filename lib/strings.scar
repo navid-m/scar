@@ -11,6 +11,9 @@ pub class Builder:
     fn append(string str) -> void:
         this.buffer = cat!(this.buffer, str)
         this.length = this.length + strings::length(str)
+    
+    fn to_string() -> string:
+        return strings::clone(this.buffer)
 
 ## Returns the length of a string.
 pub fn length(string str) -> int:
@@ -18,9 +21,31 @@ pub fn length(string str) -> int:
         return strlen(str);
     )
 
+## Return owned string copy of src.
+pub fn clone(string src) -> lstring:
+    $raw (
+        if (src == NULL) {
+            return NULL;
+        }
+        size_t len = strlen(src) + 1;
+        char *copy = malloc(len);
+        if (copy == NULL) {
+            return NULL;
+        }
+        memcpy(copy, src, len);
+        return copy;
+    )
+
 ## Compares two strings.
 pub fn compare(string a, string b) -> int:
     $raw (
+        if (a == NULL && b == NULL) {
+            return 0;  
+        } else if (a == NULL) {
+            return -1; 
+        } else if (b == NULL) {
+            return 1;   
+        }
         return strcmp(a, b);
     )
 
@@ -414,7 +439,7 @@ pub fn trim(string str) -> string:
     )
 
 ## Returns the character at a specific index in a string.
-macro get_char_at_either(name, return_type):
+macro get_char_at_either(name, return_type, ret_one, ret_two):
     pub fn name(string str, int index) -> return_type:
         $raw (
             if (str == NULL || index < 0 || index >= strlen(str)) {
@@ -423,8 +448,9 @@ macro get_char_at_either(name, return_type):
             char result[2];
             result[0] = str[index];
             result[1] = '\0';
+            ret_one
         )
-        return result
+        ret_two
 
-get_char_at_either(get_char_at, string)
-get_char_at_either(get_char_at_lstr, lstring)
+get_char_at_either(get_char_at, string, /* placeholder */, return result)
+get_char_at_either(get_char_at_lstr, lstring, return strdup(result);, pass)
