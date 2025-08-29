@@ -8,3 +8,7 @@ pub class Error:
     fn raise():
         if this.fatal:
             runtime::error(this.msg)
+        else:
+            $raw (
+                _exception = _exception + 1;
+            )
