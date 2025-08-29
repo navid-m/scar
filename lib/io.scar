@@ -12,7 +12,7 @@ pub fn readln() -> lstring:
             if (len > 0 && buffer[len - 1] == '\n') {
                 buffer[len - 1] = '\0';
             }
-            lstring s;
+            lstring s = malloc(strlen(buffer) + 1);
             strcpy(s, buffer);
             return s;
         } else {
@@ -56,16 +56,16 @@ pub fn write_file(string filepath, string content) -> bool:
         if (filepath == NULL || content == NULL) {
             return false;
         }
-        
+
         FILE* file = fopen(filepath, "w");
         if (file == NULL) {
             return false;
         }
-        
+
         size_t content_len = strlen(content);
         size_t written = fwrite(content, 1, content_len, file);
         fclose(file);
-        
+
         return written == content_len;
     )
 
@@ -75,16 +75,16 @@ pub fn append_file(string filepath, string content) -> bool:
         if (filepath == NULL || content == NULL) {
             return false;
         }
-        
+
         FILE* file = fopen(filepath, "a");
         if (file == NULL) {
             return false;
         }
-        
+
         size_t content_len = strlen(content);
         size_t written = fwrite(content, 1, content_len, file);
         fclose(file);
-        
+
         return written == content_len;
     )
 
@@ -94,30 +94,30 @@ pub fn read_file(string filepath) -> lstring:
         if (filepath == NULL) {
             return "";
         }
-        
+
         FILE* file = fopen(filepath, "r");
         if (file == NULL) {
             runtime_error(fmt("Failed to open file %s", filepath));
         }
-        
+
         fseek(file, 0, SEEK_END);
         long file_size = ftell(file);
         fseek(file, 0, SEEK_SET);
-        
+
         if (file_size <= 0) {
             fclose(file);
             return "";
         }
-        
+
         char* buffer = (char*)malloc(file_size + 1);
         if (buffer == NULL) {
             fclose(file);
             return "";
         }
-        
+
         size_t bytes_read = fread(buffer, 1, file_size, file);
         fclose(file);
-        
+
         buffer[bytes_read] = '\0';
         return buffer;
     )
@@ -128,7 +128,7 @@ pub fn exists(string filepath) -> bool:
         if (filepath == NULL) {
             return false;
         }
-        
+
         FILE* file = fopen(filepath, "r");
         if (file == NULL) {
             return false;

@@ -250,7 +250,14 @@ func buildDependencyGraph(statements []*Statement, aliases map[string]string) (m
 		}
 	}
 
-	for name, node := range graph {
+	sortedNames := make([]string, 0, len(graph))
+	for name := range graph {
+		sortedNames = append(sortedNames, name)
+	}
+	sort.Strings(sortedNames)
+
+	for _, name := range sortedNames {
+		node := graph[name]
 		var body []*Statement
 		if node.statement.TopLevelFuncDecl != nil {
 			body = node.statement.TopLevelFuncDecl.Body
@@ -258,7 +265,14 @@ func buildDependencyGraph(statements []*Statement, aliases map[string]string) (m
 			body = node.statement.PubTopLevelFuncDecl.Body
 		}
 
-		for dep := range processFunctionDependencies(body) {
+		deps := processFunctionDependencies(body)
+		depNames := make([]string, 0, len(deps))
+		for dep := range deps {
+			depNames = append(depNames, dep)
+		}
+		sort.Strings(depNames)
+
+		for _, dep := range depNames {
 			real := dep
 			visited := make(map[string]bool)
 			for {
@@ -311,20 +325,24 @@ func topologicalSort(graph map[string]*functionNode) ([]*Statement, error) {
 			return fmt.Errorf("function not found: %s", name)
 		}
 
-		deps := make([]*functionNode, 0, len(node.dependencies))
-		for dep := range node.dependencies {
-			if dn, ok := graph[dep]; ok {
-				deps = append(deps, dn)
+		depNodes := make([]*functionNode, 0, len(node.dependencies))
+		for depName := range node.dependencies {
+			if depNode, ok := graph[depName]; ok {
+				depNodes = append(depNodes, depNode)
 			}
 		}
-		sort.Slice(deps, func(i, j int) bool {
-			if deps[i].order == deps[j].order {
-				return deps[i].name < deps[j].name
+		sort.Slice(depNodes, func(i, j int) bool {
+			if depNodes[i].name != depNodes[j].name {
+				return depNodes[i].name < depNodes[j].name
 			}
-			return deps[i].order < deps[j].order
+			return depNodes[i].order < depNodes[j].order
 		})
-		for _, dn := range deps {
-			if err := visit(dn.name); err != nil {
+
+		for _, depNode := range depNodes {
+			if _, exists := graph[depNode.name]; !exists {
+				continue
+			}
+			if err := visit(depNode.name); err != nil {
 				return err
 			}
 		}
@@ -335,17 +353,18 @@ func topologicalSort(graph map[string]*functionNode) ([]*Statement, error) {
 		return nil
 	}
 
-	nodes := make([]*functionNode, 0, len(graph))
+	sortedNodes := make([]*functionNode, 0, len(graph))
 	for _, n := range graph {
-		nodes = append(nodes, n)
+		sortedNodes = append(sortedNodes, n)
 	}
-	sort.Slice(nodes, func(i, j int) bool {
-		if nodes[i].order == nodes[j].order {
-			return nodes[i].name < nodes[j].name
+	sort.Slice(sortedNodes, func(i, j int) bool {
+		if sortedNodes[i].name != sortedNodes[j].name {
+			return sortedNodes[i].name < sortedNodes[j].name
 		}
-		return nodes[i].order < nodes[j].order
+		return sortedNodes[i].order < sortedNodes[j].order
 	})
-	for _, n := range nodes {
+
+	for _, n := range sortedNodes {
 		if !visited[n.name] {
 			if err := visit(n.name); err != nil {
 				return nil, err

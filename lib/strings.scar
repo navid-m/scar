@@ -6,7 +6,7 @@ pub class Builder:
         string this.buffer = ""
         int this.length = 0
         int this.capacity = 0
-    
+
     ## Appends a string to the builder.
     fn append(string str) -> void:
         this.buffer = cat!(this.buffer, str)
@@ -157,14 +157,14 @@ pub fn ends_with(string str, string suffix) -> bool:
         if (str == NULL || suffix == NULL) {
             return false;
         }
-        
+
         size_t str_len = strlen(str);
         size_t suffix_len = strlen(suffix);
-        
+
         if (suffix_len > str_len) {
             return false;
         }
-        
+
         return strcmp(str + str_len - suffix_len, suffix) == 0;
     )
 
@@ -199,16 +199,16 @@ pub fn last_index_of(lstring str, lstring substring) -> int:
         char *last_found = NULL;
         char *current = str;
         size_t substring_len = strlen(substring);
-        
+
         if (substring_len == 0) {
             return strlen(str);
         }
-        
+
         while ((current = strstr(current, substring)) != NULL) {
             last_found = current;
             current += 1;
         }
-        
+
         if (last_found == NULL) {
             return -1;
         }
@@ -221,14 +221,14 @@ pub fn starts_with(string str, string prefix) -> bool:
         if (str == NULL || prefix == NULL) {
             return false;
         }
-        
+
         int str_len = strlen(str);
         int prefix_len = strlen(prefix);
-        
+
         if (prefix_len > str_len) {
             return false;
         }
-        
+
         return strncmp(str, prefix, prefix_len) == 0;
     )
 
@@ -238,24 +238,24 @@ pub fn substring(string str, int start, int end) -> char*:
         if (str == NULL) {
             return strdup("");
         }
-        
+
         int str_len = strlen(str);
-        
+
         if (start < 0) start = 0;
         if (end > str_len) end = str_len;
         if (start >= end || start >= str_len) {
             return strdup("");
         }
-        
+
         int sub_len = end - start;
         char *result = malloc(sub_len + 1);
         if (result == NULL) {
             return strdup("");
         }
-        
+
         memcpy(result, str + start, sub_len);
         result[sub_len] = '\0';
-        
+
         return result;
     )
 
@@ -266,12 +266,12 @@ pub fn to_hex(int value) -> char*:
         if (result == NULL) {
             return strdup("");
         }
-        
+
         if (value < 0) {
             strcpy(result, "0");
             return result;
         }
-        
+
         sprintf(result, "%X", value);
         return result;
     )
@@ -296,7 +296,7 @@ pub fn equal(string a, string b) -> bool:
         if (a == NULL || b == NULL) {
             return false;
         }
-        
+
         return strcmp(a, b) == 0;
     )
 
@@ -306,11 +306,11 @@ pub fn replace(string str, string old_substr, string new_substr) -> char*:
         if (str == NULL || old_substr == NULL || new_substr == NULL) {
             return str ? strdup(str) : strdup("");
         }
-        
+
         int old_len = strlen(old_substr);
         int new_len = strlen(new_substr);
         int str_len = strlen(str);
-        
+
         if (old_len == 0) {
             return strdup(str);
         }
@@ -320,20 +320,20 @@ pub fn replace(string str, string old_substr, string new_substr) -> char*:
             count++;
             temp += old_len;
         }
-        
+
         if (count == 0) {
             return strdup(str);
         }
-        
+
         int result_len = str_len + count * (new_len - old_len);
         char *result = malloc(result_len + 1);
         if (result == NULL) {
             return strdup("");
         }
-        
+
         char *src = str;
         char *dst = result;
-        
+
         while ((temp = strstr(src, old_substr)) != NULL) {
             int prefix_len = temp - src;
             memcpy(dst, src, prefix_len);
@@ -341,7 +341,7 @@ pub fn replace(string str, string old_substr, string new_substr) -> char*:
             strcpy(dst, new_substr);
             dst += new_len;
             src = temp + old_len;
-        }        
+        }
         strcpy(dst, src);
         return result;
     )
@@ -352,16 +352,16 @@ pub fn split(string str, string delimiter) -> collections::StringArrayList:
     if strings::length(str) == 0:
         result.add_element("")
         return result
-    
+
     if strings::length(delimiter) == 0:
         result.add_element(str)
         return result
-    
+
     int str_len = strings::length(str)
     int delim_len = strings::length(delimiter)
     string current_part = ""
     int i = 0
-    
+
     while i < str_len:
         bool found_delimiter = true
         if i + delim_len <= str_len:
@@ -375,7 +375,7 @@ pub fn split(string str, string delimiter) -> collections::StringArrayList:
                 j = j + 1
         else:
             found_delimiter = false
-        
+
         if found_delimiter:
             result.add_element(current_part)
             current_part = ""
@@ -384,36 +384,10 @@ pub fn split(string str, string delimiter) -> collections::StringArrayList:
             string current_char = strings::get_char_at(str, i)
             current_part = fmt!("%s%s", current_part, current_char)
             i = i + 1
-    
+
     result.add_element(current_part)
     return result
 
-pub fn trimc(cstring cstr) -> cstring:
-    $raw (
-        if (cstr == NULL) {
-            return "";
-        }
-        const char *start = cstr;
-        while (*start && isspace((unsigned char)*start)) {
-            start++;
-        }
-        if (*start == '\0') {
-            return "";
-        }
-        const char *end = cstr + strlen(cstr) - 1;
-        while (end > start && isspace((unsigned char)*end)) {
-            end--;
-        }
-        size_t len = end - start + 1;
-        char *result = (char *)malloc(len + 1);
-        if (!result) {
-            return "";
-        }
-        memcpy(result, start, len);
-        result[len] = '\0';
-        return result;
-    )
-    
 ## Trims leading and trailing whitespace from a string.
 pub fn trim(string str) -> string:
     $raw (

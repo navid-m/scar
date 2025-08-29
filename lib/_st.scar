@@ -16,6 +16,7 @@ import "std/uri"
 import "std/runtime"
 import "std/csv"
 import "std/typecons"
+import "std/errors"
 
 platform (Windows):
     import "std/net"
