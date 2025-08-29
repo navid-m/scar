@@ -5,10 +5,10 @@ import "std/collections"
 import "std/os"
 
 string filename = "hi.csv"
-print "good"
+
 ref csv::CSV doc = csv::read_file(filename)
-print "good2"
 int num_rows = csv::CSV::get_row_count(doc)
+
 if num_rows == 0:
     print "No rows in CSV"
     os::exit(1)
