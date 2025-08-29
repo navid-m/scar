@@ -1,0 +1,10 @@
+import "std/runtime"
+
+pub class Error:
+    init(cstring m):
+        bool this.fatal = false
+        cstring this.msg = m
+
+    fn raise():
+        if this.fatal:
+            runtime::error(this.msg)
