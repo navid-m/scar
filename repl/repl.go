@@ -100,16 +100,19 @@ SCAR REPL ` + meta.Version + " - By Navid M (c) 2025")
 			continue
 		}
 
-		var compileArgs []string
-		cplr := "gcc"
-		outputBin := filepath.Join(tmpDir, "repl_out")
+		var (
+			compileArgs []string
+			cplr        = "gcc"
+			outputBin   = filepath.Join(tmpDir, "repl_out")
+		)
+
 		if runtime.GOOS == "windows" {
 			outputBin += ".exe"
 		}
 
 		cCode := preprocessor.InsertMacros(renderer.RenderC(program, baseDir, false))
-
 		cPath := filepath.Join(tmpDir, "repl_out.c")
+
 		if err := os.WriteFile(cPath, []byte(cCode), 0644); err != nil {
 			log.Printf("write c: %v", err)
 			continue
