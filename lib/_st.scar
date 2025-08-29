@@ -15,6 +15,7 @@ import "std/json"
 import "std/uri"
 import "std/runtime"
 import "std/csv"
+import "std/typecons"
 
 platform (Windows):
     import "std/net"
@@ -442,10 +443,14 @@ collections::StringBoolMap::put(sbm, "debug", false)
 
 t.assert_equals(true, collections::StringBoolMap::get(sbm, "flag"), "StringBoolMap get 'flag'")
 t.assert_equals(false, collections::StringBoolMap::get(sbm, "debug"), "StringBoolMap get 'debug'")
-t.test_summary()
 
-fixed i32 some_fixed_integer = 10
+var str_test = new typecons::String("Hello")
+t.assert_equals(true, str_test.equal(typecons::String::new("Hello")), "String equal should work")
+t.assert_equals(false, str_test.equal(typecons::String::new("Not hello")), "String not equal should work")
 
 # csv::read_file("test.csv")
+fixed i32 some_fixed_integer = 10
+
+t.test_summary()
 
 os::exit(0)

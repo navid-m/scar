@@ -117,13 +117,6 @@ pub fn crc32(string data) -> i32:
         return (int32_t)(crc ^ 0xFFFFFFFF);
     )
 
-## Hash function for integers
-pub fn hash_int(i32 value) -> i32:
-    value = ((value >> 16) ^ value) * 0x45d9f3b
-    value = ((value >> 16) ^ value) * 0x45d9f3b
-    value = (value >> 16) ^ value
-    return value
-
 ## Combine two hash values
 pub fn combine_hash(i32 hash1, i32 hash2) -> i32:
     return hash1 ^ (hash2 + 0x9e3779b9 + (hash1 << 6) + (hash1 >> 2))

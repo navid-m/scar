@@ -1,0 +1,17 @@
+import "std/strings"
+
+pub class String:
+    init(string value):
+        cstring this.value = strdup(value)
+    
+    fn length() -> i32:
+        return strings::length(this.value)
+    
+    fn equal(ref typecons::String other) -> bool:
+        return strings::equal(this.value, other.value)
+    
+    fn compare(ref typecons::String other) -> i32:
+        return strings::compare(this.value, other.value)
+    
+    fn clone() -> typecons::String:
+        return new typecons::String(strdup(this.value))
