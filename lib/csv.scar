@@ -92,26 +92,19 @@ pub fn parse_with(string content, string delimiter) -> ref csv::CSV:
     if strings::length(content) == 0:
         return doc
     
-    print "good"
     lstring delim = strings::length(delimiter) > 0 ? strings::get_char_at_lstr(delimiter, 0) : ","
-    print "good2"
     lstring quote = "\""
-    print "good3"
     bool in_quote = false
     lstring field = ""
     ref csv::CSVRow row = new csv::CSVRow()
     int n = strings::length(content)
-    print "good4"
     
     int i = 0
     while i < n:
         lstring ch = strings::get_char_at_lstr(content, i)
-        print "OK1"
         if in_quote:
-            print "OK2"
             if ch == nil:
                 continue
-            print "ok4"
             if strings::compare(ch, quote) == 0:
                 bool is_doubled = false
                 if i + 1 < n:
@@ -125,16 +118,12 @@ pub fn parse_with(string content, string delimiter) -> ref csv::CSV:
             else:
                 field = fmt!("%s%s", field, ch)
         else:
-            print "OK3"
             if strings::compare(ch, quote) == 0:
-                print "OK4"
                 in_quote = true
             elif strings::compare(ch, delim) == 0:
-                print "OK5"
                 row.add_field(field)
                 field = ""
             elif strings::compare(ch, "\n") == 0 || strings::compare(ch, "\r") == 0:
-                print "OK6"
                 row.add_field(field)
                 field = ""
                 doc.add_row(row)
@@ -149,8 +138,7 @@ pub fn parse_with(string content, string delimiter) -> ref csv::CSV:
                 var sb = new strings::Builder()
                 sb.append(field)
                 sb.append(ch)
-                print "BEFORE SEG."
-                field = sb.buffer #segfaults here
+                field = sb.to_string()
         i = i + 1
     if in_quote:
         in_quote = false
