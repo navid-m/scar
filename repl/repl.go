@@ -110,8 +110,10 @@ SCAR REPL ` + meta.Version + " - By Navid M (c) 2025")
 			outputBin += ".exe"
 		}
 
-		cCode := preprocessor.InsertMacros(renderer.RenderC(program, baseDir, false))
-		cPath := filepath.Join(tmpDir, "repl_out.c")
+		var (
+			cCode = preprocessor.InsertMacros(renderer.RenderC(program, baseDir, false))
+			cPath = filepath.Join(tmpDir, "repl_out.c")
+		)
 
 		if err := os.WriteFile(cPath, []byte(cCode), 0644); err != nil {
 			log.Printf("write c: %v", err)
