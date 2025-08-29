@@ -80,12 +80,14 @@ func replaceDoubleColonsOutsideStrings(text string) string {
 	if text == "" {
 		return text
 	}
+
 	var (
 		b       bytes.Buffer
 		inStr   bool
 		escaped bool
 		i       int
 	)
+
 	for i < len(text) {
 		ch := text[i]
 		if inStr {
