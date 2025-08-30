@@ -397,8 +397,80 @@ func parseEnumDeclaration(lines []string, startLine, indentLevel int) (*Statemen
 	}
 }
 
+func parsePreprocIfStatement(lines []string, lineNum, currentIndent int) (*Statement, int, error) {
+	line := strings.TrimSpace(lines[lineNum])
+	if !strings.HasPrefix(line, "$if ") {
+		return nil, lineNum, fmt.Errorf("invalid $if syntax at line %d", lineNum+1)
+	}
+
+	line = strings.TrimSpace(line[4:])
+	if !strings.HasSuffix(line, ":") {
+		return nil, lineNum, fmt.Errorf("expected ':' after $if condition at line %d", lineNum+1)
+	}
+
+	condition := strings.TrimSpace(line[:len(line)-1])
+	if condition == "" {
+		return nil, lineNum, fmt.Errorf("missing condition in $if statement at line %d", lineNum+1)
+	}
+
+	bodyIndent := currentIndent + 1
+	for i := lineNum + 1; i < len(lines); i++ {
+		if strings.TrimSpace(lines[i]) != "" {
+			bodyIndent = getIndentation(lines[i])
+			break
+		}
+	}
+
+	body, err := parseStatements(lines, lineNum+1, bodyIndent)
+	if err != nil {
+		return nil, lineNum + 1, fmt.Errorf("error parsing $if body: %v", err)
+	}
+
+	nextLine := lineNum + 1 + len(body)
+	for nextLine < len(lines) && strings.TrimSpace(lines[nextLine]) == "" {
+		nextLine++
+	}
+
+	var elseStmt *PreprocElseStmt
+	if nextLine < len(lines) {
+		elseLine := strings.TrimSpace(lines[nextLine])
+		if elseLine == "$else:" {
+			elseBodyIndent := bodyIndent
+			for i := nextLine + 1; i < len(lines); i++ {
+				if strings.TrimSpace(lines[i]) != "" {
+					elseBodyIndent = getIndentation(lines[i])
+					break
+				}
+			}
+
+			nextLine++
+			elseBody, err := parseStatements(lines, nextLine, elseBodyIndent)
+			if err != nil {
+				return nil, nextLine + 1, fmt.Errorf("error parsing $else body: %v", err)
+			}
+			elseStmt = &PreprocElseStmt{Body: elseBody}
+			nextLine += len(elseBody)
+			for nextLine < len(lines) && strings.TrimSpace(lines[nextLine]) == "" {
+				nextLine++
+			}
+		}
+	}
+
+	return &Statement{
+		PreprocIf: &PreprocIfStmt{
+			Condition: condition,
+			Body:      body,
+			Else:      elseStmt,
+		},
+	}, nextLine, nil
+}
+
 func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int, error) {
 	line := strings.TrimSpace(lines[lineNum])
+
+	if strings.HasPrefix(line, "$if") {
+		return parsePreprocIfStatement(lines, lineNum, currentIndent)
+	}
 
 	if !isStandardLibraryFile(CurrentSourceFile) {
 		if hasReserved, reservedCmd := containsReserved(line); hasReserved {

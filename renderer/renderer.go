@@ -2479,6 +2479,17 @@ func parseFunctionCall(funcCall string) (string, []string) {
 	return funcName, args
 }
 
+func renderPreprocIfStmt(b *strings.Builder, stmt *lexer.PreprocIfStmt, indent string, className string, program *lexer.Program, currentFunctionReturnType string) error {
+	fmt.Fprintf(b, "%s#ifdef %s\n", indent, stmt.Condition)
+	renderStatements(b, stmt.Body, indent+"    ", className, program, currentFunctionReturnType)
+	if stmt.Else != nil {
+		fmt.Fprintf(b, "%s#else\n", indent)
+		renderStatements(b, stmt.Else.Body, indent+"    ", className, program, currentFunctionReturnType)
+	}
+	fmt.Fprintf(b, "%s#endif\n", indent)
+	return nil
+}
+
 func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent string, className string, program *lexer.Program, currentFunctionReturnType string) {
 	if className != "" {
 		currentClassName = className
@@ -2495,6 +2506,11 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 			fmt.Fprintf(b, "%somp_set_lock(&%s);\n", indent, stmt.LockBlock.LockName)
 			renderStatements(b, stmt.LockBlock.Body, indent, className, program, currentFunctionReturnType)
 			fmt.Fprintf(b, "%somp_unset_lock(&%s);\n", indent, stmt.LockBlock.LockName)
+		case stmt.PreprocIf != nil:
+			err := renderPreprocIfStmt(b, stmt.PreprocIf, indent, className, program, currentFunctionReturnType)
+			if err != nil {
+				fmt.Fprintf(b, "%s// Error: %v\n", indent, err)
+			}
 		case stmt.Platform != nil:
 			plat := strings.TrimSpace(stmt.Platform.Platform)
 			var open, close string

@@ -56,6 +56,8 @@ type Statement struct {
 	VerboseFor           *VerboseForStmt
 	Put                  *PutStmt
 	If                   *IfStmt
+	PreprocIf            *PreprocIfStmt
+	PreprocElse          *PreprocElseStmt
 	Break                *BreakStmt
 	Continue             *ContinueStmt
 	VarDecl              *VarDeclStmt
@@ -305,6 +307,16 @@ type MapDeclStmt struct {
 	ValueType string
 	Name      string
 	Pairs     []MapPair
+}
+
+type PreprocIfStmt struct {
+	Condition string
+	Body      []*Statement
+	Else      *PreprocElseStmt
+}
+
+type PreprocElseStmt struct {
+	Body []*Statement
 }
 
 type ListOfStmt struct {
