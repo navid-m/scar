@@ -422,6 +422,18 @@ func parseStatement(lines []string, lineNum, currentIndent int) (*Statement, int
 		return parseAliasDeclaration(line, lineNum)
 	}
 
+	if strings.HasPrefix(line, "make lock ") {
+		return parseMakeLock(line, lineNum)
+	}
+
+	if strings.HasPrefix(line, "drop lock ") {
+		return parseDropLock(line, lineNum)
+	}
+
+	if strings.HasPrefix(line, "lock ") && strings.Contains(line, ":") {
+		return parseLockBlock(lines, lineNum, currentIndent)
+	}
+
 	if strings.HasPrefix(line, "new ") {
 		return parseNewExprStatement(line, lineNum)
 	}
@@ -2744,6 +2756,10 @@ func findMatchingClosingBracket(str string, openPos int) int {
 }
 
 func parseAliasDeclaration(line string, lineNum int) (*Statement, int, error) {
+	if !strings.Contains(line, "alias") {
+		return nil, lineNum, fmt.Errorf("invalid alias syntax at line %d: expected 'alias name = target'", lineNum+1)
+	}
+
 	aliasPart := strings.TrimSpace(line[6:])
 
 	parts := strings.SplitN(aliasPart, "=", 2)
@@ -2764,4 +2780,102 @@ func parseAliasDeclaration(line string, lineNum int) (*Statement, int, error) {
 		AliasName: aliasName,
 		Target:    target,
 	}}, lineNum + 1, nil
+}
+
+func parseMakeLock(line string, lineNum int) (*Statement, int, error) {
+	if !strings.HasPrefix(line, "make lock ") {
+		return nil, lineNum, fmt.Errorf("invalid make lock syntax at line %d: expected 'make lock name'", lineNum+1)
+	}
+
+	lockName := strings.TrimSpace(line[10:])
+	if lockName == "" {
+		return nil, lineNum + 1, fmt.Errorf("lock name cannot be empty at line %d", lineNum+1)
+	}
+
+	return &Statement{MakeLock: &MakeLockStmt{
+		LockName: lockName,
+	}}, lineNum + 1, nil
+}
+
+func parseDropLock(line string, lineNum int) (*Statement, int, error) {
+	if !strings.HasPrefix(line, "drop lock ") {
+		return nil, lineNum, fmt.Errorf("invalid drop lock syntax at line %d: expected 'drop lock name'", lineNum+1)
+	}
+
+	lockName := strings.TrimSpace(line[10:])
+	if lockName == "" {
+		return nil, lineNum + 1, fmt.Errorf("lock name cannot be empty at line %d", lineNum+1)
+	}
+
+	return &Statement{DropLock: &DropLockStmt{
+		LockName: lockName,
+	}}, lineNum + 1, nil
+}
+
+func parseLockBlock(lines []string, lineNum, currentIndent int) (*Statement, int, error) {
+	line := strings.TrimSpace(lines[lineNum])
+	if !strings.HasPrefix(line, "lock ") || !strings.Contains(line, ":") {
+		return nil, lineNum, fmt.Errorf("invalid lock block syntax at line %d: expected 'lock name:'", lineNum+1)
+	}
+
+	lockPart := strings.TrimSpace(line[:len(line)-1])
+	lockName := strings.TrimSpace(lockPart[5:])
+	if lockName == "" {
+		return nil, lineNum + 1, fmt.Errorf("lock name cannot be empty at line %d", lineNum+1)
+	}
+
+	expectedBodyIndent := currentIndent + 4
+	if currentIndent == 0 {
+		bodyStartLine := lineNum + 1
+		for bodyStartLine < len(lines) {
+			bodyLine := lines[bodyStartLine]
+			if strings.TrimSpace(bodyLine) != "" && !strings.HasPrefix(strings.TrimSpace(bodyLine), "#") {
+				expectedBodyIndent = getIndentation(bodyLine)
+				break
+			}
+			bodyStartLine++
+		}
+		if expectedBodyIndent <= currentIndent {
+			expectedBodyIndent = currentIndent + 4
+		}
+	}
+
+	var body []*Statement
+	nextLine := lineNum + 1
+
+	for nextLine < len(lines) {
+		bodyLine := lines[nextLine]
+		trimmed := strings.TrimSpace(bodyLine)
+
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			nextLine++
+			continue
+		}
+
+		indent := getIndentation(bodyLine)
+		if indent < expectedBodyIndent {
+			break
+		}
+
+		if indent != expectedBodyIndent {
+			return nil, nextLine + 1, fmt.Errorf("unexpected indentation in lock block at line %d", nextLine+1)
+		}
+
+		stmt, newNextLine, err := parseStatement(lines, nextLine, expectedBodyIndent)
+		if err != nil {
+			return nil, newNextLine, err
+		}
+
+		body = append(body, stmt)
+		nextLine = newNextLine
+	}
+
+	if len(body) == 0 {
+		return nil, lineNum + 1, fmt.Errorf("lock block body cannot be empty at line %d", lineNum+1)
+	}
+
+	return &Statement{LockBlock: &LockBlockStmt{
+		LockName: lockName,
+		Body:     body,
+	}}, nextLine, nil
 }

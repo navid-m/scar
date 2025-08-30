@@ -108,6 +108,9 @@ type Statement struct {
 	PubMacroDecl         *PubMacroDeclStmt
 	MacroCall            *MacroCallStmt
 	Alias                *AliasStmt
+	MakeLock             *MakeLockStmt
+	DropLock             *DropLockStmt
+	LockBlock            *LockBlockStmt
 }
 
 type ListOfDeclStmt struct {
@@ -162,6 +165,19 @@ type MacroCallStmt struct {
 type AliasStmt struct {
 	AliasName string
 	Target    string
+}
+
+type MakeLockStmt struct {
+	LockName string
+}
+
+type DropLockStmt struct {
+	LockName string
+}
+
+type LockBlockStmt struct {
+	LockName string
+	Body     []*Statement
 }
 
 type CatListStmt struct {
