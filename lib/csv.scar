@@ -26,6 +26,13 @@ pub class CSVRow:
     ## Set a field at a specific index.
     fn set_field(i32 index, string value) -> void:
         collections::StringArrayList::set_element(this->>fields, index, value)
+    
+    fn clear() -> void:
+        for i = 0 to collections::StringArrayList::get_size(this->>fields) - 1:
+            string old = collections::StringArrayList::get_element(this->>fields, i)
+            if old != nil:
+                free old
+        collections::StringArrayList::clear(this->>fields)
 
 ## A CSV document containing multiple rows.
 pub class CSV:
@@ -82,6 +89,58 @@ pub class CSV:
             for (int i = this->row_count; i < this->capacity; i++) {
                 ((void**)this->rows)[i] = NULL;
             }
+        )
+
+pub class CSVIter:
+    init(string filename):
+        ref void* this.file = nil
+        int this.buffer_size = 8192
+        ref void* this.buffer = malloc(this.buffer_size)
+        ref csv::CSVRow this.row = nil
+        this.row = new csv::CSVRow()
+        
+        $raw (
+            this->file = (void*)fopen(filename, "r");
+            if (!this->file) {
+                runtime_error(fmt("Failed to open file %s", filename));
+            }
+        )
+
+    fn next() -> ref csv::CSVRow:
+        $raw (
+            FILE* f = (FILE*)this->file;
+            char* buf = (char*)this->buffer;
+            csv_CSVRow_clear(this->row);  // reset previous row
+
+            if (fgets(buf, this->buffer_size, f) == NULL) {
+                return NULL;
+            }
+
+            char* start = buf;
+            char* p = buf;
+
+            while (*p) {
+                if (*p == ',' || *p == '\n' || *p == '\r') {
+                    *p = '\0';
+                    csv_CSVRow_add_field(this->row, start);
+                    start = p + 1;
+                }
+                p++;
+            }
+
+            if (*start != '\0') {
+                csv_CSVRow_add_field(this->row, start);
+            }
+
+            return this->row;
+        )
+
+    fn close() -> void:
+        $raw (
+            if (this->file) fclose((FILE*)this->file);
+            this->file = NULL;
+            if (this->buffer) free(this->buffer);
+            this->buffer = NULL;
         )
 
 ## Parse CSV content into a CSV document using a comma delimiter.

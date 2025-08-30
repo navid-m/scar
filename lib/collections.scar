@@ -48,6 +48,14 @@ pub macro new_array(class_name, field_type, elem_type, cType, d_return, alloc_ex
             $raw (
                 this->data = realloc(this->data, this->capacity * sizeof(cType));
             )
+    
+        fn clear() -> void:
+            $raw (
+                for (int i = 0; i < this->size; i++) {
+                    free_expr
+                }
+            )
+            this.size = 0
 
 ## Convenience macro to define an ArrayList for a custom type.
 ##
