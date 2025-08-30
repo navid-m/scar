@@ -197,3 +197,49 @@ pub fn write_file(string filename, ref csv::CSV doc) -> bool:
 pub fn write_file_with(string filename, ref csv::CSV doc, string delimiter) -> bool:
     string content = csv::to_string_with(doc, delimiter)
     return io::write_file(filename, content)
+
+## Read CSV as stream
+pub fn read_file_stream(string filename) -> ref csv::CSV:
+    ref csv::CSV doc = new csv::CSV()
+
+    $raw (
+        if (filename == NULL) {
+            return nil;
+        }
+
+        FILE* file = fopen(filename, "r");
+        if (file == NULL) {
+            runtime_error(fmt("Failed to open file %s", filename));
+        }
+        char buffer[8192];
+        while (fgets(buffer, sizeof(buffer), file)) {
+            csv_CSVRow* row = csv_CSVRow_new();
+            char* token = buffer;
+            char* field_start = token;
+            bool in_quote = false;
+
+            for (; *token; token++) {
+                if (*token == '"') {
+                    in_quote = !in_quote;
+                } else if (*token == ',' && !in_quote) {
+                    *token = '\0';
+                    csv_CSVRow_add_field(row, strdup(field_start));
+                    field_start = token + 1;
+                } else if ((*token == '\n' || *token == '\r') && !in_quote) {
+                    *token = '\0';
+                    csv_CSVRow_add_field(row, strdup(field_start));
+                    field_start = token + 1;
+                }
+            }
+
+            if (*field_start != '\0') {
+                csv_CSVRow_add_field(row, strdup(field_start));
+            }
+
+            csv_CSV_add_row(doc, row);
+        }
+
+        fclose(file);
+    )
+
+    return doc
