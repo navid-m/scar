@@ -489,7 +489,7 @@ func (av *ArgumentValidator) ValidateMethodCall(methodCall *MethodCallStmt, line
 	}
 
 	if !exists {
-		return fmt.Errorf("line %d: method '%s.%s' is not defined", line, recv, methodCall.Method)
+		return nil
 	}
 
 	if !av.looksLikeMacroName(methodCall.Method) {
