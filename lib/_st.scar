@@ -17,6 +17,7 @@ import "std/runtime"
 import "std/csv"
 import "std/typecons"
 import "std/errors"
+import "std/mutex"
 
 platform (Windows):
     import "std/net"
