@@ -1,7 +1,3 @@
-## Mutex module for Scar
-##
-## Provides cross-platform mutex (mutual exclusion) primitives for thread synchronization
-
 ## Represents a mutex for synchronizing access to shared resources.
 pub class Mutex:
     init:
@@ -9,85 +5,45 @@ pub class Mutex:
 
 ## Create a new mutex.
 pub fn create() -> mutex::Mutex:
-    platform (Windows):
-        $raw (
-            #include <windows.h>
-            #include <stdlib.h>
-            mutex_Mutex* m = mutex_Mutex_new();
-            CRITICAL_SECTION* cs = (CRITICAL_SECTION*)malloc(sizeof(CRITICAL_SECTION));
-            if (cs) {
-                InitializeCriticalSection(cs);
-                m->handle = (long long)(intptr_t)cs;
-            } else {
-                m->handle = 0;
-            }
-            return m;
-        )
-    platform (Posix):
-        $raw (
-            #include <pthread.h>
-            #include <stdlib.h>
-            mutex_Mutex* m = mutex_Mutex_new();
-            pthread_mutex_t* pm = (pthread_mutex_t*)malloc(sizeof(pthread_mutex_t));
-            if (pm) {
-                pthread_mutex_init(pm, NULL);
-                m->handle = (long long)(intptr_t)pm;
-            } else {
-                m->handle = 0;
-            }
-            return m;
-        )
+    $raw (
+        #include <omp.h>
+        #include <stdlib.h>
+        mutex_Mutex* m = mutex_Mutex_new();
+        omp_lock_t* lock = (omp_lock_t*)malloc(sizeof(omp_lock_t));
+        if (lock) {
+            omp_init_lock(lock);
+            m->handle = (long long)(intptr_t)lock;
+        } else {
+            m->handle = 0;
+        }
+        return m;
+    )
 
 ## Lock the mutex. Blocks until the lock is acquired.
 pub fn lock(mutex::Mutex m):
-    platform (Windows):
-        $raw (
-            #include <windows.h>
-            CRITICAL_SECTION* cs = (CRITICAL_SECTION*)(intptr_t)m->handle;
-            if (cs) EnterCriticalSection(cs);
-        )
-    platform (Posix):
-        $raw (
-            #include <pthread.h>
-            pthread_mutex_t* pm = (pthread_mutex_t*)(intptr_t)m->handle;
-            if (pm) pthread_mutex_lock(pm);
-        )
+    $raw (
+        #include <omp.h>
+        omp_lock_t* lock = (omp_lock_t*)(intptr_t)m->handle;
+        if (lock) omp_set_lock(lock);
+    )
 
 ## Unlock the mutex.
 pub fn unlock(mutex::Mutex m):
-    platform (Windows):
-        $raw (
-            #include <windows.h>
-            CRITICAL_SECTION* cs = (CRITICAL_SECTION*)(intptr_t)m->handle;
-            if (cs) LeaveCriticalSection(cs);
-        )
-    platform (Posix):
-        $raw (
-            #include <pthread.h>
-            pthread_mutex_t* pm = (pthread_mutex_t*)(intptr_t)m->handle;
-            if (pm) pthread_mutex_unlock(pm);
-        )
+    $raw (
+        #include <omp.h>
+        omp_lock_t* lock = (omp_lock_t*)(intptr_t)m->handle;
+        if (lock) omp_unset_lock(lock);
+    )
 
 ## Destroy the mutex and free its underlying resources.
 pub fn destroy(mutex::Mutex m):
-    platform (Windows):
-        $raw (
-            #include <windows.h>
-            #include <stdlib.h>
-            CRITICAL_SECTION* cs = (CRITICAL_SECTION*)(intptr_t)m->handle;
-            if (cs) {
-                DeleteCriticalSection(cs);
-                free(cs);
-                m->handle = 0;
-            }
-        )
-    platform (Posix):
-        $raw (
-            #include <pthread.h>
-            pthread_mutex_t* pm = (pthread_mutex_t*)(intptr_t)m->handle;
-            if (pm) {
-                pthread_mutex_destroy(pm);
-                free(pm);
-                m->handle = 0;
-            }
-        )
+    $raw (
+        #include <omp.h>
+        #include <stdlib.h>
+        omp_lock_t* lock = (omp_lock_t*)(intptr_t)m->handle;
+        if (lock) {
+            omp_destroy_lock(lock);
+            free(lock);
+            m->handle = 0;
+        }
+    )
