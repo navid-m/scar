@@ -13,7 +13,7 @@ pub class Error:
                 _exception = _exception + 1;
             )
 
-macro define_error_union(result_type, name):
+pub macro define_error_union(result_type, name):
     pub struct name:
         result_type result
         errors::Error error
