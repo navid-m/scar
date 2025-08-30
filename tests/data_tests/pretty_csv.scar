@@ -20,7 +20,7 @@ for i = 0 to num_rows - 1:
     if fc > num_cols:
         num_cols = fc
 
-collections::ArrayList widths = new collections::ArrayList(num_cols)
+var widths = new collections::ArrayList(num_cols)
 for i = 0 to num_cols - 1:
     widths.add_element(0)
 
