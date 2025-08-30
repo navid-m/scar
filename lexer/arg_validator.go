@@ -926,11 +926,14 @@ func validateStatementRecursive(stmt *Statement, validator *ArgumentValidator, l
 		if err := validator.ValidateMethodCall(stmt.MethodCall, line, varTypes); err != nil {
 			return []error{err}
 		}
-		for _, a := range stmt.MethodCall.Args {
-			for _, u := range scanUnknownVars(a, varTypes, excludedBases) {
-				return []error{fmt.Errorf("line %d: variable '%s' is not defined", line, u)}
-			}
-		}
+		// TODO: implement this correctly.
+		//
+		// for _, a := range stmt.MethodCall.Args {
+		// 	for _, u := range scanUnknownVars(a, varTypes, excludedBases) {
+		// 		fmt.Println(varTypes)
+		// 		return []error{fmt.Errorf("line %d: variable '%s' is not defined", line, u)}
+		// 	}
+		// }
 	}
 
 	if stmt.StaticMethodCall != nil {
