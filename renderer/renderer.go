@@ -4016,7 +4016,7 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 				fmt.Println("\033[91mObject name:\033[0m", stmt.VarDeclMethodCall.Object)
 				fmt.Println("\033[91mMethod name:\033[0m", stmt.VarDeclMethodCall.Method)
 				fmt.Println("\033[91mArgs:\033[0m", stmt.VarDeclMethodCall.Args)
-				fmt.Println("\033[91mCompError - Internal compilation failed.\033[0m")
+				fmt.Println("\033[91mCompError - Class-level compilation failed.\033[0m")
 				os.Exit(1)
 			}
 			if argsStr == "" {
