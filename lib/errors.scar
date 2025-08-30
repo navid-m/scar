@@ -13,6 +13,19 @@ pub class Error:
                 _exception = _exception + 1;
             )
 
-pub struct ErrorUnion:
-    int result
-    errors::Error error
+macro define_error_union(result_type, name):
+    pub struct name:
+        result_type result
+        errors::Error error
+
+define_error_union(i32, IntResult)
+define_error_union(string, StringResult)
+define_error_union(void, RefResult)
+define_error_union(int, IntResult)
+define_error_union(u32, U32Result)
+define_error_union(i64, I64Result)
+define_error_union(u64, U64Result)
+define_error_union(f32, F32Result)
+define_error_union(f64, F64Result)
+define_error_union(char, CharResult)
+define_error_union(u8, U8Result)

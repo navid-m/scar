@@ -801,7 +801,7 @@ func GenerateUniqueSymbol(originalName string, moduleName string) string {
 }
 
 var (
-	vdt          = []string{"int", "float", "double", "char", "string", "bool", "map", "cstring", "lstring"}
+	vdt          = []string{"int", "float", "double", "void*", "void", "char", "string", "bool", "map", "cstring", "lstring"}
 	numericTypes = map[string]bool{
 		"i8": true, "i16": true, "i32": true, "i64": true,
 		"u8": true, "u16": true, "u32": true, "u64": true,
