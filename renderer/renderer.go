@@ -2486,6 +2486,15 @@ func renderStatements(b *strings.Builder, stmts []*lexer.Statement, indent strin
 
 	for _, stmt := range stmts {
 		switch {
+		case stmt.MakeLock != nil:
+			fmt.Fprintf(b, "%somp_lock_t %s;\n", indent, stmt.MakeLock.LockName)
+			fmt.Fprintf(b, "%somp_init_lock(&%s);\n", indent, stmt.MakeLock.LockName)
+		case stmt.DropLock != nil:
+			fmt.Fprintf(b, "%somp_destroy_lock(&%s);\n", indent, stmt.DropLock.LockName)
+		case stmt.LockBlock != nil:
+			fmt.Fprintf(b, "%somp_set_lock(&%s);\n", indent, stmt.LockBlock.LockName)
+			renderStatements(b, stmt.LockBlock.Body, indent, className, program, currentFunctionReturnType)
+			fmt.Fprintf(b, "%somp_unset_lock(&%s);\n", indent, stmt.LockBlock.LockName)
 		case stmt.Platform != nil:
 			plat := strings.TrimSpace(stmt.Platform.Platform)
 			var open, close string
