@@ -128,6 +128,9 @@ pub fn to_float(string value) -> f32:
 
     return (float)(sign) * (result + fraction)
 
+pub fn to_double(string value) -> f64:
+    return (f64)math::to_float(value)
+
 ## Minimum of two 32-bit integers.
 pub fn min(i32 a, i32 b) -> i32:
     if a < b:
