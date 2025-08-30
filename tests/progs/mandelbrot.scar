@@ -1,13 +1,14 @@
 import "std/os"
 import "std/math"
+import "std/collections"
 
 int iterations = 50
 f64 depth = 4.0
 
-list[string] args = os::get_args()
+collections::StringArrayList args = os::get_args()
 int width = 100
 if len(args) > 1:
-    width = math::to_int(args[1])
+    width = math::to_int(collections::StringArrayList::get_element(args, 1))
 
 int height = width
 f64 start_x = -1.5
@@ -32,7 +33,7 @@ for x = 0 to (line_size - 1):
 parallel for y = 0 to (line_count - 1):
     f64 ci = ci_0 + (f64)(y) * pixel_height
     for x = 0 to (line_size - 1):
-        u8 pixel = 0
+        u8 pixel = (u8) 0
         for bit = 0 to 7:
             int cr_idx = x * 8 + bit
             if cr_idx < width:
