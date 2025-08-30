@@ -489,6 +489,7 @@ func (av *ArgumentValidator) ValidateMethodCall(methodCall *MethodCallStmt, line
 	}
 
 	if !exists {
+		// TODO: Revisit.
 		return nil
 	}
 
