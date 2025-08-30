@@ -159,10 +159,28 @@ pub macro define_map(class_name, value_type, cValueType, default_value):
 
         ## Resize the map.
         fn resize() -> void:
+            i32 old_capacity = this.capacity
             this.capacity = this.capacity * 2
             $raw (
                 this->keys = realloc(this->keys, this->capacity * sizeof(char*));
                 this->values = realloc(this->values, this->capacity * sizeof(cValueType));
+                for (int i = old_capacity; i < this->capacity; i++) {
+                    ((char**)this->keys)[i] = nil;
+                }
+            )
+        
+        fn get_key_at(i32 idx) -> string:
+            if idx < 0 || idx >= this.size:
+                return ""
+            $raw (
+                return ((char**)this->keys)[idx];
+            )
+        
+        fn get_value_at(i32 idx) -> value_type:
+            if idx < 0 || idx >= this.size:
+                return default_value
+            $raw (
+                return ((cValueType*)this->values)[idx];
             )
 
 define_map(StringIntMap, i32, int, -1)
