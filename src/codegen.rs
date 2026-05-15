@@ -125,15 +125,20 @@ fn render_stmt(
             output.push_str(&render_expr(expr)?);
             output.push_str(";\n");
         }
-        Stmt::ParallelFor {
+        Stmt::For {
+            pragma,
             var_name,
             start,
             end,
             body,
         } => {
             indent(output, level);
-            output.push_str("#pragma omp parallel for\n");
-            indent(output, level);
+            if let Some(pragma) = pragma {
+                output.push_str("#pragma ");
+                output.push_str(pragma);
+                output.push('\n');
+                indent(output, level);
+            }
             output.push_str("for (int32_t ");
             output.push_str(var_name);
             output.push_str(" = ");

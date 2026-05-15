@@ -17,7 +17,8 @@ Prioritizes:
 
 ```scar
 pub def do_thing() void
-    parallel for var i = 1 to 5
+    @("omp parallel for")
+    for var i = 1 to 5
         builtin.print("i = {d}", {i})
         builtin.sleep(0.1)
     end

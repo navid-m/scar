@@ -26,6 +26,7 @@ pub enum TokenKind {
     Int(i64),
     Str(String),
     Newline,
+    At,
     LParen,
     RParen,
     LBrace,
@@ -86,6 +87,7 @@ impl Lexer {
                         self.bump();
                     }
                 }
+                '@' => tokens.push(self.single(TokenKind::At)),
                 '(' => tokens.push(self.single(TokenKind::LParen)),
                 ')' => tokens.push(self.single(TokenKind::RParen)),
                 '{' => tokens.push(self.single(TokenKind::LBrace)),

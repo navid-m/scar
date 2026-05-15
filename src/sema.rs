@@ -156,7 +156,8 @@ fn analyze_stmt(
         Stmt::Expr(expr) => {
             infer_expr_type(expr, functions, scope)?;
         }
-        Stmt::ParallelFor {
+        Stmt::For {
+            pragma: _,
             var_name,
             start,
             end,
@@ -165,9 +166,7 @@ fn analyze_stmt(
             let start_ty = infer_expr_type(start, functions, scope)?;
             let end_ty = infer_expr_type(end, functions, scope)?;
             if start_ty != Type::I32 || end_ty != Type::I32 {
-                return Err(CompileError::new(
-                    "`parallel for` bounds must have type i32",
-                ));
+                return Err(CompileError::new("`for` bounds must have type i32"));
             }
 
             let mut nested = scope.clone();

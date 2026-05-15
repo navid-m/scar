@@ -25,7 +25,8 @@ def hello_world(x i32) void
 end
 
 pub def main() void
-	parallel for var i = 0 to 10 
+	@("omp parallel for")
+	for var i = 0 to 10 
 		hello_world(i)
 	end
 end

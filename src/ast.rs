@@ -43,7 +43,8 @@ pub enum Stmt {
     },
     Return(Option<Expr>),
     Expr(Expr),
-    ParallelFor {
+    For {
+        pragma: Option<String>,
         var_name: String,
         start: Expr,
         end: Expr,

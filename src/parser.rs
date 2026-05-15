@@ -113,25 +113,17 @@ impl Parser {
             return Ok(Stmt::Return(value));
         }
 
+        if self.check_simple(&TokenKind::At) {
+            return self.parse_pragma_stmt();
+        }
+
+        if self.check_simple(&TokenKind::For) {
+            return self.parse_for_stmt(None);
+        }
+
         if self.check_simple(&TokenKind::Parallel) {
             self.advance();
-            self.expect_simple(TokenKind::For)?;
-            self.expect_simple(TokenKind::Var)?;
-            let var_name = self.expect_ident()?;
-            self.expect_simple(TokenKind::Assign)?;
-            let start = self.parse_expr()?;
-            self.expect_simple(TokenKind::To)?;
-            let end = self.parse_expr()?;
-            self.expect_newline("expected a newline after parallel for header")?;
-            let body = self.parse_block()?;
-            self.expect_simple(TokenKind::End)?;
-            self.consume_newlines();
-            return Ok(Stmt::ParallelFor {
-                var_name,
-                start,
-                end,
-                body,
-            });
+            return self.parse_for_stmt(Some("omp parallel for".to_string()));
         }
 
         let expr = self.parse_expr()?;
@@ -156,6 +148,57 @@ impl Parser {
 
         self.expect_stmt_terminator()?;
         Ok(Stmt::Expr(expr))
+    }
+
+    fn parse_pragma_stmt(&mut self) -> Result<Stmt, CompileError> {
+        self.expect_simple(TokenKind::At)?;
+        self.expect_simple(TokenKind::LParen)?;
+        let TokenKind::Str(pragma) = self.current().kind.clone() else {
+            return Err(self.error_at_current("expected a string literal pragma directive"));
+        };
+        self.advance();
+        self.expect_simple(TokenKind::RParen)?;
+        self.expect_newline("expected a newline after pragma directive")?;
+
+        match self.parse_stmt()? {
+            Stmt::For {
+                pragma: None,
+                var_name,
+                start,
+                end,
+                body,
+            } => Ok(Stmt::For {
+                pragma: Some(pragma),
+                var_name,
+                start,
+                end,
+                body,
+            }),
+            _ => Err(CompileError::new(
+                "pragma directives currently apply only to `for` loops",
+            )),
+        }
+    }
+
+    fn parse_for_stmt(&mut self, pragma: Option<String>) -> Result<Stmt, CompileError> {
+        self.expect_simple(TokenKind::For)?;
+        self.expect_simple(TokenKind::Var)?;
+        let var_name = self.expect_ident()?;
+        self.expect_simple(TokenKind::Assign)?;
+        let start = self.parse_expr()?;
+        self.expect_simple(TokenKind::To)?;
+        let end = self.parse_expr()?;
+        self.expect_newline("expected a newline after for header")?;
+        let body = self.parse_block()?;
+        self.expect_simple(TokenKind::End)?;
+        self.consume_newlines();
+        Ok(Stmt::For {
+            pragma,
+            var_name,
+            start,
+            end,
+            body,
+        })
     }
 
     fn parse_expr(&mut self) -> Result<Expr, CompileError> {
@@ -373,6 +416,7 @@ impl Parser {
             TokenKind::I32 => "`i32`",
             TokenKind::U8 => "`u8`",
             TokenKind::Newline => "a newline",
+            TokenKind::At => "`@`",
             TokenKind::LParen => "`(`",
             TokenKind::RParen => "`)`",
             TokenKind::LBrace => "`{`",
@@ -393,7 +437,7 @@ impl Parser {
 #[cfg(test)]
 mod tests {
     use super::parse_program;
-    use crate::lexer::lex;
+    use crate::{ast::Stmt, lexer::lex};
 
     #[test]
     fn parses_pub_function() {
@@ -402,5 +446,26 @@ mod tests {
 
         assert!(program.functions[0].is_pub);
         assert_eq!(program.functions[0].name, "main");
+    }
+
+    #[test]
+    fn parses_pragma_for_loop() {
+        let source = "pub def main() void\n@(\"omp parallel for\")\nfor var i = 0 to 10\nend\nend\n";
+        let program = parse_program(lex(source).unwrap()).unwrap();
+
+        match &program.functions[0].body[0] {
+            Stmt::For {
+                pragma,
+                var_name,
+                start: _,
+                end: _,
+                body,
+            } => {
+                assert_eq!(pragma.as_deref(), Some("omp parallel for"));
+                assert_eq!(var_name, "i");
+                assert!(body.is_empty());
+            }
+            other => panic!("expected for loop, got {other:?}"),
+        }
     }
 }
