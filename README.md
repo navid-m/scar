@@ -20,7 +20,6 @@ pub def do_thing() void
     @("omp parallel for")
     for var i = 1 to 5
         builtin.print("i = {d}", {i})
-        builtin.sleep(0.1)
     end
     print "Parallel for loop completed."
 end
