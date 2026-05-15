@@ -16,7 +16,7 @@ Prioritizes:
 #### Example
 
 ```scar
-pub def do_thing() void
+def do_thing() void
     @("omp parallel for")
     for var i = 1 to 5
         builtin.print("i = {d}", {i})
