@@ -5,6 +5,7 @@ pub struct Program {
 
 #[derive(Debug, Clone)]
 pub struct Function {
+    pub is_pub: bool,
     pub name: String,
     pub params: Vec<Param>,
     pub return_type: Type,

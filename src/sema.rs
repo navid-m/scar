@@ -32,6 +32,11 @@ pub fn analyze(program: &Program) -> Result<ProgramInfo, CompileError> {
                 function.name
             )));
         }
+        if function.name == "main" && !function.is_pub {
+            return Err(CompileError::new(
+                "function `main` must be declared as `pub def main`",
+            ));
+        }
         functions.insert(
             function.name.clone(),
             FunctionSig {
@@ -442,5 +447,31 @@ fn describe_type(ty: &Type) -> String {
         Type::I32 => "i32".to_string(),
         Type::U8 => "u8".to_string(),
         Type::Ref(inner) => format!("ref({})", describe_type(inner)),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::analyze;
+    use crate::{lexer::lex, parser::parse_program};
+
+    #[test]
+    fn rejects_non_pub_main() {
+        let source = "def main() void\nend\n";
+        let program = parse_program(lex(source).unwrap()).unwrap();
+
+        let error = analyze(&program).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "function `main` must be declared as `pub def main`"
+        );
+    }
+
+    #[test]
+    fn accepts_pub_main() {
+        let source = "pub def main() void\nend\n";
+        let program = parse_program(lex(source).unwrap()).unwrap();
+
+        analyze(&program).unwrap();
     }
 }

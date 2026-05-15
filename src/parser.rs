@@ -29,6 +29,12 @@ impl Parser {
     }
 
     fn parse_function(&mut self) -> Result<Function, CompileError> {
+        let is_pub = if self.check_simple(&TokenKind::Pub) {
+            self.advance();
+            true
+        } else {
+            false
+        };
         self.expect_simple(TokenKind::Def)?;
         let name = self.expect_ident()?;
         self.expect_simple(TokenKind::LParen)?;
@@ -63,6 +69,7 @@ impl Parser {
         self.consume_newlines();
 
         Ok(Function {
+            is_pub,
             name,
             params,
             return_type,
@@ -352,6 +359,7 @@ impl Parser {
 
     fn describe(kind: &TokenKind) -> &'static str {
         match kind {
+            TokenKind::Pub => "`pub`",
             TokenKind::Def => "`def`",
             TokenKind::End => "`end`",
             TokenKind::Var => "`var`",
@@ -379,5 +387,20 @@ impl Parser {
             TokenKind::Int(_) => "an integer",
             TokenKind::Str(_) => "a string",
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_program;
+    use crate::lexer::lex;
+
+    #[test]
+    fn parses_pub_function() {
+        let source = "pub def main() void\nend\n";
+        let program = parse_program(lex(source).unwrap()).unwrap();
+
+        assert!(program.functions[0].is_pub);
+        assert_eq!(program.functions[0].name, "main");
     }
 }

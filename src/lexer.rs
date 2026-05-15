@@ -9,6 +9,7 @@ pub struct Token {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum TokenKind {
+    Pub,
     Def,
     End,
     Var,
@@ -217,6 +218,7 @@ impl Lexer {
         }
         let lexeme: String = self.chars[start..self.pos].iter().collect();
         let kind = match lexeme.as_str() {
+            "pub" => TokenKind::Pub,
             "def" => TokenKind::Def,
             "end" => TokenKind::End,
             "var" => TokenKind::Var,
