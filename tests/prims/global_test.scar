@@ -1,7 +1,0 @@
-pub int global_test = 42
-pub int WIDTH = 60
-
-fn test_global() -> int:
-    return global_test + WIDTH
-
-print "%d" | test_global()

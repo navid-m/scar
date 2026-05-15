@@ -1,2 +1,0 @@
-val char asd = 'a'
-print "hello %c" | asd

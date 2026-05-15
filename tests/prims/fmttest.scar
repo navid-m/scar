@@ -1,2 +1,0 @@
-string yo = fmt!("Hello, %s!", "World")
-print "%s" | yo

@@ -1,7 +1,0 @@
-import "math/calculator"
-
-int result = math::calculator::add(5, 3)
-print "5 + 3 = %d\n" | result
-
-int product = math::calculator::multiply(4, 6)
-print "4 * 6 = %d\n" | product

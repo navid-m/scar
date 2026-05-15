@@ -1,0 +1,32 @@
+def print_address_of(x ref(void))
+	builtin.print("{p}", {builtin.addr(x)})
+end
+
+def modify_in_place(x ref(u8)) void
+	builtin.deref(x) = "modified"
+end
+
+def declare_and_use() i32
+	## This is a docstring for some function
+	## It's pretty cool, huh? :)
+	var some_variable = 10
+	val some_constant = 20
+	some_variable += 10
+	return some_variable + some_constant
+end
+
+def add(x i32, y i32) i32
+	return x + y
+end
+
+def hello_world(x i32) void
+	builtin.puts("This is some function")
+	builtin.print("{d}\n", {x})
+end
+
+def main() void
+	parallel for var i = 0 to 10 
+		hello_world(i)
+	end
+end
+

@@ -1,7 +1,0 @@
-# SC #1
-#
-# Types in lists should be checked at compile time.
-
-list[int] nums = [1, 2, 3]
-nums[1] = "not an int"
-print "nums[1] = %d" | nums[1]

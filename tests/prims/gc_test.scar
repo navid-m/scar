@@ -1,3 +1,0 @@
-print "hello"
-allocate i32 arr = 100
-print "Memory allocated for arr with size 100"

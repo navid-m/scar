@@ -1,5 +1,0 @@
-if true and true:
-    print "true"
-
-if true or false:
-    print "wow its true again can you believe it"

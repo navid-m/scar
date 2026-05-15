@@ -1,6 +1,0 @@
-string world = "worlda"
-string world2 = "unionize!"
-list[string] asdf = ["hello", world, world2]
-
-for i = 0 to len(asdf) - 1:
-    put "%s " | asdf[i]

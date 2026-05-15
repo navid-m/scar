@@ -1,4 +1,0 @@
-$if _WIN32:
-    print "Windows"
-$else:
-    print "Not windows."

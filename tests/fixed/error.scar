@@ -1,8 +1,0 @@
-string x = "sup"
-string z = x
-x = "hello"
-print "String x initialized to: %s\n" | x
-
-string y = x
-print "String y initialized to: %s\n" | y
-print "String z initialized to: %s\n" | z

@@ -1,7 +1,0 @@
-int sign = 1
-sign = -sign
-sign = +sign
-
-int x = 10
-x = -x
-x = -x + 5

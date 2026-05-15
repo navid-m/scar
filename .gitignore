@@ -1,10 +1,4 @@
-.vscode
-vendor/
-*.exe
-*.test
 *.out
-errors
-*.DS_Store
-summary.spec.md
-*.dSYM
-_st
+.DS_Store
+*.c
+/target
