@@ -16,13 +16,17 @@ Prioritizes:
 #### Example
 
 ```scar
-pub fn do_thing() -> void:
-    parallel for i = 1 to 5:
-        print "i = %d" | i
-        sleep 0.1
+pub def do_thing() void
+    parallel for var i = 1 to 5
+        builtin.print("i = {d}", {i})
+        builtin.sleep(0.1)
+    end
     print "Parallel for loop completed."
+end
 
-do_thing()
+pub def main() void
+    do_thing()
+end
 ```
 
 #### Getting Started
