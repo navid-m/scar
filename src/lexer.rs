@@ -11,6 +11,7 @@ pub struct Token {
 pub enum TokenKind {
     Pub,
     Def,
+    Type,
     End,
     Var,
     Val,
@@ -32,6 +33,7 @@ pub enum TokenKind {
     LBrace,
     RBrace,
     Comma,
+    Colon,
     Dot,
     Assign,
     Plus,
@@ -93,6 +95,7 @@ impl Lexer {
                 '{' => tokens.push(self.single(TokenKind::LBrace)),
                 '}' => tokens.push(self.single(TokenKind::RBrace)),
                 ',' => tokens.push(self.single(TokenKind::Comma)),
+                ':' => tokens.push(self.single(TokenKind::Colon)),
                 '.' => tokens.push(self.single(TokenKind::Dot)),
                 '=' => tokens.push(self.single(TokenKind::Assign)),
                 '+' => {
@@ -222,6 +225,7 @@ impl Lexer {
         let kind = match lexeme.as_str() {
             "pub" => TokenKind::Pub,
             "def" => TokenKind::Def,
+            "type" => TokenKind::Type,
             "end" => TokenKind::End,
             "var" => TokenKind::Var,
             "val" => TokenKind::Val,

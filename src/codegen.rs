@@ -1,6 +1,6 @@
 use crate::{
     CompileError,
-    ast::{BinaryOp, Expr, Function, Program, Stmt, Type},
+    ast::{BinaryOp, Expr, Function, Program, Stmt, Type, TypeDef},
     sema::ProgramInfo,
 };
 
@@ -8,6 +8,11 @@ pub fn generate_c(program: &Program, info: &ProgramInfo) -> Result<String, Compi
     let mut output = String::new();
     output.push_str("#include <stdint.h>\n");
     output.push_str("#include <stdio.h>\n\n");
+
+    for type_def in &program.type_defs {
+        output.push_str(&render_type_def(type_def));
+        output.push('\n');
+    }
 
     for function in &program.functions {
         output.push_str(&render_signature(function));
@@ -39,6 +44,22 @@ fn render_function(
     }
     output.push_str("}\n");
     Ok(())
+}
+
+fn render_type_def(type_def: &TypeDef) -> String {
+    let mut output = String::new();
+    output.push_str("typedef struct {\n");
+    for field in &type_def.fields {
+        output.push_str("    ");
+        output.push_str(&c_type(&field.ty));
+        output.push(' ');
+        output.push_str(&field.name);
+        output.push_str(";\n");
+    }
+    output.push_str("} ");
+    output.push_str(&type_def.name);
+    output.push_str(";\n");
+    output
 }
 
 fn render_signature(function: &Function) -> String {
@@ -164,6 +185,14 @@ fn render_expr(expr: &Expr) -> Result<String, CompileError> {
     match expr {
         Expr::Int(value) => Ok(value.to_string()),
         Expr::String(value) => Ok(format!("\"{}\"", escape_c_string(value))),
+        Expr::FieldAccess { base, field } => Ok(format!("({}).{}", render_expr(base)?, field)),
+        Expr::StructInit { name, fields } => {
+            let rendered_fields = fields
+                .iter()
+                .map(|field| Ok(format!(".{} = {}", field.name, render_expr(&field.value)?)))
+                .collect::<Result<Vec<_>, CompileError>>()?;
+            Ok(format!("({name}){{ {} }}", rendered_fields.join(", ")))
+        }
         Expr::BuiltinCall { name, args } => render_builtin_call(name, args),
         Expr::Path(path) => match path.as_slice() {
             [name] => Ok(name.clone()),
@@ -281,6 +310,7 @@ fn c_type(ty: &Type) -> String {
         Type::Void => "void".to_string(),
         Type::I32 => "int32_t".to_string(),
         Type::U8 => "const char *".to_string(),
+        Type::Named(name) => name.clone(),
         Type::Ref(inner) => {
             let inner = c_type(inner);
             if inner.ends_with('*') {

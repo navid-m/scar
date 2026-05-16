@@ -6,7 +6,7 @@ use std::{
 
 use crate::{
     CompileError,
-    ast::{Expr, Function, ModuleUse, Program, Stmt},
+    ast::{Expr, FieldDef, FieldInit, Function, ModuleUse, Program, Stmt, Type, TypeDef},
     lexer::lex,
     parser::parse_program,
 };
@@ -21,20 +21,32 @@ pub fn resolve_entry_program(entry: &Path) -> Result<Program, CompileError> {
         root_dir,
         cache: HashMap::new(),
         emitted_modules: HashSet::new(),
+        resolved_types: Vec::new(),
         resolved_functions: Vec::new(),
         visiting: Vec::new(),
     };
 
     let program = parse_program_file(&entry)?;
     let module_aliases = resolver.resolve_module_uses(&program.module_uses, &entry)?;
+    let local_types = build_type_map(&program.type_defs, None);
     let local_functions = build_function_map(&program.functions, None);
+    let mut type_defs = resolver.resolved_types;
+    for type_def in program.type_defs {
+        type_defs.push(rewrite_type_def(type_def, &local_types));
+    }
     let mut functions = resolver.resolved_functions;
     for function in program.functions {
-        functions.push(rewrite_function(function, &local_functions, &module_aliases)?);
+        functions.push(rewrite_function(
+            function,
+            &local_functions,
+            &local_types,
+            &module_aliases,
+        )?);
     }
 
     Ok(Program {
         module_uses: Vec::new(),
+        type_defs,
         functions,
     })
 }
@@ -50,6 +62,7 @@ struct Resolver {
     root_dir: PathBuf,
     cache: HashMap<PathBuf, ModuleExports>,
     emitted_modules: HashSet<PathBuf>,
+    resolved_types: Vec<TypeDef>,
     resolved_functions: Vec<Function>,
     visiting: Vec<PathBuf>,
 }
@@ -88,21 +101,35 @@ impl Resolver {
                 .map(|path| path.display().to_string())
                 .collect::<Vec<_>>()
                 .join(" -> ");
-            return Err(CompileError::new(format!("module import cycle detected: {cycle}")));
+            return Err(CompileError::new(format!(
+                "module import cycle detected: {cycle}"
+            )));
         }
 
         self.visiting.push(module_path.clone());
         let parsed = parse_program_file(&module_path)?;
         let module_aliases = self.resolve_module_uses(&parsed.module_uses, &module_path)?;
         let prefix = module_prefix(&module_path, &self.root_dir);
+        let local_types = build_type_map(&parsed.type_defs, Some(&prefix));
         let local_functions = build_function_map(&parsed.functions, Some(&prefix));
+
+        let mut rewritten_types = Vec::new();
+        for type_def in parsed.type_defs {
+            rewritten_types.push(rewrite_type_def(type_def, &local_types));
+        }
 
         let mut rewritten_functions = Vec::new();
         for function in parsed.functions {
-            rewritten_functions.push(rewrite_function(function, &local_functions, &module_aliases)?);
+            rewritten_functions.push(rewrite_function(
+                function,
+                &local_functions,
+                &local_types,
+                &module_aliases,
+            )?);
         }
 
         if self.emitted_modules.insert(module_path.clone()) {
+            self.resolved_types.extend(rewritten_types);
             self.resolved_functions.extend(rewritten_functions);
         }
 
@@ -116,16 +143,19 @@ impl Resolver {
 }
 
 fn parse_program_file(path: &Path) -> Result<Program, CompileError> {
-    let source = fs::read_to_string(path)
-        .map_err(|error| CompileError::new(format!("failed to read {}: {error}", path.display())))?;
+    let source = fs::read_to_string(path).map_err(|error| {
+        CompileError::new(format!("failed to read {}: {error}", path.display()))
+    })?;
     let tokens = lex(&source)
         .map_err(|error| CompileError::new(format!("in {}: {error}", path.display())))?;
-    parse_program(tokens).map_err(|error| CompileError::new(format!("in {}: {error}", path.display())))
+    parse_program(tokens)
+        .map_err(|error| CompileError::new(format!("in {}: {error}", path.display())))
 }
 
 fn canonicalize_path(path: &Path) -> Result<PathBuf, CompileError> {
-    fs::canonicalize(path)
-        .map_err(|error| CompileError::new(format!("failed to resolve {}: {error}", path.display())))
+    fs::canonicalize(path).map_err(|error| {
+        CompileError::new(format!("failed to resolve {}: {error}", path.display()))
+    })
 }
 
 fn build_function_map(functions: &[Function], prefix: Option<&str>) -> HashMap<String, String> {
@@ -137,6 +167,19 @@ fn build_function_map(functions: &[Function], prefix: Option<&str>) -> HashMap<S
                 None => function.name.clone(),
             };
             (function.name.clone(), mapped)
+        })
+        .collect()
+}
+
+fn build_type_map(type_defs: &[TypeDef], prefix: Option<&str>) -> HashMap<String, String> {
+    type_defs
+        .iter()
+        .map(|type_def| {
+            let mapped = match prefix {
+                Some(prefix) => format!("{prefix}__{}", type_def.name),
+                None => type_def.name.clone(),
+            };
+            (type_def.name.clone(), mapped)
         })
         .collect()
 }
@@ -173,22 +216,49 @@ fn module_prefix(module_path: &Path, root_dir: &Path) -> String {
 fn rewrite_function(
     mut function: Function,
     local_functions: &HashMap<String, String>,
+    local_types: &HashMap<String, String>,
     module_aliases: &ModuleAliases,
 ) -> Result<Function, CompileError> {
     if let Some(mapped) = local_functions.get(&function.name) {
         function.name = mapped.clone();
     }
+    function.params = function
+        .params
+        .into_iter()
+        .map(|mut param| {
+            param.ty = rewrite_type(param.ty, local_types);
+            param
+        })
+        .collect();
+    function.return_type = rewrite_type(function.return_type, local_types);
     function.body = function
         .body
         .into_iter()
-        .map(|stmt| rewrite_stmt(stmt, local_functions, module_aliases))
+        .map(|stmt| rewrite_stmt(stmt, local_functions, local_types, module_aliases))
         .collect::<Result<Vec<_>, _>>()?;
     Ok(function)
+}
+
+fn rewrite_type_def(type_def: TypeDef, local_types: &HashMap<String, String>) -> TypeDef {
+    let name = local_types
+        .get(&type_def.name)
+        .cloned()
+        .unwrap_or(type_def.name);
+    let fields = type_def
+        .fields
+        .into_iter()
+        .map(|field| FieldDef {
+            name: field.name,
+            ty: rewrite_type(field.ty, local_types),
+        })
+        .collect();
+    TypeDef { name, fields }
 }
 
 fn rewrite_stmt(
     stmt: Stmt,
     local_functions: &HashMap<String, String>,
+    local_types: &HashMap<String, String>,
     module_aliases: &ModuleAliases,
 ) -> Result<Stmt, CompileError> {
     match stmt {
@@ -199,22 +269,27 @@ fn rewrite_stmt(
         } => Ok(Stmt::VarDecl {
             mutable,
             name,
-            init: rewrite_expr(init, local_functions, module_aliases)?,
+            init: rewrite_expr(init, local_functions, local_types, module_aliases)?,
         }),
         Stmt::Assign { target, value } => Ok(Stmt::Assign {
-            target: rewrite_expr(target, local_functions, module_aliases)?,
-            value: rewrite_expr(value, local_functions, module_aliases)?,
+            target: rewrite_expr(target, local_functions, local_types, module_aliases)?,
+            value: rewrite_expr(value, local_functions, local_types, module_aliases)?,
         }),
         Stmt::AddAssign { target, value } => Ok(Stmt::AddAssign {
-            target: rewrite_expr(target, local_functions, module_aliases)?,
-            value: rewrite_expr(value, local_functions, module_aliases)?,
+            target: rewrite_expr(target, local_functions, local_types, module_aliases)?,
+            value: rewrite_expr(value, local_functions, local_types, module_aliases)?,
         }),
         Stmt::Return(value) => Ok(Stmt::Return(
             value
-                .map(|expr| rewrite_expr(expr, local_functions, module_aliases))
+                .map(|expr| rewrite_expr(expr, local_functions, local_types, module_aliases))
                 .transpose()?,
         )),
-        Stmt::Expr(expr) => Ok(Stmt::Expr(rewrite_expr(expr, local_functions, module_aliases)?)),
+        Stmt::Expr(expr) => Ok(Stmt::Expr(rewrite_expr(
+            expr,
+            local_functions,
+            local_types,
+            module_aliases,
+        )?)),
         Stmt::For {
             pragma,
             var_name,
@@ -224,11 +299,11 @@ fn rewrite_stmt(
         } => Ok(Stmt::For {
             pragma,
             var_name,
-            start: rewrite_expr(start, local_functions, module_aliases)?,
-            end: rewrite_expr(end, local_functions, module_aliases)?,
+            start: rewrite_expr(start, local_functions, local_types, module_aliases)?,
+            end: rewrite_expr(end, local_functions, local_types, module_aliases)?,
             body: body
                 .into_iter()
-                .map(|stmt| rewrite_stmt(stmt, local_functions, module_aliases))
+                .map(|stmt| rewrite_stmt(stmt, local_functions, local_types, module_aliases))
                 .collect::<Result<Vec<_>, _>>()?,
         }),
     }
@@ -237,34 +312,76 @@ fn rewrite_stmt(
 fn rewrite_expr(
     expr: Expr,
     local_functions: &HashMap<String, String>,
+    local_types: &HashMap<String, String>,
     module_aliases: &ModuleAliases,
 ) -> Result<Expr, CompileError> {
     match expr {
         Expr::Int(_) | Expr::String(_) | Expr::Path(_) => Ok(expr),
+        Expr::FieldAccess { base, field } => Ok(Expr::FieldAccess {
+            base: Box::new(rewrite_expr(
+                *base,
+                local_functions,
+                local_types,
+                module_aliases,
+            )?),
+            field,
+        }),
+        Expr::StructInit { name, fields } => Ok(Expr::StructInit {
+            name: local_types.get(&name).cloned().unwrap_or(name),
+            fields: fields
+                .into_iter()
+                .map(|field| {
+                    Ok(FieldInit {
+                        name: field.name,
+                        value: rewrite_expr(
+                            field.value,
+                            local_functions,
+                            local_types,
+                            module_aliases,
+                        )?,
+                    })
+                })
+                .collect::<Result<Vec<_>, CompileError>>()?,
+        }),
         Expr::BuiltinCall { name, args } => Ok(Expr::BuiltinCall {
             name,
             args: args
                 .into_iter()
-                .map(|arg| rewrite_expr(arg, local_functions, module_aliases))
+                .map(|arg| rewrite_expr(arg, local_functions, local_types, module_aliases))
                 .collect::<Result<Vec<_>, _>>()?,
         }),
         Expr::Call { callee, args } => Ok(Expr::Call {
-            callee: Box::new(rewrite_callee(*callee, local_functions, module_aliases)?),
+            callee: Box::new(rewrite_callee(
+                *callee,
+                local_functions,
+                local_types,
+                module_aliases,
+            )?),
             args: args
                 .into_iter()
-                .map(|arg| rewrite_expr(arg, local_functions, module_aliases))
+                .map(|arg| rewrite_expr(arg, local_functions, local_types, module_aliases))
                 .collect::<Result<Vec<_>, _>>()?,
         }),
         Expr::Pack(values) => Ok(Expr::Pack(
             values
                 .into_iter()
-                .map(|value| rewrite_expr(value, local_functions, module_aliases))
+                .map(|value| rewrite_expr(value, local_functions, local_types, module_aliases))
                 .collect::<Result<Vec<_>, _>>()?,
         )),
         Expr::Binary { lhs, op, rhs } => Ok(Expr::Binary {
-            lhs: Box::new(rewrite_expr(*lhs, local_functions, module_aliases)?),
+            lhs: Box::new(rewrite_expr(
+                *lhs,
+                local_functions,
+                local_types,
+                module_aliases,
+            )?),
             op,
-            rhs: Box::new(rewrite_expr(*rhs, local_functions, module_aliases)?),
+            rhs: Box::new(rewrite_expr(
+                *rhs,
+                local_functions,
+                local_types,
+                module_aliases,
+            )?),
         }),
     }
 }
@@ -272,28 +389,50 @@ fn rewrite_expr(
 fn rewrite_callee(
     callee: Expr,
     local_functions: &HashMap<String, String>,
+    local_types: &HashMap<String, String>,
     module_aliases: &ModuleAliases,
 ) -> Result<Expr, CompileError> {
     match callee {
         Expr::Path(path) if path.len() == 1 => {
             let name = &path[0];
             Ok(Expr::Path(vec![
-                local_functions.get(name).cloned().unwrap_or_else(|| name.clone()),
+                local_functions
+                    .get(name)
+                    .cloned()
+                    .unwrap_or_else(|| name.clone()),
             ]))
         }
-        Expr::Path(path) if path.len() == 2 => {
-            let module = module_aliases
-                .get(&path[0])
-                .ok_or_else(|| CompileError::new(format!("unknown module `{}`", path[0])))?;
-            let function = module.get(&path[1]).ok_or_else(|| {
-                CompileError::new(format!(
-                    "module `{}` has no function `{}`",
-                    path[0], path[1]
-                ))
-            })?;
-            Ok(Expr::Path(vec![function.clone()]))
+        Expr::FieldAccess { base, field } => {
+            if let Expr::Path(path) = *base.clone() {
+                if path.len() == 1 {
+                    let module = module_aliases.get(&path[0]).ok_or_else(|| {
+                        CompileError::new(format!("unknown module `{}`", path[0]))
+                    })?;
+                    let function = module.get(&field).ok_or_else(|| {
+                        CompileError::new(format!(
+                            "module `{}` has no function `{}`",
+                            path[0], field
+                        ))
+                    })?;
+                    return Ok(Expr::Path(vec![function.clone()]));
+                }
+            }
+            rewrite_expr(
+                Expr::FieldAccess { base, field },
+                local_functions,
+                local_types,
+                module_aliases,
+            )
         }
-        other => rewrite_expr(other, local_functions, module_aliases),
+        other => rewrite_expr(other, local_functions, local_types, module_aliases),
+    }
+}
+
+fn rewrite_type(ty: Type, local_types: &HashMap<String, String>) -> Type {
+    match ty {
+        Type::Named(name) => Type::Named(local_types.get(&name).cloned().unwrap_or(name)),
+        Type::Ref(inner) => Type::Ref(Box::new(rewrite_type(*inner, local_types))),
+        other => other,
     }
 }
 
@@ -318,10 +457,15 @@ mod tests {
             "val some_module = use(\"some_file\")\npub def main() void\n\tsome_module.some_function()\nend\n",
         )
         .unwrap();
-        fs::write(&module, "def some_function() void\n\t@puts(\"hello\")\nend\n").unwrap();
+        fs::write(
+            &module,
+            "def some_function() void\n\t@puts(\"hello\")\nend\n",
+        )
+        .unwrap();
 
         let program = resolve_entry_program(&entry).unwrap();
 
+        assert!(program.type_defs.is_empty());
         assert_eq!(program.functions.len(), 2);
         assert_eq!(program.functions[0].name, "some_file__some_function");
         assert_eq!(program.functions[1].name, "main");
@@ -342,5 +486,30 @@ mod tests {
     #[allow(dead_code)]
     fn _assert_exists(path: &Path) {
         assert!(path.exists());
+    }
+
+    #[test]
+    fn resolves_module_type_defs() {
+        let temp_dir = create_temp_dir();
+        let entry = temp_dir.join("main.scar");
+        let module = temp_dir.join("some_file.scar");
+
+        fs::write(
+            &entry,
+            "val some_module = use(\"some_file\")\npub def main() void\n\tsome_module.some_other_function()\nend\n",
+        )
+        .unwrap();
+        fs::write(
+            &module,
+            "type SomeType\n\tx i32\nend\n\ndef some_other_function() void\n\tval st = SomeType(x: 10)\n\t@print(\"{d}\", {st.x})\nend\n",
+        )
+        .unwrap();
+
+        let program = resolve_entry_program(&entry).unwrap();
+
+        assert_eq!(program.type_defs.len(), 1);
+        assert_eq!(program.type_defs[0].name, "some_file__SomeType");
+
+        fs::remove_dir_all(temp_dir).unwrap();
     }
 }

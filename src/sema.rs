@@ -1,8 +1,8 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::{
     CompileError,
-    ast::{BinaryOp, Expr, Function, Program, Stmt, Type},
+    ast::{BinaryOp, Expr, FieldDef, Function, Program, Stmt, Type},
 };
 
 #[derive(Debug, Clone)]
@@ -12,8 +12,15 @@ pub struct FunctionSig {
 }
 
 #[derive(Debug, Clone)]
+pub struct TypeDefInfo {
+    pub fields: Vec<FieldDef>,
+    pub field_map: HashMap<String, Type>,
+}
+
+#[derive(Debug, Clone)]
 pub struct ProgramInfo {
     pub functions: HashMap<String, FunctionSig>,
+    pub types: HashMap<String, TypeDefInfo>,
     pub locals: HashMap<String, HashMap<String, Type>>,
 }
 
@@ -24,6 +31,7 @@ struct LocalBinding {
 }
 
 pub fn analyze(program: &Program) -> Result<ProgramInfo, CompileError> {
+    let types = collect_types(program)?;
     let mut functions = HashMap::new();
     for function in &program.functions {
         if functions.contains_key(&function.name) {
@@ -37,14 +45,18 @@ pub fn analyze(program: &Program) -> Result<ProgramInfo, CompileError> {
                 "function `main` must be declared as `pub def main`",
             ));
         }
+        validate_type(&function.return_type, &types)?;
         functions.insert(
             function.name.clone(),
             FunctionSig {
                 params: function
                     .params
                     .iter()
-                    .map(|param| param.ty.clone())
-                    .collect(),
+                    .map(|param| {
+                        validate_type(&param.ty, &types)?;
+                        Ok(param.ty.clone())
+                    })
+                    .collect::<Result<Vec<_>, CompileError>>()?,
                 return_type: function.return_type.clone(),
             },
         );
@@ -52,21 +64,63 @@ pub fn analyze(program: &Program) -> Result<ProgramInfo, CompileError> {
 
     let mut locals = HashMap::new();
     for function in &program.functions {
-        analyze_function(function, &functions, &mut locals)?;
+        analyze_function(function, &functions, &types, &mut locals)?;
     }
 
-    Ok(ProgramInfo { functions, locals })
+    Ok(ProgramInfo {
+        functions,
+        types,
+        locals,
+    })
+}
+
+fn collect_types(program: &Program) -> Result<HashMap<String, TypeDefInfo>, CompileError> {
+    let known_type_names: HashSet<String> = program.type_defs.iter().map(|def| def.name.clone()).collect();
+    let mut types = HashMap::new();
+
+    for type_def in &program.type_defs {
+        if types.contains_key(&type_def.name) {
+            return Err(CompileError::new(format!(
+                "duplicate type definition `{}`",
+                type_def.name
+            )));
+        }
+
+        let mut field_map = HashMap::new();
+        for field in &type_def.fields {
+            if field_map.contains_key(&field.name) {
+                return Err(CompileError::new(format!(
+                    "duplicate field `{}` in type `{}`",
+                    field.name, type_def.name
+                )));
+            }
+            validate_type_with_known_names(&field.ty, &known_type_names)?;
+            field_map.insert(field.name.clone(), field.ty.clone());
+        }
+
+        types.insert(
+            type_def.name.clone(),
+            TypeDefInfo {
+                fields: type_def.fields.clone(),
+                field_map,
+            },
+        );
+    }
+
+    Ok(types)
 }
 
 fn analyze_function(
     function: &Function,
     functions: &HashMap<String, FunctionSig>,
+    types: &HashMap<String, TypeDefInfo>,
     locals: &mut HashMap<String, HashMap<String, Type>>,
 ) -> Result<(), CompileError> {
     let mut scope = HashMap::new();
     let mut function_locals = HashMap::new();
 
     for param in &function.params {
+        validate_type(&param.ty, types)?;
         if scope.contains_key(&param.name) {
             return Err(CompileError::new(format!(
                 "duplicate parameter `{}` in function `{}`",
@@ -88,6 +142,7 @@ fn analyze_function(
             &function.name,
             &function.return_type,
             functions,
+            types,
             &mut scope,
             &mut function_locals,
         )?;
@@ -102,6 +157,7 @@ fn analyze_stmt(
     function_name: &str,
     expected_return: &Type,
     functions: &HashMap<String, FunctionSig>,
+    types: &HashMap<String, TypeDefInfo>,
     scope: &mut HashMap<String, LocalBinding>,
     function_locals: &mut HashMap<String, Type>,
 ) -> Result<(), CompileError> {
@@ -116,7 +172,7 @@ fn analyze_stmt(
                     "duplicate local binding `{name}` in function `{function_name}`"
                 )));
             }
-            let ty = infer_expr_type(init, functions, scope)?;
+            let ty = infer_expr_type(init, functions, types, scope)?;
             scope.insert(
                 name.clone(),
                 LocalBinding {
@@ -127,13 +183,13 @@ fn analyze_stmt(
             function_locals.insert(name.clone(), ty);
         }
         Stmt::Assign { target, value } => {
-            let target_ty = infer_lvalue_type(target, functions, scope)?;
-            let value_ty = infer_expr_type(value, functions, scope)?;
+            let target_ty = infer_lvalue_type(target, functions, types, scope)?;
+            let value_ty = infer_expr_type(value, functions, types, scope)?;
             expect_same_type(&target_ty, &value_ty, "assignment")?;
         }
         Stmt::AddAssign { target, value } => {
-            let target_ty = infer_mutable_target(target, functions, scope)?;
-            let value_ty = infer_expr_type(value, functions, scope)?;
+            let target_ty = infer_mutable_target(target, functions, types, scope)?;
+            let value_ty = infer_expr_type(value, functions, types, scope)?;
             if target_ty != Type::I32 || value_ty != Type::I32 {
                 return Err(CompileError::new(
                     "`+=` currently requires both operands to have type i32",
@@ -146,7 +202,7 @@ fn analyze_stmt(
                 return Err(CompileError::new("void functions cannot return a value"));
             }
             (expected, Some(expr)) => {
-                let actual = infer_expr_type(expr, functions, scope)?;
+                let actual = infer_expr_type(expr, functions, types, scope)?;
                 expect_same_type(expected, &actual, "return")?;
             }
             (_, None) => {
@@ -154,7 +210,7 @@ fn analyze_stmt(
             }
         },
         Stmt::Expr(expr) => {
-            infer_expr_type(expr, functions, scope)?;
+            infer_expr_type(expr, functions, types, scope)?;
         }
         Stmt::For {
             pragma: _,
@@ -163,8 +219,8 @@ fn analyze_stmt(
             end,
             body,
         } => {
-            let start_ty = infer_expr_type(start, functions, scope)?;
-            let end_ty = infer_expr_type(end, functions, scope)?;
+            let start_ty = infer_expr_type(start, functions, types, scope)?;
+            let end_ty = infer_expr_type(end, functions, types, scope)?;
             if start_ty != Type::I32 || end_ty != Type::I32 {
                 return Err(CompileError::new("`for` bounds must have type i32"));
             }
@@ -183,6 +239,7 @@ fn analyze_stmt(
                     function_name,
                     expected_return,
                     functions,
+                    types,
                     &mut nested,
                     function_locals,
                 )?;
@@ -195,12 +252,48 @@ fn analyze_stmt(
 fn infer_expr_type(
     expr: &Expr,
     functions: &HashMap<String, FunctionSig>,
+    types: &HashMap<String, TypeDefInfo>,
     scope: &HashMap<String, LocalBinding>,
 ) -> Result<Type, CompileError> {
     match expr {
         Expr::Int(_) => Ok(Type::I32),
         Expr::String(_) => Ok(Type::U8),
-        Expr::BuiltinCall { name, args } => analyze_builtin(name, args, functions, scope),
+        Expr::StructInit { name, fields } => {
+            let type_info = types
+                .get(name)
+                .ok_or_else(|| CompileError::new(format!("unknown type `{name}`")))?;
+            let mut seen = HashSet::new();
+            for field in fields {
+                let expected = type_info.field_map.get(&field.name).ok_or_else(|| {
+                    CompileError::new(format!("type `{name}` has no field `{}`", field.name))
+                })?;
+                if !seen.insert(field.name.clone()) {
+                    return Err(CompileError::new(format!(
+                        "duplicate field initializer `{}` for type `{name}`",
+                        field.name
+                    )));
+                }
+                let actual = infer_expr_type(&field.value, functions, types, scope)?;
+                expect_same_type(expected, &actual, &format!("field `{}`", field.name))?;
+            }
+            if seen.len() != type_info.fields.len() {
+                let missing = type_info
+                    .fields
+                    .iter()
+                    .find(|field| !seen.contains(&field.name))
+                    .map(|field| field.name.clone())
+                    .unwrap_or_else(|| "<unknown>".to_string());
+                return Err(CompileError::new(format!(
+                    "missing field `{missing}` in initializer for type `{name}`"
+                )));
+            }
+            Ok(Type::Named(name.clone()))
+        }
+        Expr::FieldAccess { base, field } => {
+            let base_ty = infer_expr_type(base, functions, types, scope)?;
+            infer_field_type(&base_ty, field, types)
+        }
+        Expr::BuiltinCall { name, args } => analyze_builtin(name, args, functions, types, scope),
         Expr::Path(path) => match path.as_slice() {
             [name] => scope
                 .get(name)
@@ -212,8 +305,8 @@ fn infer_expr_type(
             ))),
         },
         Expr::Binary { lhs, op, rhs } => {
-            let lhs_ty = infer_expr_type(lhs, functions, scope)?;
-            let rhs_ty = infer_expr_type(rhs, functions, scope)?;
+            let lhs_ty = infer_expr_type(lhs, functions, types, scope)?;
+            let rhs_ty = infer_expr_type(rhs, functions, types, scope)?;
             match op {
                 BinaryOp::Add if lhs_ty == Type::I32 && rhs_ty == Type::I32 => Ok(Type::I32),
                 BinaryOp::Add => Err(CompileError::new(
@@ -224,7 +317,7 @@ fn infer_expr_type(
         Expr::Pack(_) => Err(CompileError::new(
             "packed `{...}` expressions are only valid as @print arguments",
         )),
-        Expr::Call { callee, args } => analyze_call(callee, args, functions, scope),
+        Expr::Call { callee, args } => analyze_call(callee, args, functions, types, scope),
     }
 }
 
@@ -232,12 +325,10 @@ fn analyze_call(
     callee: &Expr,
     args: &[Expr],
     functions: &HashMap<String, FunctionSig>,
+    types: &HashMap<String, TypeDefInfo>,
     scope: &HashMap<String, LocalBinding>,
 ) -> Result<Type, CompileError> {
     if let Some(path) = callee.as_path() {
-        if path.len() == 2 && path[0] == "builtin" {
-            return analyze_builtin(&path[1], args, functions, scope);
-        }
         if path.len() == 1 {
             let function_name = &path[0];
             let signature = functions
@@ -251,7 +342,7 @@ fn analyze_call(
                 )));
             }
             for (arg, expected) in args.iter().zip(&signature.params) {
-                let actual = infer_expr_type(arg, functions, scope)?;
+                let actual = infer_expr_type(arg, functions, types, scope)?;
                 expect_same_type(expected, &actual, "function argument")?;
             }
             return Ok(signature.return_type.clone());
@@ -267,6 +358,7 @@ fn analyze_builtin(
     name: &str,
     args: &[Expr],
     functions: &HashMap<String, FunctionSig>,
+    types: &HashMap<String, TypeDefInfo>,
     scope: &HashMap<String, LocalBinding>,
 ) -> Result<Type, CompileError> {
     match name {
@@ -276,7 +368,7 @@ fn analyze_builtin(
                     "@puts expects exactly one argument",
                 ));
             }
-            let arg_ty = infer_expr_type(&args[0], functions, scope)?;
+            let arg_ty = infer_expr_type(&args[0], functions, types, scope)?;
             expect_same_type(&Type::U8, &arg_ty, "@puts")?;
             Ok(Type::Void)
         }
@@ -301,7 +393,7 @@ fn analyze_builtin(
                 )));
             }
             for (marker, arg) in markers.iter().zip(flattened.iter()) {
-                let arg_ty = infer_expr_type(arg, functions, scope)?;
+                let arg_ty = infer_expr_type(arg, functions, types, scope)?;
                 if !format_type_matches(*marker, &arg_ty) {
                     return Err(CompileError::new(format!(
                         "format marker `{{{marker}}}` does not accept value of type {}",
@@ -315,14 +407,14 @@ fn analyze_builtin(
             if args.len() != 1 {
                 return Err(CompileError::new("@addr expects exactly one argument"));
             }
-            let inner = infer_lvalue_type(&args[0], functions, scope)?;
+            let inner = infer_lvalue_type(&args[0], functions, types, scope)?;
             Ok(Type::Ref(Box::new(inner)))
         }
         "deref" => {
             if args.len() != 1 {
                 return Err(CompileError::new("@deref expects exactly one argument"));
             }
-            let arg_ty = infer_expr_type(&args[0], functions, scope)?;
+            let arg_ty = infer_expr_type(&args[0], functions, types, scope)?;
             match arg_ty {
                 Type::Ref(inner) => Ok(*inner),
                 other => Err(CompileError::new(format!(
@@ -340,14 +432,16 @@ fn analyze_builtin(
 fn infer_lvalue_type(
     expr: &Expr,
     functions: &HashMap<String, FunctionSig>,
+    types: &HashMap<String, TypeDefInfo>,
     scope: &HashMap<String, LocalBinding>,
 ) -> Result<Type, CompileError> {
-    infer_mutable_target(expr, functions, scope)
+    infer_mutable_target(expr, functions, types, scope)
 }
 
 fn infer_mutable_target(
     expr: &Expr,
     functions: &HashMap<String, FunctionSig>,
+    types: &HashMap<String, TypeDefInfo>,
     scope: &HashMap<String, LocalBinding>,
 ) -> Result<Type, CompileError> {
     match expr {
@@ -363,22 +457,34 @@ fn infer_mutable_target(
             }
             Ok(binding.ty.clone())
         }
-        Expr::BuiltinCall { name, args } if name == "deref" => {
-            analyze_builtin("deref", args, functions, scope)
+        Expr::FieldAccess { base, field } => {
+            let base_ty = infer_mutable_target(base, functions, types, scope)?;
+            infer_field_type(&base_ty, field, types)
         }
-        Expr::Call { callee, args } => {
-            if let Some(path) = callee.as_path() {
-                if path.len() == 2 && path[0] == "builtin" && path[1] == "deref" {
-                    return analyze_builtin("deref", args, functions, scope);
-                }
-            }
-            Err(CompileError::new(
-                "only names and @deref(...) may appear on the left-hand side of an assignment",
-            ))
+        Expr::BuiltinCall { name, args } if name == "deref" => {
+            analyze_builtin("deref", args, functions, types, scope)
         }
         _ => Err(CompileError::new(
-            "expected an assignable expression on the left-hand side",
+            "only names, field references, and @deref(...) may appear on the left-hand side of an assignment",
         )),
+    }
+}
+
+fn infer_field_type(
+    base_ty: &Type,
+    field: &str,
+    types: &HashMap<String, TypeDefInfo>,
+) -> Result<Type, CompileError> {
+    match base_ty {
+        Type::Named(name) => types
+            .get(name)
+            .and_then(|type_info| type_info.field_map.get(field))
+            .cloned()
+            .ok_or_else(|| CompileError::new(format!("type `{name}` has no field `{field}`"))),
+        other => Err(CompileError::new(format!(
+            "field access requires a named type, got {}",
+            describe_type(other)
+        ))),
     }
 }
 
@@ -421,8 +527,36 @@ fn format_type_matches(marker: char, ty: &Type) -> bool {
     match marker {
         'd' => matches!(ty, Type::I32),
         's' => matches!(ty, Type::U8),
-        'p' => matches!(ty, Type::U8 | Type::Ref(_)),
+        'p' => matches!(ty, Type::U8 | Type::Ref(_) | Type::Named(_)),
         _ => false,
+    }
+}
+
+fn validate_type(ty: &Type, types: &HashMap<String, TypeDefInfo>) -> Result<(), CompileError> {
+    match ty {
+        Type::Void | Type::I32 | Type::U8 => Ok(()),
+        Type::Named(name) => {
+            if types.contains_key(name) {
+                Ok(())
+            } else {
+                Err(CompileError::new(format!("unknown type `{name}`")))
+            }
+        }
+        Type::Ref(inner) => validate_type(inner, types),
+    }
+}
+
+fn validate_type_with_known_names(ty: &Type, known: &HashSet<String>) -> Result<(), CompileError> {
+    match ty {
+        Type::Void | Type::I32 | Type::U8 => Ok(()),
+        Type::Named(name) => {
+            if known.contains(name) {
+                Ok(())
+            } else {
+                Err(CompileError::new(format!("unknown type `{name}`")))
+            }
+        }
+        Type::Ref(inner) => validate_type_with_known_names(inner, known),
     }
 }
 
@@ -443,6 +577,7 @@ fn describe_type(ty: &Type) -> String {
         Type::Void => "void".to_string(),
         Type::I32 => "i32".to_string(),
         Type::U8 => "u8".to_string(),
+        Type::Named(name) => name.clone(),
         Type::Ref(inner) => format!("ref({})", describe_type(inner)),
     }
 }
@@ -467,6 +602,15 @@ mod tests {
     #[test]
     fn accepts_pub_main() {
         let source = "pub def main() void\nend\n";
+        let program = parse_program(lex(source).unwrap()).unwrap();
+
+        analyze(&program).unwrap();
+    }
+
+    #[test]
+    fn analyzes_struct_init_and_field_access() {
+        let source =
+            "type SomeType\n\tx i32\n\ty i32\nend\npub def main() void\n\tval st = SomeType(x: 10, y: 12)\n\t@print(\"{d}\", {st.x})\nend\n";
         let program = parse_program(lex(source).unwrap()).unwrap();
 
         analyze(&program).unwrap();

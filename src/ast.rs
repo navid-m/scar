@@ -1,6 +1,7 @@
 #[derive(Debug, Clone)]
 pub struct Program {
     pub module_uses: Vec<ModuleUse>,
+    pub type_defs: Vec<TypeDef>,
     pub functions: Vec<Function>,
 }
 
@@ -8,6 +9,18 @@ pub struct Program {
 pub struct ModuleUse {
     pub name: String,
     pub path: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct TypeDef {
+    pub name: String,
+    pub fields: Vec<FieldDef>,
+}
+
+#[derive(Debug, Clone)]
+pub struct FieldDef {
+    pub name: String,
+    pub ty: Type,
 }
 
 #[derive(Debug, Clone)]
@@ -30,6 +43,7 @@ pub enum Type {
     Void,
     I32,
     U8,
+    Named(String),
     Ref(Box<Type>),
 }
 
@@ -64,6 +78,14 @@ pub enum Expr {
     Int(i64),
     String(String),
     Path(Vec<String>),
+    FieldAccess {
+        base: Box<Expr>,
+        field: String,
+    },
+    StructInit {
+        name: String,
+        fields: Vec<FieldInit>,
+    },
     BuiltinCall {
         name: String,
         args: Vec<Expr>,
@@ -78,6 +100,12 @@ pub enum Expr {
         op: BinaryOp,
         rhs: Box<Expr>,
     },
+}
+
+#[derive(Debug, Clone)]
+pub struct FieldInit {
+    pub name: String,
+    pub value: Expr,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

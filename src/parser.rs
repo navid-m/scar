@@ -1,6 +1,6 @@
 use crate::{
     CompileError,
-    ast::{BinaryOp, Expr, Function, ModuleUse, Param, Program, Stmt, Type},
+    ast::{BinaryOp, Expr, FieldDef, FieldInit, Function, ModuleUse, Param, Program, Stmt, Type, TypeDef},
     lexer::{Token, TokenKind},
 };
 
@@ -20,11 +20,14 @@ impl Parser {
 
     fn parse_program(&mut self) -> Result<Program, CompileError> {
         let mut module_uses = Vec::new();
+        let mut type_defs = Vec::new();
         let mut functions = Vec::new();
         self.consume_newlines();
         while !self.is_eof() {
             if self.check_simple(&TokenKind::Val) {
                 module_uses.push(self.parse_module_use()?);
+            } else if self.check_simple(&TokenKind::Type) {
+                type_defs.push(self.parse_type_def()?);
             } else {
                 functions.push(self.parse_function()?);
             }
@@ -32,6 +35,7 @@ impl Parser {
         }
         Ok(Program {
             module_uses,
+            type_defs,
             functions,
         })
     }
@@ -56,6 +60,28 @@ impl Parser {
         self.expect_simple(TokenKind::RParen)?;
         self.expect_stmt_terminator()?;
         Ok(ModuleUse { name, path })
+    }
+
+    fn parse_type_def(&mut self) -> Result<TypeDef, CompileError> {
+        self.expect_simple(TokenKind::Type)?;
+        let name = self.expect_ident()?;
+        self.expect_newline("expected a newline after type name")?;
+
+        let mut fields = Vec::new();
+        self.consume_newlines();
+        while !self.check_simple(&TokenKind::End) && !self.is_eof() {
+            let field_name = self.expect_ident()?;
+            let ty = self.parse_type()?;
+            self.expect_stmt_terminator()?;
+            fields.push(FieldDef {
+                name: field_name,
+                ty,
+            });
+        }
+
+        self.expect_simple(TokenKind::End)?;
+        self.consume_newlines();
+        Ok(TypeDef { name, fields })
     }
 
     fn parse_function(&mut self) -> Result<Function, CompileError> {
@@ -251,24 +277,46 @@ impl Parser {
 
     fn parse_postfix(&mut self) -> Result<Expr, CompileError> {
         let mut expr = self.parse_primary()?;
-        while self.check_simple(&TokenKind::LParen) {
-            self.advance();
-            let mut args = Vec::new();
-            if !self.check_simple(&TokenKind::RParen) {
-                loop {
-                    args.push(self.parse_expr()?);
-                    if self.check_simple(&TokenKind::Comma) {
-                        self.advance();
-                    } else {
-                        break;
+        loop {
+            if self.check_simple(&TokenKind::Dot) {
+                self.advance();
+                let field = self.expect_ident()?;
+                expr = Expr::FieldAccess {
+                    base: Box::new(expr),
+                    field,
+                };
+                continue;
+            }
+
+            if self.check_simple(&TokenKind::LParen) {
+                if let Expr::Path(path) = &expr {
+                    if path.len() == 1 && self.looks_like_struct_init() {
+                        expr = self.parse_struct_init(path[0].clone())?;
+                        continue;
                     }
                 }
+
+                self.advance();
+                let mut args = Vec::new();
+                if !self.check_simple(&TokenKind::RParen) {
+                    loop {
+                        args.push(self.parse_expr()?);
+                        if self.check_simple(&TokenKind::Comma) {
+                            self.advance();
+                        } else {
+                            break;
+                        }
+                    }
+                }
+                self.expect_simple(TokenKind::RParen)?;
+                expr = Expr::Call {
+                    callee: Box::new(expr),
+                    args,
+                };
+                continue;
             }
-            self.expect_simple(TokenKind::RParen)?;
-            expr = Expr::Call {
-                callee: Box::new(expr),
-                args,
-            };
+
+            break;
         }
         Ok(expr)
     }
@@ -284,7 +332,7 @@ impl Parser {
                 Ok(Expr::String(value))
             }
             TokenKind::At => self.parse_builtin_call(),
-            TokenKind::Ident(_) => self.parse_path(),
+            TokenKind::Ident(_) => self.parse_name(),
             TokenKind::LParen => {
                 self.advance();
                 let expr = self.parse_expr()?;
@@ -317,13 +365,29 @@ impl Parser {
         Ok(Expr::BuiltinCall { name, args })
     }
 
-    fn parse_path(&mut self) -> Result<Expr, CompileError> {
-        let mut segments = vec![self.expect_ident()?];
-        while self.check_simple(&TokenKind::Dot) {
-            self.advance();
-            segments.push(self.expect_ident()?);
+    fn parse_name(&mut self) -> Result<Expr, CompileError> {
+        Ok(Expr::Path(vec![self.expect_ident()?]))
+    }
+
+    fn parse_struct_init(&mut self, name: String) -> Result<Expr, CompileError> {
+        self.expect_simple(TokenKind::LParen)?;
+        let mut fields = Vec::new();
+        loop {
+            let field_name = self.expect_ident()?;
+            self.expect_simple(TokenKind::Colon)?;
+            let value = self.parse_expr()?;
+            fields.push(FieldInit {
+                name: field_name,
+                value,
+            });
+            if self.check_simple(&TokenKind::Comma) {
+                self.advance();
+            } else {
+                break;
+            }
         }
-        Ok(Expr::Path(segments))
+        self.expect_simple(TokenKind::RParen)?;
+        Ok(Expr::StructInit { name, fields })
     }
 
     fn parse_pack(&mut self) -> Result<Expr, CompileError> {
@@ -357,6 +421,10 @@ impl Parser {
                 self.advance();
                 Ok(Type::U8)
             }
+            TokenKind::Ident(name) => {
+                self.advance();
+                Ok(Type::Named(name))
+            }
             TokenKind::Ref => {
                 self.advance();
                 self.expect_simple(TokenKind::LParen)?;
@@ -371,7 +439,7 @@ impl Parser {
     fn starts_type(&self) -> bool {
         matches!(
             self.current().kind,
-            TokenKind::Void | TokenKind::I32 | TokenKind::U8 | TokenKind::Ref
+            TokenKind::Void | TokenKind::I32 | TokenKind::U8 | TokenKind::Ref | TokenKind::Ident(_)
         )
     }
 
@@ -434,6 +502,18 @@ impl Parser {
             .is_some_and(|token| std::mem::discriminant(&token.kind) == std::mem::discriminant(expected))
     }
 
+    fn looks_like_struct_init(&self) -> bool {
+        self.check_simple(&TokenKind::LParen)
+            && self
+                .tokens
+                .get(self.pos + 1)
+                .is_some_and(|token| matches!(token.kind, TokenKind::Ident(_)))
+            && self
+                .tokens
+                .get(self.pos + 2)
+                .is_some_and(|token| matches!(token.kind, TokenKind::Colon))
+    }
+
     fn current(&self) -> &Token {
         &self.tokens[self.pos]
     }
@@ -462,6 +542,7 @@ impl Parser {
         match kind {
             TokenKind::Pub => "`pub`",
             TokenKind::Def => "`def`",
+            TokenKind::Type => "`type`",
             TokenKind::End => "`end`",
             TokenKind::Var => "`var`",
             TokenKind::Val => "`val`",
@@ -480,6 +561,7 @@ impl Parser {
             TokenKind::LBrace => "`{`",
             TokenKind::RBrace => "`}`",
             TokenKind::Comma => "`,`",
+            TokenKind::Colon => "`:`",
             TokenKind::Dot => "`.`",
             TokenKind::Assign => "`=`",
             TokenKind::Plus => "`+`",
@@ -517,7 +599,29 @@ mod tests {
         assert_eq!(program.module_uses.len(), 1);
         assert_eq!(program.module_uses[0].name, "some_module");
         assert_eq!(program.module_uses[0].path, "some_file");
+        assert!(program.type_defs.is_empty());
         assert_eq!(program.functions.len(), 1);
+    }
+
+    #[test]
+    fn parses_type_defs_and_field_access() {
+        let source = "type SomeType\n\tx i32\n\ty i32\nend\npub def main() void\n\tval st = SomeType(x: 10, y: 12)\n\t@print(\"{d}\", {st.x})\nend\n";
+        let program = parse_program(lex(source).unwrap()).unwrap();
+
+        assert_eq!(program.type_defs.len(), 1);
+        assert_eq!(program.type_defs[0].name, "SomeType");
+        assert_eq!(program.type_defs[0].fields.len(), 2);
+
+        match &program.functions[0].body[0] {
+            Stmt::VarDecl {
+                init: Expr::StructInit { name, fields },
+                ..
+            } => {
+                assert_eq!(name, "SomeType");
+                assert_eq!(fields.len(), 2);
+            }
+            other => panic!("expected struct init, got {other:?}"),
+        }
     }
 
     #[test]
