@@ -55,6 +55,7 @@ pub enum TokenKind {
     EqualEqual,
     Less,
     GreaterEqual,
+    Star,
     Minus,
     Plus,
     PlusEqual,
@@ -153,6 +154,7 @@ impl Lexer {
                         return Err(self.error("unexpected character `>`"));
                     }
                 }
+                '*' => tokens.push(self.single(TokenKind::Star)),
                 '-' => tokens.push(self.single(TokenKind::Minus)),
                 '+' => {
                     let line = self.line;

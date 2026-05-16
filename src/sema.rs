@@ -566,8 +566,13 @@ fn infer_expr_type(
             match op {
                 BinaryOp::Add if lhs_ty == Type::I32 && rhs_ty == Type::I32 => Ok(Type::I32),
                 BinaryOp::Add if lhs_ty == Type::U32 && rhs_ty == Type::U32 => Ok(Type::U32),
+                BinaryOp::Multiply if lhs_ty == Type::I32 && rhs_ty == Type::I32 => Ok(Type::I32),
+                BinaryOp::Multiply if lhs_ty == Type::U32 && rhs_ty == Type::U32 => Ok(Type::U32),
                 BinaryOp::Add => Err(CompileError::new(
                     "`+` currently requires both operands to have matching integer types",
+                )),
+                BinaryOp::Multiply => Err(CompileError::new(
+                    "`*` currently requires both operands to have matching integer types",
                 )),
                 BinaryOp::And | BinaryOp::Or | BinaryOp::Xor
                     if is_integer_type(&lhs_ty, types)?
@@ -1155,7 +1160,7 @@ mod tests {
 
     #[test]
     fn accepts_bitwise_and_shift_operators() {
-        let source = "pub def main() void\n\tval mask i32 = not 1\n\tval combined = (1 shl 3) or (2 and 7) xor (8 shr 1)\n\tif 1 == 1 and 2 == 2\n\t\t@print(\"{d} {d}\", {mask, combined})\n\tend\nend\n";
+        let source = "pub def main() void\n\tval mask i32 = not 1\n\tval combined = (1 shl 3) or (2 and 7) xor (8 shr 1)\n\tval product = 6 * 7\n\tif 1 == 1 and 2 == 2\n\t\t@print(\"{d} {d} {d}\", {mask, combined, product})\n\tend\nend\n";
         let program = parse_program(lex(source).unwrap()).unwrap();
 
         analyze(&program).unwrap();

@@ -399,6 +399,7 @@ fn render_expr_with_hint(
             }
             let operator = match op {
                 BinaryOp::Add => "+",
+                BinaryOp::Multiply => "*",
                 BinaryOp::And => "&",
                 BinaryOp::Or => "|",
                 BinaryOp::Xor => "^",
@@ -734,8 +735,12 @@ fn infer_codegen_expr_type(
                 resolve_codegen_aliases(&infer_codegen_expr_type(rhs, function, info)?, info)?;
             match op {
                 BinaryOp::Add if lhs_ty == rhs_ty => Ok(lhs_ty),
+                BinaryOp::Multiply if lhs_ty == rhs_ty => Ok(lhs_ty),
                 BinaryOp::Add => Err(CompileError::new(
                     "`+` currently requires matching operand types",
+                )),
+                BinaryOp::Multiply => Err(CompileError::new(
+                    "`*` currently requires matching operand types",
                 )),
                 BinaryOp::And | BinaryOp::Or | BinaryOp::Xor
                     if is_codegen_integer_type(&lhs_ty) && lhs_ty == rhs_ty =>

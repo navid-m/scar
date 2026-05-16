@@ -174,6 +174,7 @@ pub struct FieldInit {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BinaryOp {
     Add,
+    Multiply,
     And,
     Or,
     Xor,

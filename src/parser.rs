@@ -542,13 +542,27 @@ impl Parser {
     }
 
     fn parse_additive(&mut self) -> Result<Expr, CompileError> {
-        let mut expr = self.parse_unary()?;
+        let mut expr = self.parse_multiplicative()?;
         while self.check_simple(&TokenKind::Plus) {
+            self.advance();
+            let rhs = self.parse_multiplicative()?;
+            expr = Expr::Binary {
+                lhs: Box::new(expr),
+                op: BinaryOp::Add,
+                rhs: Box::new(rhs),
+            };
+        }
+        Ok(expr)
+    }
+
+    fn parse_multiplicative(&mut self) -> Result<Expr, CompileError> {
+        let mut expr = self.parse_unary()?;
+        while self.check_simple(&TokenKind::Star) {
             self.advance();
             let rhs = self.parse_unary()?;
             expr = Expr::Binary {
                 lhs: Box::new(expr),
-                op: BinaryOp::Add,
+                op: BinaryOp::Multiply,
                 rhs: Box::new(rhs),
             };
         }
@@ -986,6 +1000,7 @@ impl Parser {
             TokenKind::EqualEqual => "`==`",
             TokenKind::Less => "`<`",
             TokenKind::GreaterEqual => "`>=`",
+            TokenKind::Star => "`*`",
             TokenKind::Minus => "`-`",
             TokenKind::Plus => "`+`",
             TokenKind::PlusEqual => "`+=`",
@@ -1169,7 +1184,7 @@ mod tests {
 
     #[test]
     fn parses_bitwise_and_boolean_style_operators() {
-        let source = "pub def main() void\n\tval mask = not (1 shl 2) and 7 or 8 xor 3\n\tif 1 == 1 and 2 == 2\n\t\t@print(\"{d}\", {mask})\n\tend\nend\n";
+        let source = "pub def main() void\n\tval mask = not (1 shl 2) and 7 or 8 xor 3\n\tval product = 2 + 3 * 4\n\tif 1 == 1 and 2 == 2\n\t\t@print(\"{d} {d}\", {mask, product})\n\tend\nend\n";
         let program = parse_program(lex(source).unwrap()).unwrap();
 
         match &program.functions[0].body[0] {
@@ -1213,6 +1228,24 @@ mod tests {
         }
 
         match &program.functions[0].body[1] {
+            Stmt::VarDecl { init, .. } => assert!(matches!(
+                init,
+                Expr::Binary {
+                    op: BinaryOp::Add,
+                    rhs,
+                    ..
+                } if matches!(
+                    rhs.as_ref(),
+                    Expr::Binary {
+                        op: BinaryOp::Multiply,
+                        ..
+                    }
+                )
+            )),
+            other => panic!("expected variable declaration, got {other:?}"),
+        }
+
+        match &program.functions[0].body[2] {
             Stmt::If { condition, .. } => assert!(matches!(
                 condition,
                 Expr::Binary {
