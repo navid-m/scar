@@ -1065,6 +1065,15 @@ mod tests {
     }
 
     #[test]
+    fn parses_top_level_single_hash_comments() {
+        let source = "# comment\npub def main() void\n\t# inside function\nend\n";
+        let program = parse_program(lex(source).unwrap()).unwrap();
+
+        assert_eq!(program.functions.len(), 1);
+        assert_eq!(program.functions[0].name, "main");
+    }
+
+    #[test]
     fn parses_type_defs_and_field_access() {
         let source = "type SomeType\n\tx i32\n\ty i32\nend\npub def main() void\n\tval st = SomeType(x: 10, y: 12)\n\t@print(\"{d}\", {st.x})\nend\n";
         let program = parse_program(lex(source).unwrap()).unwrap();

@@ -99,8 +99,7 @@ impl Lexer {
                         column,
                     });
                 }
-                '#' if self.peek_next() == Some('#') => {
-                    self.bump();
+                '#' => {
                     self.bump();
                     while let Some(current) = self.peek() {
                         if current == '\n' {
@@ -375,5 +374,30 @@ fn hex_value(ch: char) -> Option<u8> {
         'a'..='f' => Some((ch as u8) - b'a' + 10),
         'A'..='F' => Some((ch as u8) - b'A' + 10),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{TokenKind, lex};
+
+    #[test]
+    fn lexes_single_hash_comments() {
+        let tokens = lex("# headline\nval value = 1 # trailing\n").unwrap();
+
+        assert!(matches!(tokens[0].kind, TokenKind::Newline));
+        assert!(matches!(tokens[1].kind, TokenKind::Val));
+        assert!(matches!(tokens[2].kind, TokenKind::Ident(ref name) if name == "value"));
+        assert!(matches!(tokens[3].kind, TokenKind::Assign));
+        assert!(matches!(tokens[4].kind, TokenKind::Int(1)));
+        assert!(matches!(tokens[5].kind, TokenKind::Newline));
+    }
+
+    #[test]
+    fn still_accepts_double_hash_comments() {
+        let tokens = lex("## docs\npub def main() void\nend\n").unwrap();
+
+        assert!(matches!(tokens[0].kind, TokenKind::Newline));
+        assert!(matches!(tokens[1].kind, TokenKind::Pub));
     }
 }
