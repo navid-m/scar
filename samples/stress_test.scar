@@ -1,0 +1,300 @@
+# This abuses:
+# - Deep call graphs
+# - Mutually recursive functions
+# - Tons of temporary structs
+# - Nested loops
+# - Large list allocations
+# - Heavy indexing
+# - Pointer/address operations
+# - Integer math
+# - Branch-heavy code
+# - Copy-heavy returns
+
+type Vec4
+	x i64
+	y i64
+	z i64
+	w i64
+end
+
+type Matrix
+	rows list[list[i64]]
+	size i32
+end
+
+def make_vec4(x i64, y i64, z i64, w i64) Vec4
+	return Vec4(
+		x: x,
+		y: y,
+		z: z,
+		w: w
+	)
+end
+
+def add_vec4(a Vec4, b Vec4) Vec4
+	return Vec4(
+		x: a.x + b.x,
+		y: a.y + b.y,
+		z: a.z + b.z,
+		w: a.w + b.w
+	)
+end
+
+def sub_vec4(a Vec4, b Vec4) Vec4
+	return Vec4(
+		x: a.x - b.x,
+		y: a.y - b.y,
+		z: a.z - b.z,
+		w: a.w - b.w
+	)
+end
+
+def mul_vec4(a Vec4, b Vec4) Vec4
+	return Vec4(
+		x: a.x * b.x,
+		y: a.y * b.y,
+		z: a.z * b.z,
+		w: a.w * b.w
+	)
+end
+
+def dot_vec4(a Vec4, b Vec4) i64
+	return (
+		a.x * b.x +
+		a.y * b.y +
+		a.z * b.z +
+		a.w * b.w
+	)
+end
+
+def make_row(size i32) list[i64]
+	var row list[i64] = []
+
+	for var i = 0 to size
+		@append(row, 0)
+	end
+
+	return row
+end
+
+def make_matrix(size i32) Matrix
+	var rows list[list[i64]] = []
+
+	for var y = 0 to size
+		@append(rows, make_row(size))
+	end
+
+	return Matrix(
+		rows: rows,
+		size: size
+	)
+end
+
+def fill_matrix(m ref(Matrix))
+	for var y = 0 to m.size
+		for var x = 0 to m.size
+			m.rows[y][x] =
+				((x * 17) + (y * 91)) as i64
+		end
+	end
+end
+
+def matrix_mul(a ref(Matrix), b ref(Matrix)) Matrix
+	val out = make_matrix(a.size)
+
+	for var y = 0 to a.size
+		for var x = 0 to a.size
+			var sum i64 = 0
+
+			for var k = 0 to a.size
+				sum +=
+					a.rows[y][k] *
+					b.rows[k][x]
+			end
+
+			out.rows[y][x] = sum
+		end
+	end
+
+	return out
+end
+
+def chaotic_math(
+	a i64,
+	b i64,
+	c i64,
+	d i64
+) i64
+	var result i64 = 0
+
+	for var i = 0 to 100
+		result +=
+			(a * b) -
+			(c * d) +
+			(i as i64)
+
+		result ^= (
+			(a << 2) ^
+			(b << 3) ^
+			(c << 4)
+		)
+
+		if result % 2 == 0
+			result += 991
+		else
+			result -= 31337
+		end
+	end
+
+	return result
+end
+
+def fib(n i32) i64
+	if n <= 1
+		return n as i64
+	end
+
+	return fib(n - 1) + fib(n - 2)
+end
+
+def recurse_a(n i32) i64
+	if n <= 0
+		return 1
+	end
+
+	return recurse_b(n - 1) + n
+end
+
+def recurse_b(n i32) i64
+	if n <= 0
+		return 1
+	end
+
+	return recurse_c(n - 1) * 2
+end
+
+def recurse_c(n i32) i64
+	if n <= 0
+		return 1
+	end
+
+	return recurse_a(n - 1) + recurse_b(n - 1)
+end
+
+def heavy_branching(x i64) i64
+	var v = x
+
+	for var i = 0 to 500
+		if v % 2 == 0
+			v += 3
+		else
+			v -= 7
+		end
+
+		if v % 3 == 0
+			v *= 2
+		end
+
+		if v % 5 == 0
+			v /= 2
+		end
+
+		if v % 7 == 0
+			v ^= 12345
+		end
+
+		if v % 11 == 0
+			v += 999999
+		end
+	end
+
+	return v
+end
+
+def vec_pipeline(v Vec4) Vec4
+	var tmp = v
+
+	for var i = 0 to 1000
+		tmp = add_vec4(
+			tmp,
+			make_vec4(
+				i as i64,
+				(i * 2) as i64,
+				(i * 3) as i64,
+				(i * 4) as i64
+			)
+		)
+
+		tmp = sub_vec4(
+			tmp,
+			make_vec4(1, 2, 3, 4)
+		)
+
+		tmp = mul_vec4(
+			tmp,
+			make_vec4(2, 2, 2, 2)
+		)
+	end
+
+	return tmp
+end
+
+def pointer_abuse(v ref(Vec4))
+	v.x += 1
+	v.y += 2
+	v.z += 3
+	v.w += 4
+end
+
+def giant_workload() i64
+	var total i64 = 0
+
+	val a = make_matrix(32)
+	val b = make_matrix(32)
+
+	fill_matrix(@addr(a))
+	fill_matrix(@addr(b))
+
+	val c = matrix_mul(@addr(a), @addr(b))
+
+	for var y = 0 to c.size
+		for var x = 0 to c.size
+			total += c.rows[y][x]
+		end
+	end
+
+	var vec = make_vec4(1, 2, 3, 4)
+
+	for var i = 0 to 100
+		pointer_abuse(@addr(vec))
+		vec = vec_pipeline(vec)
+
+		total += dot_vec4(vec, vec)
+
+		total += chaotic_math(
+			vec.x,
+			vec.y,
+			vec.z,
+			vec.w
+		)
+
+		total += heavy_branching(total)
+
+		total += recurse_a(12)
+
+		total += fib(20)
+	end
+
+	return total
+end
+
+pub def main() void
+	@puts("starting stress test...")
+
+	val result = giant_workload()
+
+	@print(
+		"stress result = {i}\n",
+		{result}
+	)
+end
