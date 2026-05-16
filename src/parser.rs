@@ -31,7 +31,9 @@ impl Parser {
                 module_uses.push(self.parse_module_use()?);
             } else if self.check_simple(&TokenKind::Type) {
                 type_defs.push(self.parse_type_def(false)?);
-            } else if self.check_simple(&TokenKind::Extern) && self.check_next_simple(&TokenKind::Type) {
+            } else if self.check_simple(&TokenKind::Extern)
+                && self.check_next_simple(&TokenKind::Type)
+            {
                 type_defs.push(self.parse_type_def(true)?);
             } else if self.check_simple(&TokenKind::Extern) {
                 functions.push(self.parse_extern_function()?);
@@ -54,9 +56,9 @@ impl Parser {
         match self.current().kind.clone() {
             TokenKind::Ident(keyword) if keyword == "use" => self.advance(),
             _ => {
-                return Err(self.error_at_current(
-                    "expected `use(\"path\")` in top-level module binding",
-                ));
+                return Err(
+                    self.error_at_current("expected `use(\"path\")` in top-level module binding")
+                );
             }
         }
         self.expect_simple(TokenKind::LParen)?;
@@ -77,9 +79,9 @@ impl Parser {
         let name = self.expect_ident()?;
         if self.check_simple(&TokenKind::Assign) {
             if is_extern {
-                return Err(self.error_at_current(
-                    "extern types must be explicitly defined with fields",
-                ));
+                return Err(
+                    self.error_at_current("extern types must be explicitly defined with fields")
+                );
             }
             self.advance();
             let alias = Some(self.parse_type()?);
@@ -904,10 +906,7 @@ impl Parser {
             self.advance();
             Ok(())
         } else {
-            Err(self.error_at_current(format!(
-                "expected {}",
-                Self::describe(&expected)
-            )))
+            Err(self.error_at_current(format!("expected {}", Self::describe(&expected))))
         }
     }
 
@@ -1128,9 +1127,11 @@ mod tests {
         let source = "extern type Useconds = i32\n";
         let error = parse_program(lex(source).unwrap()).unwrap_err();
 
-        assert!(error
-            .message
-            .contains("extern types must be explicitly defined with fields"));
+        assert!(
+            error
+                .message
+                .contains("extern types must be explicitly defined with fields")
+        );
     }
 
     #[test]
@@ -1179,7 +1180,8 @@ mod tests {
 
     #[test]
     fn parses_pragma_for_loop() {
-        let source = "pub def main() void\n@(\"omp parallel for\")\nfor var i = 0 .. 10\nend\nend\n";
+        let source =
+            "pub def main() void\n@(\"omp parallel for\")\nfor var i = 0 .. 10\nend\nend\n";
         let program = parse_program(lex(source).unwrap()).unwrap();
 
         match &program.functions[0].body[0] {
@@ -1222,7 +1224,9 @@ mod tests {
                 ..
             } => {
                 assert_eq!(var_name, "value");
-                assert!(matches!(iterable, Expr::Path(path) if path == &vec!["values".to_string()]));
+                assert!(
+                    matches!(iterable, Expr::Path(path) if path == &vec!["values".to_string()])
+                );
                 assert_eq!(body.len(), 1);
             }
             other => panic!("expected foreach loop, got {other:?}"),
@@ -1233,7 +1237,9 @@ mod tests {
                 expr: Expr::Call { callee, args },
                 ..
             } => {
-                assert!(matches!(callee.as_ref(), Expr::Path(path) if path == &vec!["helper".to_string()]));
+                assert!(
+                    matches!(callee.as_ref(), Expr::Path(path) if path == &vec!["helper".to_string()])
+                );
                 assert!(args.is_empty());
             }
             other => panic!("expected bracketless call, got {other:?}"),
