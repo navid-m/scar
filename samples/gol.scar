@@ -1,0 +1,136 @@
+type Grid
+	width i32
+	height i32
+	cells list[list[i32]]
+end
+
+extern def sleep(t u32) void = "sleep"
+
+def make_row(width i32) list[i32]
+	var row list[i32] = []
+	for var x = 0 to width
+		@append(row, 0)
+	end
+	return row
+end
+
+def make_grid(width i32, height i32) Grid
+	var rows list[list[i32]] = []
+	for var y = 0 to height
+		@append(row, make_row(width))
+	end
+	return Grid(
+		width: width,
+		height: height,
+		cells: rows
+	)
+end
+
+def set_cell(grid ref(Grid), x i32, y i32, value i32)
+	grid.cells[y][x] = value
+end
+
+def get_cell(grid ref(Grid), x i32, y i32) i32
+	if x < 0
+		return 0
+	end
+
+	if y < 0
+		return 0
+	end
+
+	if x >= grid.width
+		return 0
+	end
+
+	if y >= grid.height
+		return 0
+	end
+
+	return grid.cells[y][x]
+end
+
+def count_neighbors(grid ref(Grid), x i32, y i32) i32
+	var count = 0
+
+	for var dy = -1 to 1
+		for var dx = -1 to 1
+			if dx == 0
+				if dy == 0
+					continue
+				end
+			end
+
+			count += get_cell(grid, x + dx, y + dy)
+		end
+	end
+
+	return count
+end
+
+def step(grid ref(Grid)) Grid
+	val next = make_grid(grid.width, grid.height)
+
+	for var y = 0 to grid.height
+		for var x = 0 to grid.width
+			val alive = get_cell(grid, x, y)
+			val neighbors = count_neighbors(grid, x, y)
+
+			if alive == 1
+				if neighbors == 2
+					set_cell(@addr(next), x, y, 1)
+				end
+
+				if neighbors == 3
+					set_cell(@addr(next), x, y, 1)
+				end
+			else
+				if neighbors == 3
+					set_cell(@addr(next), x, y, 1)
+				end
+			end
+		end
+	end
+
+	return next
+end
+
+def clear_screen()
+	@puts("\x1b[2J")
+	@puts("\x1b[H")
+end
+
+def draw(grid ref(Grid))
+	clear_screen()
+
+	for var y = 0 to grid.height
+		for var x = 0 to grid.width
+			if get_cell(grid, x, y) == 1
+				@print("[]", {})
+			else
+				@print("  ", {})
+			end
+		end
+
+		@puts("")
+	end
+end
+
+def seed_glider(grid ref(Grid))
+	set_cell(grid, 1, 0, 1)
+	set_cell(grid, 2, 1, 1)
+	set_cell(grid, 0, 2, 1)
+	set_cell(grid, 1, 2, 1)
+	set_cell(grid, 2, 2, 1)
+end
+
+pub def main() void
+	var grid = make_grid(30, 20)
+
+	seed_glider(@addr(grid))
+
+	for
+		draw(@addr(grid))
+		grid = step(@addr(grid))
+	end
+end
