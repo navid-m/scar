@@ -57,6 +57,10 @@ pub enum Expr {
     Int(i64),
     String(String),
     Path(Vec<String>),
+    BuiltinCall {
+        name: String,
+        args: Vec<Expr>,
+    },
     Call {
         callee: Box<Expr>,
         args: Vec<Expr>,

@@ -164,6 +164,7 @@ fn render_expr(expr: &Expr) -> Result<String, CompileError> {
     match expr {
         Expr::Int(value) => Ok(value.to_string()),
         Expr::String(value) => Ok(format!("\"{}\"", escape_c_string(value))),
+        Expr::BuiltinCall { name, args } => render_builtin_call(name, args),
         Expr::Path(path) => match path.as_slice() {
             [name] => Ok(name.clone()),
             _ => Err(CompileError::new(format!(
@@ -172,7 +173,7 @@ fn render_expr(expr: &Expr) -> Result<String, CompileError> {
             ))),
         },
         Expr::Pack(_) => Err(CompileError::new(
-            "packed `{...}` expressions are only valid inside builtin.print",
+            "packed `{...}` expressions are only valid inside @print",
         )),
         Expr::Binary { lhs, op, rhs } => match op {
             BinaryOp::Add => Ok(format!("({} + {})", render_expr(lhs)?, render_expr(rhs)?)),
@@ -196,7 +197,7 @@ fn render_call(callee: &Expr, args: &[Expr]) -> Result<String, CompileError> {
     }
 
     Err(CompileError::new(
-        "only direct function calls and builtin calls are currently supported in codegen",
+        "only direct function calls and @builtin calls are currently supported in codegen",
     ))
 }
 
@@ -206,7 +207,7 @@ fn render_builtin_call(name: &str, args: &[Expr]) -> Result<String, CompileError
         "print" => {
             let Expr::String(format) = &args[0] else {
                 return Err(CompileError::new(
-                    "builtin.print requires a string literal as its first argument",
+                    "@print requires a string literal as its first argument",
                 ));
             };
             let (converted, markers) = convert_format_string(format)?;
@@ -225,7 +226,7 @@ fn render_builtin_call(name: &str, args: &[Expr]) -> Result<String, CompileError
         "addr" => Ok(format!("(&{})", render_expr(&args[0])?)),
         "deref" => Ok(format!("(*({}))", render_expr(&args[0])?)),
         _ => Err(CompileError::new(format!(
-            "unsupported builtin intrinsic `builtin.{name}` during code generation"
+            "unsupported builtin intrinsic `@{name}` during code generation"
         ))),
     }
 }
@@ -250,7 +251,7 @@ fn convert_format_string(input: &str) -> Result<(String, Vec<char>), CompileErro
         if chars[index] == '{' {
             if index + 2 >= chars.len() || chars[index + 2] != '}' {
                 return Err(CompileError::new(
-                    "unterminated builtin.print format marker",
+                    "unterminated @print format marker",
                 ));
             }
             let marker = chars[index + 1];
@@ -260,7 +261,7 @@ fn convert_format_string(input: &str) -> Result<(String, Vec<char>), CompileErro
                 's' => "%s",
                 _ => {
                     return Err(CompileError::new(format!(
-                        "unsupported builtin.print marker `{{{marker}}}`"
+                        "unsupported @print marker `{{{marker}}}`"
                     )));
                 }
             };

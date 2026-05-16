@@ -1,9 +1,9 @@
 def print_address_of(x ref(void))
-	builtin.print("{p}", {builtin.addr(x)})
+	@print("{p}", {@addr(x)})
 end
 
 def modify_in_place(x ref(u8)) void
-	builtin.deref(x) = "modified"
+	@deref(x) = "modified"
 end
 
 def declare_and_use() i32
@@ -20,8 +20,8 @@ def add(x i32, y i32) i32
 end
 
 def hello_world(x i32) void
-	builtin.puts("This is some function")
-	builtin.print("{d}\n", {x})
+	@puts("This is some function")
+	@print("{d}\n", {x})
 end
 
 pub def main() void

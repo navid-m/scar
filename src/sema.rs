@@ -200,13 +200,14 @@ fn infer_expr_type(
     match expr {
         Expr::Int(_) => Ok(Type::I32),
         Expr::String(_) => Ok(Type::U8),
+        Expr::BuiltinCall { name, args } => analyze_builtin(name, args, functions, scope),
         Expr::Path(path) => match path.as_slice() {
             [name] => scope
                 .get(name)
                 .map(|binding| binding.ty.clone())
                 .ok_or_else(|| CompileError::new(format!("unknown name `{name}`"))),
             _ => Err(CompileError::new(format!(
-                "qualified path `{}` is only valid as a builtin callee",
+                "qualified path `{}` is not a valid expression",
                 path.join(".")
             ))),
         },
@@ -221,7 +222,7 @@ fn infer_expr_type(
             }
         }
         Expr::Pack(_) => Err(CompileError::new(
-            "packed `{...}` expressions are only valid as builtin.print arguments",
+            "packed `{...}` expressions are only valid as @print arguments",
         )),
         Expr::Call { callee, args } => analyze_call(callee, args, functions, scope),
     }
@@ -258,7 +259,7 @@ fn analyze_call(
     }
 
     Err(CompileError::new(
-        "only direct function calls and builtin calls are currently supported",
+        "only direct function calls and @builtin calls are currently supported",
     ))
 }
 
@@ -272,29 +273,29 @@ fn analyze_builtin(
         "puts" => {
             if args.len() != 1 {
                 return Err(CompileError::new(
-                    "builtin.puts expects exactly one argument",
+                    "@puts expects exactly one argument",
                 ));
             }
             let arg_ty = infer_expr_type(&args[0], functions, scope)?;
-            expect_same_type(&Type::U8, &arg_ty, "builtin.puts")?;
+            expect_same_type(&Type::U8, &arg_ty, "@puts")?;
             Ok(Type::Void)
         }
         "print" => {
             if args.is_empty() {
                 return Err(CompileError::new(
-                    "builtin.print expects at least a format string argument",
+                    "@print expects at least a format string argument",
                 ));
             }
             let Expr::String(format) = &args[0] else {
                 return Err(CompileError::new(
-                    "builtin.print requires a string literal as its first argument",
+                    "@print requires a string literal as its first argument",
                 ));
             };
             let flattened = flatten_print_args(&args[1..]);
             let markers = parse_format_markers(format)?;
             if markers.len() != flattened.len() {
                 return Err(CompileError::new(format!(
-                    "builtin.print format expects {} values but received {}",
+                    "@print format expects {} values but received {}",
                     markers.len(),
                     flattened.len()
                 )));
@@ -312,30 +313,26 @@ fn analyze_builtin(
         }
         "addr" => {
             if args.len() != 1 {
-                return Err(CompileError::new(
-                    "builtin.addr expects exactly one argument",
-                ));
+                return Err(CompileError::new("@addr expects exactly one argument"));
             }
             let inner = infer_lvalue_type(&args[0], functions, scope)?;
             Ok(Type::Ref(Box::new(inner)))
         }
         "deref" => {
             if args.len() != 1 {
-                return Err(CompileError::new(
-                    "builtin.deref expects exactly one argument",
-                ));
+                return Err(CompileError::new("@deref expects exactly one argument"));
             }
             let arg_ty = infer_expr_type(&args[0], functions, scope)?;
             match arg_ty {
                 Type::Ref(inner) => Ok(*inner),
                 other => Err(CompileError::new(format!(
-                    "builtin.deref requires a ref(...) argument, got {}",
+                    "@deref requires a ref(...) argument, got {}",
                     describe_type(&other)
                 ))),
             }
         }
         _ => Err(CompileError::new(format!(
-            "unsupported builtin intrinsic `builtin.{name}`"
+            "unsupported builtin intrinsic `@{name}`"
         ))),
     }
 }
@@ -366,6 +363,9 @@ fn infer_mutable_target(
             }
             Ok(binding.ty.clone())
         }
+        Expr::BuiltinCall { name, args } if name == "deref" => {
+            analyze_builtin("deref", args, functions, scope)
+        }
         Expr::Call { callee, args } => {
             if let Some(path) = callee.as_path() {
                 if path.len() == 2 && path[0] == "builtin" && path[1] == "deref" {
@@ -373,7 +373,7 @@ fn infer_mutable_target(
                 }
             }
             Err(CompileError::new(
-                "only names and builtin.deref(...) may appear on the left-hand side of an assignment",
+                "only names and @deref(...) may appear on the left-hand side of an assignment",
             ))
         }
         _ => Err(CompileError::new(
@@ -400,17 +400,15 @@ fn parse_format_markers(format: &str) -> Result<Vec<char>, CompileError> {
         if ch == '{' {
             let Some(marker) = chars.next() else {
                 return Err(CompileError::new(
-                    "unterminated format marker in builtin.print",
+                    "unterminated format marker in @print",
                 ));
             };
             let Some('}') = chars.next() else {
-                return Err(CompileError::new(
-                    "unterminated format marker in builtin.print",
-                ));
+                return Err(CompileError::new("unterminated format marker in @print"));
             };
             if !matches!(marker, 'd' | 'p' | 's') {
                 return Err(CompileError::new(format!(
-                    "unsupported builtin.print marker `{{{marker}}}`"
+                    "unsupported @print marker `{{{marker}}}`"
                 )));
             }
             markers.push(marker);

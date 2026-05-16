@@ -113,7 +113,7 @@ impl Parser {
             return Ok(Stmt::Return(value));
         }
 
-        if self.check_simple(&TokenKind::At) {
+        if self.check_simple(&TokenKind::At) && self.check_next_simple(&TokenKind::LParen) {
             return self.parse_pragma_stmt();
         }
 
@@ -253,6 +253,7 @@ impl Parser {
                 self.advance();
                 Ok(Expr::String(value))
             }
+            TokenKind::At => self.parse_builtin_call(),
             TokenKind::Ident(_) => self.parse_path(),
             TokenKind::LParen => {
                 self.advance();
@@ -263,6 +264,27 @@ impl Parser {
             TokenKind::LBrace => self.parse_pack(),
             _ => Err(self.error_at_current("expected an expression")),
         }
+    }
+
+    fn parse_builtin_call(&mut self) -> Result<Expr, CompileError> {
+        self.expect_simple(TokenKind::At)?;
+        let name = self.expect_ident()?;
+        self.expect_simple(TokenKind::LParen)?;
+
+        let mut args = Vec::new();
+        if !self.check_simple(&TokenKind::RParen) {
+            loop {
+                args.push(self.parse_expr()?);
+                if self.check_simple(&TokenKind::Comma) {
+                    self.advance();
+                } else {
+                    break;
+                }
+            }
+        }
+
+        self.expect_simple(TokenKind::RParen)?;
+        Ok(Expr::BuiltinCall { name, args })
     }
 
     fn parse_path(&mut self) -> Result<Expr, CompileError> {
@@ -376,6 +398,12 @@ impl Parser {
         std::mem::discriminant(&self.current().kind) == std::mem::discriminant(expected)
     }
 
+    fn check_next_simple(&self, expected: &TokenKind) -> bool {
+        self.tokens
+            .get(self.pos + 1)
+            .is_some_and(|token| std::mem::discriminant(&token.kind) == std::mem::discriminant(expected))
+    }
+
     fn current(&self) -> &Token {
         &self.tokens[self.pos]
     }
@@ -437,7 +465,10 @@ impl Parser {
 #[cfg(test)]
 mod tests {
     use super::parse_program;
-    use crate::{ast::Stmt, lexer::lex};
+    use crate::{
+        ast::{Expr, Stmt},
+        lexer::lex,
+    };
 
     #[test]
     fn parses_pub_function() {
@@ -466,6 +497,20 @@ mod tests {
                 assert!(body.is_empty());
             }
             other => panic!("expected for loop, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_at_builtin_calls() {
+        let source = "pub def main() void\n@print(\"{d}\", {1})\nend\n";
+        let program = parse_program(lex(source).unwrap()).unwrap();
+
+        match &program.functions[0].body[0] {
+            Stmt::Expr(Expr::BuiltinCall { name, args }) => {
+                assert_eq!(name, "print");
+                assert_eq!(args.len(), 2);
+            }
+            other => panic!("expected @builtin expression, got {other:?}"),
         }
     }
 }

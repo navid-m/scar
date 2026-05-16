@@ -19,9 +19,9 @@ Prioritizes:
 def do_thing() void
     @("omp parallel for")
     for var i = 1 to 5
-        builtin.print("i = {d}", {i})
+        @print("i = {d}", {i})
     end
-    print "Parallel for loop completed."
+    @puts("Parallel for loop completed.")
 end
 
 pub def main() void
