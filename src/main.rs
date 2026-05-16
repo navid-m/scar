@@ -2,13 +2,13 @@ mod ast;
 mod codegen;
 mod lexer;
 mod parser;
+mod resolver;
 mod sema;
 
 use std::{env, fs, path::PathBuf, process::ExitCode};
 
 use codegen::generate_c;
-use lexer::lex;
-use parser::parse_program;
+use resolver::resolve_entry_program;
 use sema::analyze;
 
 #[derive(Debug, Clone)]
@@ -44,12 +44,7 @@ fn main() -> ExitCode {
 
 fn run() -> Result<(), CompileError> {
     let cli = Cli::parse(env::args().skip(1))?;
-    let source = fs::read_to_string(&cli.input).map_err(|error| {
-        CompileError::new(format!("failed to read {}: {error}", cli.input.display()))
-    })?;
-
-    let tokens = lex(&source)?;
-    let program = parse_program(tokens)?;
+    let program = resolve_entry_program(&cli.input)?;
     let info = analyze(&program)?;
     let generated = generate_c(&program, &info)?;
 

@@ -1,3 +1,5 @@
+val some_module = use("some_file")
+
 def print_address_of(x ref(void))
 	@print("{p}", {@addr(x)})
 end
@@ -29,5 +31,6 @@ pub def main() void
 	for var i = 0 to 10 
 		hello_world(i)
 	end
+	some_module.some_function()
 end
 

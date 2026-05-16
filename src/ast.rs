@@ -1,6 +1,13 @@
 #[derive(Debug, Clone)]
 pub struct Program {
+    pub module_uses: Vec<ModuleUse>,
     pub functions: Vec<Function>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ModuleUse {
+    pub name: String,
+    pub path: String,
 }
 
 #[derive(Debug, Clone)]

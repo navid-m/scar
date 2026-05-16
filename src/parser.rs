@@ -1,6 +1,6 @@
 use crate::{
     CompileError,
-    ast::{BinaryOp, Expr, Function, Param, Program, Stmt, Type},
+    ast::{BinaryOp, Expr, Function, ModuleUse, Param, Program, Stmt, Type},
     lexer::{Token, TokenKind},
 };
 
@@ -19,13 +19,43 @@ impl Parser {
     }
 
     fn parse_program(&mut self) -> Result<Program, CompileError> {
+        let mut module_uses = Vec::new();
         let mut functions = Vec::new();
         self.consume_newlines();
         while !self.is_eof() {
-            functions.push(self.parse_function()?);
+            if self.check_simple(&TokenKind::Val) {
+                module_uses.push(self.parse_module_use()?);
+            } else {
+                functions.push(self.parse_function()?);
+            }
             self.consume_newlines();
         }
-        Ok(Program { functions })
+        Ok(Program {
+            module_uses,
+            functions,
+        })
+    }
+
+    fn parse_module_use(&mut self) -> Result<ModuleUse, CompileError> {
+        self.expect_simple(TokenKind::Val)?;
+        let name = self.expect_ident()?;
+        self.expect_simple(TokenKind::Assign)?;
+        match self.current().kind.clone() {
+            TokenKind::Ident(keyword) if keyword == "use" => self.advance(),
+            _ => {
+                return Err(self.error_at_current(
+                    "expected `use(\"path\")` in top-level module binding",
+                ));
+            }
+        }
+        self.expect_simple(TokenKind::LParen)?;
+        let TokenKind::Str(path) = self.current().kind.clone() else {
+            return Err(self.error_at_current("expected a string literal module path"));
+        };
+        self.advance();
+        self.expect_simple(TokenKind::RParen)?;
+        self.expect_stmt_terminator()?;
+        Ok(ModuleUse { name, path })
     }
 
     fn parse_function(&mut self) -> Result<Function, CompileError> {
@@ -477,6 +507,17 @@ mod tests {
 
         assert!(program.functions[0].is_pub);
         assert_eq!(program.functions[0].name, "main");
+    }
+
+    #[test]
+    fn parses_top_level_module_use() {
+        let source = "val some_module = use(\"some_file\")\npub def main() void\nend\n";
+        let program = parse_program(lex(source).unwrap()).unwrap();
+
+        assert_eq!(program.module_uses.len(), 1);
+        assert_eq!(program.module_uses[0].name, "some_module");
+        assert_eq!(program.module_uses[0].path, "some_file");
+        assert_eq!(program.functions.len(), 1);
     }
 
     #[test]
