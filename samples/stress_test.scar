@@ -1,14 +1,15 @@
 # This abuses:
-# - Deep call graphs
-# - Mutually recursive functions
-# - Tons of temporary structs
-# - Nested loops
-# - Large list allocations
-# - Heavy indexing
-# - Pointer/address operations
-# - Integer math
-# - Branch-heavy code
-# - Copy-heavy returns
+#
+#  - Deep call graphs
+#  - Mutually recursive functions
+#  - Tons of temporary structs
+#  - Nested loops
+#  - Large list allocations
+#  - Heavy indexing
+#  - Pointer/address operations
+#  - Integer math
+#  - Branch-heavy code
+#  - Copy-heavy returns
 
 type Vec4
 	x i64
