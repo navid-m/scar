@@ -292,6 +292,17 @@ impl Parser {
                 value,
             });
         }
+        if self.check_simple(&TokenKind::SlashEqual) {
+            self.advance();
+            let value = self.parse_expr()?;
+            self.expect_stmt_terminator()?;
+            return Ok(Stmt::DivAssign {
+                line,
+                column,
+                target: expr,
+                value,
+            });
+        }
         if self.check_simple(&TokenKind::AmpEqual) {
             self.advance();
             let value = self.parse_expr()?;
@@ -620,9 +631,14 @@ impl Parser {
 
     fn parse_multiplicative(&mut self) -> Result<Expr, CompileError> {
         let mut expr = self.parse_unary()?;
-        while self.check_simple(&TokenKind::Star) || self.check_simple(&TokenKind::Percent) {
+        while self.check_simple(&TokenKind::Star)
+            || self.check_simple(&TokenKind::Slash)
+            || self.check_simple(&TokenKind::Percent)
+        {
             let op = if self.check_simple(&TokenKind::Star) {
                 BinaryOp::Multiply
+            } else if self.check_simple(&TokenKind::Slash) {
+                BinaryOp::Divide
             } else {
                 BinaryOp::Modulo
             };
@@ -1071,6 +1087,8 @@ impl Parser {
             TokenKind::GreaterEqual => "`>=`",
             TokenKind::ShiftRight => "`>>`",
             TokenKind::Star => "`*`",
+            TokenKind::Slash => "`/`",
+            TokenKind::SlashEqual => "`/=`",
             TokenKind::Percent => "`%`",
             TokenKind::Minus => "`-`",
             TokenKind::Plus => "`+`",

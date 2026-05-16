@@ -263,6 +263,14 @@ fn analyze_stmt(
                 );
             }
         }
+        Stmt::DivAssign {
+            line,
+            column,
+            target,
+            value,
+        } => {
+            analyze_arithmetic_assignment(target, value, "/=", *line, *column, functions, types, scope)?;
+        }
         Stmt::BitAndAssign {
             line,
             column,
@@ -590,12 +598,17 @@ fn infer_expr_type(
             match op {
                 BinaryOp::Add if lhs_ty == Type::I32 && rhs_ty == Type::I32 => Ok(Type::I32),
                 BinaryOp::Add if lhs_ty == Type::U32 && rhs_ty == Type::U32 => Ok(Type::U32),
+                BinaryOp::Divide if lhs_ty == Type::I32 && rhs_ty == Type::I32 => Ok(Type::I32),
+                BinaryOp::Divide if lhs_ty == Type::U32 && rhs_ty == Type::U32 => Ok(Type::U32),
                 BinaryOp::Multiply if lhs_ty == Type::I32 && rhs_ty == Type::I32 => Ok(Type::I32),
                 BinaryOp::Multiply if lhs_ty == Type::U32 && rhs_ty == Type::U32 => Ok(Type::U32),
                 BinaryOp::Modulo if lhs_ty == Type::I32 && rhs_ty == Type::I32 => Ok(Type::I32),
                 BinaryOp::Modulo if lhs_ty == Type::U32 && rhs_ty == Type::U32 => Ok(Type::U32),
                 BinaryOp::Add => Err(CompileError::new(
                     "`+` currently requires both operands to have matching integer types",
+                )),
+                BinaryOp::Divide => Err(CompileError::new(
+                    "`/` currently requires both operands to have matching integer types",
                 )),
                 BinaryOp::Multiply => Err(CompileError::new(
                     "`*` currently requires both operands to have matching integer types",
@@ -779,6 +792,38 @@ fn analyze_bitwise_assignment(
         Err(
             CompileError::new(format!(
                 "`{operator}` currently requires both operands to have the same integer type"
+            ))
+            .with_location(line, column),
+        )
+    }
+}
+
+fn analyze_arithmetic_assignment(
+    target: &Expr,
+    value: &Expr,
+    operator: &str,
+    line: usize,
+    column: usize,
+    functions: &HashMap<String, FunctionSig>,
+    types: &HashMap<String, TypeDefInfo>,
+    scope: &HashMap<String, LocalBinding>,
+) -> Result<(), CompileError> {
+    let target_ty = resolve_aliases(
+        &infer_mutable_target(target, functions, types, scope)
+            .map_err(|error| error.with_location(line, column))?,
+        types,
+    )?;
+    let value_ty = resolve_aliases(
+        &infer_expr_type(value, functions, types, scope)
+            .map_err(|error| error.with_location(line, column))?,
+        types,
+    )?;
+    if target_ty == Type::I32 && value_ty == Type::I32 {
+        Ok(())
+    } else {
+        Err(
+            CompileError::new(format!(
+                "`{operator}` currently requires both operands to have type i32"
             ))
             .with_location(line, column),
         )

@@ -175,6 +175,13 @@ fn render_stmt(
             output.push_str(&render_expr(value, function, info)?);
             output.push_str(";\n");
         }
+        Stmt::DivAssign { target, value, .. } => {
+            indent(output, level);
+            output.push_str(&render_expr(target, function, info)?);
+            output.push_str(" /= ");
+            output.push_str(&render_expr(value, function, info)?);
+            output.push_str(";\n");
+        }
         Stmt::BitAndAssign { target, value, .. } => {
             indent(output, level);
             output.push_str(&render_expr(target, function, info)?);
@@ -420,6 +427,7 @@ fn render_expr_with_hint(
             }
             let operator = match op {
                 BinaryOp::Add => "+",
+                BinaryOp::Divide => "/",
                 BinaryOp::Multiply => "*",
                 BinaryOp::Modulo => "%",
                 BinaryOp::LogicalAnd => "&&",
@@ -759,10 +767,14 @@ fn infer_codegen_expr_type(
                 resolve_codegen_aliases(&infer_codegen_expr_type(rhs, function, info)?, info)?;
             match op {
                 BinaryOp::Add if lhs_ty == rhs_ty => Ok(lhs_ty),
+                BinaryOp::Divide if lhs_ty == rhs_ty => Ok(lhs_ty),
                 BinaryOp::Multiply if lhs_ty == rhs_ty => Ok(lhs_ty),
                 BinaryOp::Modulo if lhs_ty == rhs_ty => Ok(lhs_ty),
                 BinaryOp::Add => Err(CompileError::new(
                     "`+` currently requires matching operand types",
+                )),
+                BinaryOp::Divide => Err(CompileError::new(
+                    "`/` currently requires matching operand types",
                 )),
                 BinaryOp::Multiply => Err(CompileError::new(
                     "`*` currently requires matching operand types",
