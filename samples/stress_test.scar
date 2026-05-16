@@ -101,7 +101,7 @@ def fill_matrix(m ref(Matrix))
 end
 
 def matrix_mul(a ref(Matrix), b ref(Matrix)) Matrix
-	val out = make_matrix(a.size)
+	var out = make_matrix(a.size)
 
 	for var y = 0 .. a.size
 		for var x = 0 .. a.size
@@ -295,7 +295,7 @@ pub def main() void
 	val result = giant_workload()
 
 	@print(
-		"stress result = {i}\n",
+		"stress result = {d}\n",
 		{result}
 	)
 end

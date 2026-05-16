@@ -8,6 +8,7 @@ use crate::{
 
 pub fn generate_c(program: &Program, info: &ProgramInfo) -> Result<String, CompileError> {
     let mut output = String::new();
+    output.push_str("#include <inttypes.h>\n");
     output.push_str("#include <stdint.h>\n");
     output.push_str("#include <stdio.h>\n");
     output.push_str("#include <stdlib.h>\n");
@@ -562,16 +563,20 @@ fn render_builtin_call(
                     "@print requires a string literal as its first argument",
                 ));
             };
-            let (converted, markers) = convert_format_string(format)?;
             let flattened = flatten_print_args(&args[1..]);
+            let arg_types = flattened
+                .iter()
+                .map(|arg| resolve_codegen_aliases(&infer_codegen_expr_type(arg, function, info)?, info))
+                .collect::<Result<Vec<_>, CompileError>>()?;
+            let (converted, markers) = convert_format_string(format, &arg_types)?;
             let mut rendered_args = vec![format!("\"{}\"", escape_c_string(&converted))];
-            for (marker, expr) in markers.into_iter().zip(flattened.into_iter()) {
+            for ((marker, expr), arg_ty) in markers
+                .into_iter()
+                .zip(flattened.into_iter())
+                .zip(arg_types.into_iter())
+            {
                 let rendered = render_expr(expr, function, info)?;
-                if marker == 'p' {
-                    rendered_args.push(format!("(void *)({rendered})"));
-                } else {
-                    rendered_args.push(rendered);
-                }
+                rendered_args.push(render_print_value(marker, &arg_ty, &rendered)?);
             }
             Ok(format!("printf({})", rendered_args.join(", ")))
         }
@@ -798,25 +803,28 @@ fn infer_codegen_expr_type(
             let rhs_ty =
                 resolve_codegen_aliases(&infer_codegen_expr_type(rhs, function, info)?, info)?;
             match op {
-                BinaryOp::Add if lhs_ty == rhs_ty => Ok(lhs_ty),
-                BinaryOp::Subtract if lhs_ty == rhs_ty => Ok(lhs_ty),
-                BinaryOp::Divide if lhs_ty == rhs_ty => Ok(lhs_ty),
-                BinaryOp::Multiply if lhs_ty == rhs_ty => Ok(lhs_ty),
-                BinaryOp::Modulo if lhs_ty == rhs_ty => Ok(lhs_ty),
+                BinaryOp::Add | BinaryOp::Subtract | BinaryOp::Divide | BinaryOp::Multiply
+                    if common_codegen_numeric_type(&lhs_ty, &rhs_ty).is_some() =>
+                {
+                    Ok(common_codegen_numeric_type(&lhs_ty, &rhs_ty).unwrap())
+                }
+                BinaryOp::Modulo if common_codegen_integer_type(&lhs_ty, &rhs_ty).is_some() => {
+                    Ok(common_codegen_integer_type(&lhs_ty, &rhs_ty).unwrap())
+                }
                 BinaryOp::Add => Err(CompileError::new(
-                    "`+` currently requires matching operand types",
+                    "`+` currently requires compatible numeric operands",
                 )),
                 BinaryOp::Subtract => Err(CompileError::new(
-                    "`-` currently requires matching operand types",
+                    "`-` currently requires compatible numeric operands",
                 )),
                 BinaryOp::Divide => Err(CompileError::new(
-                    "`/` currently requires matching operand types",
+                    "`/` currently requires compatible numeric operands",
                 )),
                 BinaryOp::Multiply => Err(CompileError::new(
-                    "`*` currently requires matching operand types",
+                    "`*` currently requires compatible numeric operands",
                 )),
                 BinaryOp::Modulo => Err(CompileError::new(
-                    "`%` currently requires matching operand types",
+                    "`%` currently requires compatible integer operands",
                 )),
                 BinaryOp::LogicalAnd | BinaryOp::LogicalOr
                     if is_codegen_integer_type(&lhs_ty) && is_codegen_integer_type(&rhs_ty) =>
@@ -827,12 +835,12 @@ fn infer_codegen_expr_type(
                     "logical operators currently require integer operands",
                 )),
                 BinaryOp::BitAnd | BinaryOp::BitOr | BinaryOp::BitXor
-                    if is_codegen_integer_type(&lhs_ty) && lhs_ty == rhs_ty =>
+                    if common_codegen_integer_type(&lhs_ty, &rhs_ty).is_some() =>
                 {
-                    Ok(lhs_ty)
+                    Ok(common_codegen_integer_type(&lhs_ty, &rhs_ty).unwrap())
                 }
                 BinaryOp::BitAnd | BinaryOp::BitOr | BinaryOp::BitXor => Err(CompileError::new(
-                    "bitwise operators currently require matching integer operand types",
+                    "bitwise operators currently require compatible integer operands",
                 )),
                 BinaryOp::ShiftLeft | BinaryOp::ShiftRight
                     if is_codegen_integer_type(&lhs_ty) && is_codegen_integer_type(&rhs_ty) =>
@@ -862,10 +870,22 @@ fn render_logical_shift_right(
     let rendered_lhs = render_expr(lhs, function, info)?;
     let rendered_rhs = render_expr(rhs, function, info)?;
     match lhs_ty {
-        Type::I32 => Ok(format!(
-            "((int32_t)((uint32_t)({rendered_lhs}) >> ({rendered_rhs})))"
-        )),
-        Type::U32 => Ok(format!("((uint32_t)({rendered_lhs}) >> ({rendered_rhs}))")),
+        Type::I8 | Type::I16 | Type::I32 | Type::I64 | Type::Isize => {
+            let signed = c_type(&lhs_ty);
+            let unsigned = unsigned_c_type(&lhs_ty).ok_or_else(|| {
+                CompileError::new(format!(
+                    "logical shift-right requires an integer operand during code generation, got {}",
+                    describe_type(&lhs_ty)
+                ))
+            })?;
+            Ok(format!(
+                "(({})(({})({rendered_lhs}) >> ({rendered_rhs})))",
+                signed, unsigned
+            ))
+        }
+        Type::U16 | Type::U32 | Type::U64 | Type::Usize => {
+            Ok(format!("(({})({rendered_lhs}) >> ({rendered_rhs}))", c_type(&lhs_ty)))
+        }
         other => Err(CompileError::new(format!(
             "logical shift-right requires an integer operand during code generation, got {}",
             describe_type(&other)
@@ -881,9 +901,9 @@ fn infer_codegen_integer_unary_type(
 ) -> Result<Type, CompileError> {
     let inner_ty = resolve_codegen_aliases(&infer_codegen_expr_type(expr, function, info)?, info)?;
     match op {
-        UnaryOp::Neg if inner_ty == Type::I32 => Ok(Type::I32),
+        UnaryOp::Neg if is_codegen_signed_numeric_type(&inner_ty) => Ok(inner_ty),
         UnaryOp::Neg => Err(CompileError::new(
-            "unary `-` currently requires an i32 operand",
+            "unary `-` currently requires a signed numeric operand",
         )),
         UnaryOp::LogicalNot if is_codegen_integer_type(&inner_ty) => Ok(Type::I32),
         UnaryOp::LogicalNot => Err(CompileError::new(
@@ -941,30 +961,52 @@ fn flatten_print_args(args: &[Expr]) -> Vec<&Expr> {
     flattened
 }
 
-fn convert_format_string(input: &str) -> Result<(String, Vec<char>), CompileError> {
+#[derive(Clone, Copy)]
+enum PrintMarker {
+    Int,
+    Pointer,
+    String,
+    Float,
+    Double,
+}
+
+fn convert_format_string(input: &str, arg_types: &[Type]) -> Result<(String, Vec<PrintMarker>), CompileError> {
     let mut output = String::new();
     let mut markers = Vec::new();
     let chars: Vec<char> = input.chars().collect();
     let mut index = 0;
+    let mut arg_index = 0;
     while index < chars.len() {
         if chars[index] == '{' {
-            if index + 2 >= chars.len() || chars[index + 2] != '}' {
+            let start = index + 1;
+            let mut end = start;
+            while end < chars.len() && chars[end] != '}' {
+                end += 1;
+            }
+            if end >= chars.len() {
                 return Err(CompileError::new("unterminated @print format marker"));
             }
-            let marker = chars[index + 1];
-            let specifier = match marker {
-                'd' => "%d",
-                'p' => "%p",
-                's' => "%s",
+            let marker: String = chars[start..end].iter().collect();
+            let parsed = match marker.as_str() {
+                "d" => PrintMarker::Int,
+                "p" => PrintMarker::Pointer,
+                "s" => PrintMarker::String,
+                "f" => PrintMarker::Float,
+                "lf" => PrintMarker::Double,
                 _ => {
                     return Err(CompileError::new(format!(
                         "unsupported @print marker `{{{marker}}}`"
                     )));
                 }
             };
+            let arg_ty = arg_types.get(arg_index).ok_or_else(|| {
+                CompileError::new("@print format expects more values than were provided")
+            })?;
+            let specifier = print_format_specifier(parsed, arg_ty)?;
             output.push_str(specifier);
-            markers.push(marker);
-            index += 3;
+            markers.push(parsed);
+            arg_index += 1;
+            index = end + 1;
             continue;
         }
         output.push(chars[index]);
@@ -1211,9 +1253,18 @@ fn list_helper_prefix(element_ty: &Type) -> String {
 fn type_suffix(ty: &Type) -> String {
     match ty {
         Type::Void => "void".to_string(),
+        Type::I8 => "i8".to_string(),
+        Type::I16 => "i16".to_string(),
         Type::I32 => "i32".to_string(),
+        Type::I64 => "i64".to_string(),
+        Type::Isize => "isize".to_string(),
+        Type::U16 => "u16".to_string(),
         Type::U32 => "u32".to_string(),
+        Type::U64 => "u64".to_string(),
+        Type::Usize => "usize".to_string(),
         Type::U8 => "u8".to_string(),
+        Type::F32 => "f32".to_string(),
+        Type::F64 => "f64".to_string(),
         Type::Named(name) => sanitize_identifier(name),
         Type::Ref(inner) => format!("ref__{}", type_suffix(inner)),
         Type::List(inner) => format!("list__{}", type_suffix(inner)),
@@ -1229,9 +1280,18 @@ fn sanitize_identifier(name: &str) -> String {
 fn c_type(ty: &Type) -> String {
     match ty {
         Type::Void => "void".to_string(),
+        Type::I8 => "int8_t".to_string(),
+        Type::I16 => "int16_t".to_string(),
         Type::I32 => "int32_t".to_string(),
+        Type::I64 => "int64_t".to_string(),
+        Type::Isize => "intptr_t".to_string(),
+        Type::U16 => "uint16_t".to_string(),
         Type::U32 => "uint32_t".to_string(),
+        Type::U64 => "uint64_t".to_string(),
+        Type::Usize => "uintptr_t".to_string(),
         Type::U8 => "const char *".to_string(),
+        Type::F32 => "float".to_string(),
+        Type::F64 => "double".to_string(),
         Type::Named(name) => name.clone(),
         Type::Ref(inner) => {
             if inner.as_ref() == &Type::U8 {
@@ -1263,7 +1323,147 @@ fn infer_index_type(ty: &Type) -> Result<Type, CompileError> {
 }
 
 fn is_codegen_integer_type(ty: &Type) -> bool {
-    matches!(ty, Type::I32 | Type::U32)
+    codegen_integer_rank(ty).is_some()
+}
+
+fn is_codegen_signed_numeric_type(ty: &Type) -> bool {
+    is_codegen_signed_integer_type(ty) || matches!(ty, Type::F32 | Type::F64)
+}
+
+fn is_codegen_signed_integer_type(ty: &Type) -> bool {
+    matches!(ty, Type::I8 | Type::I16 | Type::I32 | Type::I64 | Type::Isize)
+}
+
+fn is_codegen_unsigned_integer_type(ty: &Type) -> bool {
+    matches!(ty, Type::U16 | Type::U32 | Type::U64 | Type::Usize)
+}
+
+fn codegen_integer_rank(ty: &Type) -> Option<u8> {
+    match ty {
+        Type::I8 => Some(1),
+        Type::I16 => Some(2),
+        Type::I32 => Some(3),
+        Type::I64 | Type::Isize => Some(4),
+        Type::U16 => Some(2),
+        Type::U32 => Some(3),
+        Type::U64 | Type::Usize => Some(4),
+        _ => None,
+    }
+}
+
+fn codegen_float_rank(ty: &Type) -> Option<u8> {
+    match ty {
+        Type::F32 => Some(1),
+        Type::F64 => Some(2),
+        _ => None,
+    }
+}
+
+fn common_codegen_integer_type(lhs: &Type, rhs: &Type) -> Option<Type> {
+    if lhs == rhs && is_codegen_integer_type(lhs) {
+        return Some(lhs.clone());
+    }
+    if is_codegen_signed_integer_type(lhs) && is_codegen_signed_integer_type(rhs) {
+        return Some(if codegen_integer_rank(lhs)? >= codegen_integer_rank(rhs)? {
+            lhs.clone()
+        } else {
+            rhs.clone()
+        });
+    }
+    if is_codegen_unsigned_integer_type(lhs) && is_codegen_unsigned_integer_type(rhs) {
+        return Some(if codegen_integer_rank(lhs)? >= codegen_integer_rank(rhs)? {
+            lhs.clone()
+        } else {
+            rhs.clone()
+        });
+    }
+    None
+}
+
+fn common_codegen_numeric_type(lhs: &Type, rhs: &Type) -> Option<Type> {
+    if let Some(common) = common_codegen_integer_type(lhs, rhs) {
+        return Some(common);
+    }
+    if lhs == rhs && matches!(lhs, Type::F32 | Type::F64) {
+        return Some(lhs.clone());
+    }
+    if matches!(lhs, Type::F32 | Type::F64) && matches!(rhs, Type::F32 | Type::F64) {
+        return Some(if codegen_float_rank(lhs)? >= codegen_float_rank(rhs)? {
+            lhs.clone()
+        } else {
+            rhs.clone()
+        });
+    }
+    None
+}
+
+fn unsigned_c_type(ty: &Type) -> Option<&'static str> {
+    match ty {
+        Type::I8 => Some("uint8_t"),
+        Type::I16 => Some("uint16_t"),
+        Type::I32 => Some("uint32_t"),
+        Type::I64 => Some("uint64_t"),
+        Type::Isize => Some("uintptr_t"),
+        _ => None,
+    }
+}
+
+fn print_format_specifier(marker: PrintMarker, ty: &Type) -> Result<&'static str, CompileError> {
+    match marker {
+        PrintMarker::Int if is_codegen_signed_integer_type(ty) => Ok("%jd"),
+        PrintMarker::Int if is_codegen_unsigned_integer_type(ty) => Ok("%ju"),
+        PrintMarker::Pointer if matches!(ty, Type::Ref(_) | Type::Named(_))
+            || matches!(ty, Type::U8)
+            || matches!(ty, Type::Ref(inner) if inner.as_ref() == &Type::U8) =>
+        {
+            Ok("%p")
+        }
+        PrintMarker::String
+            if matches!(ty, Type::U8)
+                || matches!(ty, Type::Ref(inner) if inner.as_ref() == &Type::U8) =>
+        {
+            Ok("%s")
+        }
+        PrintMarker::Float if matches!(ty, Type::F32) => Ok("%f"),
+        PrintMarker::Double if matches!(ty, Type::F64) => Ok("%lf"),
+        PrintMarker::Int => Err(CompileError::new(format!(
+            "format marker `{{d}}` does not accept value of type {}",
+            describe_type(ty)
+        ))),
+        PrintMarker::Float => Err(CompileError::new(format!(
+            "format marker `{{f}}` does not accept value of type {}",
+            describe_type(ty)
+        ))),
+        PrintMarker::Double => Err(CompileError::new(format!(
+            "format marker `{{lf}}` does not accept value of type {}",
+            describe_type(ty)
+        ))),
+        PrintMarker::Pointer => Err(CompileError::new(format!(
+            "format marker `{{p}}` does not accept value of type {}",
+            describe_type(ty)
+        ))),
+        PrintMarker::String => Err(CompileError::new(format!(
+            "format marker `{{s}}` does not accept value of type {}",
+            describe_type(ty)
+        ))),
+    }
+}
+
+fn render_print_value(marker: PrintMarker, ty: &Type, rendered: &str) -> Result<String, CompileError> {
+    match marker {
+        PrintMarker::Int if is_codegen_signed_integer_type(ty) => {
+            Ok(format!("((intmax_t)({rendered}))"))
+        }
+        PrintMarker::Int if is_codegen_unsigned_integer_type(ty) => {
+            Ok(format!("((uintmax_t)({rendered}))"))
+        }
+        PrintMarker::Pointer => Ok(format!("(void *)({rendered})")),
+        PrintMarker::String | PrintMarker::Float | PrintMarker::Double => Ok(rendered.to_string()),
+        _ => Err(CompileError::new(format!(
+            "unsupported @print argument type {}",
+            describe_type(ty)
+        ))),
+    }
 }
 
 fn resolve_codegen_aliases(ty: &Type, info: &ProgramInfo) -> Result<Type, CompileError> {
@@ -1309,9 +1509,18 @@ fn escape_c_string(value: &str) -> String {
 fn describe_type(ty: &Type) -> String {
     match ty {
         Type::Void => "void".to_string(),
+        Type::I8 => "i8".to_string(),
+        Type::I16 => "i16".to_string(),
         Type::I32 => "i32".to_string(),
+        Type::I64 => "i64".to_string(),
+        Type::Isize => "isize".to_string(),
+        Type::U16 => "u16".to_string(),
         Type::U32 => "u32".to_string(),
+        Type::U64 => "u64".to_string(),
+        Type::Usize => "usize".to_string(),
         Type::U8 => "u8".to_string(),
+        Type::F32 => "f32".to_string(),
+        Type::F64 => "f64".to_string(),
         Type::Named(name) => name.clone(),
         Type::Ref(inner) => format!("ref({})", describe_type(inner)),
         Type::List(inner) => format!("list[{}]", describe_type(inner)),

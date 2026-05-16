@@ -44,9 +44,18 @@ pub struct Param {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Type {
     Void,
+    I8,
+    I16,
     I32,
+    I64,
+    Isize,
+    U16,
     U32,
+    U64,
+    Usize,
     U8,
+    F32,
+    F64,
     Named(String),
     Ref(Box<Type>),
     List(Box<Type>),

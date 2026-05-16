@@ -889,17 +889,53 @@ impl Parser {
                 self.advance();
                 Ok(Type::Void)
             }
+            TokenKind::I8 => {
+                self.advance();
+                Ok(Type::I8)
+            }
+            TokenKind::I16 => {
+                self.advance();
+                Ok(Type::I16)
+            }
             TokenKind::I32 => {
                 self.advance();
                 Ok(Type::I32)
+            }
+            TokenKind::I64 => {
+                self.advance();
+                Ok(Type::I64)
+            }
+            TokenKind::Isize => {
+                self.advance();
+                Ok(Type::Isize)
+            }
+            TokenKind::U16 => {
+                self.advance();
+                Ok(Type::U16)
             }
             TokenKind::U32 => {
                 self.advance();
                 Ok(Type::U32)
             }
+            TokenKind::U64 => {
+                self.advance();
+                Ok(Type::U64)
+            }
+            TokenKind::Usize => {
+                self.advance();
+                Ok(Type::Usize)
+            }
             TokenKind::U8 => {
                 self.advance();
                 Ok(Type::U8)
+            }
+            TokenKind::F32 => {
+                self.advance();
+                Ok(Type::F32)
+            }
+            TokenKind::F64 => {
+                self.advance();
+                Ok(Type::F64)
             }
             TokenKind::Ident(name) => {
                 self.advance();
@@ -927,9 +963,18 @@ impl Parser {
         matches!(
             self.current().kind,
             TokenKind::Void
+                | TokenKind::I8
+                | TokenKind::I16
                 | TokenKind::I32
+                | TokenKind::I64
+                | TokenKind::Isize
+                | TokenKind::U16
                 | TokenKind::U32
+                | TokenKind::U64
+                | TokenKind::Usize
                 | TokenKind::U8
+                | TokenKind::F32
+                | TokenKind::F64
                 | TokenKind::Ref
                 | TokenKind::List
                 | TokenKind::Ident(_)
@@ -1110,9 +1155,18 @@ impl Parser {
             TokenKind::Ref => "`ref`",
             TokenKind::List => "`list`",
             TokenKind::Void => "`void`",
+            TokenKind::I8 => "`i8`",
+            TokenKind::I16 => "`i16`",
             TokenKind::I32 => "`i32`",
+            TokenKind::I64 => "`i64`",
+            TokenKind::Isize => "`isize`",
+            TokenKind::U16 => "`u16`",
             TokenKind::U32 => "`u32`",
+            TokenKind::U64 => "`u64`",
+            TokenKind::Usize => "`usize`",
             TokenKind::U8 => "`u8`",
+            TokenKind::F32 => "`f32`",
+            TokenKind::F64 => "`f64`",
             TokenKind::Newline => "a newline",
             TokenKind::At => "`@`",
             TokenKind::LParen => "`(`",
@@ -1289,6 +1343,17 @@ mod tests {
         assert_eq!(program.functions[0].name, "add");
         assert_eq!(program.functions[0].params.len(), 2);
         assert_eq!(program.functions[0].return_type, Type::I32);
+    }
+
+    #[test]
+    fn parses_extended_numeric_primitive_types() {
+        let source = "def numerics(a i64, b f64, c usize) i16\n\treturn 0 as i16\nend\n";
+        let program = parse_program(lex(source).unwrap()).unwrap();
+
+        assert_eq!(program.functions[0].params[0].ty, Type::I64);
+        assert_eq!(program.functions[0].params[1].ty, Type::F64);
+        assert_eq!(program.functions[0].params[2].ty, Type::Usize);
+        assert_eq!(program.functions[0].return_type, Type::I16);
     }
 
     #[test]

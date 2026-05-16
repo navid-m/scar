@@ -567,7 +567,7 @@ fn infer_expr_type(
         Expr::Cast { expr, ty } => {
             let source_ty = infer_expr_type(expr, functions, types, scope)?;
             validate_type(ty, types)?;
-            if is_integer_type(&source_ty, types)? && is_integer_type(ty, types)? {
+            if is_numeric_type(&source_ty, types)? && is_numeric_type(ty, types)? {
                 Ok(ty.clone())
             } else {
                 Err(CompileError::new(format!(
@@ -580,9 +580,9 @@ fn infer_expr_type(
         Expr::Unary { op, expr } => {
             let inner_ty = resolve_aliases(&infer_expr_type(expr, functions, types, scope)?, types)?;
             match op {
-                UnaryOp::Neg if inner_ty == Type::I32 => Ok(Type::I32),
+                UnaryOp::Neg if is_signed_numeric_type(&inner_ty) => Ok(inner_ty),
                 UnaryOp::Neg => Err(CompileError::new(
-                    "unary `-` currently requires an i32 operand",
+                    "unary `-` currently requires a signed numeric operand",
                 )),
                 UnaryOp::LogicalNot if is_integer_type(&inner_ty, types)? => Ok(Type::I32),
                 UnaryOp::LogicalNot => Err(CompileError::new(
@@ -597,30 +597,28 @@ fn infer_expr_type(
             let lhs_ty = resolve_aliases(&infer_expr_type(lhs, functions, types, scope)?, types)?;
             let rhs_ty = resolve_aliases(&infer_expr_type(rhs, functions, types, scope)?, types)?;
             match op {
-                BinaryOp::Add if lhs_ty == Type::I32 && rhs_ty == Type::I32 => Ok(Type::I32),
-                BinaryOp::Add if lhs_ty == Type::U32 && rhs_ty == Type::U32 => Ok(Type::U32),
-                BinaryOp::Subtract if lhs_ty == Type::I32 && rhs_ty == Type::I32 => Ok(Type::I32),
-                BinaryOp::Subtract if lhs_ty == Type::U32 && rhs_ty == Type::U32 => Ok(Type::U32),
-                BinaryOp::Divide if lhs_ty == Type::I32 && rhs_ty == Type::I32 => Ok(Type::I32),
-                BinaryOp::Divide if lhs_ty == Type::U32 && rhs_ty == Type::U32 => Ok(Type::U32),
-                BinaryOp::Multiply if lhs_ty == Type::I32 && rhs_ty == Type::I32 => Ok(Type::I32),
-                BinaryOp::Multiply if lhs_ty == Type::U32 && rhs_ty == Type::U32 => Ok(Type::U32),
-                BinaryOp::Modulo if lhs_ty == Type::I32 && rhs_ty == Type::I32 => Ok(Type::I32),
-                BinaryOp::Modulo if lhs_ty == Type::U32 && rhs_ty == Type::U32 => Ok(Type::U32),
+                BinaryOp::Add | BinaryOp::Subtract | BinaryOp::Divide | BinaryOp::Multiply
+                    if common_numeric_type(&lhs_ty, &rhs_ty).is_some() =>
+                {
+                    Ok(common_numeric_type(&lhs_ty, &rhs_ty).unwrap())
+                }
+                BinaryOp::Modulo if common_integer_type(&lhs_ty, &rhs_ty).is_some() => {
+                    Ok(common_integer_type(&lhs_ty, &rhs_ty).unwrap())
+                }
                 BinaryOp::Add => Err(CompileError::new(
-                    "`+` currently requires both operands to have matching integer types",
+                    "`+` currently requires compatible numeric operands",
                 )),
                 BinaryOp::Subtract => Err(CompileError::new(
-                    "`-` currently requires both operands to have matching integer types",
+                    "`-` currently requires compatible numeric operands",
                 )),
                 BinaryOp::Divide => Err(CompileError::new(
-                    "`/` currently requires both operands to have matching integer types",
+                    "`/` currently requires compatible numeric operands",
                 )),
                 BinaryOp::Multiply => Err(CompileError::new(
-                    "`*` currently requires both operands to have matching integer types",
+                    "`*` currently requires compatible numeric operands",
                 )),
                 BinaryOp::Modulo => Err(CompileError::new(
-                    "`%` currently requires both operands to have matching integer types",
+                    "`%` currently requires compatible integer operands",
                 )),
                 BinaryOp::LogicalAnd | BinaryOp::LogicalOr
                     if is_integer_type(&lhs_ty, types)? && is_integer_type(&rhs_ty, types)? =>
@@ -631,14 +629,12 @@ fn infer_expr_type(
                     "logical operators currently require integer operands",
                 )),
                 BinaryOp::BitAnd | BinaryOp::BitOr | BinaryOp::BitXor
-                    if is_integer_type(&lhs_ty, types)?
-                        && lhs_ty == rhs_ty
-                        && is_integer_type(&rhs_ty, types)? =>
+                    if common_integer_type(&lhs_ty, &rhs_ty).is_some() =>
                 {
-                    Ok(lhs_ty)
+                    Ok(common_integer_type(&lhs_ty, &rhs_ty).unwrap())
                 }
                 BinaryOp::BitAnd | BinaryOp::BitOr | BinaryOp::BitXor => Err(CompileError::new(
-                    "bitwise operators currently require both operands to have the same integer type",
+                    "bitwise operators currently require compatible integer operands",
                 )),
                 BinaryOp::ShiftLeft | BinaryOp::ShiftRight
                     if is_integer_type(&lhs_ty, types)? && is_integer_type(&rhs_ty, types)? =>
@@ -653,7 +649,7 @@ fn infer_expr_type(
                 | BinaryOp::GreaterThan
                 | BinaryOp::GreaterEqual
                 | BinaryOp::Equal
-                    if is_integer_type(&lhs_ty, types)? && lhs_ty == rhs_ty =>
+                    if common_numeric_type(&lhs_ty, &rhs_ty).is_some() =>
                 {
                     Ok(Type::I32)
                 }
@@ -663,7 +659,7 @@ fn infer_expr_type(
                 | BinaryOp::GreaterEqual
                 | BinaryOp::Equal => Err(
                     CompileError::new(
-                        "comparison operators currently require both operands to have the same integer type",
+                        "comparison operators currently require compatible numeric operands",
                     ),
                 ),
             }
@@ -768,7 +764,8 @@ fn analyze_builtin(
                 let arg_ty = infer_expr_type(arg, functions, types, scope)?;
                 if !format_type_matches(*marker, &resolve_aliases(&arg_ty, types)?) {
                     return Err(CompileError::new(format!(
-                        "format marker `{{{marker}}}` does not accept value of type {}",
+                        "format marker `{{{}}}` does not accept value of type {}",
+                        print_marker_name(*marker),
                         describe_type(&arg_ty)
                     )));
                 }
@@ -821,12 +818,12 @@ fn analyze_bitwise_assignment(
             .map_err(|error| error.with_location(line, column))?,
         types,
     )?;
-    if is_integer_type(&target_ty, types)? && target_ty == value_ty {
+    if common_integer_type(&target_ty, &value_ty) == Some(target_ty.clone()) {
         Ok(())
     } else {
         Err(
             CompileError::new(format!(
-                "`{operator}` currently requires both operands to have the same integer type"
+                "`{operator}` currently requires compatible integer operands"
             ))
             .with_location(line, column),
         )
@@ -853,12 +850,12 @@ fn analyze_arithmetic_assignment(
             .map_err(|error| error.with_location(line, column))?,
         types,
     )?;
-    if target_ty == Type::I32 && value_ty == Type::I32 {
+    if common_numeric_type(&target_ty, &value_ty) == Some(target_ty.clone()) {
         Ok(())
     } else {
         Err(
             CompileError::new(format!(
-                "`{operator}` currently requires both operands to have type i32"
+                "`{operator}` currently requires compatible numeric operands"
             ))
             .with_location(line, column),
         )
@@ -1122,42 +1119,84 @@ fn flatten_print_args<'a>(args: &'a [Expr]) -> Vec<&'a Expr> {
     flattened
 }
 
-fn parse_format_markers(format: &str) -> Result<Vec<char>, CompileError> {
+#[derive(Clone, Copy)]
+enum PrintMarker {
+    Int,
+    String,
+    Pointer,
+    Float,
+    Double,
+}
+
+fn parse_format_markers(format: &str) -> Result<Vec<PrintMarker>, CompileError> {
     let mut markers = Vec::new();
-    let mut chars = format.chars().peekable();
-    while let Some(ch) = chars.next() {
-        if ch == '{' {
-            let Some(marker) = chars.next() else {
-                return Err(CompileError::new(
-                    "unterminated format marker in @print",
-                ));
-            };
-            let Some('}') = chars.next() else {
-                return Err(CompileError::new("unterminated format marker in @print"));
-            };
-            if !matches!(marker, 'd' | 'p' | 's') {
-                return Err(CompileError::new(format!(
-                    "unsupported @print marker `{{{marker}}}`"
-                )));
+    let chars: Vec<char> = format.chars().collect();
+    let mut index = 0;
+    while index < chars.len() {
+        if chars[index] == '{' {
+            index += 1;
+            let start = index;
+            while index < chars.len() && chars[index] != '}' {
+                index += 1;
             }
-            markers.push(marker);
+            if index >= chars.len() {
+                return Err(CompileError::new("unterminated format marker in @print"));
+            }
+            let marker: String = chars[start..index].iter().collect();
+            let parsed = match marker.as_str() {
+                "d" => PrintMarker::Int,
+                "s" => PrintMarker::String,
+                "p" => PrintMarker::Pointer,
+                "f" => PrintMarker::Float,
+                "lf" => PrintMarker::Double,
+                _ => {
+                    return Err(CompileError::new(format!(
+                        "unsupported @print marker `{{{marker}}}`"
+                    )));
+                }
+            };
+            markers.push(parsed);
         }
+        index += 1;
     }
     Ok(markers)
 }
 
-fn format_type_matches(marker: char, ty: &Type) -> bool {
+fn format_type_matches(marker: PrintMarker, ty: &Type) -> bool {
     match marker {
-        'd' => matches!(ty, Type::I32 | Type::U32),
-        's' => is_string_compatible(ty),
-        'p' => matches!(ty, Type::Ref(_) | Type::Named(_)) || is_string_compatible(ty),
-        _ => false,
+        PrintMarker::Int => is_integer_primitive_type(ty),
+        PrintMarker::String => is_string_compatible(ty),
+        PrintMarker::Pointer => matches!(ty, Type::Ref(_) | Type::Named(_)) || is_string_compatible(ty),
+        PrintMarker::Float => matches!(ty, Type::F32),
+        PrintMarker::Double => matches!(ty, Type::F64),
+    }
+}
+
+fn print_marker_name(marker: PrintMarker) -> &'static str {
+    match marker {
+        PrintMarker::Int => "d",
+        PrintMarker::String => "s",
+        PrintMarker::Pointer => "p",
+        PrintMarker::Float => "f",
+        PrintMarker::Double => "lf",
     }
 }
 
 fn validate_type(ty: &Type, types: &HashMap<String, TypeDefInfo>) -> Result<(), CompileError> {
     match ty {
-        Type::Void | Type::I32 | Type::U32 | Type::U8 => Ok(()),
+        Type::Void
+        | Type::I8
+        | Type::I16
+        | Type::I32
+        | Type::I64
+        | Type::Isize
+        | Type::U16
+        | Type::U32
+        | Type::U64
+        | Type::Usize
+        | Type::U8
+        | Type::F32
+        | Type::F64 => Ok(()),
         Type::Named(name) => {
             if types.contains_key(name) {
                 Ok(())
@@ -1172,7 +1211,19 @@ fn validate_type(ty: &Type, types: &HashMap<String, TypeDefInfo>) -> Result<(), 
 
 fn validate_type_with_known_names(ty: &Type, known: &HashSet<String>) -> Result<(), CompileError> {
     match ty {
-        Type::Void | Type::I32 | Type::U32 | Type::U8 => Ok(()),
+        Type::Void
+        | Type::I8
+        | Type::I16
+        | Type::I32
+        | Type::I64
+        | Type::Isize
+        | Type::U16
+        | Type::U32
+        | Type::U64
+        | Type::Usize
+        | Type::U8
+        | Type::F32
+        | Type::F64 => Ok(()),
         Type::Named(name) => {
             if known.contains(name) {
                 Ok(())
@@ -1209,16 +1260,107 @@ fn types_compatible(
 ) -> Result<bool, CompileError> {
     let expected = resolve_aliases(expected, types)?;
     let actual = resolve_aliases(actual, types)?;
-    Ok(expected == actual || (is_string_compatible(&expected) && is_string_compatible(&actual)))
+    Ok(expected == actual
+        || (is_string_compatible(&expected) && is_string_compatible(&actual))
+        || can_implicitly_convert_numeric(&actual, &expected))
 }
 
 fn is_string_compatible(ty: &Type) -> bool {
     matches!(ty, Type::U8) || matches!(ty, Type::Ref(inner) if inner.as_ref() == &Type::U8)
 }
 
+fn is_numeric_type(ty: &Type, types: &HashMap<String, TypeDefInfo>) -> Result<bool, CompileError> {
+    Ok(is_numeric_primitive_type(&resolve_aliases(ty, types)?))
+}
+
 fn is_integer_type(ty: &Type, types: &HashMap<String, TypeDefInfo>) -> Result<bool, CompileError> {
     let ty = resolve_aliases(ty, types)?;
-    Ok(matches!(ty, Type::I32 | Type::U32))
+    Ok(is_integer_primitive_type(&ty))
+}
+
+fn is_numeric_primitive_type(ty: &Type) -> bool {
+    is_integer_primitive_type(ty) || matches!(ty, Type::F32 | Type::F64)
+}
+
+fn is_integer_primitive_type(ty: &Type) -> bool {
+    integer_rank(ty).is_some()
+}
+
+fn is_signed_numeric_type(ty: &Type) -> bool {
+    is_signed_integer_primitive_type(ty) || matches!(ty, Type::F32 | Type::F64)
+}
+
+fn is_signed_integer_primitive_type(ty: &Type) -> bool {
+    matches!(ty, Type::I8 | Type::I16 | Type::I32 | Type::I64 | Type::Isize)
+}
+
+fn is_unsigned_integer_primitive_type(ty: &Type) -> bool {
+    matches!(ty, Type::U16 | Type::U32 | Type::U64 | Type::Usize)
+}
+
+fn integer_rank(ty: &Type) -> Option<u8> {
+    match ty {
+        Type::I8 => Some(1),
+        Type::I16 => Some(2),
+        Type::I32 => Some(3),
+        Type::I64 | Type::Isize => Some(4),
+        Type::U16 => Some(2),
+        Type::U32 => Some(3),
+        Type::U64 | Type::Usize => Some(4),
+        _ => None,
+    }
+}
+
+fn float_rank(ty: &Type) -> Option<u8> {
+    match ty {
+        Type::F32 => Some(1),
+        Type::F64 => Some(2),
+        _ => None,
+    }
+}
+
+fn common_integer_type(lhs: &Type, rhs: &Type) -> Option<Type> {
+    if lhs == rhs && is_integer_primitive_type(lhs) {
+        return Some(lhs.clone());
+    }
+    if is_signed_integer_primitive_type(lhs) && is_signed_integer_primitive_type(rhs) {
+        return Some(if integer_rank(lhs)? >= integer_rank(rhs)? {
+            lhs.clone()
+        } else {
+            rhs.clone()
+        });
+    }
+    if is_unsigned_integer_primitive_type(lhs) && is_unsigned_integer_primitive_type(rhs) {
+        return Some(if integer_rank(lhs)? >= integer_rank(rhs)? {
+            lhs.clone()
+        } else {
+            rhs.clone()
+        });
+    }
+    None
+}
+
+fn common_numeric_type(lhs: &Type, rhs: &Type) -> Option<Type> {
+    if let Some(common) = common_integer_type(lhs, rhs) {
+        return Some(common);
+    }
+    if lhs == rhs && matches!(lhs, Type::F32 | Type::F64) {
+        return Some(lhs.clone());
+    }
+    if matches!(lhs, Type::F32 | Type::F64) && matches!(rhs, Type::F32 | Type::F64) {
+        return Some(if float_rank(lhs)? >= float_rank(rhs)? {
+            lhs.clone()
+        } else {
+            rhs.clone()
+        });
+    }
+    None
+}
+
+fn can_implicitly_convert_numeric(actual: &Type, expected: &Type) -> bool {
+    common_numeric_type(actual, expected)
+        .map(|common| common == *expected)
+        .unwrap_or(false)
 }
 
 fn deref_refs(mut ty: &Type) -> &Type {
@@ -1249,9 +1391,18 @@ fn resolve_aliases(ty: &Type, types: &HashMap<String, TypeDefInfo>) -> Result<Ty
 fn describe_type(ty: &Type) -> String {
     match ty {
         Type::Void => "void".to_string(),
+        Type::I8 => "i8".to_string(),
+        Type::I16 => "i16".to_string(),
         Type::I32 => "i32".to_string(),
+        Type::I64 => "i64".to_string(),
+        Type::Isize => "isize".to_string(),
+        Type::U16 => "u16".to_string(),
         Type::U32 => "u32".to_string(),
+        Type::U64 => "u64".to_string(),
+        Type::Usize => "usize".to_string(),
         Type::U8 => "u8".to_string(),
+        Type::F32 => "f32".to_string(),
+        Type::F64 => "f64".to_string(),
         Type::Named(name) => name.clone(),
         Type::Ref(inner) => format!("ref({})", describe_type(inner)),
         Type::List(inner) => format!("list[{}]", describe_type(inner)),
@@ -1318,6 +1469,14 @@ mod tests {
     #[test]
     fn accepts_multiply_assignment() {
         let source = "pub def main() void\n\tvar value i32 = 3\n\tvalue *= 2\nend\n";
+        let program = parse_program(lex(source).unwrap()).unwrap();
+
+        analyze(&program).unwrap();
+    }
+
+    #[test]
+    fn accepts_numeric_widening_and_float_print_markers() {
+        let source = "pub def main() void\n\tval wide i64 = 1\n\tval sum i64 = wide + 2\n\tval small f32 = 3 as f32\n\tval big f64 = 4 as f64\n\t@print(\"{d} {f} {lf}\", {sum, small, big})\nend\n";
         let program = parse_program(lex(source).unwrap()).unwrap();
 
         analyze(&program).unwrap();
