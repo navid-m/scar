@@ -15,7 +15,7 @@ pub struct ModuleUse {
 pub struct TypeDef {
     pub name: String,
     pub is_extern: bool,
-    pub extern_name: Option<String>,
+    pub alias: Option<Type>,
     pub fields: Vec<FieldDef>,
 }
 

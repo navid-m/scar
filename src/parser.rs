@@ -76,21 +76,18 @@ impl Parser {
         self.expect_simple(TokenKind::Type)?;
         let name = self.expect_ident()?;
         if self.check_simple(&TokenKind::Assign) {
-            if !is_extern {
+            if is_extern {
                 return Err(self.error_at_current(
-                    "type aliases currently require `extern type Name = \"c_name\"`",
+                    "extern types must be explicitly defined with fields",
                 ));
             }
             self.advance();
-            let TokenKind::Str(extern_name) = self.current().kind.clone() else {
-                return Err(self.error_at_current("expected a string literal extern type name"));
-            };
-            self.advance();
+            let alias = Some(self.parse_type()?);
             self.expect_stmt_terminator()?;
             return Ok(TypeDef {
                 name,
                 is_extern,
-                extern_name: Some(extern_name),
+                alias,
                 fields: Vec::new(),
             });
         }
@@ -113,7 +110,7 @@ impl Parser {
         Ok(TypeDef {
             name,
             is_extern,
-            extern_name: None,
+            alias: None,
             fields,
         })
     }
@@ -950,20 +947,29 @@ mod tests {
 
     #[test]
     fn parses_extern_type_alias_and_packed_type() {
-        let source =
-            "extern type Useconds = \"useconds_t\"\nextern type Point\n\tx i32\n\ty i32\nend\n";
+        let source = "extern type Point\n\tx i32\n\ty i32\nend\ntype Count = i32\n";
         let program = parse_program(lex(source).unwrap()).unwrap();
 
         assert_eq!(program.type_defs.len(), 2);
-        assert_eq!(program.type_defs[0].name, "Useconds");
+        assert_eq!(program.type_defs[0].name, "Point");
         assert!(program.type_defs[0].is_extern);
-        assert_eq!(program.type_defs[0].extern_name.as_deref(), Some("useconds_t"));
-        assert!(program.type_defs[0].fields.is_empty());
+        assert!(program.type_defs[0].alias.is_none());
+        assert_eq!(program.type_defs[0].fields.len(), 2);
 
-        assert_eq!(program.type_defs[1].name, "Point");
-        assert!(program.type_defs[1].is_extern);
-        assert!(program.type_defs[1].extern_name.is_none());
-        assert_eq!(program.type_defs[1].fields.len(), 2);
+        assert_eq!(program.type_defs[1].name, "Count");
+        assert!(!program.type_defs[1].is_extern);
+        assert_eq!(program.type_defs[1].alias, Some(Type::I32));
+        assert!(program.type_defs[1].fields.is_empty());
+    }
+
+    #[test]
+    fn rejects_extern_type_aliases() {
+        let source = "extern type Useconds = i32\n";
+        let error = parse_program(lex(source).unwrap()).unwrap_err();
+
+        assert!(error
+            .message
+            .contains("extern types must be explicitly defined with fields"));
     }
 
     #[test]
@@ -986,7 +992,7 @@ mod tests {
         assert_eq!(program.type_defs.len(), 1);
         assert_eq!(program.type_defs[0].name, "SomeType");
         assert!(!program.type_defs[0].is_extern);
-        assert!(program.type_defs[0].extern_name.is_none());
+        assert!(program.type_defs[0].alias.is_none());
         assert_eq!(program.type_defs[0].fields.len(), 2);
 
         match &program.functions[0].body[0] {

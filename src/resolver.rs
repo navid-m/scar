@@ -244,8 +244,8 @@ fn rewrite_type_def(type_def: TypeDef, local_types: &HashMap<String, String>) ->
         .get(&type_def.name)
         .cloned()
         .unwrap_or(type_def.name);
-    let extern_name = type_def.extern_name;
     let is_extern = type_def.is_extern;
+    let alias = type_def.alias.map(|ty| rewrite_type(ty, local_types));
     let fields = type_def
         .fields
         .into_iter()
@@ -257,7 +257,7 @@ fn rewrite_type_def(type_def: TypeDef, local_types: &HashMap<String, String>) ->
     TypeDef {
         name,
         is_extern,
-        extern_name,
+        alias,
         fields,
     }
 }

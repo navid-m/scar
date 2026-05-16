@@ -73,8 +73,8 @@ fn render_function(
 }
 
 fn render_type_def(type_def: &TypeDef) -> String {
-    if let Some(extern_name) = &type_def.extern_name {
-        return format!("typedef {extern_name} {};\n", type_def.name);
+    if let Some(alias) = &type_def.alias {
+        return format!("typedef {} {};\n", c_type(alias), type_def.name);
     }
 
     let mut output = String::new();
@@ -814,6 +814,9 @@ fn convert_format_string(input: &str) -> Result<(String, Vec<char>), CompileErro
 fn collect_list_types(program: &Program, info: &ProgramInfo) -> Vec<Type> {
     let mut set = HashSet::new();
     for type_def in &program.type_defs {
+        if let Some(alias) = &type_def.alias {
+            collect_list_types_from_type(alias, &mut set);
+        }
         for field in &type_def.fields {
             collect_list_types_from_type(&field.ty, &mut set);
         }

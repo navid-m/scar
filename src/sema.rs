@@ -15,6 +15,7 @@ pub struct FunctionSig {
 pub struct TypeDefInfo {
     pub fields: Vec<FieldDef>,
     pub field_map: HashMap<String, Type>,
+    pub alias: Option<Type>,
 }
 
 #[derive(Debug, Clone)]
@@ -86,7 +87,8 @@ pub fn analyze(program: &Program) -> Result<ProgramInfo, CompileError> {
 }
 
 fn collect_types(program: &Program) -> Result<HashMap<String, TypeDefInfo>, CompileError> {
-    let known_type_names: HashSet<String> = program.type_defs.iter().map(|def| def.name.clone()).collect();
+    let known_type_names: HashSet<String> =
+        program.type_defs.iter().map(|def| def.name.clone()).collect();
     let mut types = HashMap::new();
 
     for type_def in &program.type_defs {
@@ -98,15 +100,25 @@ fn collect_types(program: &Program) -> Result<HashMap<String, TypeDefInfo>, Comp
         }
 
         let mut field_map = HashMap::new();
-        for field in &type_def.fields {
-            if field_map.contains_key(&field.name) {
+        if let Some(alias) = &type_def.alias {
+            if !type_def.fields.is_empty() {
                 return Err(CompileError::new(format!(
-                    "duplicate field `{}` in type `{}`",
-                    field.name, type_def.name
+                    "type `{}` cannot declare both an alias and fields",
+                    type_def.name
                 )));
             }
-            validate_type_with_known_names(&field.ty, &known_type_names)?;
-            field_map.insert(field.name.clone(), field.ty.clone());
+            validate_type_with_known_names(alias, &known_type_names)?;
+        } else {
+            for field in &type_def.fields {
+                if field_map.contains_key(&field.name) {
+                    return Err(CompileError::new(format!(
+                        "duplicate field `{}` in type `{}`",
+                        field.name, type_def.name
+                    )));
+                }
+                validate_type_with_known_names(&field.ty, &known_type_names)?;
+                field_map.insert(field.name.clone(), field.ty.clone());
+            }
         }
 
         types.insert(
@@ -114,6 +126,7 @@ fn collect_types(program: &Program) -> Result<HashMap<String, TypeDefInfo>, Comp
             TypeDefInfo {
                 fields: type_def.fields.clone(),
                 field_map,
+                alias: type_def.alias.clone(),
             },
         );
     }
@@ -197,7 +210,7 @@ fn analyze_stmt(
                     } else {
                         let actual = infer_expr_type(init, functions, types, scope)
                             .map_err(|error| error.with_location(*line, *column))?;
-                        expect_same_type(expected, &actual, "variable initializer")
+                        expect_same_type(expected, &actual, types, "variable initializer")
                             .map_err(|error| error.with_location(*line, *column))?;
                         expected.clone()
                     }
@@ -224,7 +237,7 @@ fn analyze_stmt(
                 .map_err(|error| error.with_location(*line, *column))?;
             let value_ty = infer_expr_type(value, functions, types, scope)
                 .map_err(|error| error.with_location(*line, *column))?;
-            expect_same_type(&target_ty, &value_ty, "assignment")
+            expect_same_type(&target_ty, &value_ty, types, "assignment")
                 .map_err(|error| error.with_location(*line, *column))?;
         }
         Stmt::AddAssign {
@@ -233,10 +246,16 @@ fn analyze_stmt(
             target,
             value,
         } => {
-            let target_ty = infer_mutable_target(target, functions, types, scope)
-                .map_err(|error| error.with_location(*line, *column))?;
-            let value_ty = infer_expr_type(value, functions, types, scope)
-                .map_err(|error| error.with_location(*line, *column))?;
+            let target_ty = resolve_aliases(
+                &infer_mutable_target(target, functions, types, scope)
+                    .map_err(|error| error.with_location(*line, *column))?,
+                types,
+            )?;
+            let value_ty = resolve_aliases(
+                &infer_expr_type(value, functions, types, scope)
+                    .map_err(|error| error.with_location(*line, *column))?,
+                types,
+            )?;
             if !(target_ty == Type::I32 && value_ty == Type::I32) {
                 return Err(
                     CompileError::new("`+=` currently requires both operands to have type i32")
@@ -259,7 +278,7 @@ fn analyze_stmt(
             (expected, Some(expr)) => {
                 let actual = infer_expr_type(expr, functions, types, scope)
                     .map_err(|error| error.with_location(*line, *column))?;
-                expect_same_type(expected, &actual, "return")
+                expect_same_type(expected, &actual, types, "return")
                     .map_err(|error| error.with_location(*line, *column))?;
             }
             (_, None) => {
@@ -278,7 +297,7 @@ fn analyze_stmt(
         } => {
             let condition_ty = infer_expr_type(condition, functions, types, scope)
                 .map_err(|error| error.with_location(*line, *column))?;
-            if !is_integer_type(&condition_ty) {
+            if !is_integer_type(&condition_ty, types)? {
                 return Err(
                     CompileError::new(format!(
                         "`if` conditions must be integer-compatible, got {}",
@@ -327,10 +346,16 @@ fn analyze_stmt(
             body,
             ..
         } => {
-            let start_ty = infer_expr_type(start, functions, types, scope)
-                .map_err(|error| error.with_location(*line, *column))?;
-            let end_ty = infer_expr_type(end, functions, types, scope)
-                .map_err(|error| error.with_location(*line, *column))?;
+            let start_ty = resolve_aliases(
+                &infer_expr_type(start, functions, types, scope)
+                    .map_err(|error| error.with_location(*line, *column))?,
+                types,
+            )?;
+            let end_ty = resolve_aliases(
+                &infer_expr_type(end, functions, types, scope)
+                    .map_err(|error| error.with_location(*line, *column))?,
+                types,
+            )?;
             if !(start_ty == Type::I32 && end_ty == Type::I32) {
                 return Err(
                     CompileError::new("`for` bounds must have type i32")
@@ -365,8 +390,11 @@ fn analyze_stmt(
             iterable,
             body,
         } => {
-            let iterable_ty = infer_expr_type(iterable, functions, types, scope)
-                .map_err(|error| error.with_location(*line, *column))?;
+            let iterable_ty = resolve_aliases(
+                &infer_expr_type(iterable, functions, types, scope)
+                    .map_err(|error| error.with_location(*line, *column))?,
+                types,
+            )?;
             let Type::List(element_ty) = deref_refs(&iterable_ty) else {
                 return Err(
                     CompileError::new(format!(
@@ -437,13 +465,18 @@ fn infer_expr_type(
         Expr::Index { base, index } => {
             let base_ty = infer_expr_type(base, functions, types, scope)?;
             let index_ty = infer_expr_type(index, functions, types, scope)?;
-            expect_same_type(&Type::I32, &index_ty, "list index")?;
-            infer_index_type(&base_ty)
+            expect_same_type(&Type::I32, &index_ty, types, "list index")?;
+            infer_index_type(&base_ty, types)
         }
         Expr::StructInit { name, fields } => {
             let type_info = types
                 .get(name)
                 .ok_or_else(|| CompileError::new(format!("unknown type `{name}`")))?;
+            if type_info.alias.is_some() {
+                return Err(CompileError::new(format!(
+                    "type `{name}` is an alias and cannot be initialized like a struct"
+                )));
+            }
             let mut seen = HashSet::new();
             for field in fields {
                 let expected = type_info.field_map.get(&field.name).ok_or_else(|| {
@@ -456,7 +489,7 @@ fn infer_expr_type(
                     )));
                 }
                 let actual = infer_expr_type(&field.value, functions, types, scope)?;
-                expect_same_type(expected, &actual, &format!("field `{}`", field.name))?;
+                expect_same_type(expected, &actual, types, &format!("field `{}`", field.name))?;
             }
             if seen.len() != type_info.fields.len() {
                 let missing = type_info
@@ -501,7 +534,7 @@ fn infer_expr_type(
         Expr::Cast { expr, ty } => {
             let source_ty = infer_expr_type(expr, functions, types, scope)?;
             validate_type(ty, types)?;
-            if is_integer_type(&source_ty) && is_integer_type(ty) {
+            if is_integer_type(&source_ty, types)? && is_integer_type(ty, types)? {
                 Ok(ty.clone())
             } else {
                 Err(CompileError::new(format!(
@@ -512,7 +545,7 @@ fn infer_expr_type(
             }
         }
         Expr::Unary { op, expr } => {
-            let inner_ty = infer_expr_type(expr, functions, types, scope)?;
+            let inner_ty = resolve_aliases(&infer_expr_type(expr, functions, types, scope)?, types)?;
             match op {
                 UnaryOp::Neg if inner_ty == Type::I32 => Ok(Type::I32),
                 UnaryOp::Neg => Err(CompileError::new(
@@ -524,8 +557,8 @@ fn infer_expr_type(
             "packed `{...}` expressions are only valid as @print arguments",
         )),
         Expr::Binary { lhs, op, rhs } => {
-            let lhs_ty = infer_expr_type(lhs, functions, types, scope)?;
-            let rhs_ty = infer_expr_type(rhs, functions, types, scope)?;
+            let lhs_ty = resolve_aliases(&infer_expr_type(lhs, functions, types, scope)?, types)?;
+            let rhs_ty = resolve_aliases(&infer_expr_type(rhs, functions, types, scope)?, types)?;
             match op {
                 BinaryOp::Add if lhs_ty == Type::I32 && rhs_ty == Type::I32 => Ok(Type::I32),
                 BinaryOp::Add if lhs_ty == Type::U32 && rhs_ty == Type::U32 => Ok(Type::U32),
@@ -533,7 +566,7 @@ fn infer_expr_type(
                     "`+` currently requires both operands to have matching integer types",
                 )),
                 BinaryOp::LessThan | BinaryOp::GreaterEqual | BinaryOp::Equal
-                    if is_integer_type(&lhs_ty) && lhs_ty == rhs_ty =>
+                    if is_integer_type(&lhs_ty, types)? && lhs_ty == rhs_ty =>
                 {
                     Ok(Type::I32)
                 }
@@ -569,7 +602,7 @@ fn analyze_call(
             }
             for (arg, expected) in args.iter().zip(&signature.params) {
                 let actual = infer_expr_type(arg, functions, types, scope)?;
-                expect_same_type(expected, &actual, "function argument")?;
+                expect_same_type(expected, &actual, types, "function argument")?;
             }
             return Ok(signature.return_type.clone());
         }
@@ -596,7 +629,7 @@ fn analyze_builtin(
                 return Err(CompileError::new("@puts expects exactly one argument"));
             }
             let arg_ty = infer_expr_type(&args[0], functions, types, scope)?;
-            expect_same_type(&Type::U8, &arg_ty, "@puts")?;
+            expect_same_type(&Type::U8, &arg_ty, types, "@puts")?;
             Ok(Type::Void)
         }
         "print" => {
@@ -621,7 +654,7 @@ fn analyze_builtin(
             }
             for (marker, arg) in markers.iter().zip(flattened.iter()) {
                 let arg_ty = infer_expr_type(arg, functions, types, scope)?;
-                if !format_type_matches(*marker, &arg_ty) {
+                if !format_type_matches(*marker, &resolve_aliases(&arg_ty, types)?) {
                     return Err(CompileError::new(format!(
                         "format marker `{{{marker}}}` does not accept value of type {}",
                         describe_type(&arg_ty)
@@ -642,7 +675,7 @@ fn analyze_builtin(
                 return Err(CompileError::new("@deref expects exactly one argument"));
             }
             let arg_ty = infer_expr_type(&args[0], functions, types, scope)?;
-            match arg_ty {
+            match resolve_aliases(&arg_ty, types)? {
                 Type::Ref(inner) => Ok(*inner),
                 other => Err(CompileError::new(format!(
                     "@deref requires a ref(...) argument, got {}",
@@ -674,8 +707,8 @@ fn infer_lvalue_type(
         Expr::Index { base, index } => {
             let base_ty = infer_lvalue_type(base, functions, types, scope)?;
             let index_ty = infer_expr_type(index, functions, types, scope)?;
-            expect_same_type(&Type::I32, &index_ty, "list index")?;
-            infer_index_type(&base_ty)
+            expect_same_type(&Type::I32, &index_ty, types, "list index")?;
+            infer_index_type(&base_ty, types)
         }
         Expr::BuiltinCall { name, args } if name == "deref" => {
             analyze_builtin("deref", args, functions, types, scope)
@@ -712,8 +745,8 @@ fn infer_mutable_target(
         Expr::Index { base, index } => {
             let base_ty = infer_mutable_target(base, functions, types, scope)?;
             let index_ty = infer_expr_type(index, functions, types, scope)?;
-            expect_same_type(&Type::I32, &index_ty, "list index")?;
-            infer_index_type(&base_ty)
+            expect_same_type(&Type::I32, &index_ty, types, "list index")?;
+            infer_index_type(&base_ty, types)
         }
         Expr::BuiltinCall { name, args } if name == "deref" => {
             analyze_builtin("deref", args, functions, types, scope)
@@ -729,7 +762,8 @@ fn infer_field_type(
     field: &str,
     types: &HashMap<String, TypeDefInfo>,
 ) -> Result<Type, CompileError> {
-    match deref_refs(base_ty) {
+    let resolved = resolve_aliases(base_ty, types)?;
+    match deref_refs(&resolved) {
         Type::Named(name) => types
             .get(name)
             .and_then(|type_info| type_info.field_map.get(field))
@@ -742,8 +776,9 @@ fn infer_field_type(
     }
 }
 
-fn infer_index_type(base_ty: &Type) -> Result<Type, CompileError> {
-    match deref_refs(base_ty) {
+fn infer_index_type(base_ty: &Type, types: &HashMap<String, TypeDefInfo>) -> Result<Type, CompileError> {
+    let resolved = resolve_aliases(base_ty, types)?;
+    match deref_refs(&resolved) {
         Type::List(inner) => Ok((**inner).clone()),
         other => Err(CompileError::new(format!(
             "indexing requires a list type, got {}",
@@ -779,7 +814,8 @@ fn analyze_list_method_with_receiver(
     types: &HashMap<String, TypeDefInfo>,
     scope: &HashMap<String, LocalBinding>,
 ) -> Result<Type, CompileError> {
-    let element_ty = match deref_refs(receiver_ty) {
+    let resolved_receiver = resolve_aliases(receiver_ty, types)?;
+    let element_ty = match deref_refs(&resolved_receiver) {
         Type::List(inner) => inner,
         other => {
             return Err(CompileError::new(format!(
@@ -795,7 +831,7 @@ fn analyze_list_method_with_receiver(
                 return Err(CompileError::new("@append expects exactly one argument"));
             }
             let value_ty = infer_expr_type(&args[0], functions, types, scope)?;
-            expect_same_type(element_ty, &value_ty, "@append")?;
+            expect_same_type(element_ty, &value_ty, types, "@append")?;
             Ok(Type::Void)
         }
         "capacity" => {
@@ -809,7 +845,7 @@ fn analyze_list_method_with_receiver(
                 return Err(CompileError::new("@reserve expects exactly one argument"));
             }
             let capacity_ty = infer_expr_type(&args[0], functions, types, scope)?;
-            expect_same_type(&Type::I32, &capacity_ty, "@reserve")?;
+            expect_same_type(&Type::I32, &capacity_ty, types, "@reserve")?;
             Ok(Type::Void)
         }
         "set" => {
@@ -817,9 +853,9 @@ fn analyze_list_method_with_receiver(
                 return Err(CompileError::new("@set expects exactly two arguments"));
             }
             let index_ty = infer_expr_type(&args[0], functions, types, scope)?;
-            expect_same_type(&Type::I32, &index_ty, "@set index")?;
+            expect_same_type(&Type::I32, &index_ty, types, "@set index")?;
             let value_ty = infer_expr_type(&args[1], functions, types, scope)?;
-            expect_same_type(element_ty, &value_ty, "@set value")?;
+            expect_same_type(element_ty, &value_ty, types, "@set value")?;
             Ok(Type::Void)
         }
         "insert" => {
@@ -827,9 +863,9 @@ fn analyze_list_method_with_receiver(
                 return Err(CompileError::new("@insert expects exactly two arguments"));
             }
             let index_ty = infer_expr_type(&args[0], functions, types, scope)?;
-            expect_same_type(&Type::I32, &index_ty, "@insert index")?;
+            expect_same_type(&Type::I32, &index_ty, types, "@insert index")?;
             let value_ty = infer_expr_type(&args[1], functions, types, scope)?;
-            expect_same_type(element_ty, &value_ty, "@insert value")?;
+            expect_same_type(element_ty, &value_ty, types, "@insert value")?;
             Ok(Type::Void)
         }
         "remove" => {
@@ -837,7 +873,7 @@ fn analyze_list_method_with_receiver(
                 return Err(CompileError::new("@remove expects exactly one argument"));
             }
             let index_ty = infer_expr_type(&args[0], functions, types, scope)?;
-            expect_same_type(&Type::I32, &index_ty, "@remove index")?;
+            expect_same_type(&Type::I32, &index_ty, types, "@remove index")?;
             Ok((**element_ty).clone())
         }
         "clear" => {
@@ -876,7 +912,7 @@ fn infer_list_literal_type(
         Some(Type::List(element_ty)) => {
             for value in values {
                 let actual = infer_expr_type(value, functions, types, scope)?;
-                expect_same_type(element_ty, &actual, "list element")?;
+                expect_same_type(element_ty, &actual, types, "list element")?;
             }
             element_ty.clone()
         }
@@ -890,7 +926,7 @@ fn infer_list_literal_type(
             let first_ty = infer_expr_type(&values[0], functions, types, scope)?;
             for value in &values[1..] {
                 let actual = infer_expr_type(value, functions, types, scope)?;
-                expect_same_type(&first_ty, &actual, "list element")?;
+                expect_same_type(&first_ty, &actual, types, "list element")?;
             }
             Box::new(first_ty)
         }
@@ -973,8 +1009,13 @@ fn validate_type_with_known_names(ty: &Type, known: &HashSet<String>) -> Result<
     }
 }
 
-fn expect_same_type(expected: &Type, actual: &Type, context: &str) -> Result<(), CompileError> {
-    if types_compatible(expected, actual) {
+fn expect_same_type(
+    expected: &Type,
+    actual: &Type,
+    types: &HashMap<String, TypeDefInfo>,
+    context: &str,
+) -> Result<(), CompileError> {
+    if types_compatible(expected, actual, types)? {
         Ok(())
     } else {
         Err(CompileError::new(format!(
@@ -985,16 +1026,23 @@ fn expect_same_type(expected: &Type, actual: &Type, context: &str) -> Result<(),
     }
 }
 
-fn types_compatible(expected: &Type, actual: &Type) -> bool {
-    expected == actual || (is_string_compatible(expected) && is_string_compatible(actual))
+fn types_compatible(
+    expected: &Type,
+    actual: &Type,
+    types: &HashMap<String, TypeDefInfo>,
+) -> Result<bool, CompileError> {
+    let expected = resolve_aliases(expected, types)?;
+    let actual = resolve_aliases(actual, types)?;
+    Ok(expected == actual || (is_string_compatible(&expected) && is_string_compatible(&actual)))
 }
 
 fn is_string_compatible(ty: &Type) -> bool {
     matches!(ty, Type::U8) || matches!(ty, Type::Ref(inner) if inner.as_ref() == &Type::U8)
 }
 
-fn is_integer_type(ty: &Type) -> bool {
-    matches!(ty, Type::I32 | Type::U32)
+fn is_integer_type(ty: &Type, types: &HashMap<String, TypeDefInfo>) -> Result<bool, CompileError> {
+    let ty = resolve_aliases(ty, types)?;
+    Ok(matches!(ty, Type::I32 | Type::U32))
 }
 
 fn deref_refs(mut ty: &Type) -> &Type {
@@ -1002,6 +1050,24 @@ fn deref_refs(mut ty: &Type) -> &Type {
         ty = inner;
     }
     ty
+}
+
+fn resolve_aliases(ty: &Type, types: &HashMap<String, TypeDefInfo>) -> Result<Type, CompileError> {
+    match ty {
+        Type::Named(name) => {
+            let Some(type_info) = types.get(name) else {
+                return Ok(Type::Named(name.clone()));
+            };
+            if let Some(alias) = &type_info.alias {
+                resolve_aliases(alias, types)
+            } else {
+                Ok(Type::Named(name.clone()))
+            }
+        }
+        Type::Ref(inner) => Ok(Type::Ref(Box::new(resolve_aliases(inner, types)?))),
+        Type::List(inner) => Ok(Type::List(Box::new(resolve_aliases(inner, types)?))),
+        other => Ok(other.clone()),
+    }
 }
 
 fn describe_type(ty: &Type) -> String {
@@ -1052,6 +1118,14 @@ mod tests {
     #[test]
     fn accepts_indexing_and_extern_calls() {
         let source = "type Grid\n\tcells list[list[i32]]\nend\nextern def sleep(t u32) void = \"sleep\"\npub def main() void\n\tvar grid = Grid(cells: [[1]])\n\tgrid.cells[0][0] = 2\n\tsleep(100 as u32)\nend\n";
+        let program = parse_program(lex(source).unwrap()).unwrap();
+
+        analyze(&program).unwrap();
+    }
+
+    #[test]
+    fn accepts_regular_type_aliases() {
+        let source = "type Count = i32\npub def main() void\n\tval count Count = 1\n\t@print(\"{d}\", {count})\nend\n";
         let program = parse_program(lex(source).unwrap()).unwrap();
 
         analyze(&program).unwrap();
