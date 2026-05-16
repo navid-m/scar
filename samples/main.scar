@@ -4,7 +4,7 @@ def print_address_of(x ref(void))
 	@print("{p}", {@addr(x)})
 end
 
-def modify_in_place(x ref(u8)) void
+def modify_in_place(x ref(u8))
 	@deref(x) = "modified"
 end
 
@@ -21,7 +21,7 @@ def add(x i32, y i32) i32
 	return x + y
 end
 
-def hello_world(x i32) void
+def hello_world(x i32)
 	@puts("This is some function")
 	@print("{d}\n", {x})
 end
