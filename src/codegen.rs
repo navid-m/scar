@@ -47,7 +47,7 @@ pub fn generate_c(program: &Program, info: &ProgramInfo) -> Result<String, Compi
 fn render_runtime_prelude() -> String {
     let mut output = String::new();
     output.push_str("static void scar_runtime_panic(const char *message) {\n");
-    output.push_str("    fprintf(stderr, \"scar runtime error: %s\\n\", message);\n");
+    output.push_str("    fprintf(stderr, \"scar: panic: %s\\n\", message);\n");
     output.push_str("    exit(1);\n");
     output.push_str("}\n\n");
     output
@@ -313,7 +313,11 @@ fn render_stmt(
     Ok(())
 }
 
-fn render_expr(expr: &Expr, function: &Function, info: &ProgramInfo) -> Result<String, CompileError> {
+fn render_expr(
+    expr: &Expr,
+    function: &Function,
+    info: &ProgramInfo,
+) -> Result<String, CompileError> {
     render_expr_with_hint(expr, function, info, None)
 }
 
@@ -619,7 +623,9 @@ fn infer_codegen_expr_type(
             }
             Ok(Type::List(Box::new(first_ty)))
         }
-        Expr::Index { base, .. } => infer_index_type(&infer_codegen_expr_type(base, function, info)?),
+        Expr::Index { base, .. } => {
+            infer_index_type(&infer_codegen_expr_type(base, function, info)?)
+        }
         Expr::Path(path) => match path.as_slice() {
             [name] => info
                 .locals
@@ -634,7 +640,9 @@ fn infer_codegen_expr_type(
                         .map(|param| param.ty.clone())
                 })
                 .or_else(|| info.functions.get(name).map(|sig| sig.return_type.clone()))
-                .ok_or_else(|| CompileError::new(format!("unknown expression `{name}` in code generation"))),
+                .ok_or_else(|| {
+                    CompileError::new(format!("unknown expression `{name}` in code generation"))
+                }),
             _ => Err(CompileError::new(format!(
                 "unsupported qualified expression `{}` in code generation",
                 path.join(".")
@@ -648,7 +656,9 @@ fn infer_codegen_expr_type(
                     .get(name)
                     .and_then(|type_info| type_info.field_map.get(field))
                     .cloned()
-                    .ok_or_else(|| CompileError::new(format!("type `{name}` has no field `{field}`"))),
+                    .ok_or_else(|| {
+                        CompileError::new(format!("type `{name}` has no field `{field}`"))
+                    }),
                 other => Err(CompileError::new(format!(
                     "field access requires a named type during code generation, got {}",
                     describe_type(other)
@@ -706,9 +716,7 @@ fn infer_codegen_expr_type(
                 BinaryOp::Add => Err(CompileError::new(
                     "`+` currently requires matching operand types",
                 )),
-                BinaryOp::LessThan | BinaryOp::GreaterEqual | BinaryOp::Equal => {
-                    Ok(Type::I32)
-                }
+                BinaryOp::LessThan | BinaryOp::GreaterEqual | BinaryOp::Equal => Ok(Type::I32),
             }
         }
     }
