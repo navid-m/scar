@@ -73,8 +73,16 @@ fn render_function(
 }
 
 fn render_type_def(type_def: &TypeDef) -> String {
+    if let Some(extern_name) = &type_def.extern_name {
+        return format!("typedef {extern_name} {};\n", type_def.name);
+    }
+
     let mut output = String::new();
-    output.push_str("typedef struct {\n");
+    if type_def.is_extern {
+        output.push_str("typedef struct __attribute__((packed)) {\n");
+    } else {
+        output.push_str("typedef struct {\n");
+    }
     for field in &type_def.fields {
         output.push_str("    ");
         output.push_str(&c_type(&field.ty));

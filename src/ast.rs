@@ -14,6 +14,8 @@ pub struct ModuleUse {
 #[derive(Debug, Clone)]
 pub struct TypeDef {
     pub name: String,
+    pub is_extern: bool,
+    pub extern_name: Option<String>,
     pub fields: Vec<FieldDef>,
 }
 

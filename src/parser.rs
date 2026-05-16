@@ -30,7 +30,9 @@ impl Parser {
             if self.check_simple(&TokenKind::Val) {
                 module_uses.push(self.parse_module_use()?);
             } else if self.check_simple(&TokenKind::Type) {
-                type_defs.push(self.parse_type_def()?);
+                type_defs.push(self.parse_type_def(false)?);
+            } else if self.check_simple(&TokenKind::Extern) && self.check_next_simple(&TokenKind::Type) {
+                type_defs.push(self.parse_type_def(true)?);
             } else if self.check_simple(&TokenKind::Extern) {
                 functions.push(self.parse_extern_function()?);
             } else {
@@ -67,9 +69,31 @@ impl Parser {
         Ok(ModuleUse { name, path })
     }
 
-    fn parse_type_def(&mut self) -> Result<TypeDef, CompileError> {
+    fn parse_type_def(&mut self, is_extern: bool) -> Result<TypeDef, CompileError> {
+        if is_extern {
+            self.expect_simple(TokenKind::Extern)?;
+        }
         self.expect_simple(TokenKind::Type)?;
         let name = self.expect_ident()?;
+        if self.check_simple(&TokenKind::Assign) {
+            if !is_extern {
+                return Err(self.error_at_current(
+                    "type aliases currently require `extern type Name = \"c_name\"`",
+                ));
+            }
+            self.advance();
+            let TokenKind::Str(extern_name) = self.current().kind.clone() else {
+                return Err(self.error_at_current("expected a string literal extern type name"));
+            };
+            self.advance();
+            self.expect_stmt_terminator()?;
+            return Ok(TypeDef {
+                name,
+                is_extern,
+                extern_name: Some(extern_name),
+                fields: Vec::new(),
+            });
+        }
         self.expect_newline("expected a newline after type name")?;
 
         let mut fields = Vec::new();
@@ -86,7 +110,12 @@ impl Parser {
 
         self.expect_simple(TokenKind::End)?;
         self.consume_newlines();
-        Ok(TypeDef { name, fields })
+        Ok(TypeDef {
+            name,
+            is_extern,
+            extern_name: None,
+            fields,
+        })
     }
 
     fn parse_function(&mut self) -> Result<Function, CompileError> {
@@ -920,6 +949,24 @@ mod tests {
     }
 
     #[test]
+    fn parses_extern_type_alias_and_packed_type() {
+        let source =
+            "extern type Useconds = \"useconds_t\"\nextern type Point\n\tx i32\n\ty i32\nend\n";
+        let program = parse_program(lex(source).unwrap()).unwrap();
+
+        assert_eq!(program.type_defs.len(), 2);
+        assert_eq!(program.type_defs[0].name, "Useconds");
+        assert!(program.type_defs[0].is_extern);
+        assert_eq!(program.type_defs[0].extern_name.as_deref(), Some("useconds_t"));
+        assert!(program.type_defs[0].fields.is_empty());
+
+        assert_eq!(program.type_defs[1].name, "Point");
+        assert!(program.type_defs[1].is_extern);
+        assert!(program.type_defs[1].extern_name.is_none());
+        assert_eq!(program.type_defs[1].fields.len(), 2);
+    }
+
+    #[test]
     fn parses_top_level_module_use() {
         let source = "val some_module = use(\"some_file\")\npub def main() void\nend\n";
         let program = parse_program(lex(source).unwrap()).unwrap();
@@ -938,6 +985,8 @@ mod tests {
 
         assert_eq!(program.type_defs.len(), 1);
         assert_eq!(program.type_defs[0].name, "SomeType");
+        assert!(!program.type_defs[0].is_extern);
+        assert!(program.type_defs[0].extern_name.is_none());
         assert_eq!(program.type_defs[0].fields.len(), 2);
 
         match &program.functions[0].body[0] {

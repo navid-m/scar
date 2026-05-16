@@ -4,6 +4,12 @@ type Grid
 	cells list[list[i32]]
 end
 
+extern type Dirent
+	x i32
+	y i32
+	z i32
+end
+
 extern def sleep(t u32) void = "sleep"
 
 def make_row(width i32) list[i32]
