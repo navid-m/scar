@@ -164,6 +164,7 @@ impl Parser {
         self.expect_simple(TokenKind::Def)?;
         let name = self.expect_ident()?;
         self.expect_simple(TokenKind::LParen)?;
+        self.consume_newlines();
 
         let mut params = Vec::new();
         if !self.check_simple(&TokenKind::RParen) {
@@ -176,11 +177,13 @@ impl Parser {
                 });
                 if self.check_simple(&TokenKind::Comma) {
                     self.advance();
+                    self.consume_newlines();
                 } else {
                     break;
                 }
             }
         }
+        self.consume_newlines();
         self.expect_simple(TokenKind::RParen)?;
 
         let return_type = if self.starts_type() {
@@ -1257,6 +1260,16 @@ mod tests {
             }
             other => panic!("expected for loop, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn parses_multiline_function_signature() {
+        let source = "def add(\n\ta i32,\n\tb i32\n) i32\n\treturn a + b\nend\n";
+        let program = parse_program(lex(source).unwrap()).unwrap();
+
+        assert_eq!(program.functions[0].name, "add");
+        assert_eq!(program.functions[0].params.len(), 2);
+        assert_eq!(program.functions[0].return_type, Type::I32);
     }
 
     #[test]
