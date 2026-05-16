@@ -74,6 +74,12 @@ pub enum Stmt {
         target: Expr,
         value: Expr,
     },
+    MulAssign {
+        line: usize,
+        column: usize,
+        target: Expr,
+        value: Expr,
+    },
     SubAssign {
         line: usize,
         column: usize,

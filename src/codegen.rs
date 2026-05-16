@@ -175,6 +175,13 @@ fn render_stmt(
             output.push_str(&render_expr(value, function, info)?);
             output.push_str(";\n");
         }
+        Stmt::MulAssign { target, value, .. } => {
+            indent(output, level);
+            output.push_str(&render_expr(target, function, info)?);
+            output.push_str(" *= ");
+            output.push_str(&render_expr(value, function, info)?);
+            output.push_str(";\n");
+        }
         Stmt::SubAssign { target, value, .. } => {
             indent(output, level);
             output.push_str(&render_expr(target, function, info)?);

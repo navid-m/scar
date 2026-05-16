@@ -63,6 +63,7 @@ pub enum TokenKind {
     GreaterEqual,
     ShiftRight,
     Star,
+    StarEqual,
     Slash,
     SlashEqual,
     Percent,
@@ -251,7 +252,25 @@ impl Lexer {
                         });
                     }
                 }
-                '*' => tokens.push(self.single(TokenKind::Star)),
+                '*' => {
+                    let line = self.line;
+                    let column = self.column;
+                    self.bump();
+                    if self.peek() == Some('=') {
+                        self.bump();
+                        tokens.push(Token {
+                            kind: TokenKind::StarEqual,
+                            line,
+                            column,
+                        });
+                    } else {
+                        tokens.push(Token {
+                            kind: TokenKind::Star,
+                            line,
+                            column,
+                        });
+                    }
+                }
                 '/' => {
                     let line = self.line;
                     let column = self.column;

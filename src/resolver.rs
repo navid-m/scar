@@ -306,6 +306,17 @@ fn rewrite_stmt(
             target: rewrite_expr(target, local_functions, local_types, module_aliases)?,
             value: rewrite_expr(value, local_functions, local_types, module_aliases)?,
         }),
+        Stmt::MulAssign {
+            line,
+            column,
+            target,
+            value,
+        } => Ok(Stmt::MulAssign {
+            line,
+            column,
+            target: rewrite_expr(target, local_functions, local_types, module_aliases)?,
+            value: rewrite_expr(value, local_functions, local_types, module_aliases)?,
+        }),
         Stmt::SubAssign {
             line,
             column,

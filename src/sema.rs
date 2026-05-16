@@ -248,6 +248,14 @@ fn analyze_stmt(
         } => {
             analyze_arithmetic_assignment(target, value, "+=", *line, *column, functions, types, scope)?;
         }
+        Stmt::MulAssign {
+            line,
+            column,
+            target,
+            value,
+        } => {
+            analyze_arithmetic_assignment(target, value, "*=", *line, *column, functions, types, scope)?;
+        }
         Stmt::SubAssign {
             line,
             column,
@@ -1302,6 +1310,14 @@ mod tests {
     #[test]
     fn accepts_bitwise_and_shift_operators() {
         let source = "type Pair\n\tleft i32\n\tright i32\nend\npub def main() void\n\tvar mask i32 = (1 << 3) | (2 & 7) ^ (8 >> 1)\n\tmask &= 15\n\tmask |= 1\n\tmask ^= 2\n\tmask -= 1\n\tval product = (6 * 7) % 5\n\tval pair = Pair(mask, product)\n\tif !(1 == 0) && pair.left - pair.right == 10\n\t\t@print(\"{d} {d}\", {mask, product})\n\tend\nend\n";
+        let program = parse_program(lex(source).unwrap()).unwrap();
+
+        analyze(&program).unwrap();
+    }
+
+    #[test]
+    fn accepts_multiply_assignment() {
+        let source = "pub def main() void\n\tvar value i32 = 3\n\tvalue *= 2\nend\n";
         let program = parse_program(lex(source).unwrap()).unwrap();
 
         analyze(&program).unwrap();

@@ -297,6 +297,18 @@ impl Parser {
                 value,
             });
         }
+        if self.check_simple(&TokenKind::StarEqual) {
+            self.advance();
+            self.consume_newlines();
+            let value = self.parse_expr()?;
+            self.expect_stmt_terminator()?;
+            return Ok(Stmt::MulAssign {
+                line,
+                column,
+                target: expr,
+                value,
+            });
+        }
         if self.check_simple(&TokenKind::MinusEqual) {
             self.advance();
             self.consume_newlines();
@@ -1131,6 +1143,7 @@ impl Parser {
             TokenKind::GreaterEqual => "`>=`",
             TokenKind::ShiftRight => "`>>`",
             TokenKind::Star => "`*`",
+            TokenKind::StarEqual => "`*=`",
             TokenKind::Slash => "`/`",
             TokenKind::SlashEqual => "`/=`",
             TokenKind::Percent => "`%`",
@@ -1366,6 +1379,14 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn parses_multiply_assignment() {
+        let source = "pub def main() void\n\tvar value = 3\n\tvalue *= 2\nend\n";
+        let program = parse_program(lex(source).unwrap()).unwrap();
+
+        assert!(matches!(program.functions[0].body[1], Stmt::MulAssign { .. }));
     }
 
     #[test]
