@@ -265,10 +265,12 @@ fn rewrite_stmt(
         Stmt::VarDecl {
             mutable,
             name,
+            declared_type,
             init,
         } => Ok(Stmt::VarDecl {
             mutable,
             name,
+            declared_type: declared_type.map(|ty| rewrite_type(ty, local_types)),
             init: rewrite_expr(init, local_functions, local_types, module_aliases)?,
         }),
         Stmt::Assign { target, value } => Ok(Stmt::Assign {
@@ -290,17 +292,29 @@ fn rewrite_stmt(
             local_types,
             module_aliases,
         )?)),
-        Stmt::For {
+        Stmt::ForRange {
             pragma,
             var_name,
             start,
             end,
             body,
-        } => Ok(Stmt::For {
+        } => Ok(Stmt::ForRange {
             pragma,
             var_name,
             start: rewrite_expr(start, local_functions, local_types, module_aliases)?,
             end: rewrite_expr(end, local_functions, local_types, module_aliases)?,
+            body: body
+                .into_iter()
+                .map(|stmt| rewrite_stmt(stmt, local_functions, local_types, module_aliases))
+                .collect::<Result<Vec<_>, _>>()?,
+        }),
+        Stmt::ForEach {
+            var_name,
+            iterable,
+            body,
+        } => Ok(Stmt::ForEach {
+            var_name,
+            iterable: rewrite_expr(iterable, local_functions, local_types, module_aliases)?,
             body: body
                 .into_iter()
                 .map(|stmt| rewrite_stmt(stmt, local_functions, local_types, module_aliases))
@@ -317,6 +331,12 @@ fn rewrite_expr(
 ) -> Result<Expr, CompileError> {
     match expr {
         Expr::Int(_) | Expr::String(_) | Expr::Path(_) => Ok(expr),
+        Expr::ListLiteral(values) => Ok(Expr::ListLiteral(
+            values
+                .into_iter()
+                .map(|value| rewrite_expr(value, local_functions, local_types, module_aliases))
+                .collect::<Result<Vec<_>, _>>()?,
+        )),
         Expr::FieldAccess { base, field } => Ok(Expr::FieldAccess {
             base: Box::new(rewrite_expr(
                 *base,
@@ -345,6 +365,23 @@ fn rewrite_expr(
         }),
         Expr::BuiltinCall { name, args } => Ok(Expr::BuiltinCall {
             name,
+            args: args
+                .into_iter()
+                .map(|arg| rewrite_expr(arg, local_functions, local_types, module_aliases))
+                .collect::<Result<Vec<_>, _>>()?,
+        }),
+        Expr::MethodCall {
+            receiver,
+            method,
+            args,
+        } => Ok(Expr::MethodCall {
+            receiver: Box::new(rewrite_expr(
+                *receiver,
+                local_functions,
+                local_types,
+                module_aliases,
+            )?),
+            method,
             args: args
                 .into_iter()
                 .map(|arg| rewrite_expr(arg, local_functions, local_types, module_aliases))
@@ -432,6 +469,7 @@ fn rewrite_type(ty: Type, local_types: &HashMap<String, String>) -> Type {
     match ty {
         Type::Named(name) => Type::Named(local_types.get(&name).cloned().unwrap_or(name)),
         Type::Ref(inner) => Type::Ref(Box::new(rewrite_type(*inner, local_types))),
+        Type::List(inner) => Type::List(Box::new(rewrite_type(*inner, local_types))),
         other => other,
     }
 }

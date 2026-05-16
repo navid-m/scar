@@ -165,6 +165,7 @@ fn analyze_stmt(
         Stmt::VarDecl {
             mutable,
             name,
+            declared_type,
             init,
         } => {
             if scope.contains_key(name) {
@@ -172,7 +173,19 @@ fn analyze_stmt(
                     "duplicate local binding `{name}` in function `{function_name}`"
                 )));
             }
-            let ty = infer_expr_type(init, functions, types, scope)?;
+            let ty = match declared_type {
+                Some(expected) => {
+                    validate_type(expected, types)?;
+                    if let Expr::ListLiteral(values) = init {
+                        infer_list_literal_type(values, Some(expected), functions, types, scope)?
+                    } else {
+                        let actual = infer_expr_type(init, functions, types, scope)?;
+                        expect_same_type(expected, &actual, "variable initializer")?;
+                        expected.clone()
+                    }
+                }
+                None => infer_expr_type(init, functions, types, scope)?,
+            };
             scope.insert(
                 name.clone(),
                 LocalBinding {
@@ -212,7 +225,7 @@ fn analyze_stmt(
         Stmt::Expr(expr) => {
             infer_expr_type(expr, functions, types, scope)?;
         }
-        Stmt::For {
+        Stmt::ForRange {
             pragma: _,
             var_name,
             start,
@@ -245,6 +258,39 @@ fn analyze_stmt(
                 )?;
             }
         }
+        Stmt::ForEach {
+            var_name,
+            iterable,
+            body,
+        } => {
+            let iterable_ty = infer_expr_type(iterable, functions, types, scope)?;
+            let Type::List(element_ty) = iterable_ty else {
+                return Err(CompileError::new(format!(
+                    "`for ... in ...` requires a list iterable, got {}",
+                    describe_type(&iterable_ty)
+                )));
+            };
+
+            let mut nested = scope.clone();
+            nested.insert(
+                var_name.clone(),
+                LocalBinding {
+                    ty: (*element_ty).clone(),
+                    mutable: true,
+                },
+            );
+            for stmt in body {
+                analyze_stmt(
+                    stmt,
+                    function_name,
+                    expected_return,
+                    functions,
+                    types,
+                    &mut nested,
+                    function_locals,
+                )?;
+            }
+        }
     }
     Ok(())
 }
@@ -257,7 +303,8 @@ fn infer_expr_type(
 ) -> Result<Type, CompileError> {
     match expr {
         Expr::Int(_) => Ok(Type::I32),
-        Expr::String(_) => Ok(Type::U8),
+        Expr::String(_) => Ok(Type::Ref(Box::new(Type::U8))),
+        Expr::ListLiteral(values) => infer_list_literal_type(values, None, functions, types, scope),
         Expr::StructInit { name, fields } => {
             let type_info = types
                 .get(name)
@@ -294,6 +341,11 @@ fn infer_expr_type(
             infer_field_type(&base_ty, field, types)
         }
         Expr::BuiltinCall { name, args } => analyze_builtin(name, args, functions, types, scope),
+        Expr::MethodCall {
+            receiver,
+            method,
+            args,
+        } => analyze_method_call(receiver, method, args, functions, types, scope),
         Expr::Path(path) => match path.as_slice() {
             [name] => scope
                 .get(name)
@@ -354,6 +406,88 @@ fn analyze_call(
     ))
 }
 
+fn analyze_method_call(
+    receiver: &Expr,
+    method: &str,
+    args: &[Expr],
+    functions: &HashMap<String, FunctionSig>,
+    types: &HashMap<String, TypeDefInfo>,
+    scope: &HashMap<String, LocalBinding>,
+) -> Result<Type, CompileError> {
+    let receiver_ty = match method {
+        "capacity" => infer_expr_type(receiver, functions, types, scope)?,
+        _ => infer_mutable_target(receiver, functions, types, scope)?,
+    };
+    let Type::List(element_ty) = receiver_ty else {
+        return Err(CompileError::new(format!(
+            "`@{method}` requires a list receiver, got {}",
+            describe_type(&receiver_ty)
+        )));
+    };
+
+    match method {
+        "append" => {
+            if args.len() != 1 {
+                return Err(CompileError::new("@append expects exactly one argument"));
+            }
+            let value_ty = infer_expr_type(&args[0], functions, types, scope)?;
+            expect_same_type(&element_ty, &value_ty, "@append")?;
+            Ok(Type::Void)
+        }
+        "capacity" => {
+            if !args.is_empty() {
+                return Err(CompileError::new("@capacity expects no arguments"));
+            }
+            Ok(Type::I32)
+        }
+        "reserve" => {
+            if args.len() != 1 {
+                return Err(CompileError::new("@reserve expects exactly one argument"));
+            }
+            let capacity_ty = infer_expr_type(&args[0], functions, types, scope)?;
+            expect_same_type(&Type::I32, &capacity_ty, "@reserve")?;
+            Ok(Type::Void)
+        }
+        "set" => {
+            if args.len() != 2 {
+                return Err(CompileError::new("@set expects exactly two arguments"));
+            }
+            let index_ty = infer_expr_type(&args[0], functions, types, scope)?;
+            expect_same_type(&Type::I32, &index_ty, "@set index")?;
+            let value_ty = infer_expr_type(&args[1], functions, types, scope)?;
+            expect_same_type(&element_ty, &value_ty, "@set value")?;
+            Ok(Type::Void)
+        }
+        "insert" => {
+            if args.len() != 2 {
+                return Err(CompileError::new("@insert expects exactly two arguments"));
+            }
+            let index_ty = infer_expr_type(&args[0], functions, types, scope)?;
+            expect_same_type(&Type::I32, &index_ty, "@insert index")?;
+            let value_ty = infer_expr_type(&args[1], functions, types, scope)?;
+            expect_same_type(&element_ty, &value_ty, "@insert value")?;
+            Ok(Type::Void)
+        }
+        "remove" => {
+            if args.len() != 1 {
+                return Err(CompileError::new("@remove expects exactly one argument"));
+            }
+            let index_ty = infer_expr_type(&args[0], functions, types, scope)?;
+            expect_same_type(&Type::I32, &index_ty, "@remove index")?;
+            Ok((*element_ty).clone())
+        }
+        "clear" => {
+            if !args.is_empty() {
+                return Err(CompileError::new("@clear expects no arguments"));
+            }
+            Ok(Type::Void)
+        }
+        _ => Err(CompileError::new(format!(
+            "unsupported list accessor `@{method}`"
+        ))),
+    }
+}
+
 fn analyze_builtin(
     name: &str,
     args: &[Expr],
@@ -369,7 +503,7 @@ fn analyze_builtin(
                 ));
             }
             let arg_ty = infer_expr_type(&args[0], functions, types, scope)?;
-            expect_same_type(&Type::U8, &arg_ty, "@puts")?;
+            expect_same_type(&Type::Ref(Box::new(Type::U8)), &arg_ty, "@puts")?;
             Ok(Type::Void)
         }
         "print" => {
@@ -488,6 +622,53 @@ fn infer_field_type(
     }
 }
 
+fn infer_list_literal_type(
+    values: &[Expr],
+    expected: Option<&Type>,
+    functions: &HashMap<String, FunctionSig>,
+    types: &HashMap<String, TypeDefInfo>,
+    scope: &HashMap<String, LocalBinding>,
+) -> Result<Type, CompileError> {
+    if values.is_empty() {
+        return match expected {
+            Some(Type::List(element_ty)) => Ok(Type::List(element_ty.clone())),
+            Some(other) => Err(CompileError::new(format!(
+                "empty list literals require a list type, got {}",
+                describe_type(other)
+            ))),
+            None => Err(CompileError::new(
+                "cannot infer the element type of an empty list literal",
+            )),
+        };
+    }
+
+    let element_ty = match expected {
+        Some(Type::List(element_ty)) => {
+            for value in values {
+                let actual = infer_expr_type(value, functions, types, scope)?;
+                expect_same_type(element_ty, &actual, "list element")?;
+            }
+            element_ty.clone()
+        }
+        Some(other) => {
+            return Err(CompileError::new(format!(
+                "list literal cannot initialize non-list type {}",
+                describe_type(other)
+            )));
+        }
+        None => {
+            let first_ty = infer_expr_type(&values[0], functions, types, scope)?;
+            for value in &values[1..] {
+                let actual = infer_expr_type(value, functions, types, scope)?;
+                expect_same_type(&first_ty, &actual, "list element")?;
+            }
+            Box::new(first_ty)
+        }
+    };
+
+    Ok(Type::List(element_ty))
+}
+
 fn flatten_print_args<'a>(args: &'a [Expr]) -> Vec<&'a Expr> {
     let mut flattened = Vec::new();
     for arg in args {
@@ -526,8 +707,8 @@ fn parse_format_markers(format: &str) -> Result<Vec<char>, CompileError> {
 fn format_type_matches(marker: char, ty: &Type) -> bool {
     match marker {
         'd' => matches!(ty, Type::I32),
-        's' => matches!(ty, Type::U8),
-        'p' => matches!(ty, Type::U8 | Type::Ref(_) | Type::Named(_)),
+        's' => matches!(ty, Type::Ref(inner) if inner.as_ref() == &Type::U8),
+        'p' => matches!(ty, Type::Ref(_) | Type::Named(_)),
         _ => false,
     }
 }
@@ -543,6 +724,7 @@ fn validate_type(ty: &Type, types: &HashMap<String, TypeDefInfo>) -> Result<(), 
             }
         }
         Type::Ref(inner) => validate_type(inner, types),
+        Type::List(inner) => validate_type(inner, types),
     }
 }
 
@@ -557,6 +739,7 @@ fn validate_type_with_known_names(ty: &Type, known: &HashSet<String>) -> Result<
             }
         }
         Type::Ref(inner) => validate_type_with_known_names(inner, known),
+        Type::List(inner) => validate_type_with_known_names(inner, known),
     }
 }
 
@@ -579,6 +762,7 @@ fn describe_type(ty: &Type) -> String {
         Type::U8 => "u8".to_string(),
         Type::Named(name) => name.clone(),
         Type::Ref(inner) => format!("ref({})", describe_type(inner)),
+        Type::List(inner) => format!("list[{}]", describe_type(inner)),
     }
 }
 
@@ -611,6 +795,14 @@ mod tests {
     fn analyzes_struct_init_and_field_access() {
         let source =
             "type SomeType\n\tx i32\n\ty i32\nend\npub def main() void\n\tval st = SomeType(x: 10, y: 12)\n\t@print(\"{d}\", {st.x})\nend\n";
+        let program = parse_program(lex(source).unwrap()).unwrap();
+
+        analyze(&program).unwrap();
+    }
+
+    #[test]
+    fn accepts_string_literals_as_ref_u8() {
+        let source = "pub def main() void\n\tval message ref(u8) = \"hello\"\n\t@puts(message)\n\t@print(\"{s}\", {message})\nend\n";
         let program = parse_program(lex(source).unwrap()).unwrap();
 
         analyze(&program).unwrap();

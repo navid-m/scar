@@ -38,13 +38,14 @@ pub struct Param {
     pub ty: Type,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Type {
     Void,
     I32,
     U8,
     Named(String),
     Ref(Box<Type>),
+    List(Box<Type>),
 }
 
 #[derive(Debug, Clone)]
@@ -52,6 +53,7 @@ pub enum Stmt {
     VarDecl {
         mutable: bool,
         name: String,
+        declared_type: Option<Type>,
         init: Expr,
     },
     Assign {
@@ -64,11 +66,16 @@ pub enum Stmt {
     },
     Return(Option<Expr>),
     Expr(Expr),
-    For {
+    ForRange {
         pragma: Option<String>,
         var_name: String,
         start: Expr,
         end: Expr,
+        body: Vec<Stmt>,
+    },
+    ForEach {
+        var_name: String,
+        iterable: Expr,
         body: Vec<Stmt>,
     },
 }
@@ -78,6 +85,7 @@ pub enum Expr {
     Int(i64),
     String(String),
     Path(Vec<String>),
+    ListLiteral(Vec<Expr>),
     FieldAccess {
         base: Box<Expr>,
         field: String,
@@ -88,6 +96,11 @@ pub enum Expr {
     },
     BuiltinCall {
         name: String,
+        args: Vec<Expr>,
+    },
+    MethodCall {
+        receiver: Box<Expr>,
+        method: String,
         args: Vec<Expr>,
     },
     Call {

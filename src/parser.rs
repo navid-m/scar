@@ -148,12 +148,18 @@ impl Parser {
             let mutable = self.check_simple(&TokenKind::Var);
             self.advance();
             let name = self.expect_ident()?;
+            let declared_type = if self.check_simple(&TokenKind::Assign) {
+                None
+            } else {
+                Some(self.parse_type()?)
+            };
             self.expect_simple(TokenKind::Assign)?;
             let init = self.parse_expr()?;
             self.expect_stmt_terminator()?;
             return Ok(Stmt::VarDecl {
                 mutable,
                 name,
+                declared_type,
                 init,
             });
         }
@@ -202,6 +208,11 @@ impl Parser {
             });
         }
 
+        let expr = if self.at_stmt_end() {
+            self.maybe_promote_bracketless_call(expr)
+        } else {
+            expr
+        };
         self.expect_stmt_terminator()?;
         Ok(Stmt::Expr(expr))
     }
@@ -217,13 +228,13 @@ impl Parser {
         self.expect_newline("expected a newline after pragma directive")?;
 
         match self.parse_stmt()? {
-            Stmt::For {
+            Stmt::ForRange {
                 pragma: None,
                 var_name,
                 start,
                 end,
                 body,
-            } => Ok(Stmt::For {
+            } => Ok(Stmt::ForRange {
                 pragma: Some(pragma),
                 var_name,
                 start,
@@ -240,19 +251,39 @@ impl Parser {
         self.expect_simple(TokenKind::For)?;
         self.expect_simple(TokenKind::Var)?;
         let var_name = self.expect_ident()?;
-        self.expect_simple(TokenKind::Assign)?;
-        let start = self.parse_expr()?;
-        self.expect_simple(TokenKind::To)?;
-        let end = self.parse_expr()?;
+        if self.check_simple(&TokenKind::Assign) {
+            self.advance();
+            let start = self.parse_expr()?;
+            self.expect_simple(TokenKind::To)?;
+            let end = self.parse_expr()?;
+            self.expect_newline("expected a newline after for header")?;
+            let body = self.parse_block()?;
+            self.expect_simple(TokenKind::End)?;
+            self.consume_newlines();
+            return Ok(Stmt::ForRange {
+                pragma,
+                var_name,
+                start,
+                end,
+                body,
+            });
+        }
+
+        if pragma.is_some() {
+            return Err(self.error_at_current(
+                "pragma directives currently apply only to range-based `for` loops",
+            ));
+        }
+
+        self.expect_simple(TokenKind::In)?;
+        let iterable = self.parse_expr()?;
         self.expect_newline("expected a newline after for header")?;
         let body = self.parse_block()?;
         self.expect_simple(TokenKind::End)?;
         self.consume_newlines();
-        Ok(Stmt::For {
-            pragma,
+        Ok(Stmt::ForEach {
             var_name,
-            start,
-            end,
+            iterable,
             body,
         })
     }
@@ -288,6 +319,18 @@ impl Parser {
                 continue;
             }
 
+            if self.check_simple(&TokenKind::At) {
+                self.advance();
+                let method = self.expect_ident()?;
+                let args = self.parse_call_args()?;
+                expr = Expr::MethodCall {
+                    receiver: Box::new(expr),
+                    method,
+                    args,
+                };
+                continue;
+            }
+
             if self.check_simple(&TokenKind::LParen) {
                 if let Expr::Path(path) = &expr {
                     if path.len() == 1 && self.looks_like_struct_init() {
@@ -296,19 +339,7 @@ impl Parser {
                     }
                 }
 
-                self.advance();
-                let mut args = Vec::new();
-                if !self.check_simple(&TokenKind::RParen) {
-                    loop {
-                        args.push(self.parse_expr()?);
-                        if self.check_simple(&TokenKind::Comma) {
-                            self.advance();
-                        } else {
-                            break;
-                        }
-                    }
-                }
-                self.expect_simple(TokenKind::RParen)?;
+                let args = self.parse_call_args()?;
                 expr = Expr::Call {
                     callee: Box::new(expr),
                     args,
@@ -331,6 +362,7 @@ impl Parser {
                 self.advance();
                 Ok(Expr::String(value))
             }
+            TokenKind::LBracket => self.parse_list_literal(),
             TokenKind::At => self.parse_builtin_call(),
             TokenKind::Ident(_) => self.parse_name(),
             TokenKind::LParen => {
@@ -347,21 +379,7 @@ impl Parser {
     fn parse_builtin_call(&mut self) -> Result<Expr, CompileError> {
         self.expect_simple(TokenKind::At)?;
         let name = self.expect_ident()?;
-        self.expect_simple(TokenKind::LParen)?;
-
-        let mut args = Vec::new();
-        if !self.check_simple(&TokenKind::RParen) {
-            loop {
-                args.push(self.parse_expr()?);
-                if self.check_simple(&TokenKind::Comma) {
-                    self.advance();
-                } else {
-                    break;
-                }
-            }
-        }
-
-        self.expect_simple(TokenKind::RParen)?;
+        let args = self.parse_call_args()?;
         Ok(Expr::BuiltinCall { name, args })
     }
 
@@ -407,6 +425,23 @@ impl Parser {
         Ok(Expr::Pack(values))
     }
 
+    fn parse_list_literal(&mut self) -> Result<Expr, CompileError> {
+        self.expect_simple(TokenKind::LBracket)?;
+        let mut values = Vec::new();
+        if !self.check_simple(&TokenKind::RBracket) {
+            loop {
+                values.push(self.parse_expr()?);
+                if self.check_simple(&TokenKind::Comma) {
+                    self.advance();
+                } else {
+                    break;
+                }
+            }
+        }
+        self.expect_simple(TokenKind::RBracket)?;
+        Ok(Expr::ListLiteral(values))
+    }
+
     fn parse_type(&mut self) -> Result<Type, CompileError> {
         match self.current().kind.clone() {
             TokenKind::Void => {
@@ -432,6 +467,13 @@ impl Parser {
                 self.expect_simple(TokenKind::RParen)?;
                 Ok(Type::Ref(Box::new(inner)))
             }
+            TokenKind::List => {
+                self.advance();
+                self.expect_simple(TokenKind::LBracket)?;
+                let inner = self.parse_type()?;
+                self.expect_simple(TokenKind::RBracket)?;
+                Ok(Type::List(Box::new(inner)))
+            }
             _ => Err(self.error_at_current("expected a type")),
         }
     }
@@ -439,8 +481,40 @@ impl Parser {
     fn starts_type(&self) -> bool {
         matches!(
             self.current().kind,
-            TokenKind::Void | TokenKind::I32 | TokenKind::U8 | TokenKind::Ref | TokenKind::Ident(_)
+            TokenKind::Void
+                | TokenKind::I32
+                | TokenKind::U8
+                | TokenKind::Ref
+                | TokenKind::List
+                | TokenKind::Ident(_)
         )
+    }
+
+    fn parse_call_args(&mut self) -> Result<Vec<Expr>, CompileError> {
+        self.expect_simple(TokenKind::LParen)?;
+        let mut args = Vec::new();
+        if !self.check_simple(&TokenKind::RParen) {
+            loop {
+                args.push(self.parse_expr()?);
+                if self.check_simple(&TokenKind::Comma) {
+                    self.advance();
+                } else {
+                    break;
+                }
+            }
+        }
+        self.expect_simple(TokenKind::RParen)?;
+        Ok(args)
+    }
+
+    fn maybe_promote_bracketless_call(&self, expr: Expr) -> Expr {
+        match expr {
+            Expr::Path(_) => Expr::Call {
+                callee: Box::new(expr),
+                args: Vec::new(),
+            },
+            other => other,
+        }
     }
 
     fn expect_ident(&mut self) -> Result<String, CompileError> {
@@ -550,7 +624,9 @@ impl Parser {
             TokenKind::Parallel => "`parallel`",
             TokenKind::For => "`for`",
             TokenKind::To => "`to`",
+            TokenKind::In => "`in`",
             TokenKind::Ref => "`ref`",
+            TokenKind::List => "`list`",
             TokenKind::Void => "`void`",
             TokenKind::I32 => "`i32`",
             TokenKind::U8 => "`u8`",
@@ -558,6 +634,8 @@ impl Parser {
             TokenKind::At => "`@`",
             TokenKind::LParen => "`(`",
             TokenKind::RParen => "`)`",
+            TokenKind::LBracket => "`[`",
+            TokenKind::RBracket => "`]`",
             TokenKind::LBrace => "`{`",
             TokenKind::RBrace => "`}`",
             TokenKind::Comma => "`,`",
@@ -578,7 +656,7 @@ impl Parser {
 mod tests {
     use super::parse_program;
     use crate::{
-        ast::{Expr, Stmt},
+        ast::{Expr, Stmt, Type},
         lexer::lex,
     };
 
@@ -630,7 +708,7 @@ mod tests {
         let program = parse_program(lex(source).unwrap()).unwrap();
 
         match &program.functions[0].body[0] {
-            Stmt::For {
+            Stmt::ForRange {
                 pragma,
                 var_name,
                 start: _,
@@ -642,6 +720,45 @@ mod tests {
                 assert!(body.is_empty());
             }
             other => panic!("expected for loop, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_list_declaration_foreach_and_bracketless_call() {
+        let source = "pub def helper() void\nend\npub def main() void\n\tval values list[i32] = [1, 2, 3]\n\tfor var value in values\n\t\t@print(\"{d}\", {value})\n\tend\n\thelper\nend\n";
+        let program = parse_program(lex(source).unwrap()).unwrap();
+
+        match &program.functions[1].body[0] {
+            Stmt::VarDecl {
+                declared_type: Some(Type::List(inner)),
+                init: Expr::ListLiteral(values),
+                ..
+            } => {
+                assert_eq!(**inner, Type::I32);
+                assert_eq!(values.len(), 3);
+            }
+            other => panic!("expected typed list declaration, got {other:?}"),
+        }
+
+        match &program.functions[1].body[1] {
+            Stmt::ForEach {
+                var_name,
+                iterable,
+                body,
+            } => {
+                assert_eq!(var_name, "value");
+                assert!(matches!(iterable, Expr::Path(path) if path == &vec!["values".to_string()]));
+                assert_eq!(body.len(), 1);
+            }
+            other => panic!("expected foreach loop, got {other:?}"),
+        }
+
+        match &program.functions[1].body[2] {
+            Stmt::Expr(Expr::Call { callee, args }) => {
+                assert!(matches!(callee.as_ref(), Expr::Path(path) if path == &vec!["helper".to_string()]));
+                assert!(args.is_empty());
+            }
+            other => panic!("expected bracketless call, got {other:?}"),
         }
     }
 
