@@ -61,6 +61,7 @@ pub enum TokenKind {
     GreaterEqual,
     ShiftRight,
     Star,
+    Percent,
     Minus,
     Plus,
     PlusEqual,
@@ -239,6 +240,7 @@ impl Lexer {
                     }
                 }
                 '*' => tokens.push(self.single(TokenKind::Star)),
+                '%' => tokens.push(self.single(TokenKind::Percent)),
                 '-' => tokens.push(self.single(TokenKind::Minus)),
                 '+' => {
                     let line = self.line;

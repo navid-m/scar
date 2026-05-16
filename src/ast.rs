@@ -193,6 +193,7 @@ pub struct FieldInit {
 pub enum BinaryOp {
     Add,
     Multiply,
+    Modulo,
     LogicalAnd,
     LogicalOr,
     BitAnd,

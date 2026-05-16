@@ -620,12 +620,17 @@ impl Parser {
 
     fn parse_multiplicative(&mut self) -> Result<Expr, CompileError> {
         let mut expr = self.parse_unary()?;
-        while self.check_simple(&TokenKind::Star) {
+        while self.check_simple(&TokenKind::Star) || self.check_simple(&TokenKind::Percent) {
+            let op = if self.check_simple(&TokenKind::Star) {
+                BinaryOp::Multiply
+            } else {
+                BinaryOp::Modulo
+            };
             self.advance();
             let rhs = self.parse_unary()?;
             expr = Expr::Binary {
                 lhs: Box::new(expr),
-                op: BinaryOp::Multiply,
+                op,
                 rhs: Box::new(rhs),
             };
         }
@@ -1066,6 +1071,7 @@ impl Parser {
             TokenKind::GreaterEqual => "`>=`",
             TokenKind::ShiftRight => "`>>`",
             TokenKind::Star => "`*`",
+            TokenKind::Percent => "`%`",
             TokenKind::Minus => "`-`",
             TokenKind::Plus => "`+`",
             TokenKind::PlusEqual => "`+=`",

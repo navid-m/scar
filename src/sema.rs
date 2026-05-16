@@ -592,11 +592,16 @@ fn infer_expr_type(
                 BinaryOp::Add if lhs_ty == Type::U32 && rhs_ty == Type::U32 => Ok(Type::U32),
                 BinaryOp::Multiply if lhs_ty == Type::I32 && rhs_ty == Type::I32 => Ok(Type::I32),
                 BinaryOp::Multiply if lhs_ty == Type::U32 && rhs_ty == Type::U32 => Ok(Type::U32),
+                BinaryOp::Modulo if lhs_ty == Type::I32 && rhs_ty == Type::I32 => Ok(Type::I32),
+                BinaryOp::Modulo if lhs_ty == Type::U32 && rhs_ty == Type::U32 => Ok(Type::U32),
                 BinaryOp::Add => Err(CompileError::new(
                     "`+` currently requires both operands to have matching integer types",
                 )),
                 BinaryOp::Multiply => Err(CompileError::new(
                     "`*` currently requires both operands to have matching integer types",
+                )),
+                BinaryOp::Modulo => Err(CompileError::new(
+                    "`%` currently requires both operands to have matching integer types",
                 )),
                 BinaryOp::LogicalAnd | BinaryOp::LogicalOr
                     if is_integer_type(&lhs_ty, types)? && is_integer_type(&rhs_ty, types)? =>
@@ -1224,7 +1229,7 @@ mod tests {
 
     #[test]
     fn accepts_bitwise_and_shift_operators() {
-        let source = "pub def main() void\n\tvar mask i32 = (1 << 3) | (2 & 7) ^ (8 >> 1)\n\tmask &= 15\n\tmask |= 1\n\tmask ^= 2\n\tval product = 6 * 7\n\tif !(1 == 0) && 2 == 2\n\t\t@print(\"{d} {d}\", {mask, product})\n\tend\nend\n";
+        let source = "pub def main() void\n\tvar mask i32 = (1 << 3) | (2 & 7) ^ (8 >> 1)\n\tmask &= 15\n\tmask |= 1\n\tmask ^= 2\n\tval product = (6 * 7) % 5\n\tif !(1 == 0) && 2 == 2\n\t\t@print(\"{d} {d}\", {mask, product})\n\tend\nend\n";
         let program = parse_program(lex(source).unwrap()).unwrap();
 
         analyze(&program).unwrap();
