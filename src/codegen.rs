@@ -388,16 +388,25 @@ fn render_expr_with_hint(
         }
         Expr::Unary { op, expr } => match op {
             UnaryOp::Neg => Ok(format!("(-({}))", render_expr(expr, function, info)?)),
+            UnaryOp::Not => Ok(format!("(~({}))", render_expr(expr, function, info)?)),
         },
         Expr::Pack(_) => Err(CompileError::new(
             "packed `{...}` expressions are only valid inside @print",
         )),
         Expr::Binary { lhs, op, rhs } => {
+            if *op == BinaryOp::ShiftRight {
+                return render_logical_shift_right(lhs, rhs, function, info);
+            }
             let operator = match op {
                 BinaryOp::Add => "+",
+                BinaryOp::And => "&",
+                BinaryOp::Or => "|",
+                BinaryOp::Xor => "^",
+                BinaryOp::ShiftLeft => "<<",
                 BinaryOp::LessThan => "<",
                 BinaryOp::GreaterEqual => ">=",
                 BinaryOp::Equal => "==",
+                BinaryOp::ShiftRight => unreachable!("handled above"),
             };
             Ok(format!(
                 "(({}) {} ({}))",
@@ -711,22 +720,82 @@ fn infer_codegen_expr_type(
         }
         Expr::Cast { ty, .. } => Ok(ty.clone()),
         Expr::Unary { op, expr } => match op {
-            UnaryOp::Neg => infer_codegen_expr_type(expr, function, info),
+            UnaryOp::Neg | UnaryOp::Not => {
+                infer_codegen_integer_unary_type(*op, expr, function, info)
+            }
         },
         Expr::Pack(_) => Err(CompileError::new(
             "packed `{...}` expressions are only valid inside @print",
         )),
         Expr::Binary { lhs, op, rhs } => {
-            let lhs_ty = infer_codegen_expr_type(lhs, function, info)?;
-            let rhs_ty = infer_codegen_expr_type(rhs, function, info)?;
+            let lhs_ty =
+                resolve_codegen_aliases(&infer_codegen_expr_type(lhs, function, info)?, info)?;
+            let rhs_ty =
+                resolve_codegen_aliases(&infer_codegen_expr_type(rhs, function, info)?, info)?;
             match op {
                 BinaryOp::Add if lhs_ty == rhs_ty => Ok(lhs_ty),
                 BinaryOp::Add => Err(CompileError::new(
                     "`+` currently requires matching operand types",
                 )),
+                BinaryOp::And | BinaryOp::Or | BinaryOp::Xor
+                    if is_codegen_integer_type(&lhs_ty) && lhs_ty == rhs_ty =>
+                {
+                    Ok(lhs_ty)
+                }
+                BinaryOp::And | BinaryOp::Or | BinaryOp::Xor => Err(CompileError::new(
+                    "bitwise operators currently require matching integer operand types",
+                )),
+                BinaryOp::ShiftLeft | BinaryOp::ShiftRight
+                    if is_codegen_integer_type(&lhs_ty) && is_codegen_integer_type(&rhs_ty) =>
+                {
+                    Ok(lhs_ty)
+                }
+                BinaryOp::ShiftLeft | BinaryOp::ShiftRight => Err(CompileError::new(
+                    "shift operators currently require integer operands",
+                )),
                 BinaryOp::LessThan | BinaryOp::GreaterEqual | BinaryOp::Equal => Ok(Type::I32),
             }
         }
+    }
+}
+
+fn render_logical_shift_right(
+    lhs: &Expr,
+    rhs: &Expr,
+    function: &Function,
+    info: &ProgramInfo,
+) -> Result<String, CompileError> {
+    let lhs_ty = resolve_codegen_aliases(&infer_codegen_expr_type(lhs, function, info)?, info)?;
+    let rendered_lhs = render_expr(lhs, function, info)?;
+    let rendered_rhs = render_expr(rhs, function, info)?;
+    match lhs_ty {
+        Type::I32 => Ok(format!(
+            "((int32_t)((uint32_t)({rendered_lhs}) >> ({rendered_rhs})))"
+        )),
+        Type::U32 => Ok(format!("((uint32_t)({rendered_lhs}) >> ({rendered_rhs}))")),
+        other => Err(CompileError::new(format!(
+            "logical shift-right requires an integer operand during code generation, got {}",
+            describe_type(&other)
+        ))),
+    }
+}
+
+fn infer_codegen_integer_unary_type(
+    op: UnaryOp,
+    expr: &Expr,
+    function: &Function,
+    info: &ProgramInfo,
+) -> Result<Type, CompileError> {
+    let inner_ty = resolve_codegen_aliases(&infer_codegen_expr_type(expr, function, info)?, info)?;
+    match op {
+        UnaryOp::Neg if inner_ty == Type::I32 => Ok(Type::I32),
+        UnaryOp::Neg => Err(CompileError::new(
+            "unary `-` currently requires an i32 operand",
+        )),
+        UnaryOp::Not if is_codegen_integer_type(&inner_ty) => Ok(inner_ty),
+        UnaryOp::Not => Err(CompileError::new(
+            "unary `not` currently requires an integer operand",
+        )),
     }
 }
 
@@ -1098,6 +1167,28 @@ fn list_element_type(ty: &Type) -> Result<&Type, CompileError> {
 
 fn infer_index_type(ty: &Type) -> Result<Type, CompileError> {
     Ok(list_element_type(ty)?.clone())
+}
+
+fn is_codegen_integer_type(ty: &Type) -> bool {
+    matches!(ty, Type::I32 | Type::U32)
+}
+
+fn resolve_codegen_aliases(ty: &Type, info: &ProgramInfo) -> Result<Type, CompileError> {
+    match ty {
+        Type::Named(name) => {
+            let Some(type_info) = info.types.get(name) else {
+                return Ok(Type::Named(name.clone()));
+            };
+            if let Some(alias) = &type_info.alias {
+                resolve_codegen_aliases(alias, info)
+            } else {
+                Ok(Type::Named(name.clone()))
+            }
+        }
+        Type::Ref(inner) => Ok(Type::Ref(Box::new(resolve_codegen_aliases(inner, info)?))),
+        Type::List(inner) => Ok(Type::List(Box::new(resolve_codegen_aliases(inner, info)?))),
+        other => Ok(other.clone()),
+    }
 }
 
 fn deref_refs(mut ty: &Type) -> &Type {

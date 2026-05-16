@@ -61,12 +61,9 @@ def count_neighbors(grid ref(Grid), x i32, y i32) i32
 
 	for var dy = -1 to 1
 		for var dx = -1 to 1
-			if dx == 0
-				if dy == 0
-					continue
-				end
+			if dx == 0 and dy == 0	
+				continue
 			end
-
 			count += get_cell(grid, x + dx, y + dy)
 		end
 	end

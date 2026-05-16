@@ -551,6 +551,10 @@ fn infer_expr_type(
                 UnaryOp::Neg => Err(CompileError::new(
                     "unary `-` currently requires an i32 operand",
                 )),
+                UnaryOp::Not if is_integer_type(&inner_ty, types)? => Ok(inner_ty),
+                UnaryOp::Not => Err(CompileError::new(
+                    "unary `not` currently requires an integer operand",
+                )),
             }
         }
         Expr::Pack(_) => Err(CompileError::new(
@@ -564,6 +568,24 @@ fn infer_expr_type(
                 BinaryOp::Add if lhs_ty == Type::U32 && rhs_ty == Type::U32 => Ok(Type::U32),
                 BinaryOp::Add => Err(CompileError::new(
                     "`+` currently requires both operands to have matching integer types",
+                )),
+                BinaryOp::And | BinaryOp::Or | BinaryOp::Xor
+                    if is_integer_type(&lhs_ty, types)?
+                        && lhs_ty == rhs_ty
+                        && is_integer_type(&rhs_ty, types)? =>
+                {
+                    Ok(lhs_ty)
+                }
+                BinaryOp::And | BinaryOp::Or | BinaryOp::Xor => Err(CompileError::new(
+                    "bitwise operators currently require both operands to have the same integer type",
+                )),
+                BinaryOp::ShiftLeft | BinaryOp::ShiftRight
+                    if is_integer_type(&lhs_ty, types)? && is_integer_type(&rhs_ty, types)? =>
+                {
+                    Ok(lhs_ty)
+                }
+                BinaryOp::ShiftLeft | BinaryOp::ShiftRight => Err(CompileError::new(
+                    "shift operators currently require integer operands",
                 )),
                 BinaryOp::LessThan | BinaryOp::GreaterEqual | BinaryOp::Equal
                     if is_integer_type(&lhs_ty, types)? && lhs_ty == rhs_ty =>
@@ -1126,6 +1148,14 @@ mod tests {
     #[test]
     fn accepts_regular_type_aliases() {
         let source = "type Count = i32\npub def main() void\n\tval count Count = 1\n\t@print(\"{d}\", {count})\nend\n";
+        let program = parse_program(lex(source).unwrap()).unwrap();
+
+        analyze(&program).unwrap();
+    }
+
+    #[test]
+    fn accepts_bitwise_and_shift_operators() {
+        let source = "pub def main() void\n\tval mask i32 = not 1\n\tval combined = (1 shl 3) or (2 and 7) xor (8 shr 1)\n\tif 1 == 1 and 2 == 2\n\t\t@print(\"{d} {d}\", {mask, combined})\n\tend\nend\n";
         let program = parse_program(lex(source).unwrap()).unwrap();
 
         analyze(&program).unwrap();

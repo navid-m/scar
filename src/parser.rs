@@ -425,13 +425,55 @@ impl Parser {
     }
 
     fn parse_cast(&mut self) -> Result<Expr, CompileError> {
-        let mut expr = self.parse_equality()?;
+        let mut expr = self.parse_or()?;
         while self.check_simple(&TokenKind::As) {
             self.advance();
             let ty = self.parse_type()?;
             expr = Expr::Cast {
                 expr: Box::new(expr),
                 ty,
+            };
+        }
+        Ok(expr)
+    }
+
+    fn parse_or(&mut self) -> Result<Expr, CompileError> {
+        let mut expr = self.parse_xor()?;
+        while self.check_simple(&TokenKind::Or) {
+            self.advance();
+            let rhs = self.parse_xor()?;
+            expr = Expr::Binary {
+                lhs: Box::new(expr),
+                op: BinaryOp::Or,
+                rhs: Box::new(rhs),
+            };
+        }
+        Ok(expr)
+    }
+
+    fn parse_xor(&mut self) -> Result<Expr, CompileError> {
+        let mut expr = self.parse_and()?;
+        while self.check_simple(&TokenKind::Xor) {
+            self.advance();
+            let rhs = self.parse_and()?;
+            expr = Expr::Binary {
+                lhs: Box::new(expr),
+                op: BinaryOp::Xor,
+                rhs: Box::new(rhs),
+            };
+        }
+        Ok(expr)
+    }
+
+    fn parse_and(&mut self) -> Result<Expr, CompileError> {
+        let mut expr = self.parse_equality()?;
+        while self.check_simple(&TokenKind::And) {
+            self.advance();
+            let rhs = self.parse_equality()?;
+            expr = Expr::Binary {
+                lhs: Box::new(expr),
+                op: BinaryOp::And,
+                rhs: Box::new(rhs),
             };
         }
         Ok(expr)
@@ -452,12 +494,36 @@ impl Parser {
     }
 
     fn parse_comparison(&mut self) -> Result<Expr, CompileError> {
-        let mut expr = self.parse_additive()?;
+        let mut expr = self.parse_shift()?;
         loop {
             let op = if self.check_simple(&TokenKind::Less) {
                 Some(BinaryOp::LessThan)
             } else if self.check_simple(&TokenKind::GreaterEqual) {
                 Some(BinaryOp::GreaterEqual)
+            } else {
+                None
+            };
+            let Some(op) = op else {
+                break;
+            };
+            self.advance();
+            let rhs = self.parse_shift()?;
+            expr = Expr::Binary {
+                lhs: Box::new(expr),
+                op,
+                rhs: Box::new(rhs),
+            };
+        }
+        Ok(expr)
+    }
+
+    fn parse_shift(&mut self) -> Result<Expr, CompileError> {
+        let mut expr = self.parse_additive()?;
+        loop {
+            let op = if self.check_simple(&TokenKind::Shl) {
+                Some(BinaryOp::ShiftLeft)
+            } else if self.check_simple(&TokenKind::Shr) {
+                Some(BinaryOp::ShiftRight)
             } else {
                 None
             };
@@ -495,6 +561,14 @@ impl Parser {
             let expr = self.parse_unary()?;
             return Ok(Expr::Unary {
                 op: UnaryOp::Neg,
+                expr: Box::new(expr),
+            });
+        }
+        if self.check_simple(&TokenKind::Not) {
+            self.advance();
+            let expr = self.parse_unary()?;
+            return Ok(Expr::Unary {
+                op: UnaryOp::Not,
                 expr: Box::new(expr),
             });
         }
@@ -884,6 +958,12 @@ impl Parser {
             TokenKind::For => "`for`",
             TokenKind::To => "`to`",
             TokenKind::In => "`in`",
+            TokenKind::And => "`and`",
+            TokenKind::Or => "`or`",
+            TokenKind::Xor => "`xor`",
+            TokenKind::Not => "`not`",
+            TokenKind::Shl => "`shl`",
+            TokenKind::Shr => "`shr`",
             TokenKind::As => "`as`",
             TokenKind::Ref => "`ref`",
             TokenKind::List => "`list`",
@@ -921,7 +1001,7 @@ impl Parser {
 mod tests {
     use super::parse_program;
     use crate::{
-        ast::{Expr, Stmt, Type},
+        ast::{BinaryOp, Expr, Stmt, Type, UnaryOp},
         lexer::lex,
     };
 
@@ -1076,6 +1156,76 @@ mod tests {
         let program = parse_program(lex(source).unwrap()).unwrap();
 
         assert!(matches!(program.functions[0].body[1], Stmt::Loop { .. }));
+    }
+
+    #[test]
+    fn parses_bitwise_and_boolean_style_operators() {
+        let source = "pub def main() void\n\tval mask = not (1 shl 2) and 7 or 8 xor 3\n\tif 1 == 1 and 2 == 2\n\t\t@print(\"{d}\", {mask})\n\tend\nend\n";
+        let program = parse_program(lex(source).unwrap()).unwrap();
+
+        match &program.functions[0].body[0] {
+            Stmt::VarDecl { init, .. } => match init {
+                Expr::Binary {
+                    op: BinaryOp::Or,
+                    lhs,
+                    rhs,
+                } => {
+                    assert!(matches!(
+                        rhs.as_ref(),
+                        Expr::Binary {
+                            op: BinaryOp::Xor,
+                            ..
+                        }
+                    ));
+                    assert!(matches!(
+                        lhs.as_ref(),
+                        Expr::Binary {
+                            op: BinaryOp::And,
+                            lhs,
+                            ..
+                        } if matches!(
+                            lhs.as_ref(),
+                            Expr::Unary {
+                                op: UnaryOp::Not,
+                                expr,
+                            } if matches!(
+                                expr.as_ref(),
+                                Expr::Binary {
+                                    op: BinaryOp::ShiftLeft,
+                                    ..
+                                }
+                            )
+                        )
+                    ));
+                }
+                other => panic!("expected operator tree, got {other:?}"),
+            },
+            other => panic!("expected variable declaration, got {other:?}"),
+        }
+
+        match &program.functions[0].body[1] {
+            Stmt::If { condition, .. } => assert!(matches!(
+                condition,
+                Expr::Binary {
+                    op: BinaryOp::And,
+                    lhs,
+                    rhs,
+                } if matches!(
+                    lhs.as_ref(),
+                    Expr::Binary {
+                        op: BinaryOp::Equal,
+                        ..
+                    }
+                ) && matches!(
+                    rhs.as_ref(),
+                    Expr::Binary {
+                        op: BinaryOp::Equal,
+                        ..
+                    }
+                )
+            )),
+            other => panic!("expected if statement, got {other:?}"),
+        }
     }
 
     #[test]
