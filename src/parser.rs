@@ -569,8 +569,9 @@ impl Parser {
 
     fn parse_struct_init(&mut self, name: String) -> Result<Expr, CompileError> {
         self.expect_simple(TokenKind::LParen)?;
+        self.consume_newlines();
         let mut fields = Vec::new();
-        loop {
+        while !self.check_simple(&TokenKind::RParen) {
             let field_name = self.expect_ident()?;
             self.expect_simple(TokenKind::Colon)?;
             let value = self.parse_expr()?;
@@ -580,7 +581,9 @@ impl Parser {
             });
             if self.check_simple(&TokenKind::Comma) {
                 self.advance();
+                self.consume_newlines();
             } else {
+                self.consume_newlines();
                 break;
             }
         }
@@ -590,13 +593,16 @@ impl Parser {
 
     fn parse_pack(&mut self) -> Result<Expr, CompileError> {
         self.expect_simple(TokenKind::LBrace)?;
+        self.consume_newlines();
         let mut values = Vec::new();
         if !self.check_simple(&TokenKind::RBrace) {
             loop {
                 values.push(self.parse_expr()?);
                 if self.check_simple(&TokenKind::Comma) {
                     self.advance();
+                    self.consume_newlines();
                 } else {
+                    self.consume_newlines();
                     break;
                 }
             }
@@ -607,13 +613,16 @@ impl Parser {
 
     fn parse_list_literal(&mut self) -> Result<Expr, CompileError> {
         self.expect_simple(TokenKind::LBracket)?;
+        self.consume_newlines();
         let mut values = Vec::new();
         if !self.check_simple(&TokenKind::RBracket) {
             loop {
                 values.push(self.parse_expr()?);
                 if self.check_simple(&TokenKind::Comma) {
                     self.advance();
+                    self.consume_newlines();
                 } else {
+                    self.consume_newlines();
                     break;
                 }
             }
@@ -677,13 +686,16 @@ impl Parser {
 
     fn parse_call_args(&mut self) -> Result<Vec<Expr>, CompileError> {
         self.expect_simple(TokenKind::LParen)?;
+        self.consume_newlines();
         let mut args = Vec::new();
         if !self.check_simple(&TokenKind::RParen) {
             loop {
                 args.push(self.parse_expr()?);
                 if self.check_simple(&TokenKind::Comma) {
                     self.advance();
+                    self.consume_newlines();
                 } else {
+                    self.consume_newlines();
                     break;
                 }
             }
@@ -772,13 +784,37 @@ impl Parser {
     fn looks_like_struct_init(&self) -> bool {
         self.check_simple(&TokenKind::LParen)
             && self
-                .tokens
-                .get(self.pos + 1)
-                .is_some_and(|token| matches!(token.kind, TokenKind::Ident(_)))
+                .next_non_newline_kind(self.pos + 1)
+                .is_some_and(|kind| matches!(kind, TokenKind::Ident(_)))
             && self
-                .tokens
-                .get(self.pos + 2)
-                .is_some_and(|token| matches!(token.kind, TokenKind::Colon))
+                .next_non_newline_kind_after_ident(self.pos + 1)
+                .is_some_and(|kind| matches!(kind, TokenKind::Colon))
+    }
+
+    fn next_non_newline_kind(&self, start: usize) -> Option<&TokenKind> {
+        self.tokens
+            .iter()
+            .skip(start)
+            .find(|token| !matches!(token.kind, TokenKind::Newline))
+            .map(|token| &token.kind)
+    }
+
+    fn next_non_newline_kind_after_ident(&self, start: usize) -> Option<&TokenKind> {
+        let mut saw_ident = false;
+        for token in self.tokens.iter().skip(start) {
+            if matches!(token.kind, TokenKind::Newline) {
+                continue;
+            }
+            if !saw_ident {
+                if matches!(token.kind, TokenKind::Ident(_)) {
+                    saw_ident = true;
+                    continue;
+                }
+                return None;
+            }
+            return Some(&token.kind);
+        }
+        None
     }
 
     fn current(&self) -> &Token {

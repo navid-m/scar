@@ -17,7 +17,7 @@ end
 def make_grid(width i32, height i32) Grid
 	var rows list[list[i32]] = []
 	for var y = 0 to height
-		@append(row, make_row(width))
+		@append(rows, make_row(width))
 	end
 	return Grid(
 		width: width,
@@ -132,6 +132,6 @@ pub def main() void
 	for
 		draw(@addr(grid))
 		grid = step(@addr(grid))
-		sleep(100 as u32)
+		sleep(1 as u32)
 	end
 end
