@@ -498,6 +498,7 @@ impl Parser {
         let mut expr = self.parse_logical_and()?;
         while self.check_simple(&TokenKind::PipePipe) {
             self.advance();
+            self.consume_newlines();
             let rhs = self.parse_logical_and()?;
             expr = Expr::Binary {
                 lhs: Box::new(expr),
@@ -512,6 +513,7 @@ impl Parser {
         let mut expr = self.parse_bitwise_or()?;
         while self.check_simple(&TokenKind::AmpAmp) {
             self.advance();
+            self.consume_newlines();
             let rhs = self.parse_bitwise_or()?;
             expr = Expr::Binary {
                 lhs: Box::new(expr),
@@ -526,6 +528,7 @@ impl Parser {
         let mut expr = self.parse_bitwise_xor()?;
         while self.check_simple(&TokenKind::Pipe) {
             self.advance();
+            self.consume_newlines();
             let rhs = self.parse_bitwise_xor()?;
             expr = Expr::Binary {
                 lhs: Box::new(expr),
@@ -540,6 +543,7 @@ impl Parser {
         let mut expr = self.parse_bitwise_and()?;
         while self.check_simple(&TokenKind::Caret) {
             self.advance();
+            self.consume_newlines();
             let rhs = self.parse_bitwise_and()?;
             expr = Expr::Binary {
                 lhs: Box::new(expr),
@@ -554,6 +558,7 @@ impl Parser {
         let mut expr = self.parse_equality()?;
         while self.check_simple(&TokenKind::Amp) {
             self.advance();
+            self.consume_newlines();
             let rhs = self.parse_equality()?;
             expr = Expr::Binary {
                 lhs: Box::new(expr),
@@ -568,6 +573,7 @@ impl Parser {
         let mut expr = self.parse_comparison()?;
         while self.check_simple(&TokenKind::EqualEqual) {
             self.advance();
+            self.consume_newlines();
             let rhs = self.parse_comparison()?;
             expr = Expr::Binary {
                 lhs: Box::new(expr),
@@ -592,6 +598,7 @@ impl Parser {
                 break;
             };
             self.advance();
+            self.consume_newlines();
             let rhs = self.parse_shift()?;
             expr = Expr::Binary {
                 lhs: Box::new(expr),
@@ -616,6 +623,7 @@ impl Parser {
                 break;
             };
             self.advance();
+            self.consume_newlines();
             let rhs = self.parse_additive()?;
             expr = Expr::Binary {
                 lhs: Box::new(expr),
@@ -635,6 +643,7 @@ impl Parser {
                 BinaryOp::Subtract
             };
             self.advance();
+            self.consume_newlines();
             let rhs = self.parse_multiplicative()?;
             expr = Expr::Binary {
                 lhs: Box::new(expr),
@@ -659,6 +668,7 @@ impl Parser {
                 BinaryOp::Modulo
             };
             self.advance();
+            self.consume_newlines();
             let rhs = self.parse_unary()?;
             expr = Expr::Binary {
                 lhs: Box::new(expr),
@@ -761,7 +771,9 @@ impl Parser {
             TokenKind::Ident(_) => self.parse_name(),
             TokenKind::LParen => {
                 self.advance();
+                self.consume_newlines();
                 let expr = self.parse_expr()?;
+                self.consume_newlines();
                 self.expect_simple(TokenKind::RParen)?;
                 Ok(expr)
             }
@@ -1293,6 +1305,23 @@ mod tests {
         let program = parse_program(lex(source).unwrap()).unwrap();
 
         assert!(matches!(program.functions[0].body[1], Stmt::Loop { .. }));
+    }
+
+    #[test]
+    fn parses_multiline_grouped_return_expression() {
+        let source = "pub def main() i32\n\treturn (\n\t\t1 +\n\t\t2\n\t)\nend\n";
+        let program = parse_program(lex(source).unwrap()).unwrap();
+
+        assert!(matches!(
+            &program.functions[0].body[0],
+            Stmt::Return {
+                value: Some(Expr::Binary {
+                    op: BinaryOp::Add,
+                    ..
+                }),
+                ..
+            }
+        ));
     }
 
     #[test]
