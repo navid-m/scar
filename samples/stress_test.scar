@@ -70,7 +70,7 @@ end
 def make_row(size i32) list[i64]
 	var row list[i64] = []
 
-	for var i = 0 to size
+	for var i = 0 .. size
 		@append(row, 0)
 	end
 
@@ -80,7 +80,7 @@ end
 def make_matrix(size i32) Matrix
 	var rows list[list[i64]] = []
 
-	for var y = 0 to size
+	for var y = 0 .. size
 		@append(rows, make_row(size))
 	end
 
@@ -91,8 +91,8 @@ def make_matrix(size i32) Matrix
 end
 
 def fill_matrix(m ref(Matrix))
-	for var y = 0 to m.size
-		for var x = 0 to m.size
+	for var y = 0 .. m.size
+		for var x = 0 .. m.size
 			m.rows[y][x] =
 				((x * 17) + (y * 91)) as i64
 		end
@@ -102,11 +102,11 @@ end
 def matrix_mul(a ref(Matrix), b ref(Matrix)) Matrix
 	val out = make_matrix(a.size)
 
-	for var y = 0 to a.size
-		for var x = 0 to a.size
+	for var y = 0 .. a.size
+		for var x = 0 .. a.size
 			var sum i64 = 0
 
-			for var k = 0 to a.size
+			for var k = 0 .. a.size
 				sum +=
 					a.rows[y][k] *
 					b.rows[k][x]
@@ -127,7 +127,7 @@ def chaotic_math(
 ) i64
 	var result i64 = 0
 
-	for var i = 0 to 100
+	for var i = 0 .. 100
 		result +=
 			(a * b) -
 			(c * d) +
@@ -184,7 +184,7 @@ end
 def heavy_branching(x i64) i64
 	var v = x
 
-	for var i = 0 to 500
+	for var i = 0 .. 500
 		if v % 2 == 0
 			v += 3
 		else
@@ -214,7 +214,7 @@ end
 def vec_pipeline(v Vec4) Vec4
 	var tmp = v
 
-	for var i = 0 to 1000
+	for var i = 0 .. 1000
 		tmp = add_vec4(
 			tmp,
 			make_vec4(
@@ -257,15 +257,15 @@ def giant_workload() i64
 
 	val c = matrix_mul(@addr(a), @addr(b))
 
-	for var y = 0 to c.size
-		for var x = 0 to c.size
+	for var y = 0 .. c.size
+		for var x = 0 .. c.size
 			total += c.rows[y][x]
 		end
 	end
 
 	var vec = make_vec4(1, 2, 3, 4)
 
-	for var i = 0 to 100
+	for var i = 0 .. 100
 		pointer_abuse(@addr(vec))
 		vec = vec_pipeline(vec)
 

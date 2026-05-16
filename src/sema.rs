@@ -263,6 +263,30 @@ fn analyze_stmt(
                 );
             }
         }
+        Stmt::BitAndAssign {
+            line,
+            column,
+            target,
+            value,
+        } => {
+            analyze_bitwise_assignment(target, value, "&=", *line, *column, functions, types, scope)?;
+        }
+        Stmt::BitOrAssign {
+            line,
+            column,
+            target,
+            value,
+        } => {
+            analyze_bitwise_assignment(target, value, "|=", *line, *column, functions, types, scope)?;
+        }
+        Stmt::BitXorAssign {
+            line,
+            column,
+            target,
+            value,
+        } => {
+            analyze_bitwise_assignment(target, value, "^=", *line, *column, functions, types, scope)?;
+        }
         Stmt::Return {
             line,
             column,
@@ -551,9 +575,9 @@ fn infer_expr_type(
                 UnaryOp::Neg => Err(CompileError::new(
                     "unary `-` currently requires an i32 operand",
                 )),
-                UnaryOp::Not if is_integer_type(&inner_ty, types)? => Ok(inner_ty),
-                UnaryOp::Not => Err(CompileError::new(
-                    "unary `not` currently requires an integer operand",
+                UnaryOp::LogicalNot if is_integer_type(&inner_ty, types)? => Ok(Type::I32),
+                UnaryOp::LogicalNot => Err(CompileError::new(
+                    "unary `!` currently requires an integer operand",
                 )),
             }
         }
@@ -574,14 +598,22 @@ fn infer_expr_type(
                 BinaryOp::Multiply => Err(CompileError::new(
                     "`*` currently requires both operands to have matching integer types",
                 )),
-                BinaryOp::And | BinaryOp::Or | BinaryOp::Xor
+                BinaryOp::LogicalAnd | BinaryOp::LogicalOr
+                    if is_integer_type(&lhs_ty, types)? && is_integer_type(&rhs_ty, types)? =>
+                {
+                    Ok(Type::I32)
+                }
+                BinaryOp::LogicalAnd | BinaryOp::LogicalOr => Err(CompileError::new(
+                    "logical operators currently require integer operands",
+                )),
+                BinaryOp::BitAnd | BinaryOp::BitOr | BinaryOp::BitXor
                     if is_integer_type(&lhs_ty, types)?
                         && lhs_ty == rhs_ty
                         && is_integer_type(&rhs_ty, types)? =>
                 {
                     Ok(lhs_ty)
                 }
-                BinaryOp::And | BinaryOp::Or | BinaryOp::Xor => Err(CompileError::new(
+                BinaryOp::BitAnd | BinaryOp::BitOr | BinaryOp::BitXor => Err(CompileError::new(
                     "bitwise operators currently require both operands to have the same integer type",
                 )),
                 BinaryOp::ShiftLeft | BinaryOp::ShiftRight
@@ -713,6 +745,38 @@ fn analyze_builtin(
         _ => Err(CompileError::new(format!(
             "unsupported builtin intrinsic `@{name}`"
         ))),
+    }
+}
+
+fn analyze_bitwise_assignment(
+    target: &Expr,
+    value: &Expr,
+    operator: &str,
+    line: usize,
+    column: usize,
+    functions: &HashMap<String, FunctionSig>,
+    types: &HashMap<String, TypeDefInfo>,
+    scope: &HashMap<String, LocalBinding>,
+) -> Result<(), CompileError> {
+    let target_ty = resolve_aliases(
+        &infer_mutable_target(target, functions, types, scope)
+            .map_err(|error| error.with_location(line, column))?,
+        types,
+    )?;
+    let value_ty = resolve_aliases(
+        &infer_expr_type(value, functions, types, scope)
+            .map_err(|error| error.with_location(line, column))?,
+        types,
+    )?;
+    if is_integer_type(&target_ty, types)? && target_ty == value_ty {
+        Ok(())
+    } else {
+        Err(
+            CompileError::new(format!(
+                "`{operator}` currently requires both operands to have the same integer type"
+            ))
+            .with_location(line, column),
+        )
     }
 }
 
@@ -1160,7 +1224,7 @@ mod tests {
 
     #[test]
     fn accepts_bitwise_and_shift_operators() {
-        let source = "pub def main() void\n\tval mask i32 = not 1\n\tval combined = (1 shl 3) or (2 and 7) xor (8 shr 1)\n\tval product = 6 * 7\n\tif 1 == 1 and 2 == 2\n\t\t@print(\"{d} {d} {d}\", {mask, combined, product})\n\tend\nend\n";
+        let source = "pub def main() void\n\tvar mask i32 = (1 << 3) | (2 & 7) ^ (8 >> 1)\n\tmask &= 15\n\tmask |= 1\n\tmask ^= 2\n\tval product = 6 * 7\n\tif !(1 == 0) && 2 == 2\n\t\t@print(\"{d} {d}\", {mask, product})\n\tend\nend\n";
         let program = parse_program(lex(source).unwrap()).unwrap();
 
         analyze(&program).unwrap();

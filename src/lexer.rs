@@ -22,14 +22,7 @@ pub enum TokenKind {
     Continue,
     Parallel,
     For,
-    To,
     In,
-    And,
-    Or,
-    Xor,
-    Not,
-    Shl,
-    Shr,
     As,
     Ref,
     List,
@@ -51,10 +44,22 @@ pub enum TokenKind {
     Comma,
     Colon,
     Dot,
+    DotDot,
     Assign,
     EqualEqual,
+    Amp,
+    AmpAmp,
+    AmpEqual,
+    Pipe,
+    PipePipe,
+    PipeEqual,
+    Caret,
+    CaretEqual,
+    Bang,
     Less,
+    ShiftLeft,
     GreaterEqual,
+    ShiftRight,
     Star,
     Minus,
     Plus,
@@ -118,7 +123,25 @@ impl Lexer {
                 '}' => tokens.push(self.single(TokenKind::RBrace)),
                 ',' => tokens.push(self.single(TokenKind::Comma)),
                 ':' => tokens.push(self.single(TokenKind::Colon)),
-                '.' => tokens.push(self.single(TokenKind::Dot)),
+                '.' => {
+                    let line = self.line;
+                    let column = self.column;
+                    self.bump();
+                    if self.peek() == Some('.') {
+                        self.bump();
+                        tokens.push(Token {
+                            kind: TokenKind::DotDot,
+                            line,
+                            column,
+                        });
+                    } else {
+                        tokens.push(Token {
+                            kind: TokenKind::Dot,
+                            line,
+                            column,
+                        });
+                    }
+                }
                 '=' => {
                     let line = self.line;
                     let column = self.column;
@@ -138,7 +161,61 @@ impl Lexer {
                         });
                     }
                 }
-                '<' => tokens.push(self.single(TokenKind::Less)),
+                '&' => {
+                    let line = self.line;
+                    let column = self.column;
+                    self.bump();
+                    let kind = if self.peek() == Some('&') {
+                        self.bump();
+                        TokenKind::AmpAmp
+                    } else if self.peek() == Some('=') {
+                        self.bump();
+                        TokenKind::AmpEqual
+                    } else {
+                        TokenKind::Amp
+                    };
+                    tokens.push(Token { kind, line, column });
+                }
+                '|' => {
+                    let line = self.line;
+                    let column = self.column;
+                    self.bump();
+                    let kind = if self.peek() == Some('|') {
+                        self.bump();
+                        TokenKind::PipePipe
+                    } else if self.peek() == Some('=') {
+                        self.bump();
+                        TokenKind::PipeEqual
+                    } else {
+                        TokenKind::Pipe
+                    };
+                    tokens.push(Token { kind, line, column });
+                }
+                '^' => {
+                    let line = self.line;
+                    let column = self.column;
+                    self.bump();
+                    let kind = if self.peek() == Some('=') {
+                        self.bump();
+                        TokenKind::CaretEqual
+                    } else {
+                        TokenKind::Caret
+                    };
+                    tokens.push(Token { kind, line, column });
+                }
+                '!' => tokens.push(self.single(TokenKind::Bang)),
+                '<' => {
+                    let line = self.line;
+                    let column = self.column;
+                    self.bump();
+                    let kind = if self.peek() == Some('<') {
+                        self.bump();
+                        TokenKind::ShiftLeft
+                    } else {
+                        TokenKind::Less
+                    };
+                    tokens.push(Token { kind, line, column });
+                }
                 '>' => {
                     let line = self.line;
                     let column = self.column;
@@ -147,6 +224,13 @@ impl Lexer {
                         self.bump();
                         tokens.push(Token {
                             kind: TokenKind::GreaterEqual,
+                            line,
+                            column,
+                        });
+                    } else if self.peek() == Some('>') {
+                        self.bump();
+                        tokens.push(Token {
+                            kind: TokenKind::ShiftRight,
                             line,
                             column,
                         });
@@ -312,14 +396,7 @@ impl Lexer {
             "continue" => TokenKind::Continue,
             "parallel" => TokenKind::Parallel,
             "for" => TokenKind::For,
-            "to" => TokenKind::To,
             "in" => TokenKind::In,
-            "and" => TokenKind::And,
-            "or" => TokenKind::Or,
-            "xor" => TokenKind::Xor,
-            "not" => TokenKind::Not,
-            "shl" => TokenKind::Shl,
-            "shr" => TokenKind::Shr,
             "as" => TokenKind::As,
             "ref" => TokenKind::Ref,
             "list" => TokenKind::List,

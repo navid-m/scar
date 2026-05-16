@@ -14,7 +14,7 @@ extern def sleep(t u32) void = "sleep"
 
 def make_row(width i32) list[i32]
 	var row list[i32] = []
-	for var x = 0 to width
+	for var x = 0 .. width
 		@append(row, 0)
 	end
 	return row
@@ -22,7 +22,7 @@ end
 
 def make_grid(width i32, height i32) Grid
 	var rows list[list[i32]] = []
-	for var y = 0 to height
+	for var y = 0 .. height
 		@append(rows, make_row(width))
 	end
 	return Grid(
@@ -59,9 +59,9 @@ end
 def count_neighbors(grid ref(Grid), x i32, y i32) i32
 	var count = 0
 
-	for var dy = -1 to 1
-		for var dx = -1 to 1
-			if dx == 0 and dy == 0	
+	for var dy = -1 .. 1
+		for var dx = -1 .. 1
+			if dx == 0 && dy == 0	
 				continue
 			end
 			count += get_cell(grid, x + dx, y + dy)
@@ -74,8 +74,8 @@ end
 def step(grid ref(Grid)) Grid
 	val next = make_grid(grid.width, grid.height)
 
-	for var y = 0 to grid.height
-		for var x = 0 to grid.width
+	for var y = 0 .. grid.height
+		for var x = 0 .. grid.width
 			val alive = get_cell(grid, x, y)
 			val neighbors = count_neighbors(grid, x, y)
 
@@ -106,8 +106,8 @@ end
 def draw(grid ref(Grid))
 	clear_screen()
 
-	for var y = 0 to grid.height
-		for var x = 0 to grid.width
+	for var y = 0 .. grid.height
+		for var x = 0 .. grid.width
 			if get_cell(grid, x, y) == 1
 				@print("[]", {})
 			else

@@ -306,6 +306,39 @@ fn rewrite_stmt(
             target: rewrite_expr(target, local_functions, local_types, module_aliases)?,
             value: rewrite_expr(value, local_functions, local_types, module_aliases)?,
         }),
+        Stmt::BitAndAssign {
+            line,
+            column,
+            target,
+            value,
+        } => Ok(Stmt::BitAndAssign {
+            line,
+            column,
+            target: rewrite_expr(target, local_functions, local_types, module_aliases)?,
+            value: rewrite_expr(value, local_functions, local_types, module_aliases)?,
+        }),
+        Stmt::BitOrAssign {
+            line,
+            column,
+            target,
+            value,
+        } => Ok(Stmt::BitOrAssign {
+            line,
+            column,
+            target: rewrite_expr(target, local_functions, local_types, module_aliases)?,
+            value: rewrite_expr(value, local_functions, local_types, module_aliases)?,
+        }),
+        Stmt::BitXorAssign {
+            line,
+            column,
+            target,
+            value,
+        } => Ok(Stmt::BitXorAssign {
+            line,
+            column,
+            target: rewrite_expr(target, local_functions, local_types, module_aliases)?,
+            value: rewrite_expr(value, local_functions, local_types, module_aliases)?,
+        }),
         Stmt::Return {
             line,
             column,

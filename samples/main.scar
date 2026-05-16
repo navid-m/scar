@@ -28,7 +28,7 @@ end
 
 pub def main() void
 	@("omp parallel for")
-	for var i = 0 to 10 
+	for var i = 0 .. 10 
 		hello_world(i)
 	end
 	some_module.some_function()

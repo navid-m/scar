@@ -175,6 +175,27 @@ fn render_stmt(
             output.push_str(&render_expr(value, function, info)?);
             output.push_str(";\n");
         }
+        Stmt::BitAndAssign { target, value, .. } => {
+            indent(output, level);
+            output.push_str(&render_expr(target, function, info)?);
+            output.push_str(" &= ");
+            output.push_str(&render_expr(value, function, info)?);
+            output.push_str(";\n");
+        }
+        Stmt::BitOrAssign { target, value, .. } => {
+            indent(output, level);
+            output.push_str(&render_expr(target, function, info)?);
+            output.push_str(" |= ");
+            output.push_str(&render_expr(value, function, info)?);
+            output.push_str(";\n");
+        }
+        Stmt::BitXorAssign { target, value, .. } => {
+            indent(output, level);
+            output.push_str(&render_expr(target, function, info)?);
+            output.push_str(" ^= ");
+            output.push_str(&render_expr(value, function, info)?);
+            output.push_str(";\n");
+        }
         Stmt::Return { value: None, .. } => {
             indent(output, level);
             output.push_str("return;\n");
@@ -388,7 +409,7 @@ fn render_expr_with_hint(
         }
         Expr::Unary { op, expr } => match op {
             UnaryOp::Neg => Ok(format!("(-({}))", render_expr(expr, function, info)?)),
-            UnaryOp::Not => Ok(format!("(~({}))", render_expr(expr, function, info)?)),
+            UnaryOp::LogicalNot => Ok(format!("(!({}))", render_expr(expr, function, info)?)),
         },
         Expr::Pack(_) => Err(CompileError::new(
             "packed `{...}` expressions are only valid inside @print",
@@ -400,9 +421,11 @@ fn render_expr_with_hint(
             let operator = match op {
                 BinaryOp::Add => "+",
                 BinaryOp::Multiply => "*",
-                BinaryOp::And => "&",
-                BinaryOp::Or => "|",
-                BinaryOp::Xor => "^",
+                BinaryOp::LogicalAnd => "&&",
+                BinaryOp::LogicalOr => "||",
+                BinaryOp::BitAnd => "&",
+                BinaryOp::BitOr => "|",
+                BinaryOp::BitXor => "^",
                 BinaryOp::ShiftLeft => "<<",
                 BinaryOp::LessThan => "<",
                 BinaryOp::GreaterEqual => ">=",
@@ -721,7 +744,7 @@ fn infer_codegen_expr_type(
         }
         Expr::Cast { ty, .. } => Ok(ty.clone()),
         Expr::Unary { op, expr } => match op {
-            UnaryOp::Neg | UnaryOp::Not => {
+            UnaryOp::Neg | UnaryOp::LogicalNot => {
                 infer_codegen_integer_unary_type(*op, expr, function, info)
             }
         },
@@ -742,12 +765,20 @@ fn infer_codegen_expr_type(
                 BinaryOp::Multiply => Err(CompileError::new(
                     "`*` currently requires matching operand types",
                 )),
-                BinaryOp::And | BinaryOp::Or | BinaryOp::Xor
+                BinaryOp::LogicalAnd | BinaryOp::LogicalOr
+                    if is_codegen_integer_type(&lhs_ty) && is_codegen_integer_type(&rhs_ty) =>
+                {
+                    Ok(Type::I32)
+                }
+                BinaryOp::LogicalAnd | BinaryOp::LogicalOr => Err(CompileError::new(
+                    "logical operators currently require integer operands",
+                )),
+                BinaryOp::BitAnd | BinaryOp::BitOr | BinaryOp::BitXor
                     if is_codegen_integer_type(&lhs_ty) && lhs_ty == rhs_ty =>
                 {
                     Ok(lhs_ty)
                 }
-                BinaryOp::And | BinaryOp::Or | BinaryOp::Xor => Err(CompileError::new(
+                BinaryOp::BitAnd | BinaryOp::BitOr | BinaryOp::BitXor => Err(CompileError::new(
                     "bitwise operators currently require matching integer operand types",
                 )),
                 BinaryOp::ShiftLeft | BinaryOp::ShiftRight
@@ -797,9 +828,9 @@ fn infer_codegen_integer_unary_type(
         UnaryOp::Neg => Err(CompileError::new(
             "unary `-` currently requires an i32 operand",
         )),
-        UnaryOp::Not if is_codegen_integer_type(&inner_ty) => Ok(inner_ty),
-        UnaryOp::Not => Err(CompileError::new(
-            "unary `not` currently requires an integer operand",
+        UnaryOp::LogicalNot if is_codegen_integer_type(&inner_ty) => Ok(Type::I32),
+        UnaryOp::LogicalNot => Err(CompileError::new(
+            "unary `!` currently requires an integer operand",
         )),
     }
 }

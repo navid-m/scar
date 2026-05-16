@@ -74,6 +74,24 @@ pub enum Stmt {
         target: Expr,
         value: Expr,
     },
+    BitAndAssign {
+        line: usize,
+        column: usize,
+        target: Expr,
+        value: Expr,
+    },
+    BitOrAssign {
+        line: usize,
+        column: usize,
+        target: Expr,
+        value: Expr,
+    },
+    BitXorAssign {
+        line: usize,
+        column: usize,
+        target: Expr,
+        value: Expr,
+    },
     Return {
         line: usize,
         column: usize,
@@ -175,9 +193,11 @@ pub struct FieldInit {
 pub enum BinaryOp {
     Add,
     Multiply,
-    And,
-    Or,
-    Xor,
+    LogicalAnd,
+    LogicalOr,
+    BitAnd,
+    BitOr,
+    BitXor,
     ShiftLeft,
     ShiftRight,
     LessThan,
@@ -188,7 +208,7 @@ pub enum BinaryOp {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UnaryOp {
     Neg,
-    Not,
+    LogicalNot,
 }
 
 impl Expr {

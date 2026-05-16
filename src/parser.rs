@@ -290,6 +290,39 @@ impl Parser {
                 value,
             });
         }
+        if self.check_simple(&TokenKind::AmpEqual) {
+            self.advance();
+            let value = self.parse_expr()?;
+            self.expect_stmt_terminator()?;
+            return Ok(Stmt::BitAndAssign {
+                line,
+                column,
+                target: expr,
+                value,
+            });
+        }
+        if self.check_simple(&TokenKind::PipeEqual) {
+            self.advance();
+            let value = self.parse_expr()?;
+            self.expect_stmt_terminator()?;
+            return Ok(Stmt::BitOrAssign {
+                line,
+                column,
+                target: expr,
+                value,
+            });
+        }
+        if self.check_simple(&TokenKind::CaretEqual) {
+            self.advance();
+            let value = self.parse_expr()?;
+            self.expect_stmt_terminator()?;
+            return Ok(Stmt::BitXorAssign {
+                line,
+                column,
+                target: expr,
+                value,
+            });
+        }
 
         let expr = if self.at_stmt_end() {
             self.maybe_promote_bracketless_call(expr)
@@ -382,7 +415,7 @@ impl Parser {
         if self.check_simple(&TokenKind::Assign) {
             self.advance();
             let start = self.parse_expr()?;
-            self.expect_simple(TokenKind::To)?;
+            self.expect_simple(TokenKind::DotDot)?;
             let end = self.parse_expr()?;
             self.expect_newline("expected a newline after for header")?;
             let body = self.parse_block()?;
@@ -425,7 +458,7 @@ impl Parser {
     }
 
     fn parse_cast(&mut self) -> Result<Expr, CompileError> {
-        let mut expr = self.parse_or()?;
+        let mut expr = self.parse_logical_or()?;
         while self.check_simple(&TokenKind::As) {
             self.advance();
             let ty = self.parse_type()?;
@@ -437,42 +470,70 @@ impl Parser {
         Ok(expr)
     }
 
-    fn parse_or(&mut self) -> Result<Expr, CompileError> {
-        let mut expr = self.parse_xor()?;
-        while self.check_simple(&TokenKind::Or) {
+    fn parse_logical_or(&mut self) -> Result<Expr, CompileError> {
+        let mut expr = self.parse_logical_and()?;
+        while self.check_simple(&TokenKind::PipePipe) {
             self.advance();
-            let rhs = self.parse_xor()?;
+            let rhs = self.parse_logical_and()?;
             expr = Expr::Binary {
                 lhs: Box::new(expr),
-                op: BinaryOp::Or,
+                op: BinaryOp::LogicalOr,
                 rhs: Box::new(rhs),
             };
         }
         Ok(expr)
     }
 
-    fn parse_xor(&mut self) -> Result<Expr, CompileError> {
-        let mut expr = self.parse_and()?;
-        while self.check_simple(&TokenKind::Xor) {
+    fn parse_logical_and(&mut self) -> Result<Expr, CompileError> {
+        let mut expr = self.parse_bitwise_or()?;
+        while self.check_simple(&TokenKind::AmpAmp) {
             self.advance();
-            let rhs = self.parse_and()?;
+            let rhs = self.parse_bitwise_or()?;
             expr = Expr::Binary {
                 lhs: Box::new(expr),
-                op: BinaryOp::Xor,
+                op: BinaryOp::LogicalAnd,
                 rhs: Box::new(rhs),
             };
         }
         Ok(expr)
     }
 
-    fn parse_and(&mut self) -> Result<Expr, CompileError> {
+    fn parse_bitwise_or(&mut self) -> Result<Expr, CompileError> {
+        let mut expr = self.parse_bitwise_xor()?;
+        while self.check_simple(&TokenKind::Pipe) {
+            self.advance();
+            let rhs = self.parse_bitwise_xor()?;
+            expr = Expr::Binary {
+                lhs: Box::new(expr),
+                op: BinaryOp::BitOr,
+                rhs: Box::new(rhs),
+            };
+        }
+        Ok(expr)
+    }
+
+    fn parse_bitwise_xor(&mut self) -> Result<Expr, CompileError> {
+        let mut expr = self.parse_bitwise_and()?;
+        while self.check_simple(&TokenKind::Caret) {
+            self.advance();
+            let rhs = self.parse_bitwise_and()?;
+            expr = Expr::Binary {
+                lhs: Box::new(expr),
+                op: BinaryOp::BitXor,
+                rhs: Box::new(rhs),
+            };
+        }
+        Ok(expr)
+    }
+
+    fn parse_bitwise_and(&mut self) -> Result<Expr, CompileError> {
         let mut expr = self.parse_equality()?;
-        while self.check_simple(&TokenKind::And) {
+        while self.check_simple(&TokenKind::Amp) {
             self.advance();
             let rhs = self.parse_equality()?;
             expr = Expr::Binary {
                 lhs: Box::new(expr),
-                op: BinaryOp::And,
+                op: BinaryOp::BitAnd,
                 rhs: Box::new(rhs),
             };
         }
@@ -520,9 +581,9 @@ impl Parser {
     fn parse_shift(&mut self) -> Result<Expr, CompileError> {
         let mut expr = self.parse_additive()?;
         loop {
-            let op = if self.check_simple(&TokenKind::Shl) {
+            let op = if self.check_simple(&TokenKind::ShiftLeft) {
                 Some(BinaryOp::ShiftLeft)
-            } else if self.check_simple(&TokenKind::Shr) {
+            } else if self.check_simple(&TokenKind::ShiftRight) {
                 Some(BinaryOp::ShiftRight)
             } else {
                 None
@@ -578,11 +639,11 @@ impl Parser {
                 expr: Box::new(expr),
             });
         }
-        if self.check_simple(&TokenKind::Not) {
+        if self.check_simple(&TokenKind::Bang) {
             self.advance();
             let expr = self.parse_unary()?;
             return Ok(Expr::Unary {
-                op: UnaryOp::Not,
+                op: UnaryOp::LogicalNot,
                 expr: Box::new(expr),
             });
         }
@@ -970,14 +1031,7 @@ impl Parser {
             TokenKind::Continue => "`continue`",
             TokenKind::Parallel => "`parallel`",
             TokenKind::For => "`for`",
-            TokenKind::To => "`to`",
             TokenKind::In => "`in`",
-            TokenKind::And => "`and`",
-            TokenKind::Or => "`or`",
-            TokenKind::Xor => "`xor`",
-            TokenKind::Not => "`not`",
-            TokenKind::Shl => "`shl`",
-            TokenKind::Shr => "`shr`",
             TokenKind::As => "`as`",
             TokenKind::Ref => "`ref`",
             TokenKind::List => "`list`",
@@ -996,10 +1050,22 @@ impl Parser {
             TokenKind::Comma => "`,`",
             TokenKind::Colon => "`:`",
             TokenKind::Dot => "`.`",
+            TokenKind::DotDot => "`..`",
             TokenKind::Assign => "`=`",
             TokenKind::EqualEqual => "`==`",
+            TokenKind::Amp => "`&`",
+            TokenKind::AmpAmp => "`&&`",
+            TokenKind::AmpEqual => "`&=`",
+            TokenKind::Pipe => "`|`",
+            TokenKind::PipePipe => "`||`",
+            TokenKind::PipeEqual => "`|=`",
+            TokenKind::Caret => "`^`",
+            TokenKind::CaretEqual => "`^=`",
+            TokenKind::Bang => "`!`",
             TokenKind::Less => "`<`",
+            TokenKind::ShiftLeft => "`<<`",
             TokenKind::GreaterEqual => "`>=`",
+            TokenKind::ShiftRight => "`>>`",
             TokenKind::Star => "`*`",
             TokenKind::Minus => "`-`",
             TokenKind::Plus => "`+`",
@@ -1113,7 +1179,7 @@ mod tests {
 
     #[test]
     fn parses_pragma_for_loop() {
-        let source = "pub def main() void\n@(\"omp parallel for\")\nfor var i = 0 to 10\nend\nend\n";
+        let source = "pub def main() void\n@(\"omp parallel for\")\nfor var i = 0 .. 10\nend\nend\n";
         let program = parse_program(lex(source).unwrap()).unwrap();
 
         match &program.functions[0].body[0] {
@@ -1184,41 +1250,35 @@ mod tests {
 
     #[test]
     fn parses_bitwise_and_boolean_style_operators() {
-        let source = "pub def main() void\n\tval mask = not (1 shl 2) and 7 or 8 xor 3\n\tval product = 2 + 3 * 4\n\tif 1 == 1 and 2 == 2\n\t\t@print(\"{d} {d}\", {mask, product})\n\tend\nend\n";
+        let source = "pub def main() void\n\tvar mask = (1 << 2) & 7 | 8 ^ 3\n\tmask &= 6\n\tmask |= 1\n\tmask ^= 2\n\tval product = 2 + 3 * 4\n\tif !(1 == 0) && 2 == 2\n\t\t@print(\"{d} {d}\", {mask, product})\n\tend\nend\n";
         let program = parse_program(lex(source).unwrap()).unwrap();
 
         match &program.functions[0].body[0] {
             Stmt::VarDecl { init, .. } => match init {
                 Expr::Binary {
-                    op: BinaryOp::Or,
+                    op: BinaryOp::BitOr,
                     lhs,
                     rhs,
                 } => {
                     assert!(matches!(
                         rhs.as_ref(),
                         Expr::Binary {
-                            op: BinaryOp::Xor,
+                            op: BinaryOp::BitXor,
                             ..
                         }
                     ));
                     assert!(matches!(
                         lhs.as_ref(),
                         Expr::Binary {
-                            op: BinaryOp::And,
+                            op: BinaryOp::BitAnd,
                             lhs,
                             ..
                         } if matches!(
                             lhs.as_ref(),
-                            Expr::Unary {
-                                op: UnaryOp::Not,
-                                expr,
-                            } if matches!(
-                                expr.as_ref(),
-                                Expr::Binary {
-                                    op: BinaryOp::ShiftLeft,
-                                    ..
-                                }
-                            )
+                            Expr::Binary {
+                                op: BinaryOp::ShiftLeft,
+                                ..
+                            }
                         )
                     ));
                 }
@@ -1228,6 +1288,21 @@ mod tests {
         }
 
         match &program.functions[0].body[1] {
+            Stmt::BitAndAssign { .. } => {}
+            other => panic!("expected bitwise and assign, got {other:?}"),
+        }
+
+        match &program.functions[0].body[2] {
+            Stmt::BitOrAssign { .. } => {}
+            other => panic!("expected bitwise or assign, got {other:?}"),
+        }
+
+        match &program.functions[0].body[3] {
+            Stmt::BitXorAssign { .. } => {}
+            other => panic!("expected bitwise xor assign, got {other:?}"),
+        }
+
+        match &program.functions[0].body[4] {
             Stmt::VarDecl { init, .. } => assert!(matches!(
                 init,
                 Expr::Binary {
@@ -1245,19 +1320,25 @@ mod tests {
             other => panic!("expected variable declaration, got {other:?}"),
         }
 
-        match &program.functions[0].body[2] {
+        match &program.functions[0].body[5] {
             Stmt::If { condition, .. } => assert!(matches!(
                 condition,
                 Expr::Binary {
-                    op: BinaryOp::And,
+                    op: BinaryOp::LogicalAnd,
                     lhs,
                     rhs,
                 } if matches!(
                     lhs.as_ref(),
-                    Expr::Binary {
-                        op: BinaryOp::Equal,
-                        ..
-                    }
+                    Expr::Unary {
+                        op: UnaryOp::LogicalNot,
+                        expr,
+                    } if matches!(
+                        expr.as_ref(),
+                        Expr::Binary {
+                            op: BinaryOp::Equal,
+                            ..
+                        }
+                    )
                 ) && matches!(
                     rhs.as_ref(),
                     Expr::Binary {
