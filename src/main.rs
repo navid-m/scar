@@ -152,8 +152,15 @@ fn compile_c_to_binary(
         CompilerKind::Clang => "clang",
     };
 
+    let mut use_flag: &str = "-w";
+
+    if compiler_name == "clang" {
+        use_flag = "-Wno-everything";
+    }
+
     let status = Command::new(compiler_name)
         .arg("-std=c99")
+        .arg(use_flag)
         .arg(compiler.opt_flag)
         .arg(c_path)
         .arg("-o")
