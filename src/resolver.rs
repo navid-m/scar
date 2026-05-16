@@ -315,6 +315,25 @@ fn rewrite_stmt(
             column,
             expr: rewrite_expr(expr, local_functions, local_types, module_aliases)?,
         }),
+        Stmt::If {
+            line,
+            column,
+            condition,
+            then_body,
+            else_body,
+        } => Ok(Stmt::If {
+            line,
+            column,
+            condition: rewrite_expr(condition, local_functions, local_types, module_aliases)?,
+            then_body: then_body
+                .into_iter()
+                .map(|stmt| rewrite_stmt(stmt, local_functions, local_types, module_aliases))
+                .collect::<Result<Vec<_>, _>>()?,
+            else_body: else_body
+                .into_iter()
+                .map(|stmt| rewrite_stmt(stmt, local_functions, local_types, module_aliases))
+                .collect::<Result<Vec<_>, _>>()?,
+        }),
         Stmt::ForRange {
             line,
             column,
@@ -351,6 +370,15 @@ fn rewrite_stmt(
                 .map(|stmt| rewrite_stmt(stmt, local_functions, local_types, module_aliases))
                 .collect::<Result<Vec<_>, _>>()?,
         }),
+        Stmt::Loop { line, column, body } => Ok(Stmt::Loop {
+            line,
+            column,
+            body: body
+                .into_iter()
+                .map(|stmt| rewrite_stmt(stmt, local_functions, local_types, module_aliases))
+                .collect::<Result<Vec<_>, _>>()?,
+        }),
+        Stmt::Continue { line, column } => Ok(Stmt::Continue { line, column }),
     }
 }
 
@@ -368,6 +396,20 @@ fn rewrite_expr(
                 .map(|value| rewrite_expr(value, local_functions, local_types, module_aliases))
                 .collect::<Result<Vec<_>, _>>()?,
         )),
+        Expr::Index { base, index } => Ok(Expr::Index {
+            base: Box::new(rewrite_expr(
+                *base,
+                local_functions,
+                local_types,
+                module_aliases,
+            )?),
+            index: Box::new(rewrite_expr(
+                *index,
+                local_functions,
+                local_types,
+                module_aliases,
+            )?),
+        }),
         Expr::FieldAccess { base, field } => Ok(Expr::FieldAccess {
             base: Box::new(rewrite_expr(
                 *base,
@@ -429,6 +471,24 @@ fn rewrite_expr(
                 .into_iter()
                 .map(|arg| rewrite_expr(arg, local_functions, local_types, module_aliases))
                 .collect::<Result<Vec<_>, _>>()?,
+        }),
+        Expr::Cast { expr, ty } => Ok(Expr::Cast {
+            expr: Box::new(rewrite_expr(
+                *expr,
+                local_functions,
+                local_types,
+                module_aliases,
+            )?),
+            ty: rewrite_type(ty, local_types),
+        }),
+        Expr::Unary { op, expr } => Ok(Expr::Unary {
+            op,
+            expr: Box::new(rewrite_expr(
+                *expr,
+                local_functions,
+                local_types,
+                module_aliases,
+            )?),
         }),
         Expr::Pack(values) => Ok(Expr::Pack(
             values
@@ -501,6 +561,7 @@ fn rewrite_type(ty: Type, local_types: &HashMap<String, String>) -> Type {
         Type::Named(name) => Type::Named(local_types.get(&name).cloned().unwrap_or(name)),
         Type::Ref(inner) => Type::Ref(Box::new(rewrite_type(*inner, local_types))),
         Type::List(inner) => Type::List(Box::new(rewrite_type(*inner, local_types))),
+        Type::U32 => Type::U32,
         other => other,
     }
 }

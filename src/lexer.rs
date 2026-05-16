@@ -11,19 +11,25 @@ pub struct Token {
 pub enum TokenKind {
     Pub,
     Def,
+    Extern,
     Type,
     End,
     Var,
     Val,
     Return,
+    If,
+    Else,
+    Continue,
     Parallel,
     For,
     To,
     In,
+    As,
     Ref,
     List,
     Void,
     I32,
+    U32,
     U8,
     Ident(String),
     Int(i64),
@@ -40,6 +46,10 @@ pub enum TokenKind {
     Colon,
     Dot,
     Assign,
+    EqualEqual,
+    Less,
+    GreaterEqual,
+    Minus,
     Plus,
     PlusEqual,
     Eof,
@@ -103,7 +113,42 @@ impl Lexer {
                 ',' => tokens.push(self.single(TokenKind::Comma)),
                 ':' => tokens.push(self.single(TokenKind::Colon)),
                 '.' => tokens.push(self.single(TokenKind::Dot)),
-                '=' => tokens.push(self.single(TokenKind::Assign)),
+                '=' => {
+                    let line = self.line;
+                    let column = self.column;
+                    self.bump();
+                    if self.peek() == Some('=') {
+                        self.bump();
+                        tokens.push(Token {
+                            kind: TokenKind::EqualEqual,
+                            line,
+                            column,
+                        });
+                    } else {
+                        tokens.push(Token {
+                            kind: TokenKind::Assign,
+                            line,
+                            column,
+                        });
+                    }
+                }
+                '<' => tokens.push(self.single(TokenKind::Less)),
+                '>' => {
+                    let line = self.line;
+                    let column = self.column;
+                    self.bump();
+                    if self.peek() == Some('=') {
+                        self.bump();
+                        tokens.push(Token {
+                            kind: TokenKind::GreaterEqual,
+                            line,
+                            column,
+                        });
+                    } else {
+                        return Err(self.error("unexpected character `>`"));
+                    }
+                }
+                '-' => tokens.push(self.single(TokenKind::Minus)),
                 '+' => {
                     let line = self.line;
                     let column = self.column;
@@ -176,13 +221,31 @@ impl Lexer {
                         'r' => '\r',
                         '"' => '"',
                         '\\' => '\\',
+                        'x' => {
+                            self.bump();
+                            let Some(high) = self.peek() else {
+                                return Err(self.error("unterminated hex escape sequence"));
+                            };
+                            self.bump();
+                            let Some(low) = self.peek() else {
+                                return Err(self.error("unterminated hex escape sequence"));
+                            };
+                            let value = hex_value(high)
+                                .zip(hex_value(low))
+                                .map(|(high, low)| (high << 4) | low)
+                                .ok_or_else(|| self.error("invalid hex escape sequence"))?;
+                            self.bump();
+                            value as char
+                        }
                         other => {
                             return Err(
                                 self.error(format!("unsupported escape sequence `\\{other}`"))
                             );
                         }
                     };
-                    self.bump();
+                    if escaped != 'x' {
+                        self.bump();
+                    }
                     value.push(decoded);
                 }
                 '\n' => return Err(self.error("newline in string literal")),
@@ -231,19 +294,25 @@ impl Lexer {
         let kind = match lexeme.as_str() {
             "pub" => TokenKind::Pub,
             "def" => TokenKind::Def,
+            "extern" => TokenKind::Extern,
             "type" => TokenKind::Type,
             "end" => TokenKind::End,
             "var" => TokenKind::Var,
             "val" => TokenKind::Val,
             "return" => TokenKind::Return,
+            "if" => TokenKind::If,
+            "else" => TokenKind::Else,
+            "continue" => TokenKind::Continue,
             "parallel" => TokenKind::Parallel,
             "for" => TokenKind::For,
             "to" => TokenKind::To,
             "in" => TokenKind::In,
+            "as" => TokenKind::As,
             "ref" => TokenKind::Ref,
             "list" => TokenKind::List,
             "void" => TokenKind::Void,
             "i32" => TokenKind::I32,
+            "u32" => TokenKind::U32,
             "u8" => TokenKind::U8,
             _ => TokenKind::Ident(lexeme),
         };
@@ -286,4 +355,13 @@ fn is_ident_start(ch: char) -> bool {
 
 fn is_ident_continue(ch: char) -> bool {
     is_ident_start(ch) || ch.is_ascii_digit()
+}
+
+fn hex_value(ch: char) -> Option<u8> {
+    match ch {
+        '0'..='9' => Some((ch as u8) - b'0'),
+        'a'..='f' => Some((ch as u8) - b'a' + 10),
+        'A'..='F' => Some((ch as u8) - b'A' + 10),
+        _ => None,
+    }
 }

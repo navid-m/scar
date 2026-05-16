@@ -27,6 +27,7 @@ pub struct FieldDef {
 pub struct Function {
     pub is_pub: bool,
     pub name: String,
+    pub extern_name: Option<String>,
     pub params: Vec<Param>,
     pub return_type: Type,
     pub body: Vec<Stmt>,
@@ -42,6 +43,7 @@ pub struct Param {
 pub enum Type {
     Void,
     I32,
+    U32,
     U8,
     Named(String),
     Ref(Box<Type>),
@@ -75,6 +77,13 @@ pub enum Stmt {
         column: usize,
         value: Option<Expr>,
     },
+    If {
+        line: usize,
+        column: usize,
+        condition: Expr,
+        then_body: Vec<Stmt>,
+        else_body: Vec<Stmt>,
+    },
     Expr {
         line: usize,
         column: usize,
@@ -96,6 +105,15 @@ pub enum Stmt {
         iterable: Expr,
         body: Vec<Stmt>,
     },
+    Loop {
+        line: usize,
+        column: usize,
+        body: Vec<Stmt>,
+    },
+    Continue {
+        line: usize,
+        column: usize,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -104,6 +122,10 @@ pub enum Expr {
     String(String),
     Path(Vec<String>),
     ListLiteral(Vec<Expr>),
+    Index {
+        base: Box<Expr>,
+        index: Box<Expr>,
+    },
     FieldAccess {
         base: Box<Expr>,
         field: String,
@@ -125,6 +147,14 @@ pub enum Expr {
         callee: Box<Expr>,
         args: Vec<Expr>,
     },
+    Cast {
+        expr: Box<Expr>,
+        ty: Type,
+    },
+    Unary {
+        op: UnaryOp,
+        expr: Box<Expr>,
+    },
     Pack(Vec<Expr>),
     Binary {
         lhs: Box<Expr>,
@@ -142,6 +172,14 @@ pub struct FieldInit {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BinaryOp {
     Add,
+    LessThan,
+    GreaterEqual,
+    Equal,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UnaryOp {
+    Neg,
 }
 
 impl Expr {

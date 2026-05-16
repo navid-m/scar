@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use crate::{
     CompileError,
-    ast::{BinaryOp, Expr, Function, Program, Stmt, Type, TypeDef},
+    ast::{BinaryOp, Expr, Function, Program, Stmt, Type, TypeDef, UnaryOp},
     sema::ProgramInfo,
 };
 
@@ -28,12 +28,15 @@ pub fn generate_c(program: &Program, info: &ProgramInfo) -> Result<String, Compi
     }
 
     for function in &program.functions {
-        output.push_str(&render_signature(function));
+        output.push_str(&render_signature(function, info));
         output.push_str(";\n");
     }
     output.push('\n');
 
     for function in &program.functions {
+        if function.extern_name.is_some() {
+            continue;
+        }
         render_function(&mut output, function, info)?;
         output.push('\n');
     }
@@ -56,7 +59,7 @@ fn render_function(
     info: &ProgramInfo,
 ) -> Result<(), CompileError> {
     let mut next_temp_id = 0usize;
-    output.push_str(&render_signature(function));
+    output.push_str(&render_signature(function, info));
     output.push_str(" {\n");
     for stmt in &function.body {
         render_stmt(output, stmt, function, info, 1, &mut next_temp_id)?;
@@ -85,13 +88,17 @@ fn render_type_def(type_def: &TypeDef) -> String {
     output
 }
 
-fn render_signature(function: &Function) -> String {
+fn render_signature(function: &Function, info: &ProgramInfo) -> String {
     let return_type = if function.name == "main" {
         "int".to_string()
     } else {
         c_type(&function.return_type)
     };
-
+    let symbol = info
+        .function_symbols
+        .get(&function.name)
+        .cloned()
+        .unwrap_or_else(|| function.name.clone());
     let params = if function.params.is_empty() {
         "void".to_string()
     } else {
@@ -102,8 +109,12 @@ fn render_signature(function: &Function) -> String {
             .collect::<Vec<_>>()
             .join(", ")
     };
-
-    format!("{return_type} {}({params})", function.name)
+    let prefix = if function.extern_name.is_some() {
+        "extern "
+    } else {
+        ""
+    };
+    format!("{prefix}{return_type} {symbol}({params})")
 }
 
 fn render_stmt(
@@ -116,12 +127,10 @@ fn render_stmt(
 ) -> Result<(), CompileError> {
     match stmt {
         Stmt::VarDecl {
-            line: _,
-            column: _,
             mutable,
             name,
-            declared_type: _,
             init,
+            ..
         } => {
             let ty = info
                 .locals
@@ -144,65 +153,70 @@ fn render_stmt(
             output.push_str(&render_expr_with_hint(init, function, info, Some(ty))?);
             output.push_str(";\n");
         }
-        Stmt::Assign {
-            line: _,
-            column: _,
-            target,
-            value,
-        } => {
+        Stmt::Assign { target, value, .. } => {
             indent(output, level);
             output.push_str(&render_expr(target, function, info)?);
             output.push_str(" = ");
             output.push_str(&render_expr(value, function, info)?);
             output.push_str(";\n");
         }
-        Stmt::AddAssign {
-            line: _,
-            column: _,
-            target,
-            value,
-        } => {
+        Stmt::AddAssign { target, value, .. } => {
             indent(output, level);
             output.push_str(&render_expr(target, function, info)?);
             output.push_str(" += ");
             output.push_str(&render_expr(value, function, info)?);
             output.push_str(";\n");
         }
-        Stmt::Return {
-            line: _,
-            column: _,
-            value: None,
-        } => {
+        Stmt::Return { value: None, .. } => {
             indent(output, level);
             output.push_str("return;\n");
         }
         Stmt::Return {
-            line: _,
-            column: _,
-            value: Some(value),
+            value: Some(value), ..
         } => {
             indent(output, level);
             output.push_str("return ");
             output.push_str(&render_expr(value, function, info)?);
             output.push_str(";\n");
         }
-        Stmt::Expr {
-            line: _,
-            column: _,
-            expr,
+        Stmt::If {
+            condition,
+            then_body,
+            else_body,
+            ..
         } => {
+            indent(output, level);
+            output.push_str("if (");
+            output.push_str(&render_expr(condition, function, info)?);
+            output.push_str(") {\n");
+            for stmt in then_body {
+                render_stmt(output, stmt, function, info, level + 1, next_temp_id)?;
+            }
+            indent(output, level);
+            output.push('}');
+            if else_body.is_empty() {
+                output.push('\n');
+            } else {
+                output.push_str(" else {\n");
+                for stmt in else_body {
+                    render_stmt(output, stmt, function, info, level + 1, next_temp_id)?;
+                }
+                indent(output, level);
+                output.push_str("}\n");
+            }
+        }
+        Stmt::Expr { expr, .. } => {
             indent(output, level);
             output.push_str(&render_expr(expr, function, info)?);
             output.push_str(";\n");
         }
         Stmt::ForRange {
-            line: _,
-            column: _,
             pragma,
             var_name,
             start,
             end,
             body,
+            ..
         } => {
             indent(output, level);
             if let Some(pragma) = pragma {
@@ -229,14 +243,13 @@ fn render_stmt(
             output.push_str("}\n");
         }
         Stmt::ForEach {
-            line: _,
-            column: _,
             var_name,
             iterable,
             body,
+            ..
         } => {
             let iterable_ty = infer_codegen_expr_type(iterable, function, info)?;
-            let Type::List(element_ty) = iterable_ty.clone() else {
+            let Type::List(element_ty) = deref_refs(&iterable_ty) else {
                 return Err(CompileError::new(format!(
                     "expected list iterable during code generation, got {}",
                     describe_type(&iterable_ty)
@@ -267,7 +280,7 @@ fn render_stmt(
             output.push_str(&index_name);
             output.push_str(") {\n");
             indent(output, level + 2);
-            output.push_str(&c_type(&element_ty));
+            output.push_str(&c_type(element_ty));
             output.push(' ');
             output.push_str(var_name);
             output.push_str(" = ");
@@ -282,6 +295,19 @@ fn render_stmt(
             output.push_str("}\n");
             indent(output, level);
             output.push_str("}\n");
+        }
+        Stmt::Loop { body, .. } => {
+            indent(output, level);
+            output.push_str("for (;;) {\n");
+            for stmt in body {
+                render_stmt(output, stmt, function, info, level + 1, next_temp_id)?;
+            }
+            indent(output, level);
+            output.push_str("}\n");
+        }
+        Stmt::Continue { .. } => {
+            indent(output, level);
+            output.push_str("continue;\n");
         }
     }
     Ok(())
@@ -309,11 +335,8 @@ fn render_expr_with_hint(
             };
             render_list_literal(values, &list_ty, function, info)
         }
-        Expr::FieldAccess { base, field } => Ok(format!(
-            "({}).{}",
-            render_expr(base, function, info)?,
-            field
-        )),
+        Expr::Index { base, index } => render_index_expr(base, index, function, info),
+        Expr::FieldAccess { base, field } => render_field_access(base, field, function, info),
         Expr::StructInit { name, fields } => {
             let rendered_fields = fields
                 .iter()
@@ -332,7 +355,7 @@ fn render_expr_with_hint(
             receiver,
             method,
             args,
-        } => render_method_call(receiver, method, args, function, info),
+        } => render_list_method_call(method, receiver, args, function, info),
         Expr::Path(path) => match path.as_slice() {
             [name] => Ok(name.clone()),
             _ => Err(CompileError::new(format!(
@@ -340,18 +363,69 @@ fn render_expr_with_hint(
                 path.join(".")
             ))),
         },
+        Expr::Call { callee, args } => render_call(callee, args, function, info),
+        Expr::Cast { expr, ty } => {
+            if matches!(expr.as_ref(), Expr::ListLiteral(_)) {
+                return render_expr_with_hint(expr, function, info, Some(ty));
+            }
+            Ok(format!(
+                "(({})({}))",
+                c_type(ty),
+                render_expr(expr, function, info)?
+            ))
+        }
+        Expr::Unary { op, expr } => match op {
+            UnaryOp::Neg => Ok(format!("(-({}))", render_expr(expr, function, info)?)),
+        },
         Expr::Pack(_) => Err(CompileError::new(
             "packed `{...}` expressions are only valid inside @print",
         )),
-        Expr::Binary { lhs, op, rhs } => match op {
-            BinaryOp::Add => Ok(format!(
-                "({} + {})",
+        Expr::Binary { lhs, op, rhs } => {
+            let operator = match op {
+                BinaryOp::Add => "+",
+                BinaryOp::LessThan => "<",
+                BinaryOp::GreaterEqual => ">=",
+                BinaryOp::Equal => "==",
+            };
+            Ok(format!(
+                "(({}) {} ({}))",
                 render_expr(lhs, function, info)?,
+                operator,
                 render_expr(rhs, function, info)?
-            )),
-        },
-        Expr::Call { callee, args } => render_call(callee, args, function, info),
+            ))
+        }
     }
+}
+
+fn render_field_access(
+    base: &Expr,
+    field: &str,
+    function: &Function,
+    info: &ProgramInfo,
+) -> Result<String, CompileError> {
+    let base_ty = infer_codegen_expr_type(base, function, info)?;
+    let rendered_base = render_expr(base, function, info)?;
+    if matches!(base_ty, Type::Ref(_)) {
+        Ok(format!("({rendered_base})->{field}"))
+    } else {
+        Ok(format!("({rendered_base}).{field}"))
+    }
+}
+
+fn render_index_expr(
+    base: &Expr,
+    index: &Expr,
+    function: &Function,
+    info: &ProgramInfo,
+) -> Result<String, CompileError> {
+    let base_ty = infer_codegen_expr_type(base, function, info)?;
+    let element_ty = list_element_type(&base_ty)?;
+    let helper_prefix = list_helper_prefix(element_ty);
+    Ok(format!(
+        "(*{helper_prefix}_at({}, {}))",
+        render_list_pointer(base, &base_ty, function, info)?,
+        render_expr(index, function, info)?
+    ))
 }
 
 fn render_call(
@@ -361,69 +435,23 @@ fn render_call(
     info: &ProgramInfo,
 ) -> Result<String, CompileError> {
     if let Some(path) = callee.as_path() {
-        if path.len() == 2 && path[0] == "builtin" {
-            return render_builtin_call(&path[1], args, function, info);
-        }
         if path.len() == 1 {
+            let symbol = info
+                .function_symbols
+                .get(&path[0])
+                .cloned()
+                .unwrap_or_else(|| path[0].clone());
             let rendered_args = args
                 .iter()
                 .map(|arg| render_expr(arg, function, info))
                 .collect::<Result<Vec<_>, _>>()?;
-            return Ok(format!("{}({})", path[0], rendered_args.join(", ")));
+            return Ok(format!("{symbol}({})", rendered_args.join(", ")));
         }
     }
 
     Err(CompileError::new(
         "only direct function calls and @builtin calls are currently supported in codegen",
     ))
-}
-
-fn render_method_call(
-    receiver: &Expr,
-    method: &str,
-    args: &[Expr],
-    function: &Function,
-    info: &ProgramInfo,
-) -> Result<String, CompileError> {
-    let receiver_ty = infer_codegen_expr_type(receiver, function, info)?;
-    let Type::List(element_ty) = receiver_ty.clone() else {
-        return Err(CompileError::new(format!(
-            "unsupported non-list receiver for `@{method}` in code generation: {}",
-            describe_type(&receiver_ty)
-        )));
-    };
-    let helper_prefix = list_helper_prefix(&element_ty);
-    let rendered_receiver = render_expr(receiver, function, info)?;
-
-    match method {
-        "append" => Ok(format!(
-            "{helper_prefix}_append(&({rendered_receiver}), {})",
-            render_expr(&args[0], function, info)?
-        )),
-        "capacity" => Ok(format!("{helper_prefix}_capacity(&({rendered_receiver}))")),
-        "reserve" => Ok(format!(
-            "{helper_prefix}_reserve(&({rendered_receiver}), {})",
-            render_expr(&args[0], function, info)?
-        )),
-        "set" => Ok(format!(
-            "{helper_prefix}_set(&({rendered_receiver}), {}, {})",
-            render_expr(&args[0], function, info)?,
-            render_expr(&args[1], function, info)?
-        )),
-        "insert" => Ok(format!(
-            "{helper_prefix}_insert(&({rendered_receiver}), {}, {})",
-            render_expr(&args[0], function, info)?,
-            render_expr(&args[1], function, info)?
-        )),
-        "remove" => Ok(format!(
-            "{helper_prefix}_remove(&({rendered_receiver}), {})",
-            render_expr(&args[0], function, info)?
-        )),
-        "clear" => Ok(format!("{helper_prefix}_clear(&({rendered_receiver}))")),
-        _ => Err(CompileError::new(format!(
-            "unsupported list accessor `@{method}` during code generation"
-        ))),
-    }
 }
 
 fn render_builtin_call(
@@ -433,6 +461,14 @@ fn render_builtin_call(
     info: &ProgramInfo,
 ) -> Result<String, CompileError> {
     match name {
+        "append" | "capacity" | "reserve" | "set" | "insert" | "remove" | "clear" => {
+            if args.is_empty() {
+                return Err(CompileError::new(format!(
+                    "@{name} expects a list receiver as its first argument",
+                )));
+            }
+            render_list_method_call(name, &args[0], &args[1..], function, info)
+        }
         "puts" => Ok(format!("puts({})", render_expr(&args[0], function, info)?)),
         "print" => {
             let Expr::String(format) = &args[0] else {
@@ -468,18 +504,78 @@ fn render_builtin_call(
     }
 }
 
+fn render_list_method_call(
+    method: &str,
+    receiver: &Expr,
+    args: &[Expr],
+    function: &Function,
+    info: &ProgramInfo,
+) -> Result<String, CompileError> {
+    let receiver_ty = infer_codegen_expr_type(receiver, function, info)?;
+    let element_ty = list_element_type(&receiver_ty)?;
+    let helper_prefix = list_helper_prefix(element_ty);
+    let receiver_ptr = render_list_pointer(receiver, &receiver_ty, function, info)?;
+
+    match method {
+        "append" => Ok(format!(
+            "{helper_prefix}_append({receiver_ptr}, {})",
+            render_expr(&args[0], function, info)?
+        )),
+        "capacity" => Ok(format!("{helper_prefix}_capacity({receiver_ptr})")),
+        "reserve" => Ok(format!(
+            "{helper_prefix}_reserve({receiver_ptr}, {})",
+            render_expr(&args[0], function, info)?
+        )),
+        "set" => Ok(format!(
+            "{helper_prefix}_set({receiver_ptr}, {}, {})",
+            render_expr(&args[0], function, info)?,
+            render_expr(&args[1], function, info)?
+        )),
+        "insert" => Ok(format!(
+            "{helper_prefix}_insert({receiver_ptr}, {}, {})",
+            render_expr(&args[0], function, info)?,
+            render_expr(&args[1], function, info)?
+        )),
+        "remove" => Ok(format!(
+            "{helper_prefix}_remove({receiver_ptr}, {})",
+            render_expr(&args[0], function, info)?
+        )),
+        "clear" => Ok(format!("{helper_prefix}_clear({receiver_ptr})")),
+        _ => Err(CompileError::new(format!(
+            "unsupported list accessor `@{method}` during code generation"
+        ))),
+    }
+}
+
+fn render_list_pointer(
+    receiver: &Expr,
+    receiver_ty: &Type,
+    function: &Function,
+    info: &ProgramInfo,
+) -> Result<String, CompileError> {
+    let rendered = render_expr(receiver, function, info)?;
+    match deref_refs(receiver_ty) {
+        Type::List(_) => {
+            if matches!(receiver_ty, Type::Ref(inner) if matches!(inner.as_ref(), Type::List(_))) {
+                Ok(format!("({rendered})"))
+            } else {
+                Ok(format!("&({rendered})"))
+            }
+        }
+        other => Err(CompileError::new(format!(
+            "expected list receiver during code generation, got {}",
+            describe_type(other)
+        ))),
+    }
+}
+
 fn render_list_literal(
     values: &[Expr],
     ty: &Type,
     function: &Function,
     info: &ProgramInfo,
 ) -> Result<String, CompileError> {
-    let Type::List(element_ty) = ty else {
-        return Err(CompileError::new(format!(
-            "list literal requires a list type during code generation, got {}",
-            describe_type(ty)
-        )));
-    };
+    let element_ty = list_element_type(ty)?;
     let helper_prefix = list_helper_prefix(element_ty);
     if values.is_empty() {
         return Ok(format!("{helper_prefix}_new()"));
@@ -523,6 +619,7 @@ fn infer_codegen_expr_type(
             }
             Ok(Type::List(Box::new(first_ty)))
         }
+        Expr::Index { base, .. } => infer_index_type(&infer_codegen_expr_type(base, function, info)?),
         Expr::Path(path) => match path.as_slice() {
             [name] => info
                 .locals
@@ -545,17 +642,18 @@ fn infer_codegen_expr_type(
         },
         Expr::FieldAccess { base, field } => {
             let base_ty = infer_codegen_expr_type(base, function, info)?;
-            let Type::Named(name) = base_ty else {
-                return Err(CompileError::new(format!(
+            match deref_refs(&base_ty) {
+                Type::Named(name) => info
+                    .types
+                    .get(name)
+                    .and_then(|type_info| type_info.field_map.get(field))
+                    .cloned()
+                    .ok_or_else(|| CompileError::new(format!("type `{name}` has no field `{field}`"))),
+                other => Err(CompileError::new(format!(
                     "field access requires a named type during code generation, got {}",
-                    describe_type(&base_ty)
-                )));
-            };
-            info.types
-                .get(&name)
-                .and_then(|type_info| type_info.field_map.get(field))
-                .cloned()
-                .ok_or_else(|| CompileError::new(format!("type `{name}` has no field `{field}`")))
+                    describe_type(other)
+                ))),
+            }
         }
         Expr::StructInit { name, .. } => Ok(Type::Named(name.clone())),
         Expr::BuiltinCall { name, args } => infer_builtin_type(name, args, function, info),
@@ -565,21 +663,17 @@ fn infer_codegen_expr_type(
             args: _,
         } => {
             let receiver_ty = infer_codegen_expr_type(receiver, function, info)?;
-            let Type::List(element_ty) = receiver_ty else {
-                return Err(CompileError::new(format!(
-                    "`@{method}` requires a list receiver during code generation"
-                )));
-            };
+            let element_ty = list_element_type(&receiver_ty)?;
             match method.as_str() {
                 "capacity" => Ok(Type::I32),
-                "remove" => Ok((*element_ty).clone()),
+                "remove" => Ok(element_ty.clone()),
                 "append" | "reserve" | "set" | "insert" | "clear" => Ok(Type::Void),
                 _ => Err(CompileError::new(format!(
                     "unsupported list accessor `@{method}` during code generation"
                 ))),
             }
         }
-        Expr::Call { callee, args: _ } => {
+        Expr::Call { callee, .. } => {
             let Some(path) = callee.as_path() else {
                 return Err(CompileError::new(
                     "only direct calls are supported during code generation",
@@ -591,31 +685,32 @@ fn infer_codegen_expr_type(
                     .get(name)
                     .map(|sig| sig.return_type.clone())
                     .ok_or_else(|| CompileError::new(format!("unknown function `{name}`"))),
-                [builtin, name] if builtin == "builtin" => {
-                    infer_builtin_type(name, &[], function, info)
-                }
                 _ => Err(CompileError::new(format!(
                     "unsupported call target `{}` in code generation",
                     path.join(".")
                 ))),
             }
         }
+        Expr::Cast { ty, .. } => Ok(ty.clone()),
+        Expr::Unary { op, expr } => match op {
+            UnaryOp::Neg => infer_codegen_expr_type(expr, function, info),
+        },
         Expr::Pack(_) => Err(CompileError::new(
             "packed `{...}` expressions are only valid inside @print",
         )),
-        Expr::Binary { lhs, op, rhs } => match op {
-            BinaryOp::Add => {
-                let lhs_ty = infer_codegen_expr_type(lhs, function, info)?;
-                let rhs_ty = infer_codegen_expr_type(rhs, function, info)?;
-                if lhs_ty == Type::I32 && rhs_ty == Type::I32 {
+        Expr::Binary { lhs, op, rhs } => {
+            let lhs_ty = infer_codegen_expr_type(lhs, function, info)?;
+            let rhs_ty = infer_codegen_expr_type(rhs, function, info)?;
+            match op {
+                BinaryOp::Add if lhs_ty == rhs_ty => Ok(lhs_ty),
+                BinaryOp::Add => Err(CompileError::new(
+                    "`+` currently requires matching operand types",
+                )),
+                BinaryOp::LessThan | BinaryOp::GreaterEqual | BinaryOp::Equal => {
                     Ok(Type::I32)
-                } else {
-                    Err(CompileError::new(
-                        "`+` currently requires both operands to have type i32",
-                    ))
                 }
             }
-        },
+        }
     }
 }
 
@@ -626,6 +721,20 @@ fn infer_builtin_type(
     info: &ProgramInfo,
 ) -> Result<Type, CompileError> {
     match name {
+        "append" | "capacity" | "reserve" | "set" | "insert" | "remove" | "clear" => {
+            if args.is_empty() {
+                return Err(CompileError::new(format!(
+                    "@{name} expects a list receiver as its first argument",
+                )));
+            }
+            let receiver_ty = infer_codegen_expr_type(&args[0], function, info)?;
+            let element_ty = list_element_type(&receiver_ty)?;
+            match name {
+                "capacity" => Ok(Type::I32),
+                "remove" => Ok(element_ty.clone()),
+                _ => Ok(Type::Void),
+            }
+        }
         "puts" | "print" => Ok(Type::Void),
         "addr" => Ok(Type::Ref(Box::new(infer_codegen_expr_type(
             &args[0], function, info,
@@ -722,13 +831,7 @@ fn collect_list_types_from_type(ty: &Type, set: &mut HashSet<Type>) {
 }
 
 fn render_list_support(list_ty: &Type) -> Result<String, CompileError> {
-    let Type::List(element_ty) = list_ty else {
-        return Err(CompileError::new(format!(
-            "expected list type for list support generation, got {}",
-            describe_type(list_ty)
-        )));
-    };
-
+    let element_ty = list_element_type(list_ty)?;
     let list_name = c_type(list_ty);
     let element_c_ty = c_type(element_ty);
     let helper_prefix = list_helper_prefix(element_ty);
@@ -810,9 +913,22 @@ fn render_list_support(list_ty: &Type) -> Result<String, CompileError> {
     output.push_str("    return list;\n");
     output.push_str("}\n\n");
 
+    output.push_str("static ");
+    output.push_str(&element_c_ty);
+    output.push_str(" *");
+    output.push_str(&helper_prefix);
+    output.push_str("_at(");
+    output.push_str(&list_name);
+    output.push_str(" *list, int32_t index) {\n");
+    output.push_str("    if (index < 0 || index >= list->len) {\n");
+    output.push_str("        scar_runtime_panic(\"list index out of bounds\");\n");
+    output.push_str("    }\n");
+    output.push_str("    return &list->data[index];\n");
+    output.push_str("}\n\n");
+
     output.push_str("static int32_t ");
     output.push_str(&helper_prefix);
-    output.push_str("_capacity(const ");
+    output.push_str("_capacity(");
     output.push_str(&list_name);
     output.push_str(" *list) {\n");
     output.push_str("    return list->cap;\n");
@@ -848,10 +964,9 @@ fn render_list_support(list_ty: &Type) -> Result<String, CompileError> {
     output.push_str(" *list, int32_t index, ");
     output.push_str(&element_c_ty);
     output.push_str(" value) {\n");
-    output.push_str("    if (index < 0 || index >= list->len) {\n");
-    output.push_str("        scar_runtime_panic(\"list set index out of bounds\");\n");
-    output.push_str("    }\n");
-    output.push_str("    list->data[index] = value;\n");
+    output.push_str("    *");
+    output.push_str(&helper_prefix);
+    output.push_str("_at(list, index) = value;\n");
     output.push_str("}\n\n");
 
     output.push_str("static void ");
@@ -883,12 +998,11 @@ fn render_list_support(list_ty: &Type) -> Result<String, CompileError> {
     output.push_str("_remove(");
     output.push_str(&list_name);
     output.push_str(" *list, int32_t index) {\n");
-    output.push_str("    if (index < 0 || index >= list->len) {\n");
-    output.push_str("        scar_runtime_panic(\"list remove index out of bounds\");\n");
-    output.push_str("    }\n");
     output.push_str("    ");
     output.push_str(&element_c_ty);
-    output.push_str(" removed = list->data[index];\n");
+    output.push_str(" removed = *");
+    output.push_str(&helper_prefix);
+    output.push_str("_at(list, index);\n");
     output.push_str("    if (index + 1 < list->len) {\n");
     output.push_str("        memmove(&list->data[index], &list->data[index + 1], sizeof(");
     output.push_str(&element_c_ty);
@@ -917,6 +1031,7 @@ fn type_suffix(ty: &Type) -> String {
     match ty {
         Type::Void => "void".to_string(),
         Type::I32 => "i32".to_string(),
+        Type::U32 => "u32".to_string(),
         Type::U8 => "u8".to_string(),
         Type::Named(name) => sanitize_identifier(name),
         Type::Ref(inner) => format!("ref__{}", type_suffix(inner)),
@@ -934,6 +1049,7 @@ fn c_type(ty: &Type) -> String {
     match ty {
         Type::Void => "void".to_string(),
         Type::I32 => "int32_t".to_string(),
+        Type::U32 => "uint32_t".to_string(),
         Type::U8 => "const char *".to_string(),
         Type::Named(name) => name.clone(),
         Type::Ref(inner) => {
@@ -949,6 +1065,27 @@ fn c_type(ty: &Type) -> String {
         }
         Type::List(inner) => format!("scar_list__{}", type_suffix(inner)),
     }
+}
+
+fn list_element_type(ty: &Type) -> Result<&Type, CompileError> {
+    match deref_refs(ty) {
+        Type::List(inner) => Ok(inner),
+        other => Err(CompileError::new(format!(
+            "expected list type, got {}",
+            describe_type(other)
+        ))),
+    }
+}
+
+fn infer_index_type(ty: &Type) -> Result<Type, CompileError> {
+    Ok(list_element_type(ty)?.clone())
+}
+
+fn deref_refs(mut ty: &Type) -> &Type {
+    while let Type::Ref(inner) = ty {
+        ty = inner;
+    }
+    ty
 }
 
 fn escape_c_string(value: &str) -> String {
@@ -970,6 +1107,7 @@ fn describe_type(ty: &Type) -> String {
     match ty {
         Type::Void => "void".to_string(),
         Type::I32 => "i32".to_string(),
+        Type::U32 => "u32".to_string(),
         Type::U8 => "u8".to_string(),
         Type::Named(name) => name.clone(),
         Type::Ref(inner) => format!("ref({})", describe_type(inner)),
