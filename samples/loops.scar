@@ -1,0 +1,16 @@
+def some_func()
+	val x ref(u8) = "hello, world"
+	@print("{s}", {x})
+end
+
+pub def main()
+	## Iterating through some list
+	## Easy as pie :)
+	
+	val some_list list[i32] = [1, 2, 3, 4, 5]
+	for var l in some_list
+		@print("{d}", {l})
+	end
+
+	some_func
+end

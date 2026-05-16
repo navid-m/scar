@@ -2,3 +2,4 @@
 .DS_Store
 *.c
 /target
+scar-out
