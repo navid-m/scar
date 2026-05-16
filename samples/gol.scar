@@ -132,5 +132,6 @@ pub def main() void
 	for
 		draw(@addr(grid))
 		grid = step(@addr(grid))
+		sleep(100 as u32)
 	end
 end
