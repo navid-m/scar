@@ -114,7 +114,10 @@ impl Cli {
         let input = input.ok_or_else(|| {
             CompileError::new("usage: scar <input.scar> [--emit] [-opt] [-o output]")
         })?;
-        let output = output.unwrap_or_else(|| default_output_path(&input, emit_c));
+        let output = match output {
+            Some(output) => output,
+            None => default_output_path(&input, emit_c)?,
+        };
         Ok(Self {
             input,
             output,
@@ -137,6 +140,14 @@ struct CompilerSpec {
 }
 
 fn write_output(path: &Path, contents: &str) -> Result<(), CompileError> {
+    if let Some(parent) = path.parent().filter(|parent| !parent.as_os_str().is_empty()) {
+        fs::create_dir_all(parent).map_err(|error| {
+            CompileError::new(format!(
+                "failed to create output directory {}: {error}",
+                parent.display()
+            ))
+        })?;
+    }
     fs::write(path, contents)
         .map_err(|error| CompileError::new(format!("failed to write {}: {error}", path.display())))
 }
@@ -146,6 +157,15 @@ fn compile_c_to_binary(
     output_path: &Path,
     optimize: bool,
 ) -> Result<(), CompileError> {
+    if let Some(parent) = output_path.parent().filter(|parent| !parent.as_os_str().is_empty()) {
+        fs::create_dir_all(parent).map_err(|error| {
+            CompileError::new(format!(
+                "failed to create output directory {}: {error}",
+                parent.display()
+            ))
+        })?;
+    }
+
     let compiler = select_compiler(optimize)?;
     let compiler_name = match compiler.kind {
         CompilerKind::Tcc => "tcc",
@@ -227,16 +247,25 @@ fn command_exists(command: &str) -> bool {
     Command::new(command).arg("-v").output().is_ok()
 }
 
-fn default_output_path(input: &Path, emit_c: bool) -> PathBuf {
+fn default_output_path(input: &Path, emit_c: bool) -> Result<PathBuf, CompileError> {
     if emit_c {
-        return input.with_extension("c");
+        return Ok(input.with_extension("c"));
     }
 
+    let stem = input
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .unwrap_or("scar-output");
+    let mut output = env::current_dir()
+        .map_err(|error| CompileError::new(format!("failed to get current directory: {error}")))?;
+    output.push("scar-out");
+    output.push(stem);
     if cfg!(windows) {
-        input.with_extension("exe")
+        output.set_extension("exe");
     } else {
-        input.with_extension("")
+        output.set_extension("");
     }
+    Ok(output)
 }
 
 fn temporary_c_path(input: &Path) -> PathBuf {
@@ -250,7 +279,7 @@ fn temporary_c_path(input: &Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::{Cli, CompilerKind, choose_compiler, default_output_path};
-    use std::path::Path;
+    use std::{env, path::Path};
 
     #[test]
     fn cli_defaults_to_binary_output() {
@@ -259,7 +288,7 @@ mod tests {
         assert!(!cli.emit_c);
         assert_eq!(
             cli.output,
-            default_output_path(Path::new("main.scar"), false)
+            default_output_path(Path::new("main.scar"), false).unwrap()
         );
     }
 
@@ -269,6 +298,16 @@ mod tests {
 
         assert!(cli.emit_c);
         assert_eq!(cli.output, Path::new("main.c"));
+    }
+
+    #[test]
+    fn default_binary_output_uses_invocation_directory() {
+        let output = default_output_path(Path::new("nested/main.scar"), false).unwrap();
+        let mut expected = env::current_dir().unwrap();
+        expected.push("scar-out");
+        expected.push(if cfg!(windows) { "main.exe" } else { "main" });
+
+        assert_eq!(output, expected);
     }
 
     #[test]
