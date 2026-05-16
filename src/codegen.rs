@@ -116,6 +116,8 @@ fn render_stmt(
 ) -> Result<(), CompileError> {
     match stmt {
         Stmt::VarDecl {
+            line: _,
+            column: _,
             mutable,
             name,
             declared_type: _,
@@ -142,36 +144,60 @@ fn render_stmt(
             output.push_str(&render_expr_with_hint(init, function, info, Some(ty))?);
             output.push_str(";\n");
         }
-        Stmt::Assign { target, value } => {
+        Stmt::Assign {
+            line: _,
+            column: _,
+            target,
+            value,
+        } => {
             indent(output, level);
             output.push_str(&render_expr(target, function, info)?);
             output.push_str(" = ");
             output.push_str(&render_expr(value, function, info)?);
             output.push_str(";\n");
         }
-        Stmt::AddAssign { target, value } => {
+        Stmt::AddAssign {
+            line: _,
+            column: _,
+            target,
+            value,
+        } => {
             indent(output, level);
             output.push_str(&render_expr(target, function, info)?);
             output.push_str(" += ");
             output.push_str(&render_expr(value, function, info)?);
             output.push_str(";\n");
         }
-        Stmt::Return(None) => {
+        Stmt::Return {
+            line: _,
+            column: _,
+            value: None,
+        } => {
             indent(output, level);
             output.push_str("return;\n");
         }
-        Stmt::Return(Some(value)) => {
+        Stmt::Return {
+            line: _,
+            column: _,
+            value: Some(value),
+        } => {
             indent(output, level);
             output.push_str("return ");
             output.push_str(&render_expr(value, function, info)?);
             output.push_str(";\n");
         }
-        Stmt::Expr(expr) => {
+        Stmt::Expr {
+            line: _,
+            column: _,
+            expr,
+        } => {
             indent(output, level);
             output.push_str(&render_expr(expr, function, info)?);
             output.push_str(";\n");
         }
         Stmt::ForRange {
+            line: _,
+            column: _,
             pragma,
             var_name,
             start,
@@ -203,6 +229,8 @@ fn render_stmt(
             output.push_str("}\n");
         }
         Stmt::ForEach {
+            line: _,
+            column: _,
             var_name,
             iterable,
             body,
@@ -426,7 +454,14 @@ fn render_builtin_call(
             Ok(format!("printf({})", rendered_args.join(", ")))
         }
         "addr" => Ok(format!("(&{})", render_expr(&args[0], function, info)?)),
-        "deref" => Ok(format!("(*({}))", render_expr(&args[0], function, info)?)),
+        "deref" => {
+            let arg_ty = infer_codegen_expr_type(&args[0], function, info)?;
+            if matches!(arg_ty, Type::Ref(inner) if inner.as_ref() == &Type::U8) {
+                Ok(render_expr(&args[0], function, info)?)
+            } else {
+                Ok(format!("(*({}))", render_expr(&args[0], function, info)?))
+            }
+        }
         _ => Err(CompileError::new(format!(
             "unsupported builtin intrinsic `@{name}` during code generation"
         ))),
@@ -468,7 +503,7 @@ fn infer_codegen_expr_type(
 ) -> Result<Type, CompileError> {
     match expr {
         Expr::Int(_) => Ok(Type::I32),
-        Expr::String(_) => Ok(Type::Ref(Box::new(Type::U8))),
+        Expr::String(_) => Ok(Type::U8),
         Expr::ListLiteral(values) => {
             if values.is_empty() {
                 return Err(CompileError::new(
@@ -494,6 +529,13 @@ fn infer_codegen_expr_type(
                 .get(&function.name)
                 .and_then(|locals| locals.get(name))
                 .cloned()
+                .or_else(|| {
+                    function
+                        .params
+                        .iter()
+                        .find(|param| param.name == *name)
+                        .map(|param| param.ty.clone())
+                })
                 .or_else(|| info.functions.get(name).map(|sig| sig.return_type.clone()))
                 .ok_or_else(|| CompileError::new(format!("unknown expression `{name}` in code generation"))),
             _ => Err(CompileError::new(format!(
@@ -892,7 +934,7 @@ fn c_type(ty: &Type) -> String {
     match ty {
         Type::Void => "void".to_string(),
         Type::I32 => "int32_t".to_string(),
-        Type::U8 => "char".to_string(),
+        Type::U8 => "const char *".to_string(),
         Type::Named(name) => name.clone(),
         Type::Ref(inner) => {
             if inner.as_ref() == &Type::U8 {

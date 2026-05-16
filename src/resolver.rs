@@ -263,42 +263,69 @@ fn rewrite_stmt(
 ) -> Result<Stmt, CompileError> {
     match stmt {
         Stmt::VarDecl {
+            line,
+            column,
             mutable,
             name,
             declared_type,
             init,
         } => Ok(Stmt::VarDecl {
+            line,
+            column,
             mutable,
             name,
             declared_type: declared_type.map(|ty| rewrite_type(ty, local_types)),
             init: rewrite_expr(init, local_functions, local_types, module_aliases)?,
         }),
-        Stmt::Assign { target, value } => Ok(Stmt::Assign {
+        Stmt::Assign {
+            line,
+            column,
+            target,
+            value,
+        } => Ok(Stmt::Assign {
+            line,
+            column,
             target: rewrite_expr(target, local_functions, local_types, module_aliases)?,
             value: rewrite_expr(value, local_functions, local_types, module_aliases)?,
         }),
-        Stmt::AddAssign { target, value } => Ok(Stmt::AddAssign {
+        Stmt::AddAssign {
+            line,
+            column,
+            target,
+            value,
+        } => Ok(Stmt::AddAssign {
+            line,
+            column,
             target: rewrite_expr(target, local_functions, local_types, module_aliases)?,
             value: rewrite_expr(value, local_functions, local_types, module_aliases)?,
         }),
-        Stmt::Return(value) => Ok(Stmt::Return(
-            value
+        Stmt::Return {
+            line,
+            column,
+            value,
+        } => Ok(Stmt::Return {
+            line,
+            column,
+            value: value
                 .map(|expr| rewrite_expr(expr, local_functions, local_types, module_aliases))
                 .transpose()?,
-        )),
-        Stmt::Expr(expr) => Ok(Stmt::Expr(rewrite_expr(
-            expr,
-            local_functions,
-            local_types,
-            module_aliases,
-        )?)),
+        }),
+        Stmt::Expr { line, column, expr } => Ok(Stmt::Expr {
+            line,
+            column,
+            expr: rewrite_expr(expr, local_functions, local_types, module_aliases)?,
+        }),
         Stmt::ForRange {
+            line,
+            column,
             pragma,
             var_name,
             start,
             end,
             body,
         } => Ok(Stmt::ForRange {
+            line,
+            column,
             pragma,
             var_name,
             start: rewrite_expr(start, local_functions, local_types, module_aliases)?,
@@ -309,10 +336,14 @@ fn rewrite_stmt(
                 .collect::<Result<Vec<_>, _>>()?,
         }),
         Stmt::ForEach {
+            line,
+            column,
             var_name,
             iterable,
             body,
         } => Ok(Stmt::ForEach {
+            line,
+            column,
             var_name,
             iterable: rewrite_expr(iterable, local_functions, local_types, module_aliases)?,
             body: body

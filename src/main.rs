@@ -18,13 +18,30 @@ use sema::analyze;
 #[derive(Debug, Clone)]
 pub struct CompileError {
     message: String,
+    location: Option<SourceLocation>,
 }
 
 impl CompileError {
     pub fn new(message: impl Into<String>) -> Self {
         Self {
             message: message.into(),
+            location: None,
         }
+    }
+
+    pub fn with_location(mut self, line: usize, column: usize) -> Self {
+        if self.location.is_none() {
+            self.location = Some(SourceLocation { line, column });
+        }
+        self
+    }
+
+    pub fn message(&self) -> &str {
+        &self.message
+    }
+
+    pub fn location(&self) -> Option<(usize, usize)> {
+        self.location.map(|location| (location.line, location.column))
     }
 }
 
@@ -37,17 +54,24 @@ impl std::fmt::Display for CompileError {
 impl std::error::Error for CompileError {}
 
 fn main() -> ExitCode {
-    match run() {
+    let cli = match Cli::parse(env::args().skip(1)) {
+        Ok(cli) => cli,
+        Err(error) => {
+            eprintln!("{}", format_compile_error(&error, None));
+            return ExitCode::FAILURE;
+        }
+    };
+
+    match run(&cli) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
-            eprintln!("scar: {error}");
+            eprintln!("{}", format_compile_error(&error, Some(&cli.input)));
             ExitCode::FAILURE
         }
     }
 }
 
-fn run() -> Result<(), CompileError> {
-    let cli = Cli::parse(env::args().skip(1))?;
+fn run(cli: &Cli) -> Result<(), CompileError> {
     let program = resolve_entry_program(&cli.input)?;
     let info = analyze(&program)?;
     let generated = generate_c(&program, &info)?;
@@ -65,6 +89,12 @@ fn run() -> Result<(), CompileError> {
     }
 
     Ok(())
+}
+
+#[derive(Debug, Clone, Copy)]
+struct SourceLocation {
+    line: usize,
+    column: usize,
 }
 
 struct Cli {
@@ -274,6 +304,79 @@ fn temporary_c_path(input: &Path) -> PathBuf {
         .and_then(|value| value.to_str())
         .unwrap_or("scar-output");
     env::temp_dir().join(format!("scar-{stem}-{}.c", std::process::id()))
+}
+
+fn format_compile_error(error: &CompileError, default_path: Option<&Path>) -> String {
+    let (path, line, column, message) = resolve_error_site(error, default_path);
+    let Some(line) = line else {
+        return format!("scar: {message}");
+    };
+    let Some(column) = column else {
+        return format!("scar: {message}");
+    };
+    let Some(path) = path else {
+        return format!("scar: {message} at {line}:{column}");
+    };
+
+    let Ok(source) = fs::read_to_string(&path) else {
+        return format!("scar: {message}\n --> {}:{line}:{column}", path.display());
+    };
+    let Some(snippet) = source.lines().nth(line.saturating_sub(1)) else {
+        return format!("scar: {message}\n --> {}:{line}:{column}", path.display());
+    };
+
+    let line_number = line.to_string();
+    let gutter_width = line_number.len();
+    let caret_padding = " ".repeat(column.saturating_sub(1));
+
+    format!(
+        "scar: {message}\n --> {}:{line}:{column}\n{} |\n{} | {}\n{} | {}^",
+        path.display(),
+        " ".repeat(gutter_width),
+        line_number,
+        snippet,
+        " ".repeat(gutter_width),
+        caret_padding
+    )
+}
+
+fn resolve_error_site(
+    error: &CompileError,
+    default_path: Option<&Path>,
+) -> (Option<PathBuf>, Option<usize>, Option<usize>, String) {
+    if let Some((line, column)) = error.location() {
+        return (
+            default_path.map(Path::to_path_buf),
+            Some(line),
+            Some(column),
+            error.message().to_string(),
+        );
+    }
+
+    let message = error.message();
+    let (path, message) = if let Some(rest) = message.strip_prefix("in ") {
+        if let Some((path, tail)) = rest.split_once(": ") {
+            (Some(PathBuf::from(path)), tail.to_string())
+        } else {
+            (default_path.map(Path::to_path_buf), message.to_string())
+        }
+    } else {
+        (default_path.map(Path::to_path_buf), message.to_string())
+    };
+
+    if let Some((tail, line, column)) = parse_location_suffix(&message) {
+        (path, Some(line), Some(column), tail.to_string())
+    } else {
+        (path, None, None, message)
+    }
+}
+
+fn parse_location_suffix(message: &str) -> Option<(&str, usize, usize)> {
+    let (tail, location) = message.rsplit_once(" at ")?;
+    let (line, column) = location.split_once(':')?;
+    let line = line.parse().ok()?;
+    let column = column.parse().ok()?;
+    Some((tail, line, column))
 }
 
 #[cfg(test)]

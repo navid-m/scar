@@ -144,6 +144,9 @@ impl Parser {
     }
 
     fn parse_stmt(&mut self) -> Result<Stmt, CompileError> {
+        let line = self.current().line;
+        let column = self.current().column;
+
         if self.check_simple(&TokenKind::Var) || self.check_simple(&TokenKind::Val) {
             let mutable = self.check_simple(&TokenKind::Var);
             self.advance();
@@ -157,6 +160,8 @@ impl Parser {
             let init = self.parse_expr()?;
             self.expect_stmt_terminator()?;
             return Ok(Stmt::VarDecl {
+                line,
+                column,
                 mutable,
                 name,
                 declared_type,
@@ -172,7 +177,11 @@ impl Parser {
                 Some(self.parse_expr()?)
             };
             self.expect_stmt_terminator()?;
-            return Ok(Stmt::Return(value));
+            return Ok(Stmt::Return {
+                line,
+                column,
+                value,
+            });
         }
 
         if self.check_simple(&TokenKind::At) && self.check_next_simple(&TokenKind::LParen) {
@@ -194,6 +203,8 @@ impl Parser {
             let value = self.parse_expr()?;
             self.expect_stmt_terminator()?;
             return Ok(Stmt::Assign {
+                line,
+                column,
                 target: expr,
                 value,
             });
@@ -203,6 +214,8 @@ impl Parser {
             let value = self.parse_expr()?;
             self.expect_stmt_terminator()?;
             return Ok(Stmt::AddAssign {
+                line,
+                column,
                 target: expr,
                 value,
             });
@@ -214,7 +227,7 @@ impl Parser {
             expr
         };
         self.expect_stmt_terminator()?;
-        Ok(Stmt::Expr(expr))
+        Ok(Stmt::Expr { line, column, expr })
     }
 
     fn parse_pragma_stmt(&mut self) -> Result<Stmt, CompileError> {
@@ -229,12 +242,16 @@ impl Parser {
 
         match self.parse_stmt()? {
             Stmt::ForRange {
+                line,
+                column,
                 pragma: None,
                 var_name,
                 start,
                 end,
                 body,
             } => Ok(Stmt::ForRange {
+                line,
+                column,
                 pragma: Some(pragma),
                 var_name,
                 start,
@@ -248,6 +265,8 @@ impl Parser {
     }
 
     fn parse_for_stmt(&mut self, pragma: Option<String>) -> Result<Stmt, CompileError> {
+        let line = self.current().line;
+        let column = self.current().column;
         self.expect_simple(TokenKind::For)?;
         self.expect_simple(TokenKind::Var)?;
         let var_name = self.expect_ident()?;
@@ -261,6 +280,8 @@ impl Parser {
             self.expect_simple(TokenKind::End)?;
             self.consume_newlines();
             return Ok(Stmt::ForRange {
+                line,
+                column,
                 pragma,
                 var_name,
                 start,
@@ -282,6 +303,8 @@ impl Parser {
         self.expect_simple(TokenKind::End)?;
         self.consume_newlines();
         Ok(Stmt::ForEach {
+            line,
+            column,
             var_name,
             iterable,
             body,
@@ -714,6 +737,7 @@ mod tests {
                 start: _,
                 end: _,
                 body,
+                ..
             } => {
                 assert_eq!(pragma.as_deref(), Some("omp parallel for"));
                 assert_eq!(var_name, "i");
@@ -745,6 +769,7 @@ mod tests {
                 var_name,
                 iterable,
                 body,
+                ..
             } => {
                 assert_eq!(var_name, "value");
                 assert!(matches!(iterable, Expr::Path(path) if path == &vec!["values".to_string()]));
@@ -754,7 +779,10 @@ mod tests {
         }
 
         match &program.functions[1].body[2] {
-            Stmt::Expr(Expr::Call { callee, args }) => {
+            Stmt::Expr {
+                expr: Expr::Call { callee, args },
+                ..
+            } => {
                 assert!(matches!(callee.as_ref(), Expr::Path(path) if path == &vec!["helper".to_string()]));
                 assert!(args.is_empty());
             }
@@ -768,7 +796,10 @@ mod tests {
         let program = parse_program(lex(source).unwrap()).unwrap();
 
         match &program.functions[0].body[0] {
-            Stmt::Expr(Expr::BuiltinCall { name, args }) => {
+            Stmt::Expr {
+                expr: Expr::BuiltinCall { name, args },
+                ..
+            } => {
                 assert_eq!(name, "print");
                 assert_eq!(args.len(), 2);
             }

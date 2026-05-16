@@ -51,22 +51,38 @@ pub enum Type {
 #[derive(Debug, Clone)]
 pub enum Stmt {
     VarDecl {
+        line: usize,
+        column: usize,
         mutable: bool,
         name: String,
         declared_type: Option<Type>,
         init: Expr,
     },
     Assign {
+        line: usize,
+        column: usize,
         target: Expr,
         value: Expr,
     },
     AddAssign {
+        line: usize,
+        column: usize,
         target: Expr,
         value: Expr,
     },
-    Return(Option<Expr>),
-    Expr(Expr),
+    Return {
+        line: usize,
+        column: usize,
+        value: Option<Expr>,
+    },
+    Expr {
+        line: usize,
+        column: usize,
+        expr: Expr,
+    },
     ForRange {
+        line: usize,
+        column: usize,
         pragma: Option<String>,
         var_name: String,
         start: Expr,
@@ -74,6 +90,8 @@ pub enum Stmt {
         body: Vec<Stmt>,
     },
     ForEach {
+        line: usize,
+        column: usize,
         var_name: String,
         iterable: Expr,
         body: Vec<Stmt>,

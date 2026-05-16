@@ -163,6 +163,8 @@ fn analyze_stmt(
 ) -> Result<(), CompileError> {
     match stmt {
         Stmt::VarDecl {
+            line,
+            column,
             mutable,
             name,
             declared_type,
@@ -177,14 +179,18 @@ fn analyze_stmt(
                 Some(expected) => {
                     validate_type(expected, types)?;
                     if let Expr::ListLiteral(values) = init {
-                        infer_list_literal_type(values, Some(expected), functions, types, scope)?
+                        infer_list_literal_type(values, Some(expected), functions, types, scope)
+                            .map_err(|error| error.with_location(*line, *column))?
                     } else {
-                        let actual = infer_expr_type(init, functions, types, scope)?;
-                        expect_same_type(expected, &actual, "variable initializer")?;
+                        let actual = infer_expr_type(init, functions, types, scope)
+                            .map_err(|error| error.with_location(*line, *column))?;
+                        expect_same_type(expected, &actual, "variable initializer")
+                            .map_err(|error| error.with_location(*line, *column))?;
                         expected.clone()
                     }
                 }
-                None => infer_expr_type(init, functions, types, scope)?,
+                None => infer_expr_type(init, functions, types, scope)
+                    .map_err(|error| error.with_location(*line, *column))?,
             };
             scope.insert(
                 name.clone(),
@@ -195,47 +201,83 @@ fn analyze_stmt(
             );
             function_locals.insert(name.clone(), ty);
         }
-        Stmt::Assign { target, value } => {
-            let target_ty = infer_lvalue_type(target, functions, types, scope)?;
-            let value_ty = infer_expr_type(value, functions, types, scope)?;
-            expect_same_type(&target_ty, &value_ty, "assignment")?;
+        Stmt::Assign {
+            line,
+            column,
+            target,
+            value,
+        } => {
+            let target_ty = infer_lvalue_type(target, functions, types, scope)
+                .map_err(|error| error.with_location(*line, *column))?;
+            let value_ty = infer_expr_type(value, functions, types, scope)
+                .map_err(|error| error.with_location(*line, *column))?;
+            expect_same_type(&target_ty, &value_ty, "assignment")
+                .map_err(|error| error.with_location(*line, *column))?;
         }
-        Stmt::AddAssign { target, value } => {
-            let target_ty = infer_mutable_target(target, functions, types, scope)?;
-            let value_ty = infer_expr_type(value, functions, types, scope)?;
+        Stmt::AddAssign {
+            line,
+            column,
+            target,
+            value,
+        } => {
+            let target_ty = infer_mutable_target(target, functions, types, scope)
+                .map_err(|error| error.with_location(*line, *column))?;
+            let value_ty = infer_expr_type(value, functions, types, scope)
+                .map_err(|error| error.with_location(*line, *column))?;
             if target_ty != Type::I32 || value_ty != Type::I32 {
-                return Err(CompileError::new(
-                    "`+=` currently requires both operands to have type i32",
-                ));
+                return Err(
+                    CompileError::new("`+=` currently requires both operands to have type i32")
+                        .with_location(*line, *column),
+                );
             }
         }
-        Stmt::Return(value) => match (expected_return, value) {
+        Stmt::Return {
+            line,
+            column,
+            value,
+        } => match (expected_return, value) {
             (Type::Void, None) => {}
             (Type::Void, Some(_)) => {
-                return Err(CompileError::new("void functions cannot return a value"));
+                return Err(
+                    CompileError::new("void functions cannot return a value")
+                        .with_location(*line, *column),
+                );
             }
             (expected, Some(expr)) => {
-                let actual = infer_expr_type(expr, functions, types, scope)?;
-                expect_same_type(expected, &actual, "return")?;
+                let actual = infer_expr_type(expr, functions, types, scope)
+                    .map_err(|error| error.with_location(*line, *column))?;
+                expect_same_type(expected, &actual, "return")
+                    .map_err(|error| error.with_location(*line, *column))?;
             }
             (_, None) => {
-                return Err(CompileError::new("non-void functions must return a value"));
+                return Err(
+                    CompileError::new("non-void functions must return a value")
+                        .with_location(*line, *column),
+                );
             }
         },
-        Stmt::Expr(expr) => {
-            infer_expr_type(expr, functions, types, scope)?;
+        Stmt::Expr { line, column, expr } => {
+            infer_expr_type(expr, functions, types, scope)
+                .map_err(|error| error.with_location(*line, *column))?;
         }
         Stmt::ForRange {
+            line,
+            column,
             pragma: _,
             var_name,
             start,
             end,
             body,
         } => {
-            let start_ty = infer_expr_type(start, functions, types, scope)?;
-            let end_ty = infer_expr_type(end, functions, types, scope)?;
+            let start_ty = infer_expr_type(start, functions, types, scope)
+                .map_err(|error| error.with_location(*line, *column))?;
+            let end_ty = infer_expr_type(end, functions, types, scope)
+                .map_err(|error| error.with_location(*line, *column))?;
             if start_ty != Type::I32 || end_ty != Type::I32 {
-                return Err(CompileError::new("`for` bounds must have type i32"));
+                return Err(
+                    CompileError::new("`for` bounds must have type i32")
+                        .with_location(*line, *column),
+                );
             }
 
             let mut nested = scope.clone();
@@ -259,16 +301,22 @@ fn analyze_stmt(
             }
         }
         Stmt::ForEach {
+            line,
+            column,
             var_name,
             iterable,
             body,
         } => {
-            let iterable_ty = infer_expr_type(iterable, functions, types, scope)?;
+            let iterable_ty = infer_expr_type(iterable, functions, types, scope)
+                .map_err(|error| error.with_location(*line, *column))?;
             let Type::List(element_ty) = iterable_ty else {
-                return Err(CompileError::new(format!(
-                    "`for ... in ...` requires a list iterable, got {}",
-                    describe_type(&iterable_ty)
-                )));
+                return Err(
+                    CompileError::new(format!(
+                        "`for ... in ...` requires a list iterable, got {}",
+                        describe_type(&iterable_ty)
+                    ))
+                    .with_location(*line, *column),
+                );
             };
 
             let mut nested = scope.clone();
@@ -303,7 +351,7 @@ fn infer_expr_type(
 ) -> Result<Type, CompileError> {
     match expr {
         Expr::Int(_) => Ok(Type::I32),
-        Expr::String(_) => Ok(Type::Ref(Box::new(Type::U8))),
+        Expr::String(_) => Ok(Type::U8),
         Expr::ListLiteral(values) => infer_list_literal_type(values, None, functions, types, scope),
         Expr::StructInit { name, fields } => {
             let type_info = types
@@ -503,7 +551,7 @@ fn analyze_builtin(
                 ));
             }
             let arg_ty = infer_expr_type(&args[0], functions, types, scope)?;
-            expect_same_type(&Type::Ref(Box::new(Type::U8)), &arg_ty, "@puts")?;
+            expect_same_type(&Type::U8, &arg_ty, "@puts")?;
             Ok(Type::Void)
         }
         "print" => {
@@ -707,8 +755,8 @@ fn parse_format_markers(format: &str) -> Result<Vec<char>, CompileError> {
 fn format_type_matches(marker: char, ty: &Type) -> bool {
     match marker {
         'd' => matches!(ty, Type::I32),
-        's' => matches!(ty, Type::Ref(inner) if inner.as_ref() == &Type::U8),
-        'p' => matches!(ty, Type::Ref(_) | Type::Named(_)),
+        's' => is_string_compatible(ty),
+        'p' => matches!(ty, Type::Ref(_) | Type::Named(_)) || is_string_compatible(ty),
         _ => false,
     }
 }
@@ -744,7 +792,7 @@ fn validate_type_with_known_names(ty: &Type, known: &HashSet<String>) -> Result<
 }
 
 fn expect_same_type(expected: &Type, actual: &Type, context: &str) -> Result<(), CompileError> {
-    if expected == actual {
+    if types_compatible(expected, actual) {
         Ok(())
     } else {
         Err(CompileError::new(format!(
@@ -753,6 +801,14 @@ fn expect_same_type(expected: &Type, actual: &Type, context: &str) -> Result<(),
             describe_type(actual)
         )))
     }
+}
+
+fn types_compatible(expected: &Type, actual: &Type) -> bool {
+    expected == actual || (is_string_compatible(expected) && is_string_compatible(actual))
+}
+
+fn is_string_compatible(ty: &Type) -> bool {
+    matches!(ty, Type::U8) || matches!(ty, Type::Ref(inner) if inner.as_ref() == &Type::U8)
 }
 
 fn describe_type(ty: &Type) -> String {
