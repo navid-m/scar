@@ -445,6 +445,8 @@ fn render_expr_with_hint(
                 BinaryOp::BitXor => "^",
                 BinaryOp::ShiftLeft => "<<",
                 BinaryOp::LessThan => "<",
+                BinaryOp::LessEqual => "<=",
+                BinaryOp::GreaterThan => ">",
                 BinaryOp::GreaterEqual => ">=",
                 BinaryOp::Equal => "==",
                 BinaryOp::ShiftRight => unreachable!("handled above"),
@@ -833,7 +835,11 @@ fn infer_codegen_expr_type(
                 BinaryOp::ShiftLeft | BinaryOp::ShiftRight => Err(CompileError::new(
                     "shift operators currently require integer operands",
                 )),
-                BinaryOp::LessThan | BinaryOp::GreaterEqual | BinaryOp::Equal => Ok(Type::I32),
+                BinaryOp::LessThan
+                | BinaryOp::LessEqual
+                | BinaryOp::GreaterThan
+                | BinaryOp::GreaterEqual
+                | BinaryOp::Equal => Ok(Type::I32),
             }
         }
     }

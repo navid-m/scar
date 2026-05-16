@@ -599,6 +599,10 @@ impl Parser {
         loop {
             let op = if self.check_simple(&TokenKind::Less) {
                 Some(BinaryOp::LessThan)
+            } else if self.check_simple(&TokenKind::LessEqual) {
+                Some(BinaryOp::LessEqual)
+            } else if self.check_simple(&TokenKind::Greater) {
+                Some(BinaryOp::GreaterThan)
             } else if self.check_simple(&TokenKind::GreaterEqual) {
                 Some(BinaryOp::GreaterEqual)
             } else {
@@ -1121,7 +1125,9 @@ impl Parser {
             TokenKind::CaretEqual => "`^=`",
             TokenKind::Bang => "`!`",
             TokenKind::Less => "`<`",
+            TokenKind::LessEqual => "`<=`",
             TokenKind::ShiftLeft => "`<<`",
+            TokenKind::Greater => "`>`",
             TokenKind::GreaterEqual => "`>=`",
             TokenKind::ShiftRight => "`>>`",
             TokenKind::Star => "`*`",
@@ -1360,6 +1366,14 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn parses_full_comparison_set() {
+        let source = "pub def main() void\n\tif 1 < 2 && 2 <= 2 && 3 > 2 && 4 >= 4\n\tend\nend\n";
+        let program = parse_program(lex(source).unwrap()).unwrap();
+
+        assert!(matches!(program.functions[0].body[0], Stmt::If { .. }));
     }
 
     #[test]

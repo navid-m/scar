@@ -57,7 +57,9 @@ pub enum TokenKind {
     CaretEqual,
     Bang,
     Less,
+    LessEqual,
     ShiftLeft,
+    Greater,
     GreaterEqual,
     ShiftRight,
     Star,
@@ -215,6 +217,9 @@ impl Lexer {
                     let kind = if self.peek() == Some('<') {
                         self.bump();
                         TokenKind::ShiftLeft
+                    } else if self.peek() == Some('=') {
+                        self.bump();
+                        TokenKind::LessEqual
                     } else {
                         TokenKind::Less
                     };
@@ -239,7 +244,11 @@ impl Lexer {
                             column,
                         });
                     } else {
-                        return Err(self.error("unexpected character `>`"));
+                        tokens.push(Token {
+                            kind: TokenKind::Greater,
+                            line,
+                            column,
+                        });
                     }
                 }
                 '*' => tokens.push(self.single(TokenKind::Star)),

@@ -640,12 +640,20 @@ fn infer_expr_type(
                 BinaryOp::ShiftLeft | BinaryOp::ShiftRight => Err(CompileError::new(
                     "shift operators currently require integer operands",
                 )),
-                BinaryOp::LessThan | BinaryOp::GreaterEqual | BinaryOp::Equal
+                BinaryOp::LessThan
+                | BinaryOp::LessEqual
+                | BinaryOp::GreaterThan
+                | BinaryOp::GreaterEqual
+                | BinaryOp::Equal
                     if is_integer_type(&lhs_ty, types)? && lhs_ty == rhs_ty =>
                 {
                     Ok(Type::I32)
                 }
-                BinaryOp::LessThan | BinaryOp::GreaterEqual | BinaryOp::Equal => Err(
+                BinaryOp::LessThan
+                | BinaryOp::LessEqual
+                | BinaryOp::GreaterThan
+                | BinaryOp::GreaterEqual
+                | BinaryOp::Equal => Err(
                     CompileError::new(
                         "comparison operators currently require both operands to have the same integer type",
                     ),

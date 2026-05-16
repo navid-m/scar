@@ -216,6 +216,8 @@ pub enum BinaryOp {
     ShiftLeft,
     ShiftRight,
     LessThan,
+    LessEqual,
+    GreaterThan,
     GreaterEqual,
     Equal,
 }
