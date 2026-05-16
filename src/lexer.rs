@@ -65,6 +65,7 @@ pub enum TokenKind {
     SlashEqual,
     Percent,
     Minus,
+    MinusEqual,
     Plus,
     PlusEqual,
     Eof,
@@ -262,7 +263,25 @@ impl Lexer {
                     }
                 }
                 '%' => tokens.push(self.single(TokenKind::Percent)),
-                '-' => tokens.push(self.single(TokenKind::Minus)),
+                '-' => {
+                    let line = self.line;
+                    let column = self.column;
+                    self.bump();
+                    if self.peek() == Some('=') {
+                        self.bump();
+                        tokens.push(Token {
+                            kind: TokenKind::MinusEqual,
+                            line,
+                            column,
+                        });
+                    } else {
+                        tokens.push(Token {
+                            kind: TokenKind::Minus,
+                            line,
+                            column,
+                        });
+                    }
+                }
                 '+' => {
                     let line = self.line;
                     let column = self.column;

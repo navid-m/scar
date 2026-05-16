@@ -175,6 +175,13 @@ fn render_stmt(
             output.push_str(&render_expr(value, function, info)?);
             output.push_str(";\n");
         }
+        Stmt::SubAssign { target, value, .. } => {
+            indent(output, level);
+            output.push_str(&render_expr(target, function, info)?);
+            output.push_str(" -= ");
+            output.push_str(&render_expr(value, function, info)?);
+            output.push_str(";\n");
+        }
         Stmt::DivAssign { target, value, .. } => {
             indent(output, level);
             output.push_str(&render_expr(target, function, info)?);
@@ -427,6 +434,7 @@ fn render_expr_with_hint(
             }
             let operator = match op {
                 BinaryOp::Add => "+",
+                BinaryOp::Subtract => "-",
                 BinaryOp::Divide => "/",
                 BinaryOp::Multiply => "*",
                 BinaryOp::Modulo => "%",
@@ -488,20 +496,35 @@ fn render_call(
     function: &Function,
     info: &ProgramInfo,
 ) -> Result<String, CompileError> {
-    if let Some(path) = callee.as_path() {
-        if path.len() == 1 {
-            let symbol = info
-                .function_symbols
-                .get(&path[0])
-                .cloned()
-                .unwrap_or_else(|| path[0].clone());
-            let rendered_args = args
-                .iter()
-                .map(|arg| render_expr(arg, function, info))
-                .collect::<Result<Vec<_>, _>>()?;
-            return Ok(format!("{symbol}({})", rendered_args.join(", ")));
+        if let Some(path) = callee.as_path() {
+            if path.len() == 1 {
+                let rendered_args = args
+                    .iter()
+                    .map(|arg| render_expr(arg, function, info))
+                    .collect::<Result<Vec<_>, _>>()?;
+                if let Some(symbol) = info.function_symbols.get(&path[0]).cloned() {
+                    return Ok(format!("{symbol}({})", rendered_args.join(", ")));
+                }
+                if let Some(type_info) = info.types.get(&path[0]) {
+                    if type_info.alias.is_some() {
+                        return Err(CompileError::new(format!(
+                            "type `{}` is an alias and cannot be initialized like a struct",
+                            path[0]
+                        )));
+                    }
+                    if type_info.fields.len() != args.len() {
+                        return Err(CompileError::new(format!(
+                            "type `{}` expects {} constructor arguments but received {}",
+                            path[0],
+                            type_info.fields.len(),
+                            args.len()
+                        )));
+                    }
+                    return Ok(format!("({}){{ {} }}", path[0], rendered_args.join(", ")));
+                }
+                return Err(CompileError::new(format!("unknown function `{}`", path[0])));
+            }
         }
-    }
 
     Err(CompileError::new(
         "only direct function calls and @builtin calls are currently supported in codegen",
@@ -767,11 +790,15 @@ fn infer_codegen_expr_type(
                 resolve_codegen_aliases(&infer_codegen_expr_type(rhs, function, info)?, info)?;
             match op {
                 BinaryOp::Add if lhs_ty == rhs_ty => Ok(lhs_ty),
+                BinaryOp::Subtract if lhs_ty == rhs_ty => Ok(lhs_ty),
                 BinaryOp::Divide if lhs_ty == rhs_ty => Ok(lhs_ty),
                 BinaryOp::Multiply if lhs_ty == rhs_ty => Ok(lhs_ty),
                 BinaryOp::Modulo if lhs_ty == rhs_ty => Ok(lhs_ty),
                 BinaryOp::Add => Err(CompileError::new(
                     "`+` currently requires matching operand types",
+                )),
+                BinaryOp::Subtract => Err(CompileError::new(
+                    "`-` currently requires matching operand types",
                 )),
                 BinaryOp::Divide => Err(CompileError::new(
                     "`/` currently requires matching operand types",

@@ -74,6 +74,12 @@ pub enum Stmt {
         target: Expr,
         value: Expr,
     },
+    SubAssign {
+        line: usize,
+        column: usize,
+        target: Expr,
+        value: Expr,
+    },
     DivAssign {
         line: usize,
         column: usize,
@@ -198,6 +204,7 @@ pub struct FieldInit {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BinaryOp {
     Add,
+    Subtract,
     Divide,
     Multiply,
     Modulo,

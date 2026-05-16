@@ -246,22 +246,15 @@ fn analyze_stmt(
             target,
             value,
         } => {
-            let target_ty = resolve_aliases(
-                &infer_mutable_target(target, functions, types, scope)
-                    .map_err(|error| error.with_location(*line, *column))?,
-                types,
-            )?;
-            let value_ty = resolve_aliases(
-                &infer_expr_type(value, functions, types, scope)
-                    .map_err(|error| error.with_location(*line, *column))?,
-                types,
-            )?;
-            if !(target_ty == Type::I32 && value_ty == Type::I32) {
-                return Err(
-                    CompileError::new("`+=` currently requires both operands to have type i32")
-                        .with_location(*line, *column),
-                );
-            }
+            analyze_arithmetic_assignment(target, value, "+=", *line, *column, functions, types, scope)?;
+        }
+        Stmt::SubAssign {
+            line,
+            column,
+            target,
+            value,
+        } => {
+            analyze_arithmetic_assignment(target, value, "-=", *line, *column, functions, types, scope)?;
         }
         Stmt::DivAssign {
             line,
@@ -598,6 +591,8 @@ fn infer_expr_type(
             match op {
                 BinaryOp::Add if lhs_ty == Type::I32 && rhs_ty == Type::I32 => Ok(Type::I32),
                 BinaryOp::Add if lhs_ty == Type::U32 && rhs_ty == Type::U32 => Ok(Type::U32),
+                BinaryOp::Subtract if lhs_ty == Type::I32 && rhs_ty == Type::I32 => Ok(Type::I32),
+                BinaryOp::Subtract if lhs_ty == Type::U32 && rhs_ty == Type::U32 => Ok(Type::U32),
                 BinaryOp::Divide if lhs_ty == Type::I32 && rhs_ty == Type::I32 => Ok(Type::I32),
                 BinaryOp::Divide if lhs_ty == Type::U32 && rhs_ty == Type::U32 => Ok(Type::U32),
                 BinaryOp::Multiply if lhs_ty == Type::I32 && rhs_ty == Type::I32 => Ok(Type::I32),
@@ -606,6 +601,9 @@ fn infer_expr_type(
                 BinaryOp::Modulo if lhs_ty == Type::U32 && rhs_ty == Type::U32 => Ok(Type::U32),
                 BinaryOp::Add => Err(CompileError::new(
                     "`+` currently requires both operands to have matching integer types",
+                )),
+                BinaryOp::Subtract => Err(CompileError::new(
+                    "`-` currently requires both operands to have matching integer types",
                 )),
                 BinaryOp::Divide => Err(CompileError::new(
                     "`/` currently requires both operands to have matching integer types",
@@ -667,21 +665,42 @@ fn analyze_call(
     if let Some(path) = callee.as_path() {
         if path.len() == 1 {
             let function_name = &path[0];
-            let signature = functions
-                .get(function_name)
-                .ok_or_else(|| CompileError::new(format!("unknown function `{function_name}`")))?;
-            if signature.params.len() != args.len() {
-                return Err(CompileError::new(format!(
-                    "function `{function_name}` expects {} arguments but received {}",
-                    signature.params.len(),
-                    args.len()
-                )));
+            if let Some(signature) = functions.get(function_name) {
+                if signature.params.len() != args.len() {
+                    return Err(CompileError::new(format!(
+                        "function `{function_name}` expects {} arguments but received {}",
+                        signature.params.len(),
+                        args.len()
+                    )));
+                }
+                for (arg, expected) in args.iter().zip(&signature.params) {
+                    let actual = infer_expr_type(arg, functions, types, scope)?;
+                    expect_same_type(expected, &actual, types, "function argument")?;
+                }
+                return Ok(signature.return_type.clone());
             }
-            for (arg, expected) in args.iter().zip(&signature.params) {
-                let actual = infer_expr_type(arg, functions, types, scope)?;
-                expect_same_type(expected, &actual, types, "function argument")?;
+
+            if let Some(type_info) = types.get(function_name) {
+                if type_info.alias.is_some() {
+                    return Err(CompileError::new(format!(
+                        "type `{function_name}` is an alias and cannot be initialized like a struct"
+                    )));
+                }
+                if type_info.fields.len() != args.len() {
+                    return Err(CompileError::new(format!(
+                        "type `{function_name}` expects {} constructor arguments but received {}",
+                        type_info.fields.len(),
+                        args.len()
+                    )));
+                }
+                for (arg, field) in args.iter().zip(&type_info.fields) {
+                    let actual = infer_expr_type(arg, functions, types, scope)?;
+                    expect_same_type(&field.ty, &actual, types, &format!("field `{}`", field.name))?;
+                }
+                return Ok(Type::Named(function_name.clone()));
             }
-            return Ok(signature.return_type.clone());
+
+            return Err(CompileError::new(format!("unknown function `{function_name}`")));
         }
     }
 
@@ -1274,7 +1293,7 @@ mod tests {
 
     #[test]
     fn accepts_bitwise_and_shift_operators() {
-        let source = "pub def main() void\n\tvar mask i32 = (1 << 3) | (2 & 7) ^ (8 >> 1)\n\tmask &= 15\n\tmask |= 1\n\tmask ^= 2\n\tval product = (6 * 7) % 5\n\tif !(1 == 0) && 2 == 2\n\t\t@print(\"{d} {d}\", {mask, product})\n\tend\nend\n";
+        let source = "type Pair\n\tleft i32\n\tright i32\nend\npub def main() void\n\tvar mask i32 = (1 << 3) | (2 & 7) ^ (8 >> 1)\n\tmask &= 15\n\tmask |= 1\n\tmask ^= 2\n\tmask -= 1\n\tval product = (6 * 7) % 5\n\tval pair = Pair(mask, product)\n\tif !(1 == 0) && pair.left - pair.right == 10\n\t\t@print(\"{d} {d}\", {mask, product})\n\tend\nend\n";
         let program = parse_program(lex(source).unwrap()).unwrap();
 
         analyze(&program).unwrap();

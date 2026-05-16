@@ -292,6 +292,17 @@ impl Parser {
                 value,
             });
         }
+        if self.check_simple(&TokenKind::MinusEqual) {
+            self.advance();
+            let value = self.parse_expr()?;
+            self.expect_stmt_terminator()?;
+            return Ok(Stmt::SubAssign {
+                line,
+                column,
+                target: expr,
+                value,
+            });
+        }
         if self.check_simple(&TokenKind::SlashEqual) {
             self.advance();
             let value = self.parse_expr()?;
@@ -617,12 +628,17 @@ impl Parser {
 
     fn parse_additive(&mut self) -> Result<Expr, CompileError> {
         let mut expr = self.parse_multiplicative()?;
-        while self.check_simple(&TokenKind::Plus) {
+        while self.check_simple(&TokenKind::Plus) || self.check_simple(&TokenKind::Minus) {
+            let op = if self.check_simple(&TokenKind::Plus) {
+                BinaryOp::Add
+            } else {
+                BinaryOp::Subtract
+            };
             self.advance();
             let rhs = self.parse_multiplicative()?;
             expr = Expr::Binary {
                 lhs: Box::new(expr),
-                op: BinaryOp::Add,
+                op,
                 rhs: Box::new(rhs),
             };
         }
@@ -1091,6 +1107,7 @@ impl Parser {
             TokenKind::SlashEqual => "`/=`",
             TokenKind::Percent => "`%`",
             TokenKind::Minus => "`-`",
+            TokenKind::MinusEqual => "`-=`",
             TokenKind::Plus => "`+`",
             TokenKind::PlusEqual => "`+=`",
             TokenKind::Eof => "end of file",
