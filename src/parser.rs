@@ -272,6 +272,7 @@ impl Parser {
         let expr = self.parse_expr()?;
         if self.check_simple(&TokenKind::Assign) {
             self.advance();
+            self.consume_newlines();
             let value = self.parse_expr()?;
             self.expect_stmt_terminator()?;
             return Ok(Stmt::Assign {
@@ -283,6 +284,7 @@ impl Parser {
         }
         if self.check_simple(&TokenKind::PlusEqual) {
             self.advance();
+            self.consume_newlines();
             let value = self.parse_expr()?;
             self.expect_stmt_terminator()?;
             return Ok(Stmt::AddAssign {
@@ -294,6 +296,7 @@ impl Parser {
         }
         if self.check_simple(&TokenKind::MinusEqual) {
             self.advance();
+            self.consume_newlines();
             let value = self.parse_expr()?;
             self.expect_stmt_terminator()?;
             return Ok(Stmt::SubAssign {
@@ -305,6 +308,7 @@ impl Parser {
         }
         if self.check_simple(&TokenKind::SlashEqual) {
             self.advance();
+            self.consume_newlines();
             let value = self.parse_expr()?;
             self.expect_stmt_terminator()?;
             return Ok(Stmt::DivAssign {
@@ -316,6 +320,7 @@ impl Parser {
         }
         if self.check_simple(&TokenKind::AmpEqual) {
             self.advance();
+            self.consume_newlines();
             let value = self.parse_expr()?;
             self.expect_stmt_terminator()?;
             return Ok(Stmt::BitAndAssign {
@@ -327,6 +332,7 @@ impl Parser {
         }
         if self.check_simple(&TokenKind::PipeEqual) {
             self.advance();
+            self.consume_newlines();
             let value = self.parse_expr()?;
             self.expect_stmt_terminator()?;
             return Ok(Stmt::BitOrAssign {
@@ -338,6 +344,7 @@ impl Parser {
         }
         if self.check_simple(&TokenKind::CaretEqual) {
             self.advance();
+            self.consume_newlines();
             let value = self.parse_expr()?;
             self.expect_stmt_terminator()?;
             return Ok(Stmt::BitXorAssign {
@@ -1319,6 +1326,24 @@ mod tests {
                     op: BinaryOp::Add,
                     ..
                 }),
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn parses_multiline_assignment_to_indexed_field() {
+        let source = "type Matrix\n\trows list[list[i32]]\nend\npub def main() void\n\tvar m = Matrix(rows: [[0]])\n\tm.rows[0][0] =\n\t\t1 + 2\nend\n";
+        let program = parse_program(lex(source).unwrap()).unwrap();
+
+        assert!(matches!(
+            &program.functions[0].body[1],
+            Stmt::Assign {
+                target: Expr::Index { .. },
+                value: Expr::Binary {
+                    op: BinaryOp::Add,
+                    ..
+                },
                 ..
             }
         ));
