@@ -412,12 +412,12 @@ test "concat works"
 	var buffer mut(ref(u8)) = @alloc(1024)
 
 	assert eql(
-		rconcat[allocators.Arena](ac, buffer, "world")?,
+		rconcat[_](ac, buffer, "world")?,
 		"world"
 	)
 
 	assert eql(
-		rconcat[allocators.Arena](ac, "hello", " world")?,
+		rconcat[_](ac, "hello", " world")?,
 		"hello world"
 	)
 
@@ -450,12 +450,12 @@ end
 
 test "upcase works"
 	var alloc = allocators.Arena.new(1024 as usize)?
-	assert eql("HELLO", upcase[allocators.Arena](alloc, "hello")?)
+	assert eql("HELLO", upcase[_](alloc, "hello")?)
 	allocators.Arena.destroy(@addr(alloc))
 end
 
 test "downcase works"
 	var alloc = allocators.Arena.new(1024 as usize)?
-	assert eql("hello", downcase[allocators.Arena](alloc, "HELLo")?)
+	assert eql("hello", downcase[_](alloc, "HELLo")?)
 	allocators.Arena.destroy(@addr(alloc))
 end
