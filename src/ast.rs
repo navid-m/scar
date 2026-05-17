@@ -65,6 +65,7 @@ pub enum Type {
     F32,
     F64,
     Named(String),
+    Mut(Box<Type>),
     Ref(Box<Type>),
     List(Box<Type>),
 }

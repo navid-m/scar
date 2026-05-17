@@ -539,7 +539,7 @@ fn render_field_access(
 ) -> Result<String, CompileError> {
     let base_ty = infer_codegen_expr_type(base, function, info)?;
     let rendered_base = render_expr(base, function, info)?;
-    if matches!(base_ty, Type::Ref(_)) {
+    if is_reference_like(&base_ty) {
         Ok(format!("({rendered_base})->{field}"))
     } else {
         Ok(format!("({rendered_base}).{field}"))
@@ -645,7 +645,7 @@ fn render_builtin_call(
         "addr" => Ok(format!("(&{})", render_expr(&args[0], function, info)?)),
         "deref" => {
             let arg_ty = infer_codegen_expr_type(&args[0], function, info)?;
-            if matches!(arg_ty, Type::Ref(inner) if inner.as_ref() == &Type::U8) {
+            if is_codegen_string_compatible(&arg_ty) {
                 Ok(render_expr(&args[0], function, info)?)
             } else {
                 Ok(format!("(*({}))", render_expr(&args[0], function, info)?))
@@ -1013,6 +1013,13 @@ fn infer_builtin_type(
         )?))),
         "deref" => match infer_codegen_expr_type(&args[0], function, info)? {
             Type::Ref(inner) => Ok(*inner),
+            Type::Mut(inner) => match *inner {
+                Type::Ref(inner) => Ok(*inner),
+                other => Err(CompileError::new(format!(
+                    "@deref requires a ref(...) argument during code generation, got {}",
+                    describe_type(&other)
+                ))),
+            },
             other => Err(CompileError::new(format!(
                 "@deref requires a ref(...) argument during code generation, got {}",
                 describe_type(&other)
@@ -1124,6 +1131,7 @@ fn collect_list_types_from_type(ty: &Type, set: &mut HashSet<Type>) {
             collect_list_types_from_type(inner, set);
             set.insert(ty.clone());
         }
+        Type::Mut(inner) => collect_list_types_from_type(inner, set),
         Type::Ref(inner) => collect_list_types_from_type(inner, set),
         _ => {}
     }
@@ -1343,6 +1351,7 @@ fn type_suffix(ty: &Type) -> String {
         Type::F32 => "f32".to_string(),
         Type::F64 => "f64".to_string(),
         Type::Named(name) => sanitize_identifier(name),
+        Type::Mut(inner) => format!("mut__{}", type_suffix(inner)),
         Type::Ref(inner) => format!("ref__{}", type_suffix(inner)),
         Type::List(inner) => format!("list__{}", type_suffix(inner)),
     }
@@ -1371,6 +1380,7 @@ fn c_type(ty: &Type) -> String {
         Type::F32 => "float".to_string(),
         Type::F64 => "double".to_string(),
         Type::Named(name) => name.clone(),
+        Type::Mut(inner) => c_type_mut(inner),
         Type::Ref(inner) => {
             if inner.as_ref() == &Type::U8 {
                 return "const char *".to_string();
@@ -1406,6 +1416,12 @@ fn is_codegen_integer_type(ty: &Type) -> bool {
 
 fn is_codegen_condition_type(ty: &Type) -> bool {
     matches!(ty, Type::Bool) || is_codegen_integer_type(ty)
+}
+
+fn is_codegen_string_compatible(ty: &Type) -> bool {
+    matches!(ty, Type::U8)
+        || matches!(ty, Type::Ref(inner) if inner.as_ref() == &Type::U8)
+        || matches!(ty, Type::Mut(inner) if matches!(inner.as_ref(), Type::Ref(inner) if inner.as_ref() == &Type::U8))
 }
 
 fn is_codegen_signed_numeric_type(ty: &Type) -> bool {
@@ -1495,16 +1511,12 @@ fn print_format_specifier(marker: PrintMarker, ty: &Type) -> Result<&'static str
         PrintMarker::Int if is_codegen_signed_integer_type(ty) => Ok("%jd"),
         PrintMarker::Int if is_codegen_unsigned_integer_type(ty) => Ok("%ju"),
         PrintMarker::Bool if matches!(ty, Type::Bool) => Ok("%s"),
-        PrintMarker::Pointer if matches!(ty, Type::Ref(_) | Type::Named(_))
-            || matches!(ty, Type::U8)
-            || matches!(ty, Type::Ref(inner) if inner.as_ref() == &Type::U8) =>
+        PrintMarker::Pointer if matches!(ty, Type::Ref(_) | Type::Mut(_) | Type::Named(_))
+            || is_codegen_string_compatible(ty) =>
         {
             Ok("%p")
         }
-        PrintMarker::String
-            if matches!(ty, Type::U8)
-                || matches!(ty, Type::Ref(inner) if inner.as_ref() == &Type::U8) =>
-        {
+        PrintMarker::String if is_codegen_string_compatible(ty) => {
             Ok("%s")
         }
         PrintMarker::Float if matches!(ty, Type::F32) => Ok("%f"),
@@ -1568,6 +1580,7 @@ fn resolve_codegen_aliases(ty: &Type, info: &ProgramInfo) -> Result<Type, Compil
                 Ok(Type::Named(name.clone()))
             }
         }
+        Type::Mut(inner) => Ok(Type::Mut(Box::new(resolve_codegen_aliases(inner, info)?))),
         Type::Ref(inner) => Ok(Type::Ref(Box::new(resolve_codegen_aliases(inner, info)?))),
         Type::List(inner) => Ok(Type::List(Box::new(resolve_codegen_aliases(inner, info)?))),
         other => Ok(other.clone()),
@@ -1575,10 +1588,12 @@ fn resolve_codegen_aliases(ty: &Type, info: &ProgramInfo) -> Result<Type, Compil
 }
 
 fn deref_refs(mut ty: &Type) -> &Type {
-    while let Type::Ref(inner) = ty {
-        ty = inner;
+    loop {
+        match ty {
+            Type::Ref(inner) | Type::Mut(inner) => ty = inner,
+            _ => return ty,
+        }
     }
-    ty
 }
 
 fn escape_c_string(value: &str) -> String {
@@ -1613,9 +1628,32 @@ fn describe_type(ty: &Type) -> String {
         Type::F32 => "f32".to_string(),
         Type::F64 => "f64".to_string(),
         Type::Named(name) => name.clone(),
+        Type::Mut(inner) => format!("mut({})", describe_type(inner)),
         Type::Ref(inner) => format!("ref({})", describe_type(inner)),
         Type::List(inner) => format!("list[{}]", describe_type(inner)),
     }
+}
+
+fn c_type_mut(ty: &Type) -> String {
+    match ty {
+        Type::U8 => "char".to_string(),
+        Type::Ref(inner) if inner.as_ref() == &Type::U8 => "char *".to_string(),
+        Type::Ref(inner) => {
+            let inner = c_type_mut(inner);
+            if inner.ends_with('*') {
+                format!("{inner}*")
+            } else {
+                format!("{inner} *")
+            }
+        }
+        Type::Mut(inner) => c_type_mut(inner),
+        other => c_type(other),
+    }
+}
+
+fn is_reference_like(ty: &Type) -> bool {
+    matches!(ty, Type::Ref(_))
+        || matches!(ty, Type::Mut(inner) if matches!(inner.as_ref(), Type::Ref(_)))
 }
 
 fn indent(output: &mut String, level: usize) {

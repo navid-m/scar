@@ -5,7 +5,7 @@ pub def raw_eql(x ref(u8), y ref(u8)) bool
 	return strcmp(x, y) == 0
 end
 
-pub def raw_concat(dest ref(u8), src ref(u8)) ref(u8)
+pub def raw_concat(dest mut(ref(u8)), src ref(u8)) ref(u8)
 	return strcat(dest, src)
 end
 

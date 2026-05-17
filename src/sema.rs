@@ -830,6 +830,13 @@ fn analyze_builtin(
             let arg_ty = infer_expr_type(&args[0], functions, types, scope)?;
             match resolve_aliases(&arg_ty, types)? {
                 Type::Ref(inner) => Ok(*inner),
+                Type::Mut(inner) => match *inner {
+                    Type::Ref(inner) => Ok(*inner),
+                    other => Err(CompileError::new(format!(
+                        "@deref requires a ref(...) argument, got {}",
+                        describe_type(&other)
+                    ))),
+                },
                 other => Err(CompileError::new(format!(
                     "@deref requires a ref(...) argument, got {}",
                     describe_type(&other)
@@ -1213,7 +1220,8 @@ fn format_type_matches(marker: PrintMarker, ty: &Type) -> bool {
         PrintMarker::Int => is_integer_primitive_type(ty),
         PrintMarker::Bool => matches!(ty, Type::Bool),
         PrintMarker::String => is_string_compatible(ty),
-        PrintMarker::Pointer => matches!(ty, Type::Ref(_) | Type::Named(_)) || is_string_compatible(ty),
+        PrintMarker::Pointer => matches!(ty, Type::Ref(_) | Type::Mut(_) | Type::Named(_))
+            || is_string_compatible(ty),
         PrintMarker::Float => matches!(ty, Type::F32),
         PrintMarker::Double => matches!(ty, Type::F64),
     }
@@ -1253,6 +1261,7 @@ fn validate_type(ty: &Type, types: &HashMap<String, TypeDefInfo>) -> Result<(), 
                 Err(CompileError::new(format!("unknown type `{name}`")))
             }
         }
+        Type::Mut(inner) => validate_type(inner, types),
         Type::Ref(inner) => validate_type(inner, types),
         Type::List(inner) => validate_type(inner, types),
     }
@@ -1281,6 +1290,7 @@ fn validate_type_with_known_names(ty: &Type, known: &HashSet<String>) -> Result<
                 Err(CompileError::new(format!("unknown type `{name}`")))
             }
         }
+        Type::Mut(inner) => validate_type_with_known_names(inner, known),
         Type::Ref(inner) => validate_type_with_known_names(inner, known),
         Type::List(inner) => validate_type_with_known_names(inner, known),
     }
@@ -1316,7 +1326,9 @@ fn types_compatible(
 }
 
 fn is_string_compatible(ty: &Type) -> bool {
-    matches!(ty, Type::U8) || matches!(ty, Type::Ref(inner) if inner.as_ref() == &Type::U8)
+    matches!(ty, Type::U8)
+        || matches!(ty, Type::Ref(inner) if inner.as_ref() == &Type::U8)
+        || matches!(ty, Type::Mut(inner) if matches!(inner.as_ref(), Type::Ref(inner) if inner.as_ref() == &Type::U8))
 }
 
 fn is_condition_type(ty: &Type, types: &HashMap<String, TypeDefInfo>) -> Result<bool, CompileError> {
@@ -1422,10 +1434,12 @@ fn can_implicitly_convert_numeric(actual: &Type, expected: &Type) -> bool {
 }
 
 fn deref_refs(mut ty: &Type) -> &Type {
-    while let Type::Ref(inner) = ty {
-        ty = inner;
+    loop {
+        match ty {
+            Type::Ref(inner) | Type::Mut(inner) => ty = inner,
+            _ => return ty,
+        }
     }
-    ty
 }
 
 fn resolve_aliases(ty: &Type, types: &HashMap<String, TypeDefInfo>) -> Result<Type, CompileError> {
@@ -1440,6 +1454,7 @@ fn resolve_aliases(ty: &Type, types: &HashMap<String, TypeDefInfo>) -> Result<Ty
                 Ok(Type::Named(name.clone()))
             }
         }
+        Type::Mut(inner) => Ok(Type::Mut(Box::new(resolve_aliases(inner, types)?))),
         Type::Ref(inner) => Ok(Type::Ref(Box::new(resolve_aliases(inner, types)?))),
         Type::List(inner) => Ok(Type::List(Box::new(resolve_aliases(inner, types)?))),
         other => Ok(other.clone()),
@@ -1463,6 +1478,7 @@ fn describe_type(ty: &Type) -> String {
         Type::F32 => "f32".to_string(),
         Type::F64 => "f64".to_string(),
         Type::Named(name) => name.clone(),
+        Type::Mut(inner) => format!("mut({})", describe_type(inner)),
         Type::Ref(inner) => format!("ref({})", describe_type(inner)),
         Type::List(inner) => format!("list[{}]", describe_type(inner)),
     }
@@ -1552,6 +1568,14 @@ mod tests {
     #[test]
     fn accepts_bool_print_marker() {
         let source = "pub def main() void\n\tval ok bool = 1 == 1\n\t@print(\"{b}\", {ok})\nend\n";
+        let program = parse_program(lex(source).unwrap()).unwrap();
+
+        analyze(&program).unwrap();
+    }
+
+    #[test]
+    fn accepts_mutable_ref_u8_types() {
+        let source = "extern def strcat(dest mut(ref(u8)), src ref(u8)) ref(u8) :: \"strcat\"\npub def main() void\nend\n";
         let program = parse_program(lex(source).unwrap()).unwrap();
 
         analyze(&program).unwrap();

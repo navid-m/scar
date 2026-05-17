@@ -729,6 +729,7 @@ fn rewrite_callee(
 fn rewrite_type(ty: Type, local_types: &HashMap<String, String>) -> Type {
     match ty {
         Type::Named(name) => Type::Named(local_types.get(&name).cloned().unwrap_or(name)),
+        Type::Mut(inner) => Type::Mut(Box::new(rewrite_type(*inner, local_types))),
         Type::Ref(inner) => Type::Ref(Box::new(rewrite_type(*inner, local_types))),
         Type::List(inner) => Type::List(Box::new(rewrite_type(*inner, local_types))),
         Type::U32 => Type::U32,

@@ -976,6 +976,13 @@ impl Parser {
                 self.advance();
                 Ok(Type::F64)
             }
+            TokenKind::Mut => {
+                self.advance();
+                self.expect_simple(TokenKind::LParen)?;
+                let inner = self.parse_type()?;
+                self.expect_simple(TokenKind::RParen)?;
+                Ok(Type::Mut(Box::new(inner)))
+            }
             TokenKind::Ident(name) => {
                 self.advance();
                 Ok(Type::Named(name))
@@ -1015,6 +1022,7 @@ impl Parser {
                 | TokenKind::U8
                 | TokenKind::F32
                 | TokenKind::F64
+                | TokenKind::Mut
                 | TokenKind::Ref
                 | TokenKind::List
                 | TokenKind::Ident(_)
@@ -1193,6 +1201,7 @@ impl Parser {
             TokenKind::For => "`for`",
             TokenKind::In => "`in`",
             TokenKind::As => "`as`",
+            TokenKind::Mut => "`mut`",
             TokenKind::Ref => "`ref`",
             TokenKind::List => "`list`",
             TokenKind::Void => "`void`",
@@ -1417,6 +1426,17 @@ mod tests {
         assert_eq!(program.functions[0].params[1].ty, Type::F64);
         assert_eq!(program.functions[0].params[2].ty, Type::Usize);
         assert_eq!(program.functions[0].return_type, Type::Bool);
+    }
+
+    #[test]
+    fn parses_mutable_ref_type() {
+        let source = "def concat(dest mut(ref(u8)), src ref(u8)) ref(u8)\n\treturn dest\nend\n";
+        let program = parse_program(lex(source).unwrap()).unwrap();
+
+        assert!(matches!(
+            &program.functions[0].params[0].ty,
+            Type::Mut(inner) if matches!(inner.as_ref(), Type::Ref(inner) if inner.as_ref() == &Type::U8)
+        ));
     }
 
     #[test]
