@@ -229,7 +229,7 @@ pub def downcase[A: allocators.BumpAllocator](
 		var ch u8 = @deref(@add(x, i))
 
 		if ch >= 'A' && ch <= 'Z'
-			ch = ch + 32
+			ch = ch + (32 as u8)
 		end
 
 		@deref(@as_mut(@add(out, i))) = ch
@@ -451,5 +451,11 @@ end
 test "upcase works"
 	var alloc = allocators.Arena.new(1024 as usize)?
 	assert eql("HELLO", upcase[allocators.Arena](alloc, "hello")?)
+	allocators.Arena.destroy(@addr(alloc))
+end
+
+test "downcase works"
+	var alloc = allocators.Arena.new(1024 as usize)?
+	assert eql("hello", downcase[allocators.Arena](alloc, "HELLo")?)
 	allocators.Arena.destroy(@addr(alloc))
 end
