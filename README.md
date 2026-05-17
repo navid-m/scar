@@ -35,4 +35,4 @@ The VSCode extension is available [here](https://marketplace.visualstudio.com/it
 
 <font color="grey">(Under construction)</font>
 
-<img src="assets/wip.png" style="border-radius: 5px;" width=45%>
+<img src="assets/wip.jpg" style="border-radius: 5px;" width=45%>
