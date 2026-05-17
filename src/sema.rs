@@ -3,7 +3,8 @@ use std::collections::{HashMap, HashSet};
 use crate::{
     CompileError,
     ast::{
-        BinaryOp, Expr, FieldDef, Function, MatchArmKind, Program, Stmt, TestBlock, Type, UnaryOp,
+        BinaryOp, Expr, FieldDef, Function, InterfaceMethod, MatchArmKind, Program, Stmt,
+        TestBlock, Type, UnaryOp,
     },
 };
 
@@ -18,12 +19,19 @@ pub struct TypeDefInfo {
     pub fields: Vec<FieldDef>,
     pub field_map: HashMap<String, Type>,
     pub alias: Option<Type>,
+    pub derives: Vec<Type>,
+}
+
+#[derive(Debug, Clone)]
+pub struct InterfaceDefInfo {
+    pub methods: Vec<InterfaceMethod>,
 }
 
 #[derive(Debug, Clone)]
 pub struct ProgramInfo {
     pub functions: HashMap<String, FunctionSig>,
     pub function_symbols: HashMap<String, String>,
+    pub interfaces: HashMap<String, InterfaceDefInfo>,
     pub types: HashMap<String, TypeDefInfo>,
     pub locals: HashMap<String, HashMap<String, Type>>,
 }
@@ -35,6 +43,7 @@ struct LocalBinding {
 }
 
 pub fn analyze(program: &Program) -> Result<ProgramInfo, CompileError> {
+    let interfaces = collect_interfaces(program)?;
     let types = collect_types(program)?;
     let mut functions = HashMap::new();
     let mut function_symbols = HashMap::new();
@@ -82,10 +91,12 @@ pub fn analyze(program: &Program) -> Result<ProgramInfo, CompileError> {
     for test in &program.tests {
         analyze_test_block(test, &functions, &types)?;
     }
+    validate_interface_satisfaction(&interfaces, &types, &functions)?;
 
     Ok(ProgramInfo {
         functions,
         function_symbols,
+        interfaces,
         types,
         locals,
     })
@@ -109,7 +120,12 @@ fn sanitize_symbol_name(name: &str) -> String {
 
 fn collect_types(program: &Program) -> Result<HashMap<String, TypeDefInfo>, CompileError> {
     let known_type_names: HashSet<String> =
-        program.type_defs.iter().map(|def| def.name.clone()).collect();
+        program
+            .type_defs
+            .iter()
+            .map(|def| def.name.clone())
+            .chain(program.interface_defs.iter().map(|def| def.name.clone()))
+            .collect();
     let mut types = HashMap::new();
 
     for type_def in &program.type_defs {
@@ -121,16 +137,19 @@ fn collect_types(program: &Program) -> Result<HashMap<String, TypeDefInfo>, Comp
         }
 
         let mut field_map = HashMap::new();
-        if let Some(alias) = &type_def.alias {
-            if !type_def.fields.is_empty() {
+            if let Some(alias) = &type_def.alias {
+                if !type_def.fields.is_empty() {
                 return Err(CompileError::new(format!(
                     "type `{}` cannot declare both an alias and fields",
                     type_def.name
                 )));
             }
             validate_type_with_known_names(alias, &known_type_names)?;
-        } else {
-            for field in &type_def.fields {
+            } else {
+                for derive in &type_def.derives {
+                    validate_type_with_known_names(derive, &known_type_names)?;
+                }
+                for field in &type_def.fields {
                 if field_map.contains_key(&field.name) {
                     return Err(CompileError::new(format!(
                         "duplicate field `{}` in type `{}`",
@@ -142,17 +161,53 @@ fn collect_types(program: &Program) -> Result<HashMap<String, TypeDefInfo>, Comp
             }
         }
 
-        types.insert(
+            types.insert(
             type_def.name.clone(),
             TypeDefInfo {
                 fields: type_def.fields.clone(),
                 field_map,
                 alias: type_def.alias.clone(),
+                derives: type_def.derives.clone(),
             },
         );
     }
 
     Ok(types)
+}
+
+fn collect_interfaces(program: &Program) -> Result<HashMap<String, InterfaceDefInfo>, CompileError> {
+    let known_names: HashSet<String> = program
+        .type_defs
+        .iter()
+        .map(|def| def.name.clone())
+        .chain(program.interface_defs.iter().map(|def| def.name.clone()))
+        .collect();
+    let mut interfaces = HashMap::new();
+    for interface_def in &program.interface_defs {
+        if interfaces.contains_key(&interface_def.name) {
+            return Err(CompileError::new(format!(
+                "duplicate interface definition `{}`",
+                interface_def.name
+            )));
+        }
+        let mut methods = Vec::new();
+        let mut seen = HashSet::new();
+        for method in &interface_def.methods {
+            if !seen.insert(method.name.clone()) {
+                return Err(CompileError::new(format!(
+                    "duplicate interface method `{}` in `{}`",
+                    method.name, interface_def.name
+                )));
+            }
+            for param in &method.params {
+                validate_type_with_known_names(&param.ty, &known_names)?;
+            }
+            validate_type_with_known_names(&method.return_type, &known_names)?;
+            methods.push(method.clone());
+        }
+        interfaces.insert(interface_def.name.clone(), InterfaceDefInfo { methods });
+    }
+    Ok(interfaces)
 }
 
 fn analyze_function(
@@ -220,6 +275,88 @@ fn analyze_test_block(
         )?;
     }
     Ok(())
+}
+
+fn validate_interface_satisfaction(
+    interfaces: &HashMap<String, InterfaceDefInfo>,
+    types: &HashMap<String, TypeDefInfo>,
+    functions: &HashMap<String, FunctionSig>,
+) -> Result<(), CompileError> {
+    for (type_name, type_info) in types {
+        for derive in &type_info.derives {
+            let Type::Named(interface_name) = derive else {
+                return Err(CompileError::new(format!(
+                    "type `{type_name}` may only derive named interfaces"
+                )));
+            };
+            let interface = interfaces.get(interface_name).ok_or_else(|| {
+                CompileError::new(format!(
+                    "type `{type_name}` derives unknown interface `{interface_name}`"
+                ))
+            })?;
+            for method in &interface.methods {
+                let implementation_name = format!("{type_name}.{}", method.name);
+                let implementation = functions.get(&implementation_name).ok_or_else(|| {
+                    CompileError::new(format!(
+                        "type `{type_name}` does not satisfy interface `{interface_name}`: missing `{implementation_name}`"
+                    ))
+                })?;
+                if implementation.params.len() != method.params.len() {
+                    return Err(CompileError::new(format!(
+                        "type `{type_name}` does not satisfy interface `{interface_name}`: `{implementation_name}` has the wrong parameter count"
+                    )));
+                }
+                for (expected, actual) in method.params.iter().zip(&implementation.params) {
+                    let expected_ty =
+                        substitute_interface_self(&expected.ty, interface_name, type_name);
+                    if !types_compatible(&expected_ty, actual, types)? {
+                        return Err(CompileError::new(format!(
+                            "type `{type_name}` does not satisfy interface `{interface_name}`: `{implementation_name}` expects parameter type {} but found {}",
+                            describe_type(&expected_ty),
+                            describe_type(actual)
+                        )));
+                    }
+                }
+                let expected_return =
+                    substitute_interface_self(&method.return_type, interface_name, type_name);
+                if !types_compatible(&expected_return, &implementation.return_type, types)? {
+                    return Err(CompileError::new(format!(
+                        "type `{type_name}` does not satisfy interface `{interface_name}`: `{implementation_name}` returns {} but interface requires {}",
+                        describe_type(&implementation.return_type),
+                        describe_type(&expected_return)
+                    )));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn substitute_interface_self(ty: &Type, interface_name: &str, type_name: &str) -> Type {
+    match ty {
+        Type::Named(name) if name == interface_name => Type::Named(type_name.to_string()),
+        Type::Mut(inner) => Type::Mut(Box::new(substitute_interface_self(
+            inner,
+            interface_name,
+            type_name,
+        ))),
+        Type::Ref(inner) => Type::Ref(Box::new(substitute_interface_self(
+            inner,
+            interface_name,
+            type_name,
+        ))),
+        Type::List(inner) => Type::List(Box::new(substitute_interface_self(
+            inner,
+            interface_name,
+            type_name,
+        ))),
+        Type::Result(inner) => Type::Result(Box::new(substitute_interface_self(
+            inner,
+            interface_name,
+            type_name,
+        ))),
+        other => other.clone(),
+    }
 }
 
 fn analyze_stmt(

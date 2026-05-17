@@ -410,6 +410,7 @@ fn build_test_program(program: &Program) -> Program {
 
     Program {
         module_uses: Vec::new(),
+        interface_defs: program.interface_defs.clone(),
         type_defs: program.type_defs.clone(),
         functions,
         tests: Vec::new(),

@@ -1,8 +1,9 @@
 use crate::{
     CompileError,
     ast::{
-        BinaryOp, Expr, FieldDef, FieldInit, Function, GenericParam, MatchArm, MatchArmKind,
-        ModuleUse, Param, Program, Stmt, TestBlock, Type, TypeDef, UnaryOp,
+        BinaryOp, Expr, FieldDef, FieldInit, Function, GenericParam, InterfaceDef,
+        InterfaceMethod, MatchArm, MatchArmKind, ModuleUse, Param, Program, Stmt, TestBlock, Type,
+        TypeDef, UnaryOp,
     },
     lexer::{Token, TokenKind},
 };
@@ -23,6 +24,7 @@ impl Parser {
 
     fn parse_program(&mut self) -> Result<Program, CompileError> {
         let mut module_uses = Vec::new();
+        let mut interface_defs = Vec::new();
         let mut type_defs = Vec::new();
         let mut functions = Vec::new();
         let mut tests = Vec::new();
@@ -32,6 +34,12 @@ impl Parser {
                 module_uses.push(self.parse_module_use()?);
             } else if self.check_simple(&TokenKind::Test) {
                 tests.push(self.parse_test_block()?);
+            } else if self.check_simple(&TokenKind::Pub)
+                && self.check_next_simple(&TokenKind::Interface)
+            {
+                interface_defs.push(self.parse_interface_def(true)?);
+            } else if self.check_simple(&TokenKind::Interface) {
+                interface_defs.push(self.parse_interface_def(false)?);
             } else if self.check_simple(&TokenKind::Pub)
                 && self.check_next_simple(&TokenKind::Type)
             {
@@ -55,6 +63,7 @@ impl Parser {
         }
         Ok(Program {
             module_uses,
+            interface_defs,
             type_defs,
             functions,
             tests,
@@ -92,6 +101,12 @@ impl Parser {
         }
         self.expect_simple(TokenKind::Type)?;
         let name = self.expect_ident()?;
+        let derives = if self.check_simple(&TokenKind::Colon) {
+            self.advance();
+            self.parse_derive_list()?
+        } else {
+            Vec::new()
+        };
         if self.check_simple(&TokenKind::Assign) {
             if is_extern {
                 return Err(
@@ -106,6 +121,7 @@ impl Parser {
                 name,
                 is_extern,
                 alias,
+                derives,
                 fields: Vec::new(),
             });
         }
@@ -130,7 +146,47 @@ impl Parser {
             name,
             is_extern,
             alias: None,
+            derives,
             fields,
+        })
+    }
+
+    fn parse_interface_def(&mut self, is_pub: bool) -> Result<InterfaceDef, CompileError> {
+        if is_pub {
+            self.expect_simple(TokenKind::Pub)?;
+        }
+        self.expect_simple(TokenKind::Interface)?;
+        let name = self.expect_ident()?;
+        self.expect_newline("expected a newline after interface name")?;
+
+        let mut methods = Vec::new();
+        self.consume_newlines();
+        while !self.check_simple(&TokenKind::End) && !self.is_eof() {
+            let method_is_pub = if self.check_simple(&TokenKind::Pub) {
+                self.advance();
+                true
+            } else {
+                false
+            };
+            let (method_name, generic_params, params, return_type) = self.parse_function_signature()?;
+            if !generic_params.is_empty() {
+                return Err(self.error_at_current("interface methods cannot declare generics"));
+            }
+            self.expect_stmt_terminator()?;
+            methods.push(InterfaceMethod {
+                is_pub: method_is_pub,
+                name: method_name,
+                params,
+                return_type,
+            });
+        }
+
+        self.expect_simple(TokenKind::End)?;
+        self.consume_newlines();
+        Ok(InterfaceDef {
+            is_pub,
+            name,
+            methods,
         })
     }
 
@@ -280,6 +336,16 @@ impl Parser {
             constraints.push(self.parse_non_result_type()?);
         }
         Ok(constraints)
+    }
+
+    fn parse_derive_list(&mut self) -> Result<Vec<Type>, CompileError> {
+        let mut derives = vec![self.parse_non_result_type()?];
+        while self.check_simple(&TokenKind::Comma) {
+            self.advance();
+            self.consume_newlines();
+            derives.push(self.parse_non_result_type()?);
+        }
+        Ok(derives)
     }
 
     fn parse_block(&mut self) -> Result<Vec<Stmt>, CompileError> {
@@ -1188,8 +1254,13 @@ impl Parser {
                 Ok(Type::Mut(Box::new(inner)))
             }
             TokenKind::Ident(name) => {
+                let mut segments = vec![name];
                 self.advance();
-                Ok(Type::Named(name))
+                while self.check_simple(&TokenKind::Dot) {
+                    self.advance();
+                    segments.push(self.expect_ident()?);
+                }
+                Ok(Type::Named(segments.join(".")))
             }
             TokenKind::Ref => {
                 self.advance();
@@ -1446,6 +1517,7 @@ impl Parser {
             TokenKind::Extern => "`extern`",
             TokenKind::Test => "`test`",
             TokenKind::Match => "`match`",
+            TokenKind::Interface => "`interface`",
             TokenKind::Type => "`type`",
             TokenKind::End => "`end`",
             TokenKind::Var => "`var`",
@@ -1522,7 +1594,6 @@ impl Parser {
             TokenKind::Eof => "end of file",
             TokenKind::Ident(_) => "an identifier",
             TokenKind::Int(_) => "an integer",
-            TokenKind::Float(_) => "a float",
             TokenKind::Str(_) => "a string",
         }
     }

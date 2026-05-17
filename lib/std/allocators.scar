@@ -1,4 +1,11 @@
-pub type Arena
+pub interface BumpAllocator
+	pub def alloc(a ref(BumpAllocator), size usize) ref(void)|error
+	pub def alloc_aligned(a ref(BumpAllocator), size usize, align usize) ref(void)|error
+	pub def reset(a ref(BumpAllocator))
+	pub def destroy(a ref(BumpAllocator))
+end
+
+pub type Arena : BumpAllocator
 	ptr ref(u8)
 	cap usize
 	off usize
@@ -69,6 +76,11 @@ pub def Arena.destroy(a ref(Arena))
 	a.off = 0
 end
 
+def test_bump_alloc[A: BumpAllocator](a ref(A))
+	A.alloc(a, 1024)
+	A.destroy(a)
+end
+
 test "alloc works"
     match Arena.new(1024 as usize)
         ok arena => (
@@ -93,4 +105,9 @@ test "alloc with unwrap works"
     var arena = Arena.new(1024 as usize)?
     var mem = Arena.alloc(@addr(arena), 500)?
     Arena.destroy(@addr(arena))
+end
+
+test "generic bump allocator"
+	var arena = Arena.new(1024 as usize)?
+	test_bump_alloc[Arena](@addr(arena))
 end

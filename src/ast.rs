@@ -1,6 +1,7 @@
 #[derive(Debug, Clone)]
 pub struct Program {
     pub module_uses: Vec<ModuleUse>,
+    pub interface_defs: Vec<InterfaceDef>,
     pub type_defs: Vec<TypeDef>,
     pub functions: Vec<Function>,
     pub tests: Vec<TestBlock>,
@@ -18,7 +19,23 @@ pub struct TypeDef {
     pub name: String,
     pub is_extern: bool,
     pub alias: Option<Type>,
+    pub derives: Vec<Type>,
     pub fields: Vec<FieldDef>,
+}
+
+#[derive(Debug, Clone)]
+pub struct InterfaceDef {
+    pub is_pub: bool,
+    pub name: String,
+    pub methods: Vec<InterfaceMethod>,
+}
+
+#[derive(Debug, Clone)]
+pub struct InterfaceMethod {
+    pub is_pub: bool,
+    pub name: String,
+    pub params: Vec<Param>,
+    pub return_type: Type,
 }
 
 #[derive(Debug, Clone)]

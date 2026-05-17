@@ -8,8 +8,8 @@ use std::{
 use crate::{
     CompileError,
     ast::{
-        Expr, FieldDef, FieldInit, Function, GenericParam, ModuleUse, Program, Stmt, TestBlock,
-        Type, TypeDef,
+        Expr, FieldDef, FieldInit, Function, GenericParam, InterfaceDef, InterfaceMethod, ModuleUse,
+        Param, Program, Stmt, TestBlock, Type, TypeDef,
     },
     lexer::lex,
     parser::parse_program,
@@ -27,6 +27,7 @@ pub fn resolve_entry_program(entry: &Path) -> Result<Program, CompileError> {
         home_std_root: discover_home_std_root()?,
         cache: HashMap::new(),
         emitted_modules: HashSet::new(),
+        resolved_interfaces: Vec::new(),
         resolved_types: Vec::new(),
         resolved_functions: Vec::new(),
         visiting: Vec::new(),
@@ -34,11 +35,19 @@ pub fn resolve_entry_program(entry: &Path) -> Result<Program, CompileError> {
 
     let program = parse_program_file(&entry)?;
     let module_aliases = resolver.resolve_module_uses(&program.module_uses, &entry)?;
-    let local_types = build_type_map(&program.type_defs, None);
+    let local_types = build_named_type_map(&program.type_defs, &program.interface_defs, None);
     let local_functions = build_function_map(&program.functions, None);
+    let mut interface_defs = resolver.resolved_interfaces;
+    for interface_def in program.interface_defs {
+        interface_defs.push(rewrite_interface_def(
+            interface_def,
+            &local_types,
+            &module_aliases,
+        )?);
+    }
     let mut type_defs = resolver.resolved_types;
     for type_def in program.type_defs {
-        type_defs.push(rewrite_type_def(type_def, &local_types));
+        type_defs.push(rewrite_type_def(type_def, &local_types, &module_aliases)?);
     }
     let mut functions = resolver.resolved_functions;
     for function in program.functions {
@@ -57,6 +66,7 @@ pub fn resolve_entry_program(entry: &Path) -> Result<Program, CompileError> {
 
     instantiate_generic_functions(Program {
         module_uses: Vec::new(),
+        interface_defs,
         type_defs,
         functions,
         tests,
@@ -66,9 +76,11 @@ pub fn resolve_entry_program(entry: &Path) -> Result<Program, CompileError> {
 #[derive(Clone)]
 struct ModuleExports {
     functions: HashMap<String, String>,
+    named_types: HashMap<String, String>,
+    interfaces: HashMap<String, String>,
 }
 
-type ModuleAliases = HashMap<String, HashMap<String, String>>;
+type ModuleAliases = HashMap<String, ModuleExports>;
 
 struct Resolver {
     root_dir: PathBuf,
@@ -76,6 +88,7 @@ struct Resolver {
     home_std_root: Option<PathBuf>,
     cache: HashMap<PathBuf, ModuleExports>,
     emitted_modules: HashSet<PathBuf>,
+    resolved_interfaces: Vec<InterfaceDef>,
     resolved_types: Vec<TypeDef>,
     resolved_functions: Vec<Function>,
     visiting: Vec<PathBuf>,
@@ -103,7 +116,7 @@ impl Resolver {
                 self.home_std_root.as_deref(),
             );
             let exports = self.resolve_module(&module_path)?;
-            aliases.insert(module_use.name.clone(), exports.functions);
+            aliases.insert(module_use.name.clone(), exports);
         }
         Ok(aliases)
     }
@@ -129,13 +142,23 @@ impl Resolver {
         let parsed = parse_program_file(&module_path)?;
         let module_aliases = self.resolve_module_uses(&parsed.module_uses, &module_path)?;
         let prefix = module_prefix(&module_path, &self.root_dir);
-        let local_types = build_type_map(&parsed.type_defs, Some(&prefix));
+        let local_types = build_named_type_map(&parsed.type_defs, &parsed.interface_defs, Some(&prefix));
         let local_functions = build_function_map(&parsed.functions, Some(&prefix));
         let public_functions = build_public_function_map(&parsed.functions, Some(&prefix));
+        let public_types = build_public_named_type_map(&parsed.type_defs, Some(&prefix));
+        let public_interfaces = build_public_interface_map(&parsed.interface_defs, Some(&prefix));
 
+        let mut rewritten_interfaces = Vec::new();
+        for interface_def in parsed.interface_defs {
+            rewritten_interfaces.push(rewrite_interface_def(
+                interface_def,
+                &local_types,
+                &module_aliases,
+            )?);
+        }
         let mut rewritten_types = Vec::new();
         for type_def in parsed.type_defs {
-            rewritten_types.push(rewrite_type_def(type_def, &local_types));
+            rewritten_types.push(rewrite_type_def(type_def, &local_types, &module_aliases)?);
         }
 
         let mut rewritten_functions = Vec::new();
@@ -149,6 +172,7 @@ impl Resolver {
         }
 
         if self.emitted_modules.insert(module_path.clone()) {
+            self.resolved_interfaces.extend(rewritten_interfaces);
             self.resolved_types.extend(rewritten_types);
             self.resolved_functions.extend(rewritten_functions);
         }
@@ -156,6 +180,8 @@ impl Resolver {
         self.visiting.pop();
         let exports = ModuleExports {
             functions: public_functions,
+            named_types: public_types,
+            interfaces: public_interfaces,
         };
         self.cache.insert(module_path, exports.clone());
         Ok(exports)
@@ -246,8 +272,12 @@ fn build_public_function_map(functions: &[Function], prefix: Option<&str>) -> Ha
         .collect()
 }
 
-fn build_type_map(type_defs: &[TypeDef], prefix: Option<&str>) -> HashMap<String, String> {
-    type_defs
+fn build_named_type_map(
+    type_defs: &[TypeDef],
+    interface_defs: &[InterfaceDef],
+    prefix: Option<&str>,
+) -> HashMap<String, String> {
+    let mut named = type_defs
         .iter()
         .map(|type_def| {
             let mapped = match prefix {
@@ -255,6 +285,45 @@ fn build_type_map(type_defs: &[TypeDef], prefix: Option<&str>) -> HashMap<String
                 None => type_def.name.clone(),
             };
             (type_def.name.clone(), mapped)
+        })
+        .collect::<HashMap<_, _>>();
+    named.extend(interface_defs.iter().map(|interface_def| {
+        let mapped = match prefix {
+            Some(prefix) => format!("{prefix}__{}", interface_def.name),
+            None => interface_def.name.clone(),
+        };
+        (interface_def.name.clone(), mapped)
+    }));
+    named
+}
+
+fn build_public_named_type_map(type_defs: &[TypeDef], prefix: Option<&str>) -> HashMap<String, String> {
+    type_defs
+        .iter()
+        .filter(|type_def| type_def.is_pub)
+        .map(|type_def| {
+            let mapped = match prefix {
+                Some(prefix) => format!("{prefix}__{}", type_def.name),
+                None => type_def.name.clone(),
+            };
+            (type_def.name.clone(), mapped)
+        })
+        .collect()
+}
+
+fn build_public_interface_map(
+    interface_defs: &[InterfaceDef],
+    prefix: Option<&str>,
+) -> HashMap<String, String> {
+    interface_defs
+        .iter()
+        .filter(|interface_def| interface_def.is_pub)
+        .map(|interface_def| {
+            let mapped = match prefix {
+                Some(prefix) => format!("{prefix}__{}", interface_def.name),
+                None => interface_def.name.clone(),
+            };
+            (interface_def.name.clone(), mapped)
         })
         .collect()
 }
@@ -304,7 +373,7 @@ fn rewrite_function(
             name,
             constraints: constraints
                 .into_iter()
-                .map(|constraint| rewrite_type(constraint, local_types))
+                .map(|constraint| rewrite_type(constraint, local_types, module_aliases))
                 .collect(),
         })
         .collect();
@@ -312,11 +381,11 @@ fn rewrite_function(
         .params
         .into_iter()
         .map(|mut param| {
-            param.ty = rewrite_type(param.ty, local_types);
+            param.ty = rewrite_type(param.ty, local_types, module_aliases);
             param
         })
         .collect();
-    function.return_type = rewrite_type(function.return_type, local_types);
+    function.return_type = rewrite_type(function.return_type, local_types, module_aliases);
     function.body = function
         .body
         .into_iter()
@@ -325,29 +394,76 @@ fn rewrite_function(
     Ok(function)
 }
 
-fn rewrite_type_def(type_def: TypeDef, local_types: &HashMap<String, String>) -> TypeDef {
+fn rewrite_interface_def(
+    interface_def: InterfaceDef,
+    local_types: &HashMap<String, String>,
+    module_aliases: &ModuleAliases,
+) -> Result<InterfaceDef, CompileError> {
+    let name = local_types
+        .get(&interface_def.name)
+        .cloned()
+        .unwrap_or(interface_def.name);
+    let methods = interface_def
+        .methods
+        .into_iter()
+        .map(|method| {
+            Ok(InterfaceMethod {
+                is_pub: method.is_pub,
+                name: method.name,
+                params: method
+                    .params
+                    .into_iter()
+                    .map(|param| Param {
+                        name: param.name,
+                        ty: rewrite_type(param.ty, local_types, module_aliases),
+                    })
+                    .collect(),
+                return_type: rewrite_type(method.return_type, local_types, module_aliases),
+            })
+        })
+        .collect::<Result<Vec<_>, CompileError>>()?;
+    Ok(InterfaceDef {
+        is_pub: interface_def.is_pub,
+        name,
+        methods,
+    })
+}
+
+fn rewrite_type_def(
+    type_def: TypeDef,
+    local_types: &HashMap<String, String>,
+    module_aliases: &ModuleAliases,
+) -> Result<TypeDef, CompileError> {
     let name = local_types
         .get(&type_def.name)
         .cloned()
         .unwrap_or(type_def.name);
     let is_extern = type_def.is_extern;
     let is_pub = type_def.is_pub;
-    let alias = type_def.alias.map(|ty| rewrite_type(ty, local_types));
+    let alias = type_def
+        .alias
+        .map(|ty| rewrite_type(ty, local_types, module_aliases));
+    let derives = type_def
+        .derives
+        .into_iter()
+        .map(|ty| rewrite_type(ty, local_types, module_aliases))
+        .collect();
     let fields = type_def
         .fields
         .into_iter()
         .map(|field| FieldDef {
             name: field.name,
-            ty: rewrite_type(field.ty, local_types),
+            ty: rewrite_type(field.ty, local_types, module_aliases),
         })
         .collect();
-    TypeDef {
+    Ok(TypeDef {
         is_pub,
         name,
         is_extern,
         alias,
+        derives,
         fields,
-    }
+    })
 }
 
 fn rewrite_test_block(
@@ -385,7 +501,7 @@ fn rewrite_stmt(
             column,
             mutable,
             name,
-            declared_type: declared_type.map(|ty| rewrite_type(ty, local_types)),
+            declared_type: declared_type.map(|ty| rewrite_type(ty, local_types, module_aliases)),
             init: rewrite_expr(init, local_functions, local_types, module_aliases)?,
         }),
         Stmt::Assign {
@@ -693,7 +809,7 @@ fn rewrite_expr(
             )?),
             type_args: type_args
                 .into_iter()
-                .map(|ty| rewrite_type(ty, local_types))
+                .map(|ty| rewrite_type(ty, local_types, module_aliases))
                 .collect(),
         }),
         Expr::Cast { expr, ty } => Ok(Expr::Cast {
@@ -703,7 +819,7 @@ fn rewrite_expr(
                 local_types,
                 module_aliases,
             )?),
-            ty: rewrite_type(ty, local_types),
+            ty: rewrite_type(ty, local_types, module_aliases),
         }),
         Expr::Error { message } => Ok(Expr::Error {
             message: Box::new(rewrite_expr(
@@ -772,7 +888,7 @@ fn rewrite_callee(
             if let Expr::Path(path) = *base.clone() {
                 if path.len() == 1 {
                     if let Some(module) = module_aliases.get(&path[0]) {
-                        let function = module.get(&field).ok_or_else(|| {
+                        let function = module.functions.get(&field).ok_or_else(|| {
                             CompileError::new(format!(
                                 "module `{}` has no public function `{}`",
                                 path[0], field
@@ -797,19 +913,70 @@ fn rewrite_callee(
     }
 }
 
-fn rewrite_type(ty: Type, local_types: &HashMap<String, String>) -> Type {
+fn rewrite_type(
+    ty: Type,
+    local_types: &HashMap<String, String>,
+    module_aliases: &ModuleAliases,
+) -> Type {
     match ty {
-        Type::Named(name) => Type::Named(local_types.get(&name).cloned().unwrap_or(name)),
-        Type::Result(inner) => Type::Result(Box::new(rewrite_type(*inner, local_types))),
-        Type::Mut(inner) => Type::Mut(Box::new(rewrite_type(*inner, local_types))),
-        Type::Ref(inner) => Type::Ref(Box::new(rewrite_type(*inner, local_types))),
-        Type::List(inner) => Type::List(Box::new(rewrite_type(*inner, local_types))),
+        Type::Named(name) => Type::Named(rewrite_named_type(name, local_types, module_aliases)),
+        Type::Result(inner) => {
+            Type::Result(Box::new(rewrite_type(*inner, local_types, module_aliases)))
+        }
+        Type::Mut(inner) => Type::Mut(Box::new(rewrite_type(*inner, local_types, module_aliases))),
+        Type::Ref(inner) => Type::Ref(Box::new(rewrite_type(*inner, local_types, module_aliases))),
+        Type::List(inner) => {
+            Type::List(Box::new(rewrite_type(*inner, local_types, module_aliases)))
+        }
         Type::U32 => Type::U32,
         other => other,
     }
 }
 
+fn rewrite_named_type(
+    name: String,
+    local_types: &HashMap<String, String>,
+    module_aliases: &ModuleAliases,
+) -> String {
+    if let Some(mapped) = local_types.get(&name) {
+        return mapped.clone();
+    }
+    if let Some((alias, member)) = name.split_once('.') {
+        if let Some(module) = module_aliases.get(alias) {
+            if let Some(mapped) = module.named_types.get(member) {
+                return mapped.clone();
+            }
+            if let Some(mapped) = module.interfaces.get(member) {
+                return mapped.clone();
+            }
+        }
+    }
+    name
+}
+
 fn instantiate_generic_functions(program: Program) -> Result<Program, CompileError> {
+    let interface_names = program
+        .interface_defs
+        .iter()
+        .map(|interface_def| interface_def.name.clone())
+        .collect::<HashSet<_>>();
+    let type_interfaces = program
+        .type_defs
+        .iter()
+        .map(|type_def| {
+            (
+                type_def.name.clone(),
+                type_def
+                    .derives
+                    .iter()
+                    .filter_map(|derive| match derive {
+                        Type::Named(name) => Some(name.clone()),
+                        _ => None,
+                    })
+                    .collect::<HashSet<_>>(),
+            )
+        })
+        .collect::<HashMap<_, _>>();
     let mut templates = HashMap::new();
     let mut concrete_functions = Vec::new();
     for function in program.functions {
@@ -830,6 +997,8 @@ fn instantiate_generic_functions(program: Program) -> Result<Program, CompileErr
         templates,
         instantiated_names: HashMap::new(),
         generated_functions: Vec::new(),
+        interface_names,
+        type_interfaces,
     };
 
     let functions = concrete_functions
@@ -847,6 +1016,7 @@ fn instantiate_generic_functions(program: Program) -> Result<Program, CompileErr
 
     Ok(Program {
         module_uses: program.module_uses,
+        interface_defs: program.interface_defs,
         type_defs: program.type_defs,
         functions: all_functions,
         tests,
@@ -857,6 +1027,8 @@ struct GenericInstantiator {
     templates: HashMap<String, Function>,
     instantiated_names: HashMap<String, String>,
     generated_functions: Vec<Function>,
+    interface_names: HashSet<String>,
+    type_interfaces: HashMap<String, HashSet<String>>,
 }
 
 impl GenericInstantiator {
@@ -1227,7 +1399,11 @@ impl GenericInstantiator {
 
         let mut substitutions = HashMap::new();
         for (param, type_arg) in template.generic_params.iter().zip(type_args.iter()) {
-            if !param.constraints.is_empty() && !param.constraints.iter().any(|allowed| allowed == type_arg)
+            if !param.constraints.is_empty()
+                && !param
+                    .constraints
+                    .iter()
+                    .any(|allowed| self.constraint_matches(allowed, type_arg))
             {
                 return Err(CompileError::new(format!(
                     "generic parameter `{}` on `{}` does not allow type {}",
@@ -1269,6 +1445,22 @@ impl GenericInstantiator {
         self.generated_functions.push(specialized);
 
         Ok(specialized_name)
+    }
+
+    fn constraint_matches(&self, constraint: &Type, type_arg: &Type) -> bool {
+        if constraint == type_arg {
+            return true;
+        }
+        match (constraint, type_arg) {
+            (Type::Named(interface_name), Type::Named(type_name))
+                if self.interface_names.contains(interface_name) =>
+            {
+                self.type_interfaces
+                    .get(type_name)
+                    .is_some_and(|interfaces| interfaces.contains(interface_name))
+            }
+            _ => false,
+        }
     }
 }
 
@@ -1487,6 +1679,14 @@ fn substitute_stmt(stmt: Stmt, substitutions: &HashMap<String, Type>) -> Stmt {
 
 fn substitute_expr(expr: Expr, substitutions: &HashMap<String, Type>) -> Expr {
     match expr {
+        Expr::Path(path) => {
+            if path.len() == 1 {
+                if let Some(Type::Named(name)) = substitutions.get(&path[0]) {
+                    return Expr::Path(vec![name.clone()]);
+                }
+            }
+            Expr::Path(path)
+        }
         Expr::ListLiteral(values) => Expr::ListLiteral(
             values
                 .into_iter()
@@ -1497,10 +1697,19 @@ fn substitute_expr(expr: Expr, substitutions: &HashMap<String, Type>) -> Expr {
             base: Box::new(substitute_expr(*base, substitutions)),
             index: Box::new(substitute_expr(*index, substitutions)),
         },
-        Expr::FieldAccess { base, field } => Expr::FieldAccess {
-            base: Box::new(substitute_expr(*base, substitutions)),
-            field,
-        },
+        Expr::FieldAccess { base, field } => {
+            if let Expr::Path(path) = base.as_ref() {
+                if path.len() == 1 {
+                    if let Some(Type::Named(type_name)) = substitutions.get(&path[0]) {
+                        return Expr::Path(vec![format!("{type_name}.{field}")]);
+                    }
+                }
+            }
+            Expr::FieldAccess {
+                base: Box::new(substitute_expr(*base, substitutions)),
+                field,
+            }
+        }
         Expr::StructInit { name, fields } => Expr::StructInit {
             name,
             fields: fields
