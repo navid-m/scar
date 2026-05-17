@@ -177,6 +177,68 @@ pub def trim_prefix[A: allocators.BumpAllocator](
 	return out as ref(u8)
 end
 
+
+pub def upcase[A: allocators.BumpAllocator](
+	ac: A,
+	x ref(u8)
+) ref(u8)|error
+	guard x != none else
+		return none
+	end
+
+	var len_x usize = len(x)
+
+	var out ref(void) = A.alloc(
+		@addr(ac),
+		len_x + 1 as usize
+	)?
+
+	for var i = 0 .. len_x as i32
+		var ch u8 = @deref(@add(x, i))
+
+		if ch >= 'a' && ch <= 'z'
+			ch = ch - (32 as u8)
+		end
+
+		@deref(@as_mut(@add(out, i))) = ch
+	end
+
+	@deref(@as_mut(@add(out, len_x))) = 0 as u8
+	return out as ref(u8)
+end
+
+pub def downcase[A: allocators.BumpAllocator](
+	ac: A,
+	x ref(u8)
+) ref(u8)|error
+	## Convert some string to its lower case form.
+	## Allocates, thus requires an allocator.
+	
+	guard x != none else
+		return none
+	end
+
+	var len_x usize = len(x)
+
+	var out ref(void) = A.alloc(
+		@addr(ac),
+		len_x + 1 as usize
+	)?
+
+	for var i = 0 .. len_x as i32
+		var ch u8 = @deref(@add(x, i))
+
+		if ch >= 'A' && ch <= 'Z'
+			ch = ch + 32
+		end
+
+		@deref(@as_mut(@add(out, i))) = ch
+	end
+
+	@deref(@as_mut(@add(out, len_x))) = 0 as u8
+	return out as ref(u8)
+end
+
 pub def trim_suffix[A: allocators.BumpAllocator](
 	ac: A,
 	x ref(u8),
@@ -384,4 +446,10 @@ test "stringbuilder works"
 	)
 
 	allocators.Arena.destroy(@addr(ac))
+end
+
+test "upcase works"
+	var alloc = allocators.Arena.new(1024 as usize)?
+	assert eql("HELLO", upcase[allocators.Arena](alloc, "hello")?)
+	allocators.Arena.destroy(@addr(alloc))
 end
