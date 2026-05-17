@@ -169,6 +169,16 @@ pub enum Stmt {
         target: Expr,
         value: Expr,
     },
+    Increment {
+        line: usize,
+        column: usize,
+        target: Expr,
+    },
+    Decrement {
+        line: usize,
+        column: usize,
+        target: Expr,
+    },
     Assert {
         line: usize,
         column: usize,
@@ -213,6 +223,12 @@ pub enum Stmt {
         iterable: Expr,
         body: Vec<Stmt>,
     },
+    While {
+        line: usize,
+        column: usize,
+        condition: Expr,
+        body: Vec<Stmt>,
+    },
     Loop {
         line: usize,
         column: usize,
@@ -227,6 +243,7 @@ pub enum Stmt {
 #[derive(Debug, Clone)]
 pub enum Expr {
     Int(i64),
+    Char(u8),
     Bool(bool),
     Float(f64),
     String(String),

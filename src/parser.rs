@@ -542,6 +542,24 @@ impl Parser {
                 value,
             });
         }
+        if self.check_simple(&TokenKind::PlusPlus) {
+            self.advance();
+            self.expect_stmt_terminator()?;
+            return Ok(Stmt::Increment {
+                line,
+                column,
+                target: expr,
+            });
+        }
+        if self.check_simple(&TokenKind::MinusMinus) {
+            self.advance();
+            self.expect_stmt_terminator()?;
+            return Ok(Stmt::Decrement {
+                line,
+                column,
+                target: expr,
+            });
+        }
 
         let expr = if self.at_stmt_end() {
             self.maybe_promote_bracketless_call(expr)
@@ -693,6 +711,29 @@ impl Parser {
         let line = self.current().line;
         let column = self.current().column;
         self.expect_simple(TokenKind::For)?;
+
+        if self.check_simple(&TokenKind::LParen) {
+            if pragma.is_some() {
+                return Err(self.error_at_current(
+                    "pragma directives currently apply only to range-based `for` loops",
+                ));
+            }
+            self.advance();
+            self.consume_newlines();
+            let condition = self.parse_expr()?;
+            self.consume_newlines();
+            self.expect_simple(TokenKind::RParen)?;
+            self.expect_newline("expected a newline after for condition")?;
+            let body = self.parse_block()?;
+            self.expect_simple(TokenKind::End)?;
+            self.consume_newlines();
+            return Ok(Stmt::While {
+                line,
+                column,
+                condition,
+                body,
+            });
+        }
 
         if self.check_simple(&TokenKind::Newline) {
             if pragma.is_some() {
@@ -1093,6 +1134,10 @@ impl Parser {
             TokenKind::Int(value) => {
                 self.advance();
                 Ok(Expr::Int(value))
+            }
+            TokenKind::Char(value) => {
+                self.advance();
+                Ok(Expr::Char(value))
             }
             TokenKind::Ident(name) if name == "true" || name == "false" => {
                 self.advance();
@@ -1626,14 +1671,17 @@ impl Parser {
             TokenKind::SlashEqual => "`/=`",
             TokenKind::Percent => "`%`",
             TokenKind::Minus => "`-`",
+            TokenKind::MinusMinus => "`--`",
             TokenKind::MinusEqual => "`-=`",
             TokenKind::Plus => "`+`",
+            TokenKind::PlusPlus => "`++`",
             TokenKind::PlusEqual => "`+=`",
             TokenKind::FatArrow => "`=>`",
             TokenKind::Question => "`?`",
             TokenKind::Eof => "end of file",
             TokenKind::Ident(_) => "an identifier",
             TokenKind::Int(_) => "an integer",
+            TokenKind::Char(_) => "a character",
             TokenKind::Str(_) => "a string",
         }
     }
@@ -1795,6 +1843,24 @@ mod tests {
                 assert!(body.is_empty());
             }
             other => panic!("expected for loop, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_conditional_for_loop() {
+        let source = "pub def main() void\n\tfor (value < 10)\n\t\tvalue++\n\tend\nend\n";
+        let program = parse_program(lex(source).unwrap()).unwrap();
+
+        match &program.functions[0].body[0] {
+            Stmt::While {
+                condition,
+                body,
+                ..
+            } => {
+                assert!(matches!(condition, Expr::Binary { op: BinaryOp::LessThan, .. }));
+                assert!(matches!(body[0], Stmt::Increment { .. }));
+            }
+            other => panic!("expected conditional for loop, got {other:?}"),
         }
     }
 
@@ -2132,5 +2198,21 @@ mod tests {
             Stmt::Return { value: Some(Expr::Bool(false)), .. } => {}
             other => panic!("expected false return, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn parses_char_literals_and_postfix_updates() {
+        let source = "pub def main() void\n\tvar ch u8 = 'a'\n\tcounter++\n\tremaining--\nend\n";
+        let program = parse_program(lex(source).unwrap()).unwrap();
+
+        match &program.functions[0].body[0] {
+            Stmt::VarDecl {
+                init: Expr::Char(b'a'),
+                ..
+            } => {}
+            other => panic!("expected char literal declaration, got {other:?}"),
+        }
+        assert!(matches!(program.functions[0].body[1], Stmt::Increment { .. }));
+        assert!(matches!(program.functions[0].body[2], Stmt::Decrement { .. }));
     }
 }

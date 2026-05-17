@@ -592,6 +592,24 @@ fn rewrite_stmt(
             target: rewrite_expr(target, local_functions, local_types, module_aliases)?,
             value: rewrite_expr(value, local_functions, local_types, module_aliases)?,
         }),
+        Stmt::Increment {
+            line,
+            column,
+            target,
+        } => Ok(Stmt::Increment {
+            line,
+            column,
+            target: rewrite_expr(target, local_functions, local_types, module_aliases)?,
+        }),
+        Stmt::Decrement {
+            line,
+            column,
+            target,
+        } => Ok(Stmt::Decrement {
+            line,
+            column,
+            target: rewrite_expr(target, local_functions, local_types, module_aliases)?,
+        }),
         Stmt::Assert {
             line,
             column,
@@ -698,6 +716,20 @@ fn rewrite_stmt(
                 .map(|stmt| rewrite_stmt(stmt, local_functions, local_types, module_aliases))
                 .collect::<Result<Vec<_>, _>>()?,
         }),
+        Stmt::While {
+            line,
+            column,
+            condition,
+            body,
+        } => Ok(Stmt::While {
+            line,
+            column,
+            condition: rewrite_expr(condition, local_functions, local_types, module_aliases)?,
+            body: body
+                .into_iter()
+                .map(|stmt| rewrite_stmt(stmt, local_functions, local_types, module_aliases))
+                .collect::<Result<Vec<_>, _>>()?,
+        }),
         Stmt::Loop { line, column, body } => Ok(Stmt::Loop {
             line,
             column,
@@ -718,6 +750,7 @@ fn rewrite_expr(
 ) -> Result<Expr, CompileError> {
     match expr {
         Expr::Int(_)
+        | Expr::Char(_)
         | Expr::Bool(_)
         | Expr::Float(_)
         | Expr::String(_)
@@ -1169,6 +1202,24 @@ impl GenericInstantiator {
                 target: self.rewrite_expr_generics(target)?,
                 value: self.rewrite_expr_generics(value)?,
             },
+            Stmt::Increment {
+                line,
+                column,
+                target,
+            } => Stmt::Increment {
+                line,
+                column,
+                target: self.rewrite_expr_generics(target)?,
+            },
+            Stmt::Decrement {
+                line,
+                column,
+                target,
+            } => Stmt::Decrement {
+                line,
+                column,
+                target: self.rewrite_expr_generics(target)?,
+            },
             Stmt::Assert {
                 line,
                 column,
@@ -1264,6 +1315,20 @@ impl GenericInstantiator {
                 column,
                 var_name,
                 iterable: self.rewrite_expr_generics(iterable)?,
+                body: body
+                    .into_iter()
+                    .map(|stmt| self.rewrite_stmt_generics(stmt))
+                    .collect::<Result<Vec<_>, _>>()?,
+            },
+            Stmt::While {
+                line,
+                column,
+                condition,
+                body,
+            } => Stmt::While {
+                line,
+                column,
+                condition: self.rewrite_expr_generics(condition)?,
                 body: body
                     .into_iter()
                     .map(|stmt| self.rewrite_stmt_generics(stmt))
@@ -1579,6 +1644,24 @@ fn substitute_stmt(stmt: Stmt, substitutions: &HashMap<String, Type>) -> Stmt {
             target: substitute_expr(target, substitutions),
             value: substitute_expr(value, substitutions),
         },
+        Stmt::Increment {
+            line,
+            column,
+            target,
+        } => Stmt::Increment {
+            line,
+            column,
+            target: substitute_expr(target, substitutions),
+        },
+        Stmt::Decrement {
+            line,
+            column,
+            target,
+        } => Stmt::Decrement {
+            line,
+            column,
+            target: substitute_expr(target, substitutions),
+        },
         Stmt::Assert {
             line,
             column,
@@ -1675,6 +1758,20 @@ fn substitute_stmt(stmt: Stmt, substitutions: &HashMap<String, Type>) -> Stmt {
                 .map(|stmt| substitute_stmt(stmt, substitutions))
                 .collect(),
         },
+        Stmt::While {
+            line,
+            column,
+            condition,
+            body,
+        } => Stmt::While {
+            line,
+            column,
+            condition: substitute_expr(condition, substitutions),
+            body: body
+                .into_iter()
+                .map(|stmt| substitute_stmt(stmt, substitutions))
+                .collect(),
+        },
         Stmt::Loop { line, column, body } => Stmt::Loop {
             line,
             column,
@@ -1690,6 +1787,7 @@ fn substitute_stmt(stmt: Stmt, substitutions: &HashMap<String, Type>) -> Stmt {
 fn substitute_expr(expr: Expr, substitutions: &HashMap<String, Type>) -> Expr {
     match expr {
         Expr::Bool(value) => Expr::Bool(value),
+        Expr::Char(value) => Expr::Char(value),
         Expr::Path(path) => {
             if path.len() == 1 {
                 if let Some(Type::Named(name)) = substitutions.get(&path[0]) {
@@ -1843,6 +1941,7 @@ fn infer_return_type_from_stmts(body: &[Stmt], param_types: &HashMap<String, Typ
             }
             Stmt::ForRange { body, .. }
             | Stmt::ForEach { body, .. }
+            | Stmt::While { body, .. }
             | Stmt::Loop { body, .. } => {
                 if let Some(ty) = infer_return_type_from_stmts(body, param_types) {
                     return Some(ty);
@@ -1857,6 +1956,7 @@ fn infer_return_type_from_stmts(body: &[Stmt], param_types: &HashMap<String, Typ
 fn infer_expr_type_from_template(expr: &Expr, param_types: &HashMap<String, Type>) -> Option<Type> {
     match expr {
         Expr::Int(_) => Some(Type::I32),
+        Expr::Char(_) => Some(Type::U8),
         Expr::Bool(_) => Some(Type::Bool),
         Expr::Float(_) => Some(Type::F32),
         Expr::String(_) => Some(Type::Ref(Box::new(Type::U8))),

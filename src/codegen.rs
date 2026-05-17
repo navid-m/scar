@@ -475,6 +475,16 @@ fn render_stmt(
             output.push_str(&render_expr(value, function, info)?);
             output.push_str(";\n");
         }
+        Stmt::Increment { target, .. } => {
+            indent(output, level);
+            output.push_str(&render_expr(target, function, info)?);
+            output.push_str("++;\n");
+        }
+        Stmt::Decrement { target, .. } => {
+            indent(output, level);
+            output.push_str(&render_expr(target, function, info)?);
+            output.push_str("--;\n");
+        }
         Stmt::Assert {
             line,
             column,
@@ -802,6 +812,19 @@ fn render_stmt(
             indent(output, level);
             output.push_str("}\n");
         }
+        Stmt::While {
+            condition, body, ..
+        } => {
+            indent(output, level);
+            output.push_str("while (");
+            output.push_str(&render_expr(condition, function, info)?);
+            output.push_str(") {\n");
+            for stmt in body {
+                render_stmt(output, stmt, function, info, level + 1, next_temp_id)?;
+            }
+            indent(output, level);
+            output.push_str("}\n");
+        }
         Stmt::Loop { body, .. } => {
             indent(output, level);
             output.push_str("for (;;) {\n");
@@ -855,6 +878,7 @@ fn render_expr_with_hint(
     }
     match expr {
         Expr::Int(value) => Ok(value.to_string()),
+        Expr::Char(value) => Ok(value.to_string()),
         Expr::Bool(value) => Ok(if *value { "1".to_string() } else { "0".to_string() }),
         Expr::Float(value) => Ok(value.to_string()),
         Expr::String(value) => Ok(format!("\"{}\"", escape_c_string(value))),
@@ -1403,6 +1427,7 @@ fn infer_codegen_expr_type(
             }
         }
         Expr::StructInit { name, .. } => Ok(Type::Named(name.clone())),
+        Expr::Char(_) => Ok(Type::U8),
         Expr::BuiltinCall { name, args } => infer_builtin_type(name, args, function, info),
         Expr::MethodCall {
             receiver,

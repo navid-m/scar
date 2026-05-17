@@ -146,6 +146,186 @@ pub def StringBuilder.str(sb ref(StringBuilder)) ref(u8)
 	return sb.ptr
 end
 
+pub def trim_prefix[A: allocators.BumpAllocator](
+	ac: A,
+	x ref(u8),
+	prefix ref(u8)
+) ref(u8)|error
+	guard (x != none) else
+		return none
+	end
+
+	if !starts_with(x, prefix)
+		return x
+	end
+
+	var len_prefix usize = len(prefix)
+	var len_x usize = len(x)
+	var new_len usize = len_x - len_prefix
+	var out ref(void) = A.alloc(
+		@addr(ac),
+		new_len + 1 as usize
+	)?
+
+	@memcpy(
+		out,
+		@add(x, len_prefix),
+		new_len
+	)
+
+	@deref(@as_mut(@add(out, new_len))) = 0 as u8
+
+	return out as ref(u8)
+end
+
+pub def trim_suffix[A: allocators.BumpAllocator](
+	ac: A,
+	x ref(u8),
+	suffix ref(u8)
+) ref(u8)|error
+	guard (x != none) else
+		return none
+	end
+
+	if !ends_with(x, suffix)
+		return x
+	end
+
+	var len_x usize = len(x)
+	var len_suffix usize = len(suffix)
+	var new_len usize = len_x - len_suffix
+	var out ref(void) = A.alloc(
+		@addr(ac),
+		new_len + 1 as usize
+	)?
+
+	@memcpy(
+		out,
+		x,
+		new_len
+	)
+
+	@deref(@as_mut(@add(out, new_len))) = 0 as u8
+	return out as ref(u8)
+end
+
+pub def trim[A: allocators.BumpAllocator](
+	ac: A,
+	x ref(u8)
+) ref(u8)|error
+	guard (x != none) else
+		return none
+	end
+
+	var start usize = 0
+	var nd usize = len(x)
+
+	for (start < nd)
+		var ch u8 = @deref(@add(x, start))
+
+		if (
+			ch != ' ' &&
+			ch != '\t' &&
+			ch != '\n' &&
+			ch != '\r'
+		)
+			break
+		end
+
+		start++
+	end
+
+	for (end > start)
+		var ch u8 = @deref(@add(x, nd - 1))
+
+		if (
+			ch != ' ' &&
+			ch != '\t' &&
+			ch != '\n' &&
+			ch != '\r'
+		)
+			break
+		end
+
+		nd--
+	end
+
+	var new_len usize = nd - start
+
+	var out ref(void) = A.alloc(
+		@addr(ac),
+		new_len + 1 as usize
+	)?
+
+	@memcpy(
+		out,
+		@add(x, start),
+		new_len
+	)
+
+	@deref(@as_mut(@add(out, new_len))) = 0 as u8
+
+	return out as ref(u8)
+end
+
+test "trim_prefix works"
+	var ac = allocators.Arena.new(1024)?
+
+	assert eql(
+		trim_prefix[allocators.Arena](ac, "foobar", "foo")?,
+		"bar"
+	)
+
+	assert eql(
+		trim_prefix[allocators.Arena](ac, "foobar", "baz")?,
+		"foobar"
+	)
+
+	allocators.Arena.destroy(@addr(ac))
+end
+
+test "trim_suffix works"
+	var ac = allocators.Arena.new(1024)?
+
+	assert eql(
+		trim_suffix[allocators.Arena](ac, "foobar", "bar")?,
+		"foo"
+	)
+
+	assert eql(
+		trim_suffix[allocators.Arena](ac, "foobar", "baz")?,
+		"foobar"
+	)
+
+	allocators.Arena.destroy(@addr(ac))
+end
+
+test "trim works"
+	var ac = allocators.Arena.new(1024)?
+
+	assert eql(
+		trim[allocators.Arena](ac, "   hello world   ")?,
+		"hello world"
+	)
+
+	assert eql(
+		trim[allocators.Arena](ac, "\n\t hello \r\n")?,
+		"hello"
+	)
+
+	assert eql(
+		trim[allocators.Arena](ac, "no_whitespace")?,
+		"no_whitespace"
+	)
+
+	assert eql(
+		trim[allocators.Arena](ac, "   ")?,
+		""
+	)
+
+	allocators.Arena.destroy(@addr(ac))
+end
+
 test "equals works"
 	assert eql("hello", "hello")
 	assert !eql("hello", "something else")

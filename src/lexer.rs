@@ -47,6 +47,7 @@ pub enum TokenKind {
     F64,
     Ident(String),
     Int(i64),
+    Char(u8),
     Float(f64),
     Str(String),
     Newline,
@@ -87,8 +88,10 @@ pub enum TokenKind {
     SlashEqual,
     Percent,
     Minus,
+    MinusMinus,
     MinusEqual,
     Plus,
+    PlusPlus,
     PlusEqual,
     FatArrow,
     Question,
@@ -346,7 +349,14 @@ impl Lexer {
                     let line = self.line;
                     let column = self.column;
                     self.bump();
-                    if self.peek() == Some('=') {
+                    if self.peek() == Some('-') {
+                        self.bump();
+                        tokens.push(Token {
+                            kind: TokenKind::MinusMinus,
+                            line,
+                            column,
+                        });
+                    } else if self.peek() == Some('=') {
                         self.bump();
                         tokens.push(Token {
                             kind: TokenKind::MinusEqual,
@@ -365,7 +375,14 @@ impl Lexer {
                     let line = self.line;
                     let column = self.column;
                     self.bump();
-                    if self.peek() == Some('=') {
+                    if self.peek() == Some('+') {
+                        self.bump();
+                        tokens.push(Token {
+                            kind: TokenKind::PlusPlus,
+                            line,
+                            column,
+                        });
+                    } else if self.peek() == Some('=') {
                         self.bump();
                         tokens.push(Token {
                             kind: TokenKind::PlusEqual,
@@ -382,6 +399,7 @@ impl Lexer {
                 }
                 '?' => tokens.push(self.single(TokenKind::Question)),
                 '"' => tokens.push(self.string()?),
+                '\'' => tokens.push(self.char_literal()?),
                 '0'..='9' => tokens.push(self.number()?),
                 _ if is_ident_start(ch) => tokens.push(self.ident_or_keyword()),
                 _ => {
@@ -425,41 +443,7 @@ impl Lexer {
                 }
                 '\\' => {
                     self.bump();
-                    let Some(escaped) = self.peek() else {
-                        return Err(self.error("unterminated escape sequence"));
-                    };
-                    let decoded = match escaped {
-                        'n' => '\n',
-                        't' => '\t',
-                        'r' => '\r',
-                        '"' => '"',
-                        '\\' => '\\',
-                        'x' => {
-                            self.bump();
-                            let Some(high) = self.peek() else {
-                                return Err(self.error("unterminated hex escape sequence"));
-                            };
-                            self.bump();
-                            let Some(low) = self.peek() else {
-                                return Err(self.error("unterminated hex escape sequence"));
-                            };
-                            let value = hex_value(high)
-                                .zip(hex_value(low))
-                                .map(|(high, low)| (high << 4) | low)
-                                .ok_or_else(|| self.error("invalid hex escape sequence"))?;
-                            self.bump();
-                            value as char
-                        }
-                        other => {
-                            return Err(
-                                self.error(format!("unsupported escape sequence `\\{other}`"))
-                            );
-                        }
-                    };
-                    if escaped != 'x' {
-                        self.bump();
-                    }
-                    value.push(decoded);
+                    value.push(self.escaped_char()?);
                 }
                 '\n' => return Err(self.error("newline in string literal")),
                 other => {
@@ -474,6 +458,95 @@ impl Lexer {
             line,
             column,
         })
+    }
+
+    fn char_literal(&mut self) -> Result<Token, CompileError> {
+        let line = self.line;
+        let column = self.column;
+        self.bump();
+
+        let Some(ch) = self.peek() else {
+            return Err(self.error("unterminated character literal"));
+        };
+        if ch == '\'' {
+            return Err(self.error("empty character literal"));
+        }
+        if ch == '\n' {
+            return Err(self.error("newline in character literal"));
+        }
+
+        let value = if ch == '\\' {
+            self.bump();
+            self.escaped_char()?
+        } else {
+            self.bump();
+            ch
+        };
+
+        if self.peek() != Some('\'') {
+            return Err(self.error("character literal must contain exactly one character"));
+        }
+        self.bump();
+
+        let byte = u8::try_from(value as u32)
+            .map_err(|_| self.error("character literal must fit in u8"))?;
+        Ok(Token {
+            kind: TokenKind::Char(byte),
+            line,
+            column,
+        })
+    }
+
+    fn escaped_char(&mut self) -> Result<char, CompileError> {
+        let Some(escaped) = self.peek() else {
+            return Err(self.error("unterminated escape sequence"));
+        };
+        let decoded = match escaped {
+            'n' => {
+                self.bump();
+                '\n'
+            }
+            't' => {
+                self.bump();
+                '\t'
+            }
+            'r' => {
+                self.bump();
+                '\r'
+            }
+            '"' => {
+                self.bump();
+                '"'
+            }
+            '\'' => {
+                self.bump();
+                '\''
+            }
+            '\\' => {
+                self.bump();
+                '\\'
+            }
+            'x' => {
+                self.bump();
+                let Some(high) = self.peek() else {
+                    return Err(self.error("unterminated hex escape sequence"));
+                };
+                self.bump();
+                let Some(low) = self.peek() else {
+                    return Err(self.error("unterminated hex escape sequence"));
+                };
+                let value = hex_value(high)
+                    .zip(hex_value(low))
+                    .map(|(high, low)| (high << 4) | low)
+                    .ok_or_else(|| self.error("invalid hex escape sequence"))?;
+                self.bump();
+                value as char
+            }
+            other => {
+                return Err(self.error(format!("unsupported escape sequence `\\{other}`")));
+            }
+        };
+        Ok(decoded)
     }
 
     fn number(&mut self) -> Result<Token, CompileError> {
@@ -642,5 +715,17 @@ mod tests {
         let tokens = lex("extern def sleep() void :: \"sleep\"\n").unwrap();
 
         assert!(tokens.iter().any(|token| matches!(token.kind, TokenKind::ColonColon)));
+    }
+
+    #[test]
+    fn lexes_char_literals_and_postfix_operators() {
+        let tokens = lex("val a = 'a'\nvalue++\nother--\nval nl = '\\n'\n").unwrap();
+
+        assert!(tokens.iter().any(|token| matches!(token.kind, TokenKind::Char(b'a'))));
+        assert!(tokens
+            .iter()
+            .any(|token| matches!(token.kind, TokenKind::Char(value) if value == b'\n')));
+        assert!(tokens.iter().any(|token| matches!(token.kind, TokenKind::PlusPlus)));
+        assert!(tokens.iter().any(|token| matches!(token.kind, TokenKind::MinusMinus)));
     }
 }

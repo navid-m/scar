@@ -497,6 +497,31 @@ fn analyze_stmt(
         } => {
             analyze_bitwise_assignment(target, value, "^=", *line, *column, functions, types, scope)?;
         }
+        Stmt::Increment {
+            line,
+            column,
+            target,
+        }
+        | Stmt::Decrement {
+            line,
+            column,
+            target,
+        } => {
+            let target_ty = resolve_aliases(
+                &infer_mutable_target(target, functions, types, scope)
+                    .map_err(|error| error.with_location(*line, *column))?,
+                types,
+            )?;
+            if !is_numeric_primitive_type(&target_ty) {
+                return Err(
+                    CompileError::new(format!(
+                        "postfix update requires a numeric target, got {}",
+                        describe_type(&target_ty)
+                    ))
+                    .with_location(*line, *column),
+                );
+            }
+        }
         Stmt::Assert {
             line,
             column,
@@ -762,6 +787,40 @@ fn analyze_stmt(
                 )?;
             }
         }
+        Stmt::While {
+            line,
+            column,
+            condition,
+            body,
+        } => {
+            validate_try_usage(condition, expected_return, allow_try_panic)
+                .map_err(|error| error.with_location(*line, *column))?;
+            let condition_ty = infer_expr_type(condition, functions, types, scope)
+                .map_err(|error| error.with_location(*line, *column))?;
+            if !is_condition_type(&condition_ty, types)? {
+                return Err(
+                    CompileError::new(format!(
+                        "`for (condition)` requires a bool or integer-compatible condition, got {}",
+                        describe_type(&condition_ty)
+                    ))
+                    .with_location(*line, *column),
+                );
+            }
+            let mut nested = scope.clone();
+            for stmt in body {
+                analyze_stmt(
+                    stmt,
+                    function_name,
+                    expected_return,
+                    functions,
+                    types,
+                    &mut nested,
+                    function_locals,
+                    true,
+                    allow_try_panic,
+                )?;
+            }
+        }
         Stmt::Loop { body, .. } => {
             let mut nested = scope.clone();
             for stmt in body {
@@ -798,6 +857,7 @@ fn infer_expr_type(
 ) -> Result<Type, CompileError> {
     match expr {
         Expr::Int(_) => Ok(Type::I32),
+        Expr::Char(_) => Ok(Type::U8),
         Expr::Bool(_) => Ok(Type::Bool),
         Expr::Float(_) => Ok(Type::F32),
         Expr::String(_) => Ok(Type::Ref(Box::new(Type::U8))),
@@ -1805,6 +1865,7 @@ fn validate_try_usage(
             validate_try_usage(rhs, expected_return, allow_try_panic)?;
         }
         Expr::Int(_)
+        | Expr::Char(_)
         | Expr::Bool(_)
         | Expr::Float(_)
         | Expr::String(_)
@@ -1990,6 +2051,7 @@ fn integer_rank(ty: &Type) -> Option<u8> {
 fn constant_integer_value(expr: &Expr) -> Option<i128> {
     match expr {
         Expr::Int(value) => Some(*value as i128),
+        Expr::Char(value) => Some(*value as i128),
         Expr::Unary {
             op: UnaryOp::Neg,
             expr,
