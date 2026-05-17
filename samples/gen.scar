@@ -1,0 +1,7 @@
+def add[T: i32|i64|f32|f64](x: T, y: T)
+	return x + y
+end
+
+def add[T](x: T, y: T)
+	return x + y
+end

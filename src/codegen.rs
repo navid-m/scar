@@ -1,3 +1,8 @@
+//! C99 backend for the Scar compiler.
+//!
+//! GPL-3.0-only
+//! (C) Navid Momtahen
+
 use std::collections::HashSet;
 
 use crate::{
@@ -70,7 +75,11 @@ pub fn generate_c(
         .iter()
         .find(|function| function.name == "main" && function.extern_name.is_none())
     {
-        output.push_str(&render_entrypoint(main_function, info, install_debug_handlers)?);
+        output.push_str(&render_entrypoint(
+            main_function,
+            info,
+            install_debug_handlers,
+        )?);
     }
 
     Ok(output)
@@ -265,7 +274,9 @@ fn render_stmt(
             if let Expr::Try(inner) = init {
                 let result_ty = infer_codegen_expr_type(inner, function, info)?;
                 let Type::Result(ok_ty) = resolve_codegen_aliases(&result_ty, info)? else {
-                    return Err(CompileError::new("`?` requires a result value during code generation"));
+                    return Err(CompileError::new(
+                        "`?` requires a result value during code generation",
+                    ));
                 };
                 let temp_id = *next_temp_id;
                 *next_temp_id += 1;
@@ -289,7 +300,10 @@ fn render_stmt(
                 } else if let Type::Result(function_ok_ty) = &function.return_type {
                     indent(output, level + 1);
                     output.push_str("__scar_return_value = ");
-                    output.push_str(&render_result_error_value(function_ok_ty, &format!("{temp_name}.error")));
+                    output.push_str(&render_result_error_value(
+                        function_ok_ty,
+                        &format!("{temp_name}.error"),
+                    ));
                     output.push_str(";\n");
                     indent(output, level + 1);
                     output.push_str("goto __scar_return;\n");
@@ -328,7 +342,9 @@ fn render_stmt(
             if let Expr::Try(inner) = value {
                 let result_ty = infer_codegen_expr_type(inner, function, info)?;
                 let Type::Result(_ok_ty) = resolve_codegen_aliases(&result_ty, info)? else {
-                    return Err(CompileError::new("`?` requires a result value during code generation"));
+                    return Err(CompileError::new(
+                        "`?` requires a result value during code generation",
+                    ));
                 };
                 let temp_id = *next_temp_id;
                 *next_temp_id += 1;
@@ -352,7 +368,10 @@ fn render_stmt(
                 } else if let Type::Result(function_ok_ty) = &function.return_type {
                     indent(output, level + 1);
                     output.push_str("__scar_return_value = ");
-                    output.push_str(&render_result_error_value(function_ok_ty, &format!("{temp_name}.error")));
+                    output.push_str(&render_result_error_value(
+                        function_ok_ty,
+                        &format!("{temp_name}.error"),
+                    ));
                     output.push_str(";\n");
                     indent(output, level + 1);
                     output.push_str("goto __scar_return;\n");
@@ -373,7 +392,12 @@ fn render_stmt(
             indent(output, level);
             output.push_str(&render_expr(target, function, info)?);
             output.push_str(" = ");
-            output.push_str(&render_expr_with_hint(value, function, info, Some(&target_ty))?);
+            output.push_str(&render_expr_with_hint(
+                value,
+                function,
+                info,
+                Some(&target_ty),
+            )?);
             output.push_str(";\n");
         }
         Stmt::AddAssign { target, value, .. } => {
@@ -454,7 +478,9 @@ fn render_stmt(
             if let Expr::Try(inner) = value {
                 let result_ty = infer_codegen_expr_type(inner, function, info)?;
                 let Type::Result(ok_ty) = resolve_codegen_aliases(&result_ty, info)? else {
-                    return Err(CompileError::new("`?` requires a result value during code generation"));
+                    return Err(CompileError::new(
+                        "`?` requires a result value during code generation",
+                    ));
                 };
                 let temp_id = *next_temp_id;
                 *next_temp_id += 1;
@@ -478,7 +504,10 @@ fn render_stmt(
                 } else if let Type::Result(function_ok_ty) = &function.return_type {
                     indent(output, level + 1);
                     output.push_str("__scar_return_value = ");
-                    output.push_str(&render_result_error_value(function_ok_ty, &format!("{temp_name}.error")));
+                    output.push_str(&render_result_error_value(
+                        function_ok_ty,
+                        &format!("{temp_name}.error"),
+                    ));
                     output.push_str(";\n");
                     indent(output, level + 1);
                     output.push_str("goto __scar_return;\n");
@@ -492,7 +521,10 @@ fn render_stmt(
                 indent(output, level);
                 output.push_str("__scar_return_value = ");
                 if let Type::Result(function_ok_ty) = &function.return_type {
-                    output.push_str(&render_result_ok_value(function_ok_ty, &format!("{temp_name}.ok")));
+                    output.push_str(&render_result_ok_value(
+                        function_ok_ty,
+                        &format!("{temp_name}.ok"),
+                    ));
                 } else {
                     output.push_str(&format!("{temp_name}.ok"));
                 }
@@ -503,7 +535,12 @@ fn render_stmt(
             }
             indent(output, level);
             output.push_str("__scar_return_value = ");
-            output.push_str(&render_expr_with_hint(value, function, info, Some(&function.return_type))?);
+            output.push_str(&render_expr_with_hint(
+                value,
+                function,
+                info,
+                Some(&function.return_type),
+            )?);
             output.push_str(";\n");
             indent(output, level);
             output.push_str("goto __scar_return;\n");
@@ -537,7 +574,9 @@ fn render_stmt(
         Stmt::Match { expr, arms, .. } => {
             let matched_ty = infer_codegen_expr_type(expr, function, info)?;
             let Type::Result(ok_ty) = resolve_codegen_aliases(&matched_ty, info)? else {
-                return Err(CompileError::new("`match` expects a result value during code generation"));
+                return Err(CompileError::new(
+                    "`match` expects a result value during code generation",
+                ));
             };
             let temp_id = *next_temp_id;
             *next_temp_id += 1;
@@ -597,7 +636,9 @@ fn render_stmt(
             if let Expr::Try(inner) = expr {
                 let result_ty = infer_codegen_expr_type(inner, function, info)?;
                 let Type::Result(_ok_ty) = resolve_codegen_aliases(&result_ty, info)? else {
-                    return Err(CompileError::new("`?` requires a result value during code generation"));
+                    return Err(CompileError::new(
+                        "`?` requires a result value during code generation",
+                    ));
                 };
                 let temp_id = *next_temp_id;
                 *next_temp_id += 1;
@@ -621,7 +662,10 @@ fn render_stmt(
                 } else if let Type::Result(function_ok_ty) = &function.return_type {
                     indent(output, level + 1);
                     output.push_str("__scar_return_value = ");
-                    output.push_str(&render_result_error_value(function_ok_ty, &format!("{temp_name}.error")));
+                    output.push_str(&render_result_error_value(
+                        function_ok_ty,
+                        &format!("{temp_name}.error"),
+                    ));
                     output.push_str(";\n");
                     indent(output, level + 1);
                     output.push_str("goto __scar_return;\n");
@@ -756,7 +800,8 @@ fn render_expr_with_hint(
     hint: Option<&Type>,
 ) -> Result<String, CompileError> {
     if let Some(Type::Result(ok_ty)) = hint {
-        let actual_ty = resolve_codegen_aliases(&infer_codegen_expr_type(expr, function, info)?, info)?;
+        let actual_ty =
+            resolve_codegen_aliases(&infer_codegen_expr_type(expr, function, info)?, info)?;
         return match actual_ty {
             Type::Result(_) => render_expr_with_hint(expr, function, info, None),
             Type::Error => match expr {
@@ -790,10 +835,9 @@ fn render_expr_with_hint(
         Expr::Index { base, index } => render_index_expr(base, index, function, info),
         Expr::FieldAccess { base, field } => render_field_access(base, field, function, info),
         Expr::StructInit { name, fields } => {
-            let type_info = info
-                .types
-                .get(name)
-                .ok_or_else(|| CompileError::new(format!("unknown type `{name}` in code generation")))?;
+            let type_info = info.types.get(name).ok_or_else(|| {
+                CompileError::new(format!("unknown type `{name}` in code generation"))
+            })?;
             let rendered_fields = fields
                 .iter()
                 .map(|field| {
@@ -985,7 +1029,9 @@ fn render_call(
                 let rendered_args = args
                     .iter()
                     .zip(signature.params.iter())
-                    .map(|(arg, param_ty)| render_expr_with_hint(arg, function, info, Some(param_ty)))
+                    .map(|(arg, param_ty)| {
+                        render_expr_with_hint(arg, function, info, Some(param_ty))
+                    })
                     .collect::<Result<Vec<_>, _>>()?;
                 if let Some(symbol) = info.function_symbols.get(&path[0]).cloned() {
                     return Ok(format!("{symbol}({})", rendered_args.join(", ")));
@@ -1047,7 +1093,9 @@ fn render_builtin_call(
             let flattened = flatten_print_args(&args[1..]);
             let arg_types = flattened
                 .iter()
-                .map(|arg| resolve_codegen_aliases(&infer_codegen_expr_type(arg, function, info)?, info))
+                .map(|arg| {
+                    resolve_codegen_aliases(&infer_codegen_expr_type(arg, function, info)?, info)
+                })
                 .collect::<Result<Vec<_>, CompileError>>()?;
             let (converted, markers) = convert_format_string(format, &arg_types)?;
             let mut rendered_args = vec![format!("\"{}\"", escape_c_string(&converted))];
@@ -1073,13 +1121,19 @@ fn render_builtin_call(
             render_expr(&args[0], function, info)?,
             render_expr(&args[1], function, info)?
         )),
-        "alloc" => Ok(format!("scar_runtime_alloc((size_t)({}))", render_expr(&args[0], function, info)?)),
+        "alloc" => Ok(format!(
+            "scar_runtime_alloc((size_t)({}))",
+            render_expr(&args[0], function, info)?
+        )),
         "realloc" => Ok(format!(
             "scar_runtime_realloc((void *)({}), (size_t)({}))",
             render_expr(&args[0], function, info)?,
             render_expr(&args[1], function, info)?
         )),
-        "free" => Ok(format!("scar_runtime_free((void *)({}))", render_expr(&args[0], function, info)?)),
+        "free" => Ok(format!(
+            "scar_runtime_free((void *)({}))",
+            render_expr(&args[0], function, info)?
+        )),
         "deref" => Ok(format!("(*({}))", render_expr(&args[0], function, info)?)),
         _ => Err(CompileError::new(format!(
             "unsupported builtin intrinsic `@{name}` during code generation"
@@ -1284,7 +1338,8 @@ fn infer_codegen_expr_type(
         Expr::Cast { ty, .. } => Ok(ty.clone()),
         Expr::Error { .. } => Ok(Type::Error),
         Expr::Try(inner) => {
-            let inner_ty = resolve_codegen_aliases(&infer_codegen_expr_type(inner, function, info)?, info)?;
+            let inner_ty =
+                resolve_codegen_aliases(&infer_codegen_expr_type(inner, function, info)?, info)?;
             let Type::Result(ok_ty) = inner_ty else {
                 return Err(CompileError::new(format!(
                     "`?` requires a `T|error` expression, got {}",
@@ -1402,9 +1457,10 @@ fn render_logical_shift_right(
                 signed, unsigned
             ))
         }
-        Type::U16 | Type::U32 | Type::U64 | Type::Usize => {
-            Ok(format!("(({})({rendered_lhs}) >> ({rendered_rhs}))", c_type(&lhs_ty)))
-        }
+        Type::U16 | Type::U32 | Type::U64 | Type::Usize => Ok(format!(
+            "(({})({rendered_lhs}) >> ({rendered_rhs}))",
+            c_type(&lhs_ty)
+        )),
         other => Err(CompileError::new(format!(
             "logical shift-right requires an integer operand during code generation, got {}",
             describe_type(&other)
@@ -1503,7 +1559,10 @@ enum PrintMarker {
     Double,
 }
 
-fn convert_format_string(input: &str, arg_types: &[Type]) -> Result<(String, Vec<PrintMarker>), CompileError> {
+fn convert_format_string(
+    input: &str,
+    arg_types: &[Type],
+) -> Result<(String, Vec<PrintMarker>), CompileError> {
     let mut output = String::new();
     let mut markers = Vec::new();
     let chars: Vec<char> = input.chars().collect();
@@ -1935,11 +1994,17 @@ fn is_codegen_signed_numeric_type(ty: &Type) -> bool {
 }
 
 fn is_codegen_signed_integer_type(ty: &Type) -> bool {
-    matches!(ty, Type::I8 | Type::I16 | Type::I32 | Type::I64 | Type::Isize)
+    matches!(
+        ty,
+        Type::I8 | Type::I16 | Type::I32 | Type::I64 | Type::Isize
+    )
 }
 
 fn is_codegen_unsigned_integer_type(ty: &Type) -> bool {
-    matches!(ty, Type::U8 | Type::U16 | Type::U32 | Type::U64 | Type::Usize)
+    matches!(
+        ty,
+        Type::U8 | Type::U16 | Type::U32 | Type::U64 | Type::Usize
+    )
 }
 
 fn codegen_integer_rank(ty: &Type) -> Option<u8> {
@@ -1969,18 +2034,22 @@ fn common_codegen_integer_type(lhs: &Type, rhs: &Type) -> Option<Type> {
         return Some(lhs.clone());
     }
     if is_codegen_signed_integer_type(lhs) && is_codegen_signed_integer_type(rhs) {
-        return Some(if codegen_integer_rank(lhs)? >= codegen_integer_rank(rhs)? {
-            lhs.clone()
-        } else {
-            rhs.clone()
-        });
+        return Some(
+            if codegen_integer_rank(lhs)? >= codegen_integer_rank(rhs)? {
+                lhs.clone()
+            } else {
+                rhs.clone()
+            },
+        );
     }
     if is_codegen_unsigned_integer_type(lhs) && is_codegen_unsigned_integer_type(rhs) {
-        return Some(if codegen_integer_rank(lhs)? >= codegen_integer_rank(rhs)? {
-            lhs.clone()
-        } else {
-            rhs.clone()
-        });
+        return Some(
+            if codegen_integer_rank(lhs)? >= codegen_integer_rank(rhs)? {
+                lhs.clone()
+            } else {
+                rhs.clone()
+            },
+        );
     }
     if is_codegen_unsigned_integer_type(lhs)
         && is_codegen_signed_integer_type(rhs)
@@ -2030,14 +2099,13 @@ fn print_format_specifier(marker: PrintMarker, ty: &Type) -> Result<&'static str
         PrintMarker::Int if is_codegen_signed_integer_type(ty) => Ok("%jd"),
         PrintMarker::Int if is_codegen_unsigned_integer_type(ty) => Ok("%ju"),
         PrintMarker::Bool if matches!(ty, Type::Bool) => Ok("%s"),
-        PrintMarker::Pointer if matches!(ty, Type::Ref(_) | Type::Mut(_) | Type::Named(_))
-            || is_codegen_string_compatible(ty) =>
+        PrintMarker::Pointer
+            if matches!(ty, Type::Ref(_) | Type::Mut(_) | Type::Named(_))
+                || is_codegen_string_compatible(ty) =>
         {
             Ok("%p")
         }
-        PrintMarker::String if is_codegen_string_compatible(ty) => {
-            Ok("%s")
-        }
+        PrintMarker::String if is_codegen_string_compatible(ty) => Ok("%s"),
         PrintMarker::Float if matches!(ty, Type::F32) => Ok("%f"),
         PrintMarker::Double if matches!(ty, Type::F64) => Ok("%lf"),
         PrintMarker::Int => Err(CompileError::new(format!(
@@ -2067,7 +2135,11 @@ fn print_format_specifier(marker: PrintMarker, ty: &Type) -> Result<&'static str
     }
 }
 
-fn render_print_value(marker: PrintMarker, ty: &Type, rendered: &str) -> Result<String, CompileError> {
+fn render_print_value(
+    marker: PrintMarker,
+    ty: &Type,
+    rendered: &str,
+) -> Result<String, CompileError> {
     match marker {
         PrintMarker::Int if is_codegen_signed_integer_type(ty) => {
             Ok(format!("((intmax_t)({rendered}))"))
@@ -2099,7 +2171,9 @@ fn resolve_codegen_aliases(ty: &Type, info: &ProgramInfo) -> Result<Type, Compil
                 Ok(Type::Named(name.clone()))
             }
         }
-        Type::Result(inner) => Ok(Type::Result(Box::new(resolve_codegen_aliases(inner, info)?))),
+        Type::Result(inner) => Ok(Type::Result(Box::new(resolve_codegen_aliases(
+            inner, info,
+        )?))),
         Type::Mut(inner) => Ok(Type::Mut(Box::new(resolve_codegen_aliases(inner, info)?))),
         Type::Ref(inner) => Ok(Type::Ref(Box::new(resolve_codegen_aliases(inner, info)?))),
         Type::List(inner) => Ok(Type::List(Box::new(resolve_codegen_aliases(inner, info)?))),
