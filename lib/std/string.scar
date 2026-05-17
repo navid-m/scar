@@ -1,5 +1,6 @@
 extern def strcmp(x ref(u8), y ref(u8)) i32 :: "strcmp"
 extern def strcat(dest mut(ref(u8)), src ref(u8)) ref(u8) :: "strcat"
+extern def strlen(x ref(u8)) usize :: "strlen"
 
 pub def raw_eql(x ref(u8), y ref(u8)) bool
 	return strcmp(x, y) == 0
@@ -11,6 +12,16 @@ pub def raw_concat(dest mut(ref(u8)), src ref(u8)) ref(u8)
 	return strcat(dest, src)
 end
 
+pub def raw_concat_alloc(a ref(u8), b ref(u8)) ref(u8)
+	var len_a usize = strlen(a)
+	var len_b usize = strlen(b)
+	var out = @alloc(len_a + len_b + 1 as usize)
+	@memcpy(out, a, len_a)
+	@memcpy(@add(out, len_a), b, len_b)
+	@deref(@add(out, len_a + len_b)) = 0 as u8
+	return out
+end
+
 test "equals works"
 	assert raw_eql("hello", "hello")
 	assert !raw_eql("hello", "something else")
@@ -19,4 +30,5 @@ end
 test "concat works"
 	var buffer mut(ref(u8)) = @alloc(1024)
 	assert raw_eql(raw_concat(buffer, "world"), "world")
+	assert raw_eql(raw_concat_alloc("hello", " world"), "hello world")
 end

@@ -659,7 +659,18 @@ fn render_builtin_call(
             }
             Ok(format!("printf({})", rendered_args.join(", ")))
         }
+        "memcpy" => Ok(format!(
+            "memcpy((void *)({}), (void const *)({}), (size_t)({}))",
+            render_expr(&args[0], function, info)?,
+            render_expr(&args[1], function, info)?,
+            render_expr(&args[2], function, info)?
+        )),
         "addr" => Ok(format!("(&{})", render_expr(&args[0], function, info)?)),
+        "add" => Ok(format!(
+            "(({}) + ({}))",
+            render_expr(&args[0], function, info)?,
+            render_expr(&args[1], function, info)?
+        )),
         "alloc" => Ok(format!("scar_runtime_alloc((size_t)({}))", render_expr(&args[0], function, info)?)),
         "realloc" => Ok(format!(
             "scar_runtime_realloc((void *)({}), (size_t)({}))",
@@ -667,14 +678,7 @@ fn render_builtin_call(
             render_expr(&args[1], function, info)?
         )),
         "free" => Ok(format!("scar_runtime_free((void *)({}))", render_expr(&args[0], function, info)?)),
-        "deref" => {
-            let arg_ty = infer_codegen_expr_type(&args[0], function, info)?;
-            if is_codegen_string_compatible(&arg_ty) {
-                Ok(render_expr(&args[0], function, info)?)
-            } else {
-                Ok(format!("(*({}))", render_expr(&args[0], function, info)?))
-            }
-        }
+        "deref" => Ok(format!("(*({}))", render_expr(&args[0], function, info)?)),
         _ => Err(CompileError::new(format!(
             "unsupported builtin intrinsic `@{name}` during code generation"
         ))),
@@ -1031,7 +1035,8 @@ fn infer_builtin_type(
                 _ => Ok(Type::Void),
             }
         }
-        "puts" | "print" | "free" => Ok(Type::Void),
+        "puts" | "print" | "free" | "memcpy" => Ok(Type::Void),
+        "add" => Ok(infer_codegen_expr_type(&args[0], function, info)?),
         "alloc" | "realloc" => Ok(Type::Mut(Box::new(Type::Ref(Box::new(Type::U8))))),
         "addr" => Ok(Type::Ref(Box::new(infer_codegen_expr_type(
             &args[0], function, info,
@@ -1458,11 +1463,12 @@ fn is_codegen_signed_integer_type(ty: &Type) -> bool {
 }
 
 fn is_codegen_unsigned_integer_type(ty: &Type) -> bool {
-    matches!(ty, Type::U16 | Type::U32 | Type::U64 | Type::Usize)
+    matches!(ty, Type::U8 | Type::U16 | Type::U32 | Type::U64 | Type::Usize)
 }
 
 fn codegen_integer_rank(ty: &Type) -> Option<u8> {
     match ty {
+        Type::U8 => Some(1),
         Type::I8 => Some(1),
         Type::I16 => Some(2),
         Type::I32 => Some(3),
@@ -1499,6 +1505,18 @@ fn common_codegen_integer_type(lhs: &Type, rhs: &Type) -> Option<Type> {
         } else {
             rhs.clone()
         });
+    }
+    if is_codegen_unsigned_integer_type(lhs)
+        && is_codegen_signed_integer_type(rhs)
+        && codegen_integer_rank(lhs)? > codegen_integer_rank(rhs)?
+    {
+        return Some(lhs.clone());
+    }
+    if is_codegen_signed_integer_type(lhs)
+        && is_codegen_unsigned_integer_type(rhs)
+        && codegen_integer_rank(rhs)? > codegen_integer_rank(lhs)?
+    {
+        return Some(rhs.clone());
     }
     None
 }

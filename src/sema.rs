@@ -610,6 +610,11 @@ fn infer_expr_type(
             let source_ty = infer_expr_type(expr, functions, types, scope)?;
             validate_type(ty, types)?;
             if is_numeric_type(&source_ty, types)? && is_numeric_type(ty, types)? {
+                if is_integer_type(&source_ty, types)? && is_integer_type(ty, types)? {
+                    if let Some(value) = constant_integer_value(expr) {
+                        validate_integer_literal_cast_range(value, ty)?;
+                    }
+                }
                 Ok(ty.clone())
             } else {
                 Err(CompileError::new(format!(
@@ -816,12 +821,59 @@ fn analyze_builtin(
             }
             Ok(Type::Void)
         }
+        "memcpy" => {
+            if args.len() != 3 {
+                return Err(CompileError::new("@memcpy expects exactly three arguments"));
+            }
+            let dest_ty = resolve_aliases(&infer_expr_type(&args[0], functions, types, scope)?, types)?;
+            if !is_memory_pointer_type(&dest_ty) {
+                return Err(CompileError::new(format!(
+                    "@memcpy expects a pointer-like destination, got {}",
+                    describe_type(&dest_ty)
+                )));
+            }
+            let src_ty = resolve_aliases(&infer_expr_type(&args[1], functions, types, scope)?, types)?;
+            if !is_memory_pointer_type(&src_ty) {
+                return Err(CompileError::new(format!(
+                    "@memcpy expects a pointer-like source, got {}",
+                    describe_type(&src_ty)
+                )));
+            }
+            let len_ty = infer_expr_type(&args[2], functions, types, scope)?;
+            if !is_integer_type(&len_ty, types)? {
+                return Err(CompileError::new(format!(
+                    "@memcpy expects an integer byte count, got {}",
+                    describe_type(&len_ty)
+                )));
+            }
+            Ok(Type::Void)
+        }
         "addr" => {
             if args.len() != 1 {
                 return Err(CompileError::new("@addr expects exactly one argument"));
             }
             let inner = infer_lvalue_type(&args[0], functions, types, scope)?;
             Ok(Type::Ref(Box::new(inner)))
+        }
+        "add" => {
+            if args.len() != 2 {
+                return Err(CompileError::new("@add expects exactly two arguments"));
+            }
+            let base_ty = resolve_aliases(&infer_expr_type(&args[0], functions, types, scope)?, types)?;
+            if !is_memory_pointer_type(&base_ty) {
+                return Err(CompileError::new(format!(
+                    "@add expects a pointer-like first argument, got {}",
+                    describe_type(&base_ty)
+                )));
+            }
+            let offset_ty = infer_expr_type(&args[1], functions, types, scope)?;
+            if !is_integer_type(&offset_ty, types)? {
+                return Err(CompileError::new(format!(
+                    "@add expects an integer offset, got {}",
+                    describe_type(&offset_ty)
+                )));
+            }
+            Ok(base_ty)
         }
         "alloc" => {
             if args.len() != 1 {
@@ -1415,11 +1467,12 @@ fn is_signed_integer_primitive_type(ty: &Type) -> bool {
 }
 
 fn is_unsigned_integer_primitive_type(ty: &Type) -> bool {
-    matches!(ty, Type::U16 | Type::U32 | Type::U64 | Type::Usize)
+    matches!(ty, Type::U8 | Type::U16 | Type::U32 | Type::U64 | Type::Usize)
 }
 
 fn integer_rank(ty: &Type) -> Option<u8> {
     match ty {
+        Type::U8 => Some(1),
         Type::I8 => Some(1),
         Type::I16 => Some(2),
         Type::I32 => Some(3),
@@ -1427,6 +1480,46 @@ fn integer_rank(ty: &Type) -> Option<u8> {
         Type::U16 => Some(2),
         Type::U32 => Some(3),
         Type::U64 | Type::Usize => Some(4),
+        _ => None,
+    }
+}
+
+fn constant_integer_value(expr: &Expr) -> Option<i128> {
+    match expr {
+        Expr::Int(value) => Some(*value as i128),
+        Expr::Unary {
+            op: UnaryOp::Neg,
+            expr,
+        } => constant_integer_value(expr).map(|value| -value),
+        _ => None,
+    }
+}
+
+fn validate_integer_literal_cast_range(value: i128, ty: &Type) -> Result<(), CompileError> {
+    let Some((min, max)) = integer_cast_bounds(ty) else {
+        return Ok(());
+    };
+    if value < min || value > max {
+        return Err(CompileError::new(format!(
+            "integer literal {value} does not fit in {}",
+            describe_type(ty)
+        )));
+    }
+    Ok(())
+}
+
+fn integer_cast_bounds(ty: &Type) -> Option<(i128, i128)> {
+    match ty {
+        Type::I8 => Some((i8::MIN as i128, i8::MAX as i128)),
+        Type::I16 => Some((i16::MIN as i128, i16::MAX as i128)),
+        Type::I32 => Some((i32::MIN as i128, i32::MAX as i128)),
+        Type::I64 => Some((i64::MIN as i128, i64::MAX as i128)),
+        Type::Isize => Some((isize::MIN as i128, isize::MAX as i128)),
+        Type::U8 => Some((u8::MIN as i128, u8::MAX as i128)),
+        Type::U16 => Some((u16::MIN as i128, u16::MAX as i128)),
+        Type::U32 => Some((u32::MIN as i128, u32::MAX as i128)),
+        Type::U64 => Some((u64::MIN as i128, u64::MAX as i128)),
+        Type::Usize => Some((usize::MIN as i128, usize::MAX as i128)),
         _ => None,
     }
 }
@@ -1456,6 +1549,18 @@ fn common_integer_type(lhs: &Type, rhs: &Type) -> Option<Type> {
         } else {
             rhs.clone()
         });
+    }
+    if is_unsigned_integer_primitive_type(lhs)
+        && is_signed_integer_primitive_type(rhs)
+        && integer_rank(lhs)? > integer_rank(rhs)?
+    {
+        return Some(lhs.clone());
+    }
+    if is_signed_integer_primitive_type(lhs)
+        && is_unsigned_integer_primitive_type(rhs)
+        && integer_rank(rhs)? > integer_rank(lhs)?
+    {
+        return Some(rhs.clone());
     }
     None
 }
@@ -1629,5 +1734,39 @@ mod tests {
         let program = parse_program(lex(source).unwrap()).unwrap();
 
         analyze(&program).unwrap();
+    }
+
+    #[test]
+    fn accepts_memcpy_and_pointer_add_intrinsics() {
+        let source = "pub def main() void\n\tvar buffer mut(ref(u8)) = @alloc(16)\n\t@memcpy(buffer, \"hi\", 2 as usize)\n\tval next = @add(buffer, 1 as usize)\n\t@free(next)\nend\n";
+        let program = parse_program(lex(source).unwrap()).unwrap();
+
+        analyze(&program).unwrap();
+    }
+
+    #[test]
+    fn accepts_in_range_integer_literal_cast_to_u8() {
+        let source = "pub def main() void\n\tval byte u8 = 0 as u8\n\t@print(\"{d}\", {byte})\nend\n";
+        let program = parse_program(lex(source).unwrap()).unwrap();
+
+        analyze(&program).unwrap();
+    }
+
+    #[test]
+    fn rejects_out_of_range_integer_literal_cast_to_u8() {
+        let source = "pub def main() void\n\tval byte u8 = 23490234 as u8\nend\n";
+        let program = parse_program(lex(source).unwrap()).unwrap();
+
+        let error = analyze(&program).unwrap_err();
+        assert_eq!(error.to_string(), "integer literal 23490234 does not fit in u8");
+    }
+
+    #[test]
+    fn rejects_negative_integer_literal_cast_to_u8() {
+        let source = "pub def main() void\n\tval byte u8 = -123 as u8\nend\n";
+        let program = parse_program(lex(source).unwrap()).unwrap();
+
+        let error = analyze(&program).unwrap_err();
+        assert_eq!(error.to_string(), "integer literal -123 does not fit in u8");
     }
 }
