@@ -737,7 +737,7 @@ fn render_stmt(
             output.push_str(&render_expr(start, function, info)?);
             output.push_str("; ");
             output.push_str(&mangle_local_symbol(var_name));
-            output.push_str(" <= ");
+            output.push_str(" < ");
             output.push_str(&render_expr(end, function, info)?);
             output.push_str("; ++");
             output.push_str(&mangle_local_symbol(var_name));
@@ -1112,31 +1112,32 @@ fn render_call(
     function: &Function,
     info: &ProgramInfo,
 ) -> Result<String, CompileError> {
-    if let Some(path) = callee.as_path() {
-        if path.len() == 1 {
-            if let Some(signature) = info.functions.get(&path[0]) {
-                let rendered_args = args
-                    .iter()
-                    .zip(signature.params.iter())
-                    .map(|(arg, param_ty)| {
-                        render_expr_with_hint(arg, function, info, Some(param_ty))
-                    })
-                    .collect::<Result<Vec<_>, _>>()?;
-                if let Some(symbol) = info.function_symbols.get(&path[0]).cloned() {
-                    return Ok(format!("{symbol}({})", rendered_args.join(", ")));
-                }
+    if let Some(path) = callee.callee_path() {
+        let function_name = path.join(".");
+        if let Some(signature) = info.functions.get(&function_name) {
+            let rendered_args = args
+                .iter()
+                .zip(signature.params.iter())
+                .map(|(arg, param_ty)| {
+                    render_expr_with_hint(arg, function, info, Some(param_ty))
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            if let Some(symbol) = info.function_symbols.get(&function_name).cloned() {
+                return Ok(format!("{symbol}({})", rendered_args.join(", ")));
             }
-            if let Some(type_info) = info.types.get(&path[0]) {
+        }
+        if path.len() == 1 {
+            if let Some(type_info) = info.types.get(&function_name) {
                 if type_info.alias.is_some() {
                     return Err(CompileError::new(format!(
                         "type `{}` is an alias and cannot be initialized like a struct",
-                        path[0]
+                        function_name
                     )));
                 }
                 if type_info.fields.len() != args.len() {
                     return Err(CompileError::new(format!(
                         "type `{}` expects {} constructor arguments but received {}",
-                        path[0],
+                        function_name,
                         type_info.fields.len(),
                         args.len()
                     )));
@@ -1146,10 +1147,10 @@ fn render_call(
                     .zip(type_info.fields.iter())
                     .map(|(arg, field)| render_expr_with_hint(arg, function, info, Some(&field.ty)))
                     .collect::<Result<Vec<_>, _>>()?;
-                return Ok(format!("({}){{ {} }}", path[0], rendered_args.join(", ")));
+                return Ok(format!("({}){{ {} }}", function_name, rendered_args.join(", ")));
             }
-            return Err(CompileError::new(format!("unknown function `{}`", path[0])));
         }
+        return Err(CompileError::new(format!("unknown function `{function_name}`")));
     }
 
     Err(CompileError::new(
@@ -1205,6 +1206,17 @@ fn render_builtin_call(
             render_expr(&args[2], function, info)?
         )),
         "addr" => Ok(format!("(&{})", render_expr(&args[0], function, info)?)),
+        "as_mut" => {
+            if args.len() != 1 {
+                return Err(CompileError::new("@as_mut expects exactly one argument"));
+            }
+            let arg_ty = infer_codegen_expr_type(&args[0], function, info)?;
+            Ok(format!(
+                "(({})({}))",
+                c_type(&as_mut_type(arg_ty)),
+                render_expr(&args[0], function, info)?
+            ))
+        }
         "add" => Ok(format!(
             "(({}) + ({}))",
             render_pointer_arithmetic_base(&args[0], function, info)?,
@@ -1585,6 +1597,13 @@ fn infer_codegen_integer_unary_type(
     }
 }
 
+fn as_mut_type(ty: Type) -> Type {
+    match ty {
+        Type::Mut(_) => ty,
+        other => Type::Mut(Box::new(other)),
+    }
+}
+
 fn infer_builtin_type(
     name: &str,
     args: &[Expr],
@@ -1614,6 +1633,12 @@ fn infer_builtin_type(
         "addr" => Ok(Type::Ref(Box::new(infer_codegen_expr_type(
             &args[0], function, info,
         )?))),
+        "as_mut" => {
+            if args.len() != 1 {
+                return Err(CompileError::new("@as_mut expects exactly one argument"));
+            }
+            Ok(as_mut_type(infer_codegen_expr_type(&args[0], function, info)?))
+        }
         "deref" => match infer_codegen_expr_type(&args[0], function, info)? {
             Type::Ref(inner) => Ok(*inner),
             Type::Mut(inner) => match *inner {

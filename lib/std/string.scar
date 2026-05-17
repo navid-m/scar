@@ -5,7 +5,7 @@ extern def strcat(dest mut(ref(u8)), src ref(u8)) ref(u8)  :: "strcat"
 extern def strlen(x ref(u8)) usize                         :: "strlen"
 
 pub type StringBuilder
-	ptr ref(u8)
+	ptr mut(ref(u8))
 	cap usize
 	len usize
 end
@@ -90,7 +90,7 @@ pub def rconcat[A: allocators.BumpAllocator](
 	@memcpy(out, a, len_a)
 	@memcpy(@add(out, len_a), b, len_b)
 
-	@deref(@add(out, len_a + len_b)) = 0 as u8
+	@deref(@as_mut(@add(out, len_a + len_b))) = 0 as u8
 
 	return out as ref(u8)
 end
@@ -98,13 +98,13 @@ end
 pub def StringBuilder.new[A: allocators.BumpAllocator](
 	ac A,
 	cap usize
-) StringBuilder|error
+) mut(StringBuilder)|error
 	var ptr ref(void) = A.alloc(@addr(ac), cap)?
 
-	@deref(ptr as ref(u8)) = 0 as u8
+	@deref(@as_mut(ptr as ref(u8))) = 0 as u8
 
 	return StringBuilder(
-		ptr: ptr as ref(u8),
+		ptr: @as_mut(ptr as ref(u8)),
 		cap: cap,
 		len: 0
 	)
@@ -188,16 +188,16 @@ test "stringbuilder works"
 
 	var sb StringBuilder = StringBuilder.new[allocators.Arena](ac, 128)?
 
-	assert StringBuilder.append(@addr(sb), "hello")
-	assert StringBuilder.append(@addr(sb), " ")
-	assert StringBuilder.append(@addr(sb), "world")
+	assert StringBuilder.append(@as_mut(@addr(sb)), "hello")
+	assert StringBuilder.append(@as_mut(@addr(sb)), " ")
+	assert StringBuilder.append(@as_mut(@addr(sb)), "world")
 
 	assert eql(
 		StringBuilder.str(@addr(sb)),
 		"hello world"
 	)
 
-	StringBuilder.clear(@addr(sb))
+	StringBuilder.clear(@as_mut(@addr(sb)))
 
 	assert eql(
 		StringBuilder.str(@addr(sb)),

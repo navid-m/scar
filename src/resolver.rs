@@ -1335,17 +1335,13 @@ impl GenericInstantiator {
                     .map(|arg| self.rewrite_expr_generics(arg))
                     .collect::<Result<Vec<_>, _>>()?;
                 if let Expr::Specialize { callee, type_args } = callee {
-                    let Expr::Path(path) = *callee else {
+                    let Some(path) = extract_callee_path(&callee) else {
                         return Err(CompileError::new(
                             "generic specialization currently requires a direct function name",
                         ));
                     };
-                    if path.len() != 1 {
-                        return Err(CompileError::new(
-                            "generic specialization currently requires a direct function name",
-                        ));
-                    }
-                    let specialized = self.instantiate_specialization(&path[0], &type_args)?;
+                    let specialized =
+                        self.instantiate_specialization(&path.join("."), &type_args)?;
                     Expr::Call {
                         callee: Box::new(Expr::Path(vec![specialized])),
                         args,
@@ -2074,6 +2070,28 @@ mod tests {
 
         assert_eq!(program.type_defs[0].name, "Arena");
         assert_eq!(program.functions[0].name, "Arena.new");
+
+        fs::remove_dir_all(temp_dir).unwrap();
+    }
+
+    #[test]
+    fn resolves_specialized_same_module_type_functions() {
+        let temp_dir = create_temp_dir();
+        let entry = temp_dir.join("main.scar");
+
+        fs::write(
+            &entry,
+            "pub type Arena\n\tcap usize\nend\n\npub def StringBuilder.new[A](ac A, cap usize) usize\n\treturn cap\nend\n\npub def main() void\n\tStringBuilder.new[Arena](Arena(cap: 1 as usize), 4 as usize)\nend\n",
+        )
+        .unwrap();
+
+        let program = resolve_entry_program(&entry).unwrap();
+
+        assert_eq!(program.functions.len(), 2);
+        assert_eq!(program.functions[0].name, "main");
+        assert!(program.functions[1]
+            .name
+            .starts_with("StringBuilder.new__generic__Arena"));
 
         fs::remove_dir_all(temp_dir).unwrap();
     }

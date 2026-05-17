@@ -324,4 +324,16 @@ impl Expr {
             _ => None,
         }
     }
+
+    pub fn callee_path(&self) -> Option<Vec<String>> {
+        match self {
+            Self::Path(path) => Some(path.clone()),
+            Self::FieldAccess { base, field } => {
+                let mut path = base.callee_path()?;
+                path.push(field.clone());
+                Some(path)
+            }
+            _ => None,
+        }
+    }
 }

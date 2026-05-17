@@ -701,6 +701,7 @@ fn analyze_stmt(
                     mutable: true,
                 },
             );
+            function_locals.insert(var_name.clone(), Type::I32);
             for stmt in body {
                 analyze_stmt(
                     stmt,
@@ -746,6 +747,7 @@ fn analyze_stmt(
                     mutable: true,
                 },
             );
+            function_locals.insert(var_name.clone(), (**element_ty).clone());
             for stmt in body {
                 analyze_stmt(
                     stmt,
@@ -1031,25 +1033,25 @@ fn analyze_call(
     types: &HashMap<String, TypeDefInfo>,
     scope: &HashMap<String, LocalBinding>,
 ) -> Result<Type, CompileError> {
-    if let Some(path) = callee.as_path() {
-        if path.len() == 1 {
-            let function_name = &path[0];
-            if let Some(signature) = functions.get(function_name) {
-                if signature.params.len() != args.len() {
-                    return Err(CompileError::new(format!(
-                        "function `{function_name}` expects {} arguments but received {}",
-                        signature.params.len(),
-                        args.len()
-                    )));
-                }
-                for (arg, expected) in args.iter().zip(&signature.params) {
-                    let actual = infer_expr_type(arg, functions, types, scope)?;
-                    expect_same_type(expected, &actual, types, "function argument")?;
-                }
-                return Ok(signature.return_type.clone());
+    if let Some(path) = callee.callee_path() {
+        let function_name = path.join(".");
+        if let Some(signature) = functions.get(&function_name) {
+            if signature.params.len() != args.len() {
+                return Err(CompileError::new(format!(
+                    "function `{function_name}` expects {} arguments but received {}",
+                    signature.params.len(),
+                    args.len()
+                )));
             }
+            for (arg, expected) in args.iter().zip(&signature.params) {
+                let actual = infer_expr_type(arg, functions, types, scope)?;
+                expect_same_type(expected, &actual, types, "function argument")?;
+            }
+            return Ok(signature.return_type.clone());
+        }
 
-            if let Some(type_info) = types.get(function_name) {
+        if path.len() == 1 {
+            if let Some(type_info) = types.get(&function_name) {
                 if type_info.alias.is_some() {
                     return Err(CompileError::new(format!(
                         "type `{function_name}` is an alias and cannot be initialized like a struct"
@@ -1066,11 +1068,11 @@ fn analyze_call(
                     let actual = infer_expr_type(arg, functions, types, scope)?;
                     expect_same_type(&field.ty, &actual, types, &format!("field `{}`", field.name))?;
                 }
-                return Ok(Type::Named(function_name.clone()));
+                return Ok(Type::Named(function_name));
             }
-
-            return Err(CompileError::new(format!("unknown function `{function_name}`")));
         }
+
+        return Err(CompileError::new(format!("unknown function `{function_name}`")));
     }
 
     Err(CompileError::new(
@@ -1167,6 +1169,13 @@ fn analyze_builtin(
             }
             let inner = infer_lvalue_type(&args[0], functions, types, scope)?;
             Ok(Type::Ref(Box::new(inner)))
+        }
+        "as_mut" => {
+            if args.len() != 1 {
+                return Err(CompileError::new("@as_mut expects exactly one argument"));
+            }
+            let inner = infer_expr_type(&args[0], functions, types, scope)?;
+            Ok(as_mut_type(inner))
         }
         "add" => {
             if args.len() != 2 {
@@ -1817,8 +1826,8 @@ fn types_compatible(
     actual: &Type,
     types: &HashMap<String, TypeDefInfo>,
 ) -> Result<bool, CompileError> {
-    let expected = resolve_aliases(expected, types)?;
-    let actual = resolve_aliases(actual, types)?;
+    let expected = normalize_value_mutability(&resolve_aliases(expected, types)?);
+    let actual = normalize_value_mutability(&resolve_aliases(actual, types)?);
     Ok(types_compatible_resolved(&expected, &actual)
         || (is_string_compatible(&expected) && is_string_compatible(&actual))
         || can_implicitly_convert_numeric(&actual, &expected))
@@ -1865,6 +1874,28 @@ fn pointer_arithmetic_type(ty: &Type) -> Type {
 
 fn is_nullable_pointer_type(ty: &Type) -> bool {
     matches!(ty, Type::Ref(_) | Type::Mut(_)) || is_string_compatible(ty)
+}
+
+fn as_mut_type(ty: Type) -> Type {
+    match ty {
+        Type::Mut(_) => ty,
+        other => Type::Mut(Box::new(other)),
+    }
+}
+
+fn normalize_value_mutability(ty: &Type) -> Type {
+    match ty {
+        Type::Mut(inner) => match inner.as_ref() {
+            Type::Ref(inner) => Type::Mut(Box::new(Type::Ref(Box::new(normalize_value_mutability(
+                inner,
+            ))))),
+            other => normalize_value_mutability(other),
+        },
+        Type::Ref(inner) => Type::Ref(Box::new(normalize_value_mutability(inner))),
+        Type::List(inner) => Type::List(Box::new(normalize_value_mutability(inner))),
+        Type::Result(inner) => Type::Result(Box::new(normalize_value_mutability(inner))),
+        other => other.clone(),
+    }
 }
 
 fn can_compare_with_none(lhs: &Type, rhs: &Type) -> bool {
@@ -2215,6 +2246,30 @@ mod tests {
     #[test]
     fn accepts_memcpy_and_pointer_add_intrinsics() {
         let source = "pub def main() void\n\tvar buffer mut(ref(u8)) = @alloc(16)\n\t@memcpy(buffer, \"hi\", 2 as usize)\n\tval next = @add(buffer, 1 as usize)\n\t@free(next)\nend\n";
+        let program = parse_program(lex(source).unwrap()).unwrap();
+
+        analyze(&program).unwrap();
+    }
+
+    #[test]
+    fn accepts_as_mut_pointer_coercions() {
+        let source = "type StringBuilder\n\tlen usize\nend\n\npub def StringBuilder.append(sb mut(ref(StringBuilder)), n usize) void\n\tsb.len = n\nend\n\npub def main() void\n\tvar sb StringBuilder = StringBuilder(len: 0 as usize)\n\tStringBuilder.append(@as_mut(@addr(sb)), 1 as usize)\nend\n";
+        let program = parse_program(lex(source).unwrap()).unwrap();
+
+        analyze(&program).unwrap();
+    }
+
+    #[test]
+    fn accepts_plain_value_return_for_mut_result_type() {
+        let source = "type StringBuilder\n\tlen usize\nend\n\npub def build() mut(StringBuilder)|error\n\treturn StringBuilder(len: 0 as usize)\nend\n";
+        let program = parse_program(lex(source).unwrap()).unwrap();
+
+        analyze(&program).unwrap();
+    }
+
+    #[test]
+    fn accepts_unwrapped_mut_value_result_as_plain_initializer() {
+        let source = "type StringBuilder\n\tlen usize\nend\n\npub def build() mut(StringBuilder)|error\n\treturn StringBuilder(len: 0 as usize)\nend\n\npub def main() void\n\tvar sb StringBuilder = build()?\n\t@print(\"{d}\", {sb.len})\nend\n";
         let program = parse_program(lex(source).unwrap()).unwrap();
 
         analyze(&program).unwrap();

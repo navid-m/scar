@@ -1465,7 +1465,7 @@ impl Parser {
     }
 
     fn looks_like_specialization(&self, expr: &Expr) -> bool {
-        matches!(expr, Expr::Path(_))
+        self.supports_specialization(expr)
             && self.check_simple(&TokenKind::LBracket)
             && self
                 .next_non_newline_kind(self.pos + 1)
@@ -1473,6 +1473,15 @@ impl Parser {
             && self
                 .token_after_matching_bracket(self.pos)
                 .is_some_and(|kind| matches!(kind, TokenKind::LParen))
+    }
+
+    fn supports_specialization(&self, expr: &Expr) -> bool {
+        let _ = self;
+        match expr {
+            Expr::Path(_) => true,
+            Expr::FieldAccess { base, .. } => self.supports_specialization(base),
+            _ => false,
+        }
     }
 
     fn token_after_matching_bracket(&self, start: usize) -> Option<&TokenKind> {
@@ -2044,6 +2053,35 @@ mod tests {
                 assert_eq!(args.len(), 2);
             }
             other => panic!("expected @builtin expression, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_specialized_qualified_function_calls() {
+        let source = "pub def main() void\n\tStringBuilder.new[Arena](ac, 128)\nend\n";
+        let program = parse_program(lex(source).unwrap()).unwrap();
+
+        match &program.functions[0].body[0] {
+            Stmt::Expr {
+                expr: Expr::Call { callee, args },
+                ..
+            } => {
+                assert_eq!(args.len(), 2);
+                match callee.as_ref() {
+                    Expr::Specialize { callee, type_args } => {
+                        assert_eq!(type_args.len(), 1);
+                        assert!(matches!(&type_args[0], Type::Named(name) if name == "Arena"));
+                        assert!(matches!(
+                            callee.as_ref(),
+                            Expr::FieldAccess { base, field }
+                                if matches!(base.as_ref(), Expr::Path(path) if path == &vec!["StringBuilder".to_string()])
+                                    && field == "new"
+                        ));
+                    }
+                    other => panic!("expected specialized callee, got {other:?}"),
+                }
+            }
+            other => panic!("expected call expression, got {other:?}"),
         }
     }
 
