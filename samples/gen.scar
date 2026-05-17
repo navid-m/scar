@@ -9,5 +9,5 @@ end
 pub def main()
 	@print("{d}\n", add[i32](120, 140))
 	# should error:
-	# @print("{d}\n", add[i8](1, 2))
+	# @print("{d}\n", add_constrained[i8](1, 2))
 end
