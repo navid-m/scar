@@ -535,7 +535,7 @@ fn infer_expr_type(
 ) -> Result<Type, CompileError> {
     match expr {
         Expr::Int(_) => Ok(Type::I32),
-        Expr::String(_) => Ok(Type::U8),
+        Expr::String(_) => Ok(Type::Ref(Box::new(Type::U8))),
         Expr::ListLiteral(values) => infer_list_literal_type(values, None, functions, types, scope),
         Expr::Index { base, index } => {
             let base_ty = infer_expr_type(base, functions, types, scope)?;
@@ -785,8 +785,13 @@ fn analyze_builtin(
             if args.len() != 1 {
                 return Err(CompileError::new("@puts expects exactly one argument"));
             }
-            let arg_ty = infer_expr_type(&args[0], functions, types, scope)?;
-            expect_same_type(&Type::U8, &arg_ty, types, "@puts")?;
+            let arg_ty = resolve_aliases(&infer_expr_type(&args[0], functions, types, scope)?, types)?;
+            if !is_string_compatible(&arg_ty) {
+                return Err(CompileError::new(format!(
+                    "@puts expects a string-compatible value, got {}",
+                    describe_type(&arg_ty)
+                )));
+            }
             Ok(Type::Void)
         }
         "print" => {
@@ -1424,8 +1429,7 @@ fn types_compatible(
 }
 
 fn is_string_compatible(ty: &Type) -> bool {
-    matches!(ty, Type::U8)
-        || matches!(ty, Type::Ref(inner) if inner.as_ref() == &Type::U8)
+    matches!(ty, Type::Ref(inner) if inner.as_ref() == &Type::U8)
         || matches!(ty, Type::Mut(inner) if matches!(inner.as_ref(), Type::Ref(inner) if inner.as_ref() == &Type::U8))
 }
 
@@ -1768,5 +1772,14 @@ mod tests {
 
         let error = analyze(&program).unwrap_err();
         assert_eq!(error.to_string(), "integer literal -123 does not fit in u8");
+    }
+
+    #[test]
+    fn rejects_string_addition() {
+        let source = "pub def main() void\n\tvar line = \"hello\"\n\tline = line + \"sup\"\nend\n";
+        let program = parse_program(lex(source).unwrap()).unwrap();
+
+        let error = analyze(&program).unwrap_err();
+        assert_eq!(error.to_string(), "`+` currently requires compatible numeric operands");
     }
 }

@@ -1,4 +1,5 @@
-pub def main() void
-	@print("shouldnt work: {s}", {"hello" + 10})
+pub def main()
+	var line = "hello"
+	line = line + "sup"
 end
 

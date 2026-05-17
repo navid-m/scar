@@ -780,7 +780,7 @@ fn infer_codegen_expr_type(
 ) -> Result<Type, CompileError> {
     match expr {
         Expr::Int(_) => Ok(Type::I32),
-        Expr::String(_) => Ok(Type::U8),
+        Expr::String(_) => Ok(Type::Ref(Box::new(Type::U8))),
         Expr::ListLiteral(values) => {
             if values.is_empty() {
                 return Err(CompileError::new(
@@ -1449,8 +1449,7 @@ fn is_codegen_condition_type(ty: &Type) -> bool {
 }
 
 fn is_codegen_string_compatible(ty: &Type) -> bool {
-    matches!(ty, Type::U8)
-        || matches!(ty, Type::Ref(inner) if inner.as_ref() == &Type::U8)
+    matches!(ty, Type::Ref(inner) if inner.as_ref() == &Type::U8)
         || matches!(ty, Type::Mut(inner) if matches!(inner.as_ref(), Type::Ref(inner) if inner.as_ref() == &Type::U8))
 }
 
