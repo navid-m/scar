@@ -995,6 +995,7 @@ fn flatten_print_args(args: &[Expr]) -> Vec<&Expr> {
 #[derive(Clone, Copy)]
 enum PrintMarker {
     Int,
+    Bool,
     Pointer,
     String,
     Float,
@@ -1020,6 +1021,7 @@ fn convert_format_string(input: &str, arg_types: &[Type]) -> Result<(String, Vec
             let marker: String = chars[start..end].iter().collect();
             let parsed = match marker.as_str() {
                 "d" => PrintMarker::Int,
+                "b" => PrintMarker::Bool,
                 "p" => PrintMarker::Pointer,
                 "s" => PrintMarker::String,
                 "f" => PrintMarker::Float,
@@ -1449,6 +1451,7 @@ fn print_format_specifier(marker: PrintMarker, ty: &Type) -> Result<&'static str
     match marker {
         PrintMarker::Int if is_codegen_signed_integer_type(ty) => Ok("%jd"),
         PrintMarker::Int if is_codegen_unsigned_integer_type(ty) => Ok("%ju"),
+        PrintMarker::Bool if matches!(ty, Type::Bool) => Ok("%s"),
         PrintMarker::Pointer if matches!(ty, Type::Ref(_) | Type::Named(_))
             || matches!(ty, Type::U8)
             || matches!(ty, Type::Ref(inner) if inner.as_ref() == &Type::U8) =>
@@ -1465,6 +1468,10 @@ fn print_format_specifier(marker: PrintMarker, ty: &Type) -> Result<&'static str
         PrintMarker::Double if matches!(ty, Type::F64) => Ok("%lf"),
         PrintMarker::Int => Err(CompileError::new(format!(
             "format marker `{{d}}` does not accept value of type {}",
+            describe_type(ty)
+        ))),
+        PrintMarker::Bool => Err(CompileError::new(format!(
+            "format marker `{{b}}` does not accept value of type {}",
             describe_type(ty)
         ))),
         PrintMarker::Float => Err(CompileError::new(format!(
@@ -1493,6 +1500,9 @@ fn render_print_value(marker: PrintMarker, ty: &Type, rendered: &str) -> Result<
         }
         PrintMarker::Int if is_codegen_unsigned_integer_type(ty) => {
             Ok(format!("((uintmax_t)({rendered}))"))
+        }
+        PrintMarker::Bool if matches!(ty, Type::Bool) => {
+            Ok(format!("(({}) ? \"true\" : \"false\")", rendered))
         }
         PrintMarker::Pointer => Ok(format!("(void *)({rendered})")),
         PrintMarker::String | PrintMarker::Float | PrintMarker::Double => Ok(rendered.to_string()),

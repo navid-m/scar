@@ -1166,6 +1166,7 @@ fn flatten_print_args<'a>(args: &'a [Expr]) -> Vec<&'a Expr> {
 #[derive(Clone, Copy)]
 enum PrintMarker {
     Int,
+    Bool,
     String,
     Pointer,
     Float,
@@ -1189,6 +1190,7 @@ fn parse_format_markers(format: &str) -> Result<Vec<PrintMarker>, CompileError> 
             let marker: String = chars[start..index].iter().collect();
             let parsed = match marker.as_str() {
                 "d" => PrintMarker::Int,
+                "b" => PrintMarker::Bool,
                 "s" => PrintMarker::String,
                 "p" => PrintMarker::Pointer,
                 "f" => PrintMarker::Float,
@@ -1209,6 +1211,7 @@ fn parse_format_markers(format: &str) -> Result<Vec<PrintMarker>, CompileError> 
 fn format_type_matches(marker: PrintMarker, ty: &Type) -> bool {
     match marker {
         PrintMarker::Int => is_integer_primitive_type(ty),
+        PrintMarker::Bool => matches!(ty, Type::Bool),
         PrintMarker::String => is_string_compatible(ty),
         PrintMarker::Pointer => matches!(ty, Type::Ref(_) | Type::Named(_)) || is_string_compatible(ty),
         PrintMarker::Float => matches!(ty, Type::F32),
@@ -1219,6 +1222,7 @@ fn format_type_matches(marker: PrintMarker, ty: &Type) -> bool {
 fn print_marker_name(marker: PrintMarker) -> &'static str {
     match marker {
         PrintMarker::Int => "d",
+        PrintMarker::Bool => "b",
         PrintMarker::String => "s",
         PrintMarker::Pointer => "p",
         PrintMarker::Float => "f",
@@ -1540,6 +1544,14 @@ mod tests {
     #[test]
     fn accepts_bool_return_types_from_comparisons() {
         let source = "pub def same(x i32, y i32) bool\n\treturn x == y\nend\n";
+        let program = parse_program(lex(source).unwrap()).unwrap();
+
+        analyze(&program).unwrap();
+    }
+
+    #[test]
+    fn accepts_bool_print_marker() {
+        let source = "pub def main() void\n\tval ok bool = 1 == 1\n\t@print(\"{b}\", {ok})\nend\n";
         let program = parse_program(lex(source).unwrap()).unwrap();
 
         analyze(&program).unwrap();

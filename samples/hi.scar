@@ -1,0 +1,6 @@
+val str = use("std/string")
+
+pub def main()
+	@print("{b}", {str.raw_eql("hello", "hello")})	
+end
+
