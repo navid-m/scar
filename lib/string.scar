@@ -1,0 +1,10 @@
+extern def strcmp(x ref(u8), y ref(u8)) i32 :: "strcmp"
+
+pub def raw_eql(x ref(u8), y ref(u8)) bool
+	return strcmp(x, y) == 0
+end
+
+test "equals works"
+	assert raw_eql("hello", "hello")
+	assert !raw_eql("hello", "something else")
+end

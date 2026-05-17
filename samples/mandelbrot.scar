@@ -1,0 +1,83 @@
+type Complex
+    re i64
+    im i64
+end
+
+def make_complex(re i64, im i64) Complex
+    return Complex(
+        re: re,
+        im: im
+    )
+end
+
+def c_add(a Complex, b Complex) Complex
+    return Complex(
+        re: a.re + b.re,
+        im: a.im + b.im
+    )
+end
+
+def c_mul(a Complex, b Complex) Complex
+    return Complex(
+        re: (a.re * b.re - a.im * b.im),
+        im: (a.re * b.im + a.im * b.re)
+    )
+end
+
+def c_mag2(a Complex) i64
+    return (a.re * a.re + a.im * a.im)
+end
+
+def mandelbrot_iter(c Complex, max_iter i32) i32
+    var z = make_complex(0, 0)
+
+    for var i = 0 .. max_iter
+        if c_mag2(z) > 4
+            return i
+        end
+
+        z = c_add(c_mul(z, z), c)
+    end
+
+    return max_iter
+end
+
+def render_mandelbrot(width i32, height i32, max_iter i32)
+    var y = 0
+
+    for var iy = 0 .. height
+        var line = ""
+
+        for var ix = 0 .. width
+            var re = ((ix * 3) - (width * 2)) as i64
+            var im = ((iy * 2) - (height)) as i64
+
+            var c = make_complex(re, im)
+            var iter = mandelbrot_iter(c, max_iter)
+
+            if iter == max_iter
+                line = line + "#"
+            else
+                if iter > (max_iter / 2)
+                    line = line + "*"
+                else
+                    if iter > (max_iter / 4)
+                        line = line + "+"
+                    else
+                        line = line + "."
+                    end
+                end
+            end
+        end
+
+        @puts(line)
+    end
+end
+
+pub def main() void
+    @puts("mandelbrot starting...")
+
+    render_mandelbrot(80, 40, 60)
+
+    @puts("done")
+end
