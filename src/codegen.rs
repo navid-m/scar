@@ -57,6 +57,14 @@ pub fn generate_c(
         output.push('\n');
     }
 
+    if let Some(main_function) = program
+        .functions
+        .iter()
+        .find(|function| function.name == "main" && function.extern_name.is_none())
+    {
+        output.push_str(&render_entrypoint(main_function, info, install_debug_handlers)?);
+    }
+
     Ok(output)
 }
 
@@ -118,16 +126,8 @@ fn render_function(
     let mut next_temp_id = 0usize;
     output.push_str(&render_signature(function, info));
     output.push_str(" {\n");
-    if function.name == "main" && install_debug_handlers {
-        indent(output, 1);
-        output.push_str("scar_runtime_install_signal_handlers();\n");
-    }
     for stmt in &function.body {
         render_stmt(output, stmt, function, info, 1, &mut next_temp_id)?;
-    }
-    if function.name == "main" && function.return_type == Type::Void {
-        indent(output, 1);
-        output.push_str("return 0;\n");
     }
     output.push_str("}\n");
     Ok(())
@@ -158,11 +158,7 @@ fn render_type_def(type_def: &TypeDef) -> String {
 }
 
 fn render_signature(function: &Function, info: &ProgramInfo) -> String {
-    let return_type = if function.name == "main" {
-        "int".to_string()
-    } else {
-        c_type(&function.return_type)
-    };
+    let return_type = c_type(&function.return_type);
     let symbol = info
         .function_symbols
         .get(&function.name)
@@ -174,7 +170,7 @@ fn render_signature(function: &Function, info: &ProgramInfo) -> String {
         function
             .params
             .iter()
-            .map(|param| format!("{} {}", c_type(&param.ty), param.name))
+            .map(|param| format!("{} {}", c_type(&param.ty), mangle_local_symbol(&param.name)))
             .collect::<Vec<_>>()
             .join(", ")
     };
@@ -217,7 +213,7 @@ fn render_stmt(
             }
             output.push_str(&c_type(ty));
             output.push(' ');
-            output.push_str(name);
+            output.push_str(&mangle_local_symbol(name));
             output.push_str(" = ");
             output.push_str(&render_expr_with_hint(init, function, info, Some(ty))?);
             output.push_str(";\n");
@@ -356,15 +352,15 @@ fn render_stmt(
                 indent(output, level);
             }
             output.push_str("for (int32_t ");
-            output.push_str(var_name);
+            output.push_str(&mangle_local_symbol(var_name));
             output.push_str(" = ");
             output.push_str(&render_expr(start, function, info)?);
             output.push_str("; ");
-            output.push_str(var_name);
+            output.push_str(&mangle_local_symbol(var_name));
             output.push_str(" <= ");
             output.push_str(&render_expr(end, function, info)?);
             output.push_str("; ++");
-            output.push_str(var_name);
+            output.push_str(&mangle_local_symbol(var_name));
             output.push_str(") {\n");
             for stmt in body {
                 render_stmt(output, stmt, function, info, level + 1, next_temp_id)?;
@@ -412,7 +408,7 @@ fn render_stmt(
             indent(output, level + 2);
             output.push_str(&c_type(element_ty));
             output.push(' ');
-            output.push_str(var_name);
+            output.push_str(&mangle_local_symbol(var_name));
             output.push_str(" = ");
             output.push_str(&iter_name);
             output.push_str(".data[");
@@ -491,7 +487,7 @@ fn render_expr_with_hint(
             args,
         } => render_list_method_call(method, receiver, args, function, info),
         Expr::Path(path) => match path.as_slice() {
-            [name] => Ok(name.clone()),
+            [name] => Ok(render_symbol_name(name, function, info)),
             _ => Err(CompileError::new(format!(
                 "unsupported qualified expression `{}` in code generation",
                 path.join(".")
@@ -546,6 +542,53 @@ fn render_expr_with_hint(
             ))
         }
     }
+}
+
+fn render_entrypoint(
+    main_function: &Function,
+    info: &ProgramInfo,
+    install_debug_handlers: bool,
+) -> Result<String, CompileError> {
+    let main_symbol = info
+        .function_symbols
+        .get(&main_function.name)
+        .cloned()
+        .ok_or_else(|| CompileError::new("missing mangled symbol for main"))?;
+    let mut output = String::new();
+    output.push_str("int main(void) {\n");
+    if install_debug_handlers {
+        output.push_str("    scar_runtime_install_signal_handlers();\n");
+    }
+    match main_function.return_type {
+        Type::Void => {
+            output.push_str(&format!("    {main_symbol}();\n"));
+            output.push_str("    return 0;\n");
+        }
+        _ => {
+            output.push_str(&format!("    return (int)({main_symbol}());\n"));
+        }
+    }
+    output.push_str("}\n");
+    Ok(output)
+}
+
+fn render_symbol_name(name: &str, function: &Function, info: &ProgramInfo) -> String {
+    if info
+        .locals
+        .get(&function.name)
+        .is_some_and(|locals| locals.contains_key(name))
+        || function.params.iter().any(|param| param.name == name)
+    {
+        return mangle_local_symbol(name);
+    }
+    if let Some(symbol) = info.function_symbols.get(name) {
+        return symbol.clone();
+    }
+    name.to_string()
+}
+
+fn mangle_local_symbol(name: &str) -> String {
+    format!("loc__{name}")
 }
 
 fn render_field_access(

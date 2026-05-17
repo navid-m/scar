@@ -69,7 +69,7 @@ pub fn analyze(program: &Program) -> Result<ProgramInfo, CompileError> {
             function
                 .extern_name
                 .clone()
-                .unwrap_or_else(|| function.name.clone()),
+                .unwrap_or_else(|| mangle_function_symbol(&function.name)),
         );
     }
 
@@ -87,6 +87,10 @@ pub fn analyze(program: &Program) -> Result<ProgramInfo, CompileError> {
         types,
         locals,
     })
+}
+
+fn mangle_function_symbol(name: &str) -> String {
+    format!("fn__{name}")
 }
 
 fn collect_types(program: &Program) -> Result<HashMap<String, TypeDefInfo>, CompileError> {
