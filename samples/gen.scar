@@ -1,7 +1,11 @@
-def add[T: i32|i64|f32|f64](x: T, y: T)
+def add_constrained[T: i32|i64|f32|f64](x: T, y: T)
 	return x + y
 end
 
 def add[T](x: T, y: T)
 	return x + y
+end
+
+pub def main()
+	@print("{d}\n", add[i32](120, 140))
 end
