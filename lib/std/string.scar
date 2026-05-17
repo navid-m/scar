@@ -1,3 +1,5 @@
+val allocators = use("allocators")
+
 extern def strcmp(x ref(u8), y ref(u8)) i32               :: "strcmp"
 extern def strcat(dest mut(ref(u8)), src ref(u8)) ref(u8) :: "strcat"
 extern def strlen(x ref(u8)) usize                        :: "strlen"
@@ -9,20 +11,31 @@ pub def eql(x ref(u8), y ref(u8)) bool
 	return strcmp(x, y) == 0
 end
 
+pub def len(x ref(u8)) usize
+	guard (x != none) else
+		return 0
+	end
+	return strlen(x)
+end
+
 pub def rconcat_buf(dest mut(ref(u8)), src ref(u8)) ref(u8)
 	## This requires dest to be a writable buffer.
 	## Do not confuse it with an in-place concat.
 	return strcat(dest, src)
 end
 
-pub def rconcat(a ref(u8), b ref(u8)) ref(u8)
-	var len_a usize = strlen(a)
-	var len_b usize = strlen(b)
-	var out = @alloc(len_a + len_b + 1 as usize)
+pub def rconcat[A: allocators.BumpAllocator](
+	ac: A,
+	a ref(u8),
+	b ref(u8)
+) ref(u8)|error
+	var len_a usize = len(a)
+	var len_b usize = len(b)
+	var out ref(void) = A.alloc(@addr(ac), len_a + len_b + 1 as usize)?
 	@memcpy(out, a, len_a)
 	@memcpy(@add(out, len_a), b, len_b)
 	@deref(@add(out, len_a + len_b)) = 0 as u8
-	return out
+	return out as ref(u8)
 end
 
 test "equals works"
@@ -31,7 +44,9 @@ test "equals works"
 end
 
 test "concat works"
+	var ac = allocators.Arena.new(1024)?
 	var buffer mut(ref(u8)) = @alloc(1024)
-	assert eql(rconcat(buffer, "world"), "world")
-	assert eql(rconcat("hello", " world"), "hello world")
+	assert eql(rconcat[allocators.Arena](ac, buffer, "world")?, "world")
+	assert eql(rconcat[allocators.Arena](ac, "hello", " world")?, "hello world")
+	allocators.Arena.destroy(@addr(ac))
 end

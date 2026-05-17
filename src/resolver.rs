@@ -879,42 +879,51 @@ fn rewrite_callee(
     local_types: &HashMap<String, String>,
     module_aliases: &ModuleAliases,
 ) -> Result<Expr, CompileError> {
-    match callee {
-        Expr::Path(path) if path.len() == 1 => {
+    if let Some(path) = extract_callee_path(&callee) {
+        if path.len() == 1 {
             let name = &path[0];
-            Ok(Expr::Path(vec![
+            return Ok(Expr::Path(vec![
                 local_functions
                     .get(name)
                     .cloned()
                     .unwrap_or_else(|| name.clone()),
-            ]))
+            ]));
         }
-        Expr::FieldAccess { base, field } => {
-            if let Expr::Path(path) = *base.clone() {
-                if path.len() == 1 {
-                    if let Some(module) = module_aliases.get(&path[0]) {
-                        let function = module.functions.get(&field).ok_or_else(|| {
-                            CompileError::new(format!(
-                                "module `{}` has no public function `{}`",
-                                path[0], field
-                            ))
-                        })?;
-                        return Ok(Expr::Path(vec![function.clone()]));
-                    }
-                    let qualified = format!("{}.{}", path[0], field);
-                    if let Some(function) = local_functions.get(&qualified) {
-                        return Ok(Expr::Path(vec![function.clone()]));
-                    }
-                }
-            }
-            rewrite_expr(
-                Expr::FieldAccess { base, field },
-                local_functions,
-                local_types,
-                module_aliases,
-            )
+        if let Some(module) = module_aliases.get(&path[0]) {
+            let member = path[1..].join(".");
+            let function = module.functions.get(&member).ok_or_else(|| {
+                CompileError::new(format!(
+                    "module `{}` has no public function `{}`",
+                    path[0], member
+                ))
+            })?;
+            return Ok(Expr::Path(vec![function.clone()]));
         }
+        let qualified = path.join(".");
+        if let Some(function) = local_functions.get(&qualified) {
+            return Ok(Expr::Path(vec![function.clone()]));
+        }
+    }
+    match callee {
+        Expr::FieldAccess { base, field } => rewrite_expr(
+            Expr::FieldAccess { base, field },
+            local_functions,
+            local_types,
+            module_aliases,
+        ),
         other => rewrite_expr(other, local_functions, local_types, module_aliases),
+    }
+}
+
+fn extract_callee_path(expr: &Expr) -> Option<Vec<String>> {
+    match expr {
+        Expr::Path(path) => Some(path.clone()),
+        Expr::FieldAccess { base, field } => {
+            let mut path = extract_callee_path(base)?;
+            path.push(field.clone());
+            Some(path)
+        }
+        _ => None,
     }
 }
 

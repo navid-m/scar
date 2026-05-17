@@ -1186,7 +1186,7 @@ fn analyze_builtin(
                     describe_type(&offset_ty)
                 )));
             }
-            Ok(base_ty)
+            Ok(pointer_arithmetic_type(&base_ty))
         }
         "alloc" => {
             if args.len() != 1 {
@@ -1848,6 +1848,19 @@ fn is_string_compatible(ty: &Type) -> bool {
 
 fn is_memory_pointer_type(ty: &Type) -> bool {
     matches!(ty, Type::Ref(_) | Type::Mut(_)) || is_string_compatible(ty)
+}
+
+fn pointer_arithmetic_type(ty: &Type) -> Type {
+    match ty {
+        Type::Ref(inner) if inner.as_ref() == &Type::Void => Type::Ref(Box::new(Type::U8)),
+        Type::Mut(inner) => match inner.as_ref() {
+            Type::Ref(pointee) if pointee.as_ref() == &Type::Void => {
+                Type::Mut(Box::new(Type::Ref(Box::new(Type::U8))))
+            }
+            _ => ty.clone(),
+        },
+        _ => ty.clone(),
+    }
 }
 
 fn is_nullable_pointer_type(ty: &Type) -> bool {

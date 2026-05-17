@@ -3,7 +3,10 @@
 //! GPL-3.0-only
 //! (C) Navid Momtahen
 
-use std::collections::HashSet;
+use std::{
+    collections::HashSet,
+    sync::atomic::{AtomicUsize, Ordering},
+};
 
 use crate::{
     CompileError,
@@ -916,9 +919,7 @@ fn render_expr_with_hint(
         Expr::Error { .. } => Err(CompileError::new(
             "`error(...)` requires a `T|error` context during code generation",
         )),
-        Expr::Try(_) => Err(CompileError::new(
-            "`?` is only supported in statement positions during code generation",
-        )),
+        Expr::Try(inner) => render_try_expr(inner, function, info),
         Expr::Unary { op, expr } => match op {
             UnaryOp::Neg => Ok(format!("(-({}))", render_expr(expr, function, info)?)),
             UnaryOp::LogicalNot => Ok(format!("(!({}))", render_expr(expr, function, info)?)),
@@ -1020,6 +1021,58 @@ fn mangle_local_symbol(name: &str) -> String {
 
 fn function_allows_try_panic(function: &Function) -> bool {
     function.name == "main" || function.name.starts_with("__scar_test_case_")
+}
+
+fn next_codegen_temp_id() -> usize {
+    static NEXT_TEMP_ID: AtomicUsize = AtomicUsize::new(0);
+    NEXT_TEMP_ID.fetch_add(1, Ordering::Relaxed)
+}
+
+fn render_try_expr(
+    inner: &Expr,
+    function: &Function,
+    info: &ProgramInfo,
+) -> Result<String, CompileError> {
+    let result_ty = infer_codegen_expr_type(inner, function, info)?;
+    let resolved_result_ty = resolve_codegen_aliases(&result_ty, info)?;
+    let Type::Result(ok_ty) = resolved_result_ty else {
+        return Err(CompileError::new(
+            "`?` requires a result value during code generation",
+        ));
+    };
+    let temp_id = next_codegen_temp_id();
+    let temp_name = format!("__scar_try_expr_{temp_id}");
+    let mut rendered = String::new();
+    rendered.push_str("({ ");
+    rendered.push_str(&c_type(&result_ty));
+    rendered.push(' ');
+    rendered.push_str(&temp_name);
+    rendered.push_str(" = ");
+    rendered.push_str(&render_expr(inner, function, info)?);
+    rendered.push_str("; if (");
+    rendered.push_str(&temp_name);
+    rendered.push_str(".is_error) { ");
+    if function_allows_try_panic(function) {
+        rendered.push_str("scar_runtime_panic(");
+        rendered.push_str(&temp_name);
+        rendered.push_str(".error);");
+    } else if let Type::Result(function_ok_ty) = &function.return_type {
+        rendered.push_str("__scar_return_value = ");
+        rendered.push_str(&render_result_error_value(
+            function_ok_ty,
+            &format!("{temp_name}.error"),
+        ));
+        rendered.push_str("; goto __scar_return;");
+    } else {
+        return Err(CompileError::new(
+            "`?` propagation requires a result-returning function during code generation",
+        ));
+    }
+    rendered.push_str(" } ");
+    rendered.push_str(&temp_name);
+    rendered.push_str(".ok; })");
+    let _ = ok_ty;
+    Ok(rendered)
 }
 
 fn render_field_access(
@@ -1154,7 +1207,7 @@ fn render_builtin_call(
         "addr" => Ok(format!("(&{})", render_expr(&args[0], function, info)?)),
         "add" => Ok(format!(
             "(({}) + ({}))",
-            render_expr(&args[0], function, info)?,
+            render_pointer_arithmetic_base(&args[0], function, info)?,
             render_expr(&args[1], function, info)?
         )),
         "alloc" => Ok(format!(
@@ -1554,7 +1607,9 @@ fn infer_builtin_type(
             }
         }
         "puts" | "print" | "free" | "memcpy" => Ok(Type::Void),
-        "add" => Ok(infer_codegen_expr_type(&args[0], function, info)?),
+        "add" => Ok(pointer_arithmetic_type(&infer_codegen_expr_type(
+            &args[0], function, info,
+        )?)),
         "alloc" | "realloc" => Ok(Type::Mut(Box::new(Type::Ref(Box::new(Type::U8))))),
         "addr" => Ok(Type::Ref(Box::new(infer_codegen_expr_type(
             &args[0], function, info,
@@ -1970,7 +2025,7 @@ fn c_type(ty: &Type) -> String {
         Type::U32 => "uint32_t".to_string(),
         Type::U64 => "uint64_t".to_string(),
         Type::Usize => "uintptr_t".to_string(),
-        Type::U8 => "const char *".to_string(),
+        Type::U8 => "uint8_t".to_string(),
         Type::F32 => "float".to_string(),
         Type::F64 => "double".to_string(),
         Type::Named(name) => name.clone(),
@@ -2013,6 +2068,38 @@ fn is_codegen_integer_type(ty: &Type) -> bool {
 
 fn is_codegen_condition_type(ty: &Type) -> bool {
     matches!(ty, Type::Bool) || is_codegen_integer_type(ty)
+}
+
+fn pointer_arithmetic_type(ty: &Type) -> Type {
+    match ty {
+        Type::Ref(inner) if inner.as_ref() == &Type::Void => Type::Ref(Box::new(Type::U8)),
+        Type::Mut(inner) => match inner.as_ref() {
+            Type::Ref(pointee) if pointee.as_ref() == &Type::Void => {
+                Type::Mut(Box::new(Type::Ref(Box::new(Type::U8))))
+            }
+            _ => ty.clone(),
+        },
+        _ => ty.clone(),
+    }
+}
+
+fn render_pointer_arithmetic_base(
+    expr: &Expr,
+    function: &Function,
+    info: &ProgramInfo,
+) -> Result<String, CompileError> {
+    let rendered = render_expr(expr, function, info)?;
+    let ty = infer_codegen_expr_type(expr, function, info)?;
+    Ok(match ty {
+        Type::Ref(inner) if inner.as_ref() == &Type::Void => format!("((char *)({rendered}))"),
+        Type::Mut(inner) => match inner.as_ref() {
+            Type::Ref(pointee) if pointee.as_ref() == &Type::Void => {
+                format!("((char *)({rendered}))")
+            }
+            _ => rendered,
+        },
+        _ => rendered,
+    })
 }
 
 fn is_codegen_string_compatible(ty: &Type) -> bool {
