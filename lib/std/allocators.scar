@@ -61,7 +61,6 @@ pub def Arena.destroy(a ref(Arena))
 	if a.ptr != none
 		@free(a.ptr)
 	end
-
 	a.ptr = none
 	a.cap = 0
 	a.off = 0
