@@ -2,17 +2,20 @@ extern def strcmp(x ref(u8), y ref(u8)) i32               :: "strcmp"
 extern def strcat(dest mut(ref(u8)), src ref(u8)) ref(u8) :: "strcat"
 extern def strlen(x ref(u8)) usize                        :: "strlen"
 
-pub def raw_eql(x ref(u8), y ref(u8)) bool
+pub def eql(x ref(u8), y ref(u8)) bool
+	guard (y != none && x != none) else
+		return false
+	end
 	return strcmp(x, y) == 0
 end
 
-pub def raw_concat(dest mut(ref(u8)), src ref(u8)) ref(u8)
+pub def rconcat_buf(dest mut(ref(u8)), src ref(u8)) ref(u8)
 	## This requires dest to be a writable buffer.
 	## Do not confuse it with an in-place concat.
 	return strcat(dest, src)
 end
 
-pub def raw_concat_alloc(a ref(u8), b ref(u8)) ref(u8)
+pub def rconcat(a ref(u8), b ref(u8)) ref(u8)
 	var len_a usize = strlen(a)
 	var len_b usize = strlen(b)
 	var out = @alloc(len_a + len_b + 1 as usize)
@@ -23,12 +26,12 @@ pub def raw_concat_alloc(a ref(u8), b ref(u8)) ref(u8)
 end
 
 test "equals works"
-	assert raw_eql("hello", "hello")
-	assert !raw_eql("hello", "something else")
+	assert eql("hello", "hello")
+	assert !eql("hello", "something else")
 end
 
 test "concat works"
 	var buffer mut(ref(u8)) = @alloc(1024)
-	assert raw_eql(raw_concat(buffer, "world"), "world")
-	assert raw_eql(raw_concat_alloc("hello", " world"), "hello world")
+	assert eql(rconcat(buffer, "world"), "world")
+	assert eql(rconcat("hello", " world"), "hello world")
 end

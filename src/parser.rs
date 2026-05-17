@@ -418,6 +418,10 @@ impl Parser {
             return self.parse_if_stmt();
         }
 
+        if self.check_simple(&TokenKind::Guard) {
+            return self.parse_guard_stmt();
+        }
+
         if self.check_simple(&TokenKind::Match) {
             return self.parse_match_stmt();
         }
@@ -570,6 +574,28 @@ impl Parser {
             condition,
             then_body,
             else_body,
+        })
+    }
+
+    fn parse_guard_stmt(&mut self) -> Result<Stmt, CompileError> {
+        let line = self.current().line;
+        let column = self.current().column;
+        self.expect_simple(TokenKind::Guard)?;
+        let condition = self.parse_expr()?;
+        self.expect_simple(TokenKind::Else)?;
+        self.expect_newline("expected a newline after guard else")?;
+        let else_body = self.parse_block()?;
+        self.expect_simple(TokenKind::End)?;
+        self.consume_newlines();
+        Ok(Stmt::If {
+            line,
+            column,
+            condition: Expr::Unary {
+                op: UnaryOp::LogicalNot,
+                expr: Box::new(condition),
+            },
+            then_body: else_body,
+            else_body: Vec::new(),
         })
     }
 
@@ -1068,6 +1094,10 @@ impl Parser {
                 self.advance();
                 Ok(Expr::Int(value))
             }
+            TokenKind::Ident(name) if name == "true" || name == "false" => {
+                self.advance();
+                Ok(Expr::Bool(name == "true"))
+            }
             TokenKind::Float(value) => {
                 self.advance();
                 Ok(Expr::Float(value))
@@ -1524,6 +1554,7 @@ impl Parser {
             TokenKind::Val => "`val`",
             TokenKind::Return => "`return`",
             TokenKind::If => "`if`",
+            TokenKind::Guard => "`guard`",
             TokenKind::Else => "`else`",
             TokenKind::Continue => "`continue`",
             TokenKind::Parallel => "`parallel`",
@@ -2013,6 +2044,55 @@ mod tests {
                 assert_eq!(args.len(), 2);
             }
             other => panic!("expected @builtin expression, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_guard_as_inverted_if() {
+        let source =
+            "pub def main() void\n\tguard (1 == 2) else\n\t\treturn\n\tend\nend\n";
+        let program = parse_program(lex(source).unwrap()).unwrap();
+
+        match &program.functions[0].body[0] {
+            Stmt::If {
+                condition,
+                then_body,
+                else_body,
+                ..
+            } => {
+                assert!(else_body.is_empty());
+                assert_eq!(then_body.len(), 1);
+                assert!(matches!(
+                    condition,
+                    Expr::Unary {
+                        op: UnaryOp::LogicalNot,
+                        expr,
+                    } if matches!(
+                        expr.as_ref(),
+                        Expr::Binary {
+                            op: BinaryOp::Equal,
+                            ..
+                        }
+                    )
+                ));
+            }
+            other => panic!("expected inverted if statement, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_bool_literals() {
+        let source = "pub def main() void\n\tassert true\n\treturn false\nend\n";
+        let program = parse_program(lex(source).unwrap()).unwrap();
+
+        match &program.functions[0].body[0] {
+            Stmt::Assert { condition, .. } => assert!(matches!(condition, Expr::Bool(true))),
+            other => panic!("expected assert statement, got {other:?}"),
+        }
+
+        match &program.functions[0].body[1] {
+            Stmt::Return { value: Some(Expr::Bool(false)), .. } => {}
+            other => panic!("expected false return, got {other:?}"),
         }
     }
 }
