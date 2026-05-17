@@ -1,11 +1,13 @@
 extern def strcmp(x ref(u8), y ref(u8)) i32 :: "strcmp"
-extern def strcat(dest ref(u8), src ref(u8)) ref(u8) :: "strcat"
+extern def strcat(dest mut(ref(u8)), src ref(u8)) ref(u8) :: "strcat"
 
 pub def raw_eql(x ref(u8), y ref(u8)) bool
 	return strcmp(x, y) == 0
 end
 
 pub def raw_concat(dest mut(ref(u8)), src ref(u8)) ref(u8)
+	## This requires dest to be a writable buffer.
+	## Do not confuse it with an in-place concat.
 	return strcat(dest, src)
 end
 
@@ -15,7 +17,6 @@ test "equals works"
 end
 
 test "concat works"
-	@puts("hello")
-	@print("{s}", {raw_concat("hello", "world")})
-	#assert raw_eql(raw_concat("hello", "world"), "helloworld")
+	var buffer mut(ref(u8)) = @alloc(1024)
+	assert raw_eql(raw_concat(buffer, "world"), "world")
 end

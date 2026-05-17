@@ -823,6 +823,52 @@ fn analyze_builtin(
             let inner = infer_lvalue_type(&args[0], functions, types, scope)?;
             Ok(Type::Ref(Box::new(inner)))
         }
+        "alloc" => {
+            if args.len() != 1 {
+                return Err(CompileError::new("@alloc expects exactly one argument"));
+            }
+            let size_ty = infer_expr_type(&args[0], functions, types, scope)?;
+            if !is_integer_type(&size_ty, types)? {
+                return Err(CompileError::new(format!(
+                    "@alloc expects an integer size, got {}",
+                    describe_type(&size_ty)
+                )));
+            }
+            Ok(Type::Mut(Box::new(Type::Ref(Box::new(Type::U8)))))
+        }
+        "realloc" => {
+            if args.len() != 2 {
+                return Err(CompileError::new("@realloc expects exactly two arguments"));
+            }
+            let ptr_ty = resolve_aliases(&infer_expr_type(&args[0], functions, types, scope)?, types)?;
+            if !is_memory_pointer_type(&ptr_ty) {
+                return Err(CompileError::new(format!(
+                    "@realloc expects a pointer-like first argument, got {}",
+                    describe_type(&ptr_ty)
+                )));
+            }
+            let size_ty = infer_expr_type(&args[1], functions, types, scope)?;
+            if !is_integer_type(&size_ty, types)? {
+                return Err(CompileError::new(format!(
+                    "@realloc expects an integer size, got {}",
+                    describe_type(&size_ty)
+                )));
+            }
+            Ok(Type::Mut(Box::new(Type::Ref(Box::new(Type::U8)))))
+        }
+        "free" => {
+            if args.len() != 1 {
+                return Err(CompileError::new("@free expects exactly one argument"));
+            }
+            let ptr_ty = resolve_aliases(&infer_expr_type(&args[0], functions, types, scope)?, types)?;
+            if !is_memory_pointer_type(&ptr_ty) {
+                return Err(CompileError::new(format!(
+                    "@free expects a pointer-like argument, got {}",
+                    describe_type(&ptr_ty)
+                )));
+            }
+            Ok(Type::Void)
+        }
         "deref" => {
             if args.len() != 1 {
                 return Err(CompileError::new("@deref expects exactly one argument"));
@@ -1329,6 +1375,10 @@ fn is_string_compatible(ty: &Type) -> bool {
     matches!(ty, Type::U8)
         || matches!(ty, Type::Ref(inner) if inner.as_ref() == &Type::U8)
         || matches!(ty, Type::Mut(inner) if matches!(inner.as_ref(), Type::Ref(inner) if inner.as_ref() == &Type::U8))
+}
+
+fn is_memory_pointer_type(ty: &Type) -> bool {
+    matches!(ty, Type::Ref(_) | Type::Mut(_)) || is_string_compatible(ty)
 }
 
 fn is_condition_type(ty: &Type, types: &HashMap<String, TypeDefInfo>) -> Result<bool, CompileError> {

@@ -66,6 +66,23 @@ fn render_runtime_prelude(install_debug_handlers: bool) -> String {
     output.push_str("    fprintf(stderr, \"scar: panic: %s\\n\", message);\n");
     output.push_str("    exit(1);\n");
     output.push_str("}\n\n");
+    output.push_str("static void *scar_runtime_alloc(size_t size) {\n");
+    output.push_str("    void *ptr = malloc(size);\n");
+    output.push_str("    if (ptr == NULL) {\n");
+    output.push_str("        scar_runtime_panic(\"allocation failed\");\n");
+    output.push_str("    }\n");
+    output.push_str("    return ptr;\n");
+    output.push_str("}\n\n");
+    output.push_str("static void *scar_runtime_realloc(void *ptr, size_t size) {\n");
+    output.push_str("    void *resized = realloc(ptr, size);\n");
+    output.push_str("    if (resized == NULL) {\n");
+    output.push_str("        scar_runtime_panic(\"reallocation failed\");\n");
+    output.push_str("    }\n");
+    output.push_str("    return resized;\n");
+    output.push_str("}\n\n");
+    output.push_str("static void scar_runtime_free(void *ptr) {\n");
+    output.push_str("    free(ptr);\n");
+    output.push_str("}\n\n");
     if install_debug_handlers {
         output.push_str("static void scar_runtime_signal_handler(int signal_number) {\n");
         output.push_str("    fprintf(stderr, \"scar: fatal signal %d\\n\", signal_number);\n");
@@ -643,6 +660,13 @@ fn render_builtin_call(
             Ok(format!("printf({})", rendered_args.join(", ")))
         }
         "addr" => Ok(format!("(&{})", render_expr(&args[0], function, info)?)),
+        "alloc" => Ok(format!("scar_runtime_alloc((size_t)({}))", render_expr(&args[0], function, info)?)),
+        "realloc" => Ok(format!(
+            "scar_runtime_realloc((void *)({}), (size_t)({}))",
+            render_expr(&args[0], function, info)?,
+            render_expr(&args[1], function, info)?
+        )),
+        "free" => Ok(format!("scar_runtime_free((void *)({}))", render_expr(&args[0], function, info)?)),
         "deref" => {
             let arg_ty = infer_codegen_expr_type(&args[0], function, info)?;
             if is_codegen_string_compatible(&arg_ty) {
@@ -1007,7 +1031,8 @@ fn infer_builtin_type(
                 _ => Ok(Type::Void),
             }
         }
-        "puts" | "print" => Ok(Type::Void),
+        "puts" | "print" | "free" => Ok(Type::Void),
+        "alloc" | "realloc" => Ok(Type::Mut(Box::new(Type::Ref(Box::new(Type::U8))))),
         "addr" => Ok(Type::Ref(Box::new(infer_codegen_expr_type(
             &args[0], function, info,
         )?))),
