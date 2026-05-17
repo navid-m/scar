@@ -12,7 +12,7 @@ Prioritizes:
 
 ```scar
 def add[T](x: T, y: T) T
-	return x + y
+		return x + y
 end
 
 def mix_add[A: i32|i64, B: f32|f64, C: f64](x: A, y: B) C
@@ -20,30 +20,10 @@ def mix_add[A: i32|i64, B: f32|f64, C: f64](x: A, y: B) C
 end
 
 pub def main()
-	@print("{d}\n", add[i32](120, 140))
-	@print("{lf}\n", mix_add[i32, f32, f64](1, 2.0))
+		@print("{d}\n", add[i32](120, 140))
+		@print("{lf}\n", mix_add[i32, f32, f64](1, 2.0))
 end
 ```
-
-#### Getting Started
-
-##### Windows
-
--  Unzip `scar.zip` to some folder, then add that folder to system PATH.
--  Run the `setup.cmd` script
-
-##### Linux (experimental)
-
--  Get prebuilt version from releases.
--  Extract zip.
--  Add `scar` binary location to env.
-
-##### MacOS (experimental)
-
--  Install the go toolchain
--  Clone the repository
--  Run `go build`
--  Add the folder with the executable to zsh profile (`.zprofile`).
 
 #### Resources
 
