@@ -52,6 +52,7 @@ pub enum TokenKind {
     RBrace,
     Comma,
     Colon,
+    ColonColon,
     Dot,
     DotDot,
     Assign,
@@ -138,7 +139,18 @@ impl Lexer {
                 '{' => tokens.push(self.single(TokenKind::LBrace)),
                 '}' => tokens.push(self.single(TokenKind::RBrace)),
                 ',' => tokens.push(self.single(TokenKind::Comma)),
-                ':' => tokens.push(self.single(TokenKind::Colon)),
+                ':' => {
+                    let line = self.line;
+                    let column = self.column;
+                    self.bump();
+                    let kind = if self.peek() == Some(':') {
+                        self.bump();
+                        TokenKind::ColonColon
+                    } else {
+                        TokenKind::Colon
+                    };
+                    tokens.push(Token { kind, line, column });
+                }
                 '.' => {
                     let line = self.line;
                     let column = self.column;
@@ -566,5 +578,12 @@ mod tests {
 
         assert!(matches!(tokens[0].kind, TokenKind::Newline));
         assert!(matches!(tokens[1].kind, TokenKind::Pub));
+    }
+
+    #[test]
+    fn lexes_double_colon() {
+        let tokens = lex("extern def sleep() void :: \"sleep\"\n").unwrap();
+
+        assert!(tokens.iter().any(|token| matches!(token.kind, TokenKind::ColonColon)));
     }
 }

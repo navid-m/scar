@@ -143,7 +143,7 @@ impl Parser {
     fn parse_extern_function(&mut self) -> Result<Function, CompileError> {
         self.expect_simple(TokenKind::Extern)?;
         let (name, params, return_type) = self.parse_function_signature()?;
-        self.expect_simple(TokenKind::Assign)?;
+        self.expect_simple(TokenKind::ColonColon)?;
         let TokenKind::Str(extern_name) = self.current().kind.clone() else {
             return Err(self.error_at_current("expected a string literal extern symbol name"));
         };
@@ -1177,6 +1177,7 @@ impl Parser {
             TokenKind::RBrace => "`}`",
             TokenKind::Comma => "`,`",
             TokenKind::Colon => "`:`",
+            TokenKind::ColonColon => "`::`",
             TokenKind::Dot => "`.`",
             TokenKind::DotDot => "`..`",
             TokenKind::Assign => "`=`",
@@ -1232,7 +1233,7 @@ mod tests {
 
     #[test]
     fn parses_extern_function() {
-        let source = "extern def sleep(t u32) void = \"sleep\"\n";
+        let source = "extern def sleep(t u32) void :: \"sleep\"\n";
         let program = parse_program(lex(source).unwrap()).unwrap();
 
         assert_eq!(program.functions.len(), 1);

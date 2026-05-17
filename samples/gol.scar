@@ -10,7 +10,7 @@ extern type Dirent
 	z i32
 end
 
-extern def sleep(t u32) void = "sleep"
+extern def sleep(t u32) void :: "sleep"
 
 def make_row(width i32) list[i32]
 	var row list[i32] = []

@@ -1444,7 +1444,7 @@ mod tests {
 
     #[test]
     fn accepts_indexing_and_extern_calls() {
-        let source = "type Grid\n\tcells list[list[i32]]\nend\nextern def sleep(t u32) void = \"sleep\"\npub def main() void\n\tvar grid = Grid(cells: [[1]])\n\tgrid.cells[0][0] = 2\n\tsleep(100 as u32)\nend\n";
+        let source = "type Grid\n\tcells list[list[i32]]\nend\nextern def sleep(t u32) void :: \"sleep\"\npub def main() void\n\tvar grid = Grid(cells: [[1]])\n\tgrid.cells[0][0] = 2\n\tsleep(100 as u32)\nend\n";
         let program = parse_program(lex(source).unwrap()).unwrap();
 
         analyze(&program).unwrap();
