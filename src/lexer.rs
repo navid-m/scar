@@ -45,6 +45,7 @@ pub enum TokenKind {
     F64,
     Ident(String),
     Int(i64),
+    Float(f64),
     Str(String),
     Newline,
     At,
@@ -480,7 +481,27 @@ impl Lexer {
         while matches!(self.peek(), Some('0'..='9')) {
             self.bump();
         }
+        let is_float = self.peek() == Some('.')
+            && matches!(self.peek_next(), Some('0'..='9'));
+        if is_float {
+            self.bump();
+            while matches!(self.peek(), Some('0'..='9')) {
+                self.bump();
+            }
+        }
         let lexeme: String = self.chars[start..self.pos].iter().collect();
+        if is_float {
+            let value = lexeme.parse::<f64>().map_err(|error| {
+                CompileError::new(format!(
+                    "invalid float literal `{lexeme}` at {line}:{column}: {error}"
+                ))
+            })?;
+            return Ok(Token {
+                kind: TokenKind::Float(value),
+                line,
+                column,
+            });
+        }
         let value = lexeme.parse::<i64>().map_err(|error| {
             CompileError::new(format!(
                 "invalid integer literal `{lexeme}` at {line}:{column}: {error}"

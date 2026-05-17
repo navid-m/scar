@@ -601,7 +601,7 @@ fn rewrite_expr(
     module_aliases: &ModuleAliases,
 ) -> Result<Expr, CompileError> {
     match expr {
-        Expr::Int(_) | Expr::String(_) | Expr::Path(_) | Expr::None => Ok(expr),
+        Expr::Int(_) | Expr::Float(_) | Expr::String(_) | Expr::Path(_) | Expr::None => Ok(expr),
         Expr::ListLiteral(values) => Ok(Expr::ListLiteral(
             values
                 .into_iter()
@@ -1637,6 +1637,7 @@ fn infer_return_type_from_stmts(body: &[Stmt], param_types: &HashMap<String, Typ
 fn infer_expr_type_from_template(expr: &Expr, param_types: &HashMap<String, Type>) -> Option<Type> {
     match expr {
         Expr::Int(_) => Some(Type::I32),
+        Expr::Float(_) => Some(Type::F32),
         Expr::String(_) => Some(Type::Ref(Box::new(Type::U8))),
         Expr::Path(path) if path.len() == 1 => param_types.get(&path[0]).cloned(),
         Expr::Cast { ty, .. } => Some(ty.clone()),

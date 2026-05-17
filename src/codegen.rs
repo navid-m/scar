@@ -821,6 +821,7 @@ fn render_expr_with_hint(
     }
     match expr {
         Expr::Int(value) => Ok(value.to_string()),
+        Expr::Float(value) => Ok(value.to_string()),
         Expr::String(value) => Ok(format!("\"{}\"", escape_c_string(value))),
         Expr::None => Ok("NULL".to_string()),
         Expr::ListLiteral(values) => {
@@ -1239,6 +1240,7 @@ fn infer_codegen_expr_type(
 ) -> Result<Type, CompileError> {
     match expr {
         Expr::Int(_) => Ok(Type::I32),
+        Expr::Float(_) => Ok(Type::F32),
         Expr::String(_) => Ok(Type::Ref(Box::new(Type::U8))),
         Expr::None => Ok(Type::None),
         Expr::ListLiteral(values) => {

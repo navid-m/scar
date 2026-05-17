@@ -1002,6 +1002,10 @@ impl Parser {
                 self.advance();
                 Ok(Expr::Int(value))
             }
+            TokenKind::Float(value) => {
+                self.advance();
+                Ok(Expr::Float(value))
+            }
             TokenKind::Str(value) => {
                 self.advance();
                 Ok(Expr::String(value))
@@ -1471,6 +1475,7 @@ impl Parser {
             TokenKind::U8 => "`u8`",
             TokenKind::F32 => "`f32`",
             TokenKind::F64 => "`f64`",
+            TokenKind::Float(_) => "a float",
             TokenKind::Newline => "a newline",
             TokenKind::At => "`@`",
             TokenKind::LParen => "`(`",
@@ -1517,6 +1522,7 @@ impl Parser {
             TokenKind::Eof => "end of file",
             TokenKind::Ident(_) => "an identifier",
             TokenKind::Int(_) => "an integer",
+            TokenKind::Float(_) => "a float",
             TokenKind::Str(_) => "a string",
         }
     }

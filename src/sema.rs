@@ -658,6 +658,7 @@ fn infer_expr_type(
 ) -> Result<Type, CompileError> {
     match expr {
         Expr::Int(_) => Ok(Type::I32),
+        Expr::Float(_) => Ok(Type::F32),
         Expr::String(_) => Ok(Type::Ref(Box::new(Type::U8))),
         Expr::None => Ok(Type::None),
         Expr::ListLiteral(values) => infer_list_literal_type(values, None, functions, types, scope),
@@ -1665,7 +1666,7 @@ fn validate_try_usage(
             validate_try_usage(lhs, expected_return, allow_try_panic)?;
             validate_try_usage(rhs, expected_return, allow_try_panic)?;
         }
-        Expr::Int(_) | Expr::String(_) | Expr::Path(_) | Expr::ListLiteral(_) | Expr::None => {
+        Expr::Int(_) | Expr::Float(_) | Expr::String(_) | Expr::Path(_) | Expr::ListLiteral(_) | Expr::None => {
             if let Expr::ListLiteral(values) = expr {
                 for value in values {
                     validate_try_usage(value, expected_return, allow_try_panic)?;

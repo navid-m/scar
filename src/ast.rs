@@ -210,6 +210,7 @@ pub enum Stmt {
 #[derive(Debug, Clone)]
 pub enum Expr {
     Int(i64),
+    Float(f64),
     String(String),
     Path(Vec<String>),
     ListLiteral(Vec<Expr>),
