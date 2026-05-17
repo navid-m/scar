@@ -1,5 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
+    env,
     fs,
     path::{Path, PathBuf},
 };
@@ -19,6 +20,8 @@ pub fn resolve_entry_program(entry: &Path) -> Result<Program, CompileError> {
         .to_path_buf();
     let mut resolver = Resolver {
         root_dir,
+        local_std_root: discover_local_std_root()?,
+        home_std_root: discover_home_std_root()?,
         cache: HashMap::new(),
         emitted_modules: HashSet::new(),
         resolved_types: Vec::new(),
@@ -66,6 +69,8 @@ type ModuleAliases = HashMap<String, HashMap<String, String>>;
 
 struct Resolver {
     root_dir: PathBuf,
+    local_std_root: Option<PathBuf>,
+    home_std_root: Option<PathBuf>,
     cache: HashMap<PathBuf, ModuleExports>,
     emitted_modules: HashSet<PathBuf>,
     resolved_types: Vec<TypeDef>,
@@ -88,7 +93,12 @@ impl Resolver {
 
         let mut aliases = HashMap::new();
         for module_use in module_uses {
-            let module_path = current_dir.join(&module_use.path).with_extension("scar");
+            let module_path = resolve_module_use_path(
+                current_dir,
+                &module_use.path,
+                self.local_std_root.as_deref(),
+                self.home_std_root.as_deref(),
+            );
             let exports = self.resolve_module(&module_path)?;
             aliases.insert(module_use.name.clone(), exports.functions);
         }
@@ -157,6 +167,47 @@ fn parse_program_file(path: &Path) -> Result<Program, CompileError> {
         .map_err(|error| CompileError::new(format!("in {}: {error}", path.display())))?;
     parse_program(tokens)
         .map_err(|error| CompileError::new(format!("in {}: {error}", path.display())))
+}
+
+fn discover_local_std_root() -> Result<Option<PathBuf>, CompileError> {
+    let candidate = env::current_dir()
+        .map_err(|error| CompileError::new(format!("failed to get current directory: {error}")))?
+        .join("lib")
+        .join("std");
+    if candidate.is_dir() {
+        Ok(Some(canonicalize_path(&candidate)?))
+    } else {
+        Ok(None)
+    }
+}
+
+fn discover_home_std_root() -> Result<Option<PathBuf>, CompileError> {
+    let Some(home) = env::var_os("HOME") else {
+        return Ok(None);
+    };
+    let candidate = PathBuf::from(home).join(".scar").join("lib").join("std");
+    if candidate.is_dir() {
+        Ok(Some(canonicalize_path(&candidate)?))
+    } else {
+        Ok(None)
+    }
+}
+
+fn resolve_module_use_path(
+    current_dir: &Path,
+    module_path: &str,
+    local_std_root: Option<&Path>,
+    home_std_root: Option<&Path>,
+) -> PathBuf {
+    if let Some(rest) = module_path.strip_prefix("std/") {
+        if let Some(local_std_root) = local_std_root {
+            return local_std_root.join(rest).with_extension("scar");
+        }
+        if let Some(home_std_root) = home_std_root {
+            return home_std_root.join(rest).with_extension("scar");
+        }
+    }
+    current_dir.join(module_path).with_extension("scar")
 }
 
 fn canonicalize_path(path: &Path) -> Result<PathBuf, CompileError> {
@@ -693,7 +744,7 @@ mod tests {
         time::{SystemTime, UNIX_EPOCH},
     };
 
-    use super::resolve_entry_program;
+    use super::{resolve_entry_program, resolve_module_use_path};
 
     #[test]
     fn resolves_module_calls_to_namespaced_functions() {
@@ -807,5 +858,41 @@ mod tests {
         assert_eq!(program.functions[0].extern_name.as_deref(), Some("sleep"));
 
         fs::remove_dir_all(temp_dir).unwrap();
+    }
+
+    #[test]
+    fn std_imports_prefer_local_std_root() {
+        let resolved = resolve_module_use_path(
+            Path::new("/project/src"),
+            "std/string",
+            Some(Path::new("/project/lib/std")),
+            Some(Path::new("/home/test/.scar/lib/std")),
+        );
+
+        assert_eq!(resolved, Path::new("/project/lib/std/string.scar"));
+    }
+
+    #[test]
+    fn std_imports_fall_back_to_home_std_root() {
+        let resolved = resolve_module_use_path(
+            Path::new("/project/src"),
+            "std/string",
+            None,
+            Some(Path::new("/home/test/.scar/lib/std")),
+        );
+
+        assert_eq!(resolved, Path::new("/home/test/.scar/lib/std/string.scar"));
+    }
+
+    #[test]
+    fn non_std_imports_stay_relative_to_current_file() {
+        let resolved = resolve_module_use_path(
+            Path::new("/project/src"),
+            "some_file",
+            Some(Path::new("/project/lib/std")),
+            Some(Path::new("/home/test/.scar/lib/std")),
+        );
+
+        assert_eq!(resolved, Path::new("/project/src/some_file.scar"));
     }
 }
