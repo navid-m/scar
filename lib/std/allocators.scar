@@ -1,0 +1,22 @@
+pub type Arena
+    ptr ref(void)
+    cap usize
+    off usize
+end
+
+pub def Arena.new(cap usize) Arena
+    val mem ref(void) = @alloc(cap)
+
+    return Arena(
+        ptr: mem,
+        cap: cap,
+        off: 0
+    )
+end
+
+pub def Arena.alloc(a Arena) ref(void)
+    val base usize = @addr(a.ptr)
+    val cur usize = base + a.off
+    a.off += size
+    return cur as ref(void)
+end
