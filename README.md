@@ -16,7 +16,7 @@ Prioritizes:
 #### Example
 
 ```scar
-def add[T](x: T, y: T)
+def add[T](x: T, y: T) T
 	return x + y
 end
 
