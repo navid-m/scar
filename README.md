@@ -1,10 +1,6 @@
 ## Scar
 
-General purpose systems programming language with abstracted concurrency and parallelism constructs builtin.
-
-No convoluted compile-time metaprogramming.
-
-Optional garbage collection. The standard library will work with or without the GC.
+General purpose systems programming language with a simple high-level syntax.
 
 Prioritizes:
 
