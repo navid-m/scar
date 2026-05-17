@@ -69,7 +69,7 @@ end
 test "alloc works"
     match Arena.new(1024 as usize)
         ok arena => (
-            var mem = Arena.alloc(arena, 500)
+            var mem = Arena.alloc(@addr(arena), 500)
             match mem
                 ok m => (
                     @puts("it worked")
@@ -78,7 +78,7 @@ test "alloc works"
                     @puts("some other bad thing happened")
                 )
             end
-            Arena.destroy(arena)    
+            Arena.destroy(@addr(arena))    
         )
         error _ => (
             @puts("something bad happened")
@@ -88,6 +88,6 @@ end
 
 test "alloc with unwrap works"
     var arena = Arena.new(1024 as usize)?
-    var mem = Arena.alloc(arena, 500)?
-    Arena.destroy(arena)
+    var mem = Arena.alloc(@addr(arena), 500)?
+    Arena.destroy(@addr(arena))
 end
