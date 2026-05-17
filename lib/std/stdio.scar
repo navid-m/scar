@@ -1,0 +1,8 @@
+pub def puts(str ref(u8))
+	@puts(str)
+end
+
+test "puts works"
+	puts("hello, world")
+end
+
