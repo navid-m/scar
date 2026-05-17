@@ -29,6 +29,9 @@ pub fn generate_c(program: &Program, info: &ProgramInfo) -> Result<String, Compi
     }
 
     for function in &program.functions {
+        if function.extern_name.is_some() {
+            continue;
+        }
         output.push_str(&render_signature(function, info));
         output.push_str(";\n");
     }

@@ -1,10 +1,21 @@
 extern def strcmp(x ref(u8), y ref(u8)) i32 :: "strcmp"
+extern def strcat(dest ref(u8), src ref(u8)) ref(u8) :: "strcat"
 
 pub def raw_eql(x ref(u8), y ref(u8)) bool
 	return strcmp(x, y) == 0
 end
 
+pub def raw_concat(dest ref(u8), src ref(u8)) ref(u8)
+	return strcat(dest, src)
+end
+
 test "equals works"
 	assert raw_eql("hello", "hello")
 	assert !raw_eql("hello", "something else")
+end
+
+test "concat works"
+	@puts("hello")
+	@print("{s}", {raw_concat("hello", "world")})
+	#assert raw_eql(raw_concat("hello", "world"), "helloworld")
 end
