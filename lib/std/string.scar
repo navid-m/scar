@@ -11,21 +11,21 @@ pub type StringBuilder
 end
 
 pub def eql(x ref(u8), y ref(u8)) bool
-	guard (y != none && x != none) else
+	guard y != none && x != none else
 		return false
 	end
 	return strcmp(x, y) == 0
 end
 
 pub def len(x ref(u8)) usize
-	guard (x != none) else
+	guard x != none else
 		return 0
 	end
 	return strlen(x)
 end
 
 pub def starts_with(x ref(u8), prefix ref(u8)) bool
-	guard (x != none && prefix != none) else
+	guard x != none && prefix != none else
 		return false
 	end
 
@@ -46,7 +46,7 @@ pub def starts_with(x ref(u8), prefix ref(u8)) bool
 end
 
 pub def ends_with(x ref(u8), suffix ref(u8)) bool
-	guard (x != none && suffix != none) else
+	guard x != none && suffix != none else
 		return false
 	end
 
@@ -89,7 +89,6 @@ pub def rconcat[A: allocators.BumpAllocator](
 
 	@memcpy(out, a, len_a)
 	@memcpy(@add(out, len_a), b, len_b)
-
 	@deref(@as_mut(@add(out, len_a + len_b))) = 0 as u8
 
 	return out as ref(u8)
@@ -114,7 +113,7 @@ pub def StringBuilder.append(
 	sb mut(ref(StringBuilder)),
 	s ref(u8)
 ) bool
-	guard (s != none) else
+	guard s != none else
 		return true
 	end
 
@@ -151,7 +150,7 @@ pub def trim_prefix[A: allocators.BumpAllocator](
 	x ref(u8),
 	prefix ref(u8)
 ) ref(u8)|error
-	guard (x != none) else
+	guard x != none else
 		return none
 	end
 
@@ -183,7 +182,7 @@ pub def trim_suffix[A: allocators.BumpAllocator](
 	x ref(u8),
 	suffix ref(u8)
 ) ref(u8)|error
-	guard (x != none) else
+	guard x != none else
 		return none
 	end
 
@@ -213,7 +212,7 @@ pub def trim[A: allocators.BumpAllocator](
 	ac: A,
 	x ref(u8)
 ) ref(u8)|error
-	guard (x != none) else
+	guard x != none else
 		return none
 	end
 
