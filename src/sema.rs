@@ -730,6 +730,9 @@ fn infer_expr_type(
             ))),
         },
         Expr::Call { callee, args } => analyze_call(callee, args, functions, types, scope),
+        Expr::Specialize { .. } => Err(CompileError::new(
+            "generic specialization must be resolved before semantic analysis",
+        )),
         Expr::Cast { expr, ty } => {
             let source_ty = infer_expr_type(expr, functions, types, scope)?;
             validate_type(ty, types)?;
@@ -1655,6 +1658,9 @@ fn validate_try_usage(
         | Expr::Try(expr)
         | Expr::Error { message: expr }
         | Expr::Unary { expr, .. } => validate_try_usage(expr, expected_return, allow_try_panic)?,
+        Expr::Specialize { callee, .. } => {
+            validate_try_usage(callee, expected_return, allow_try_panic)?;
+        }
         Expr::Binary { lhs, rhs, .. } => {
             validate_try_usage(lhs, expected_return, allow_try_panic)?;
             validate_try_usage(rhs, expected_return, allow_try_panic)?;

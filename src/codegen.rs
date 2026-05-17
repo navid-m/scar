@@ -867,6 +867,9 @@ fn render_expr_with_hint(
             ))),
         },
         Expr::Call { callee, args } => render_call(callee, args, function, info),
+        Expr::Specialize { .. } => Err(CompileError::new(
+            "generic specialization must be resolved before code generation",
+        )),
         Expr::Cast { expr, ty } => {
             if matches!(expr.as_ref(), Expr::ListLiteral(_)) {
                 return render_expr_with_hint(expr, function, info, Some(ty));
@@ -1335,6 +1338,9 @@ fn infer_codegen_expr_type(
                 ))),
             }
         }
+        Expr::Specialize { .. } => Err(CompileError::new(
+            "generic specialization must be resolved before code generation",
+        )),
         Expr::Cast { ty, .. } => Ok(ty.clone()),
         Expr::Error { .. } => Ok(Type::Error),
         Expr::Try(inner) => {

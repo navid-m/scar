@@ -7,7 +7,10 @@ use std::{
 
 use crate::{
     CompileError,
-    ast::{Expr, FieldDef, FieldInit, Function, ModuleUse, Program, Stmt, TestBlock, Type, TypeDef},
+    ast::{
+        Expr, FieldDef, FieldInit, Function, GenericParam, ModuleUse, Program, Stmt, TestBlock,
+        Type, TypeDef,
+    },
     lexer::lex,
     parser::parse_program,
 };
@@ -52,7 +55,7 @@ pub fn resolve_entry_program(entry: &Path) -> Result<Program, CompileError> {
         .map(|test| rewrite_test_block(test, &local_functions, &local_types, &module_aliases))
         .collect::<Result<Vec<_>, _>>()?;
 
-    Ok(Program {
+    instantiate_generic_functions(Program {
         module_uses: Vec::new(),
         type_defs,
         functions,
@@ -294,6 +297,17 @@ fn rewrite_function(
     if let Some(mapped) = local_functions.get(&function.name) {
         function.name = mapped.clone();
     }
+    function.generic_params = function
+        .generic_params
+        .into_iter()
+        .map(|GenericParam { name, constraints }| GenericParam {
+            name,
+            constraints: constraints
+                .into_iter()
+                .map(|constraint| rewrite_type(constraint, local_types))
+                .collect(),
+        })
+        .collect();
     function.params = function
         .params
         .into_iter()
@@ -670,6 +684,18 @@ fn rewrite_expr(
                 .map(|arg| rewrite_expr(arg, local_functions, local_types, module_aliases))
                 .collect::<Result<Vec<_>, _>>()?,
         }),
+        Expr::Specialize { callee, type_args } => Ok(Expr::Specialize {
+            callee: Box::new(rewrite_callee(
+                *callee,
+                local_functions,
+                local_types,
+                module_aliases,
+            )?),
+            type_args: type_args
+                .into_iter()
+                .map(|ty| rewrite_type(ty, local_types))
+                .collect(),
+        }),
         Expr::Cast { expr, ty } => Ok(Expr::Cast {
             expr: Box::new(rewrite_expr(
                 *expr,
@@ -780,6 +806,953 @@ fn rewrite_type(ty: Type, local_types: &HashMap<String, String>) -> Type {
         Type::List(inner) => Type::List(Box::new(rewrite_type(*inner, local_types))),
         Type::U32 => Type::U32,
         other => other,
+    }
+}
+
+fn instantiate_generic_functions(program: Program) -> Result<Program, CompileError> {
+    let mut templates = HashMap::new();
+    let mut concrete_functions = Vec::new();
+    for function in program.functions {
+        if function.generic_params.is_empty() {
+            concrete_functions.push(function);
+        } else {
+            if function.extern_name.is_some() {
+                return Err(CompileError::new(format!(
+                    "generic extern functions are not supported: `{}`",
+                    function.name
+                )));
+            }
+            templates.insert(function.name.clone(), function);
+        }
+    }
+
+    let mut instantiator = GenericInstantiator {
+        templates,
+        instantiated_names: HashMap::new(),
+        generated_functions: Vec::new(),
+    };
+
+    let functions = concrete_functions
+        .into_iter()
+        .map(|function| instantiator.rewrite_function_body(function))
+        .collect::<Result<Vec<_>, _>>()?;
+    let tests = program
+        .tests
+        .into_iter()
+        .map(|test| instantiator.rewrite_test_body(test))
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let mut all_functions = functions;
+    all_functions.extend(instantiator.generated_functions);
+
+    Ok(Program {
+        module_uses: program.module_uses,
+        type_defs: program.type_defs,
+        functions: all_functions,
+        tests,
+    })
+}
+
+struct GenericInstantiator {
+    templates: HashMap<String, Function>,
+    instantiated_names: HashMap<String, String>,
+    generated_functions: Vec<Function>,
+}
+
+impl GenericInstantiator {
+    fn rewrite_function_body(&mut self, mut function: Function) -> Result<Function, CompileError> {
+        function.body = function
+            .body
+            .into_iter()
+            .map(|stmt| self.rewrite_stmt_generics(stmt))
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(function)
+    }
+
+    fn rewrite_test_body(&mut self, mut test: TestBlock) -> Result<TestBlock, CompileError> {
+        test.body = test
+            .body
+            .into_iter()
+            .map(|stmt| self.rewrite_stmt_generics(stmt))
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(test)
+    }
+
+    fn rewrite_stmt_generics(&mut self, stmt: Stmt) -> Result<Stmt, CompileError> {
+        Ok(match stmt {
+            Stmt::VarDecl {
+                line,
+                column,
+                mutable,
+                name,
+                declared_type,
+                init,
+            } => Stmt::VarDecl {
+                line,
+                column,
+                mutable,
+                name,
+                declared_type,
+                init: self.rewrite_expr_generics(init)?,
+            },
+            Stmt::Assign {
+                line,
+                column,
+                target,
+                value,
+            } => Stmt::Assign {
+                line,
+                column,
+                target: self.rewrite_expr_generics(target)?,
+                value: self.rewrite_expr_generics(value)?,
+            },
+            Stmt::AddAssign {
+                line,
+                column,
+                target,
+                value,
+            } => Stmt::AddAssign {
+                line,
+                column,
+                target: self.rewrite_expr_generics(target)?,
+                value: self.rewrite_expr_generics(value)?,
+            },
+            Stmt::MulAssign {
+                line,
+                column,
+                target,
+                value,
+            } => Stmt::MulAssign {
+                line,
+                column,
+                target: self.rewrite_expr_generics(target)?,
+                value: self.rewrite_expr_generics(value)?,
+            },
+            Stmt::SubAssign {
+                line,
+                column,
+                target,
+                value,
+            } => Stmt::SubAssign {
+                line,
+                column,
+                target: self.rewrite_expr_generics(target)?,
+                value: self.rewrite_expr_generics(value)?,
+            },
+            Stmt::DivAssign {
+                line,
+                column,
+                target,
+                value,
+            } => Stmt::DivAssign {
+                line,
+                column,
+                target: self.rewrite_expr_generics(target)?,
+                value: self.rewrite_expr_generics(value)?,
+            },
+            Stmt::BitAndAssign {
+                line,
+                column,
+                target,
+                value,
+            } => Stmt::BitAndAssign {
+                line,
+                column,
+                target: self.rewrite_expr_generics(target)?,
+                value: self.rewrite_expr_generics(value)?,
+            },
+            Stmt::BitOrAssign {
+                line,
+                column,
+                target,
+                value,
+            } => Stmt::BitOrAssign {
+                line,
+                column,
+                target: self.rewrite_expr_generics(target)?,
+                value: self.rewrite_expr_generics(value)?,
+            },
+            Stmt::BitXorAssign {
+                line,
+                column,
+                target,
+                value,
+            } => Stmt::BitXorAssign {
+                line,
+                column,
+                target: self.rewrite_expr_generics(target)?,
+                value: self.rewrite_expr_generics(value)?,
+            },
+            Stmt::Assert {
+                line,
+                column,
+                condition,
+            } => Stmt::Assert {
+                line,
+                column,
+                condition: self.rewrite_expr_generics(condition)?,
+            },
+            Stmt::Return { line, column, value } => Stmt::Return {
+                line,
+                column,
+                value: value
+                    .map(|expr| self.rewrite_expr_generics(expr))
+                    .transpose()?,
+            },
+            Stmt::If {
+                line,
+                column,
+                condition,
+                then_body,
+                else_body,
+            } => Stmt::If {
+                line,
+                column,
+                condition: self.rewrite_expr_generics(condition)?,
+                then_body: then_body
+                    .into_iter()
+                    .map(|stmt| self.rewrite_stmt_generics(stmt))
+                    .collect::<Result<Vec<_>, _>>()?,
+                else_body: else_body
+                    .into_iter()
+                    .map(|stmt| self.rewrite_stmt_generics(stmt))
+                    .collect::<Result<Vec<_>, _>>()?,
+            },
+            Stmt::Match {
+                line,
+                column,
+                expr,
+                arms,
+            } => Stmt::Match {
+                line,
+                column,
+                expr: self.rewrite_expr_generics(expr)?,
+                arms: arms
+                    .into_iter()
+                    .map(|arm| {
+                        Ok(crate::ast::MatchArm {
+                            kind: arm.kind,
+                            binding: arm.binding,
+                            body: arm
+                                .body
+                                .into_iter()
+                                .map(|stmt| self.rewrite_stmt_generics(stmt))
+                                .collect::<Result<Vec<_>, _>>()?,
+                        })
+                    })
+                    .collect::<Result<Vec<_>, CompileError>>()?,
+            },
+            Stmt::Expr { line, column, expr } => Stmt::Expr {
+                line,
+                column,
+                expr: self.rewrite_expr_generics(expr)?,
+            },
+            Stmt::ForRange {
+                line,
+                column,
+                pragma,
+                var_name,
+                start,
+                end,
+                body,
+            } => Stmt::ForRange {
+                line,
+                column,
+                pragma,
+                var_name,
+                start: self.rewrite_expr_generics(start)?,
+                end: self.rewrite_expr_generics(end)?,
+                body: body
+                    .into_iter()
+                    .map(|stmt| self.rewrite_stmt_generics(stmt))
+                    .collect::<Result<Vec<_>, _>>()?,
+            },
+            Stmt::ForEach {
+                line,
+                column,
+                var_name,
+                iterable,
+                body,
+            } => Stmt::ForEach {
+                line,
+                column,
+                var_name,
+                iterable: self.rewrite_expr_generics(iterable)?,
+                body: body
+                    .into_iter()
+                    .map(|stmt| self.rewrite_stmt_generics(stmt))
+                    .collect::<Result<Vec<_>, _>>()?,
+            },
+            Stmt::Loop { line, column, body } => Stmt::Loop {
+                line,
+                column,
+                body: body
+                    .into_iter()
+                    .map(|stmt| self.rewrite_stmt_generics(stmt))
+                    .collect::<Result<Vec<_>, _>>()?,
+            },
+            Stmt::Continue { line, column } => Stmt::Continue { line, column },
+        })
+    }
+
+    fn rewrite_expr_generics(&mut self, expr: Expr) -> Result<Expr, CompileError> {
+        Ok(match expr {
+            Expr::ListLiteral(values) => Expr::ListLiteral(
+                values
+                    .into_iter()
+                    .map(|value| self.rewrite_expr_generics(value))
+                    .collect::<Result<Vec<_>, _>>()?,
+            ),
+            Expr::Index { base, index } => Expr::Index {
+                base: Box::new(self.rewrite_expr_generics(*base)?),
+                index: Box::new(self.rewrite_expr_generics(*index)?),
+            },
+            Expr::FieldAccess { base, field } => Expr::FieldAccess {
+                base: Box::new(self.rewrite_expr_generics(*base)?),
+                field,
+            },
+            Expr::StructInit { name, fields } => Expr::StructInit {
+                name,
+                fields: fields
+                    .into_iter()
+                    .map(|field| {
+                        Ok(FieldInit {
+                            name: field.name,
+                            value: self.rewrite_expr_generics(field.value)?,
+                        })
+                    })
+                    .collect::<Result<Vec<_>, CompileError>>()?,
+            },
+            Expr::BuiltinCall { name, args } => Expr::BuiltinCall {
+                name,
+                args: args
+                    .into_iter()
+                    .map(|arg| self.rewrite_expr_generics(arg))
+                    .collect::<Result<Vec<_>, _>>()?,
+            },
+            Expr::MethodCall {
+                receiver,
+                method,
+                args,
+            } => Expr::MethodCall {
+                receiver: Box::new(self.rewrite_expr_generics(*receiver)?),
+                method,
+                args: args
+                    .into_iter()
+                    .map(|arg| self.rewrite_expr_generics(arg))
+                    .collect::<Result<Vec<_>, _>>()?,
+            },
+            Expr::Call { callee, args } => {
+                let callee = self.rewrite_expr_generics(*callee)?;
+                let args = args
+                    .into_iter()
+                    .map(|arg| self.rewrite_expr_generics(arg))
+                    .collect::<Result<Vec<_>, _>>()?;
+                if let Expr::Specialize { callee, type_args } = callee {
+                    let Expr::Path(path) = *callee else {
+                        return Err(CompileError::new(
+                            "generic specialization currently requires a direct function name",
+                        ));
+                    };
+                    if path.len() != 1 {
+                        return Err(CompileError::new(
+                            "generic specialization currently requires a direct function name",
+                        ));
+                    }
+                    let specialized = self.instantiate_specialization(&path[0], &type_args)?;
+                    Expr::Call {
+                        callee: Box::new(Expr::Path(vec![specialized])),
+                        args,
+                    }
+                } else {
+                    Expr::Call {
+                        callee: Box::new(callee),
+                        args,
+                    }
+                }
+            }
+            Expr::Specialize { callee, type_args } => Expr::Specialize {
+                callee: Box::new(self.rewrite_expr_generics(*callee)?),
+                type_args,
+            },
+            Expr::Cast { expr, ty } => Expr::Cast {
+                expr: Box::new(self.rewrite_expr_generics(*expr)?),
+                ty,
+            },
+            Expr::Error { message } => Expr::Error {
+                message: Box::new(self.rewrite_expr_generics(*message)?),
+            },
+            Expr::Try(expr) => Expr::Try(Box::new(self.rewrite_expr_generics(*expr)?)),
+            Expr::Unary { op, expr } => Expr::Unary {
+                op,
+                expr: Box::new(self.rewrite_expr_generics(*expr)?),
+            },
+            Expr::Pack(values) => Expr::Pack(
+                values
+                    .into_iter()
+                    .map(|value| self.rewrite_expr_generics(value))
+                    .collect::<Result<Vec<_>, _>>()?,
+            ),
+            Expr::Binary { lhs, op, rhs } => Expr::Binary {
+                lhs: Box::new(self.rewrite_expr_generics(*lhs)?),
+                op,
+                rhs: Box::new(self.rewrite_expr_generics(*rhs)?),
+            },
+            other => other,
+        })
+    }
+
+    fn instantiate_specialization(
+        &mut self,
+        name: &str,
+        type_args: &[Type],
+    ) -> Result<String, CompileError> {
+        let key = specialization_key(name, type_args);
+        if let Some(existing) = self.instantiated_names.get(&key) {
+            return Ok(existing.clone());
+        }
+        let template = self
+            .templates
+            .get(name)
+            .cloned()
+            .ok_or_else(|| CompileError::new(format!("unknown generic function `{name}`")))?;
+        if template.generic_params.len() != type_args.len() {
+            return Err(CompileError::new(format!(
+                "generic function `{}` expects {} type arguments but received {}",
+                template.name,
+                template.generic_params.len(),
+                type_args.len()
+            )));
+        }
+
+        let mut substitutions = HashMap::new();
+        for (param, type_arg) in template.generic_params.iter().zip(type_args.iter()) {
+            if !param.constraints.is_empty() && !param.constraints.iter().any(|allowed| allowed == type_arg)
+            {
+                return Err(CompileError::new(format!(
+                    "generic parameter `{}` on `{}` does not allow type {}",
+                    param.name,
+                    template.name,
+                    describe_type(type_arg)
+                )));
+            }
+            substitutions.insert(param.name.clone(), type_arg.clone());
+        }
+
+        let specialized_name = format!("{}__generic__{}", template.name, specialization_suffix(type_args));
+        self.instantiated_names
+            .insert(key, specialized_name.clone());
+
+        let mut specialized = template.clone();
+        specialized.name = specialized_name.clone();
+        specialized.generic_params.clear();
+        specialized.params = specialized
+            .params
+            .into_iter()
+            .map(|param| crate::ast::Param {
+                name: param.name,
+                ty: substitute_type(param.ty, &substitutions),
+            })
+            .collect();
+        specialized.return_type = substitute_type(specialized.return_type, &substitutions);
+        if specialized.return_type == Type::Void {
+            if let Some(inferred) = infer_implicit_return_type(&specialized, &substitutions) {
+                specialized.return_type = inferred;
+            }
+        }
+        specialized.body = specialized
+            .body
+            .into_iter()
+            .map(|stmt| substitute_stmt(stmt, &substitutions))
+            .collect();
+        specialized = self.rewrite_function_body(specialized)?;
+        self.generated_functions.push(specialized);
+
+        Ok(specialized_name)
+    }
+}
+
+fn substitute_stmt(stmt: Stmt, substitutions: &HashMap<String, Type>) -> Stmt {
+    match stmt {
+        Stmt::VarDecl {
+            line,
+            column,
+            mutable,
+            name,
+            declared_type,
+            init,
+        } => Stmt::VarDecl {
+            line,
+            column,
+            mutable,
+            name,
+            declared_type: declared_type.map(|ty| substitute_type(ty, substitutions)),
+            init: substitute_expr(init, substitutions),
+        },
+        Stmt::Assign {
+            line,
+            column,
+            target,
+            value,
+        } => Stmt::Assign {
+            line,
+            column,
+            target: substitute_expr(target, substitutions),
+            value: substitute_expr(value, substitutions),
+        },
+        Stmt::AddAssign {
+            line,
+            column,
+            target,
+            value,
+        } => Stmt::AddAssign {
+            line,
+            column,
+            target: substitute_expr(target, substitutions),
+            value: substitute_expr(value, substitutions),
+        },
+        Stmt::MulAssign {
+            line,
+            column,
+            target,
+            value,
+        } => Stmt::MulAssign {
+            line,
+            column,
+            target: substitute_expr(target, substitutions),
+            value: substitute_expr(value, substitutions),
+        },
+        Stmt::SubAssign {
+            line,
+            column,
+            target,
+            value,
+        } => Stmt::SubAssign {
+            line,
+            column,
+            target: substitute_expr(target, substitutions),
+            value: substitute_expr(value, substitutions),
+        },
+        Stmt::DivAssign {
+            line,
+            column,
+            target,
+            value,
+        } => Stmt::DivAssign {
+            line,
+            column,
+            target: substitute_expr(target, substitutions),
+            value: substitute_expr(value, substitutions),
+        },
+        Stmt::BitAndAssign {
+            line,
+            column,
+            target,
+            value,
+        } => Stmt::BitAndAssign {
+            line,
+            column,
+            target: substitute_expr(target, substitutions),
+            value: substitute_expr(value, substitutions),
+        },
+        Stmt::BitOrAssign {
+            line,
+            column,
+            target,
+            value,
+        } => Stmt::BitOrAssign {
+            line,
+            column,
+            target: substitute_expr(target, substitutions),
+            value: substitute_expr(value, substitutions),
+        },
+        Stmt::BitXorAssign {
+            line,
+            column,
+            target,
+            value,
+        } => Stmt::BitXorAssign {
+            line,
+            column,
+            target: substitute_expr(target, substitutions),
+            value: substitute_expr(value, substitutions),
+        },
+        Stmt::Assert {
+            line,
+            column,
+            condition,
+        } => Stmt::Assert {
+            line,
+            column,
+            condition: substitute_expr(condition, substitutions),
+        },
+        Stmt::Return { line, column, value } => Stmt::Return {
+            line,
+            column,
+            value: value.map(|expr| substitute_expr(expr, substitutions)),
+        },
+        Stmt::If {
+            line,
+            column,
+            condition,
+            then_body,
+            else_body,
+        } => Stmt::If {
+            line,
+            column,
+            condition: substitute_expr(condition, substitutions),
+            then_body: then_body
+                .into_iter()
+                .map(|stmt| substitute_stmt(stmt, substitutions))
+                .collect(),
+            else_body: else_body
+                .into_iter()
+                .map(|stmt| substitute_stmt(stmt, substitutions))
+                .collect(),
+        },
+        Stmt::Match {
+            line,
+            column,
+            expr,
+            arms,
+        } => Stmt::Match {
+            line,
+            column,
+            expr: substitute_expr(expr, substitutions),
+            arms: arms
+                .into_iter()
+                .map(|arm| crate::ast::MatchArm {
+                    kind: arm.kind,
+                    binding: arm.binding,
+                    body: arm
+                        .body
+                        .into_iter()
+                        .map(|stmt| substitute_stmt(stmt, substitutions))
+                        .collect(),
+                })
+                .collect(),
+        },
+        Stmt::Expr { line, column, expr } => Stmt::Expr {
+            line,
+            column,
+            expr: substitute_expr(expr, substitutions),
+        },
+        Stmt::ForRange {
+            line,
+            column,
+            pragma,
+            var_name,
+            start,
+            end,
+            body,
+        } => Stmt::ForRange {
+            line,
+            column,
+            pragma,
+            var_name,
+            start: substitute_expr(start, substitutions),
+            end: substitute_expr(end, substitutions),
+            body: body
+                .into_iter()
+                .map(|stmt| substitute_stmt(stmt, substitutions))
+                .collect(),
+        },
+        Stmt::ForEach {
+            line,
+            column,
+            var_name,
+            iterable,
+            body,
+        } => Stmt::ForEach {
+            line,
+            column,
+            var_name,
+            iterable: substitute_expr(iterable, substitutions),
+            body: body
+                .into_iter()
+                .map(|stmt| substitute_stmt(stmt, substitutions))
+                .collect(),
+        },
+        Stmt::Loop { line, column, body } => Stmt::Loop {
+            line,
+            column,
+            body: body
+                .into_iter()
+                .map(|stmt| substitute_stmt(stmt, substitutions))
+                .collect(),
+        },
+        Stmt::Continue { line, column } => Stmt::Continue { line, column },
+    }
+}
+
+fn substitute_expr(expr: Expr, substitutions: &HashMap<String, Type>) -> Expr {
+    match expr {
+        Expr::ListLiteral(values) => Expr::ListLiteral(
+            values
+                .into_iter()
+                .map(|value| substitute_expr(value, substitutions))
+                .collect(),
+        ),
+        Expr::Index { base, index } => Expr::Index {
+            base: Box::new(substitute_expr(*base, substitutions)),
+            index: Box::new(substitute_expr(*index, substitutions)),
+        },
+        Expr::FieldAccess { base, field } => Expr::FieldAccess {
+            base: Box::new(substitute_expr(*base, substitutions)),
+            field,
+        },
+        Expr::StructInit { name, fields } => Expr::StructInit {
+            name,
+            fields: fields
+                .into_iter()
+                .map(|field| FieldInit {
+                    name: field.name,
+                    value: substitute_expr(field.value, substitutions),
+                })
+                .collect(),
+        },
+        Expr::BuiltinCall { name, args } => Expr::BuiltinCall {
+            name,
+            args: args
+                .into_iter()
+                .map(|arg| substitute_expr(arg, substitutions))
+                .collect(),
+        },
+        Expr::MethodCall {
+            receiver,
+            method,
+            args,
+        } => Expr::MethodCall {
+            receiver: Box::new(substitute_expr(*receiver, substitutions)),
+            method,
+            args: args
+                .into_iter()
+                .map(|arg| substitute_expr(arg, substitutions))
+                .collect(),
+        },
+        Expr::Call { callee, args } => Expr::Call {
+            callee: Box::new(substitute_expr(*callee, substitutions)),
+            args: args
+                .into_iter()
+                .map(|arg| substitute_expr(arg, substitutions))
+                .collect(),
+        },
+        Expr::Specialize { callee, type_args } => Expr::Specialize {
+            callee: Box::new(substitute_expr(*callee, substitutions)),
+            type_args: type_args
+                .into_iter()
+                .map(|ty| substitute_type(ty, substitutions))
+                .collect(),
+        },
+        Expr::Cast { expr, ty } => Expr::Cast {
+            expr: Box::new(substitute_expr(*expr, substitutions)),
+            ty: substitute_type(ty, substitutions),
+        },
+        Expr::Error { message } => Expr::Error {
+            message: Box::new(substitute_expr(*message, substitutions)),
+        },
+        Expr::Try(expr) => Expr::Try(Box::new(substitute_expr(*expr, substitutions))),
+        Expr::Unary { op, expr } => Expr::Unary {
+            op,
+            expr: Box::new(substitute_expr(*expr, substitutions)),
+        },
+        Expr::Pack(values) => Expr::Pack(
+            values
+                .into_iter()
+                .map(|value| substitute_expr(value, substitutions))
+                .collect(),
+        ),
+        Expr::Binary { lhs, op, rhs } => Expr::Binary {
+            lhs: Box::new(substitute_expr(*lhs, substitutions)),
+            op,
+            rhs: Box::new(substitute_expr(*rhs, substitutions)),
+        },
+        other => other,
+    }
+}
+
+fn substitute_type(ty: Type, substitutions: &HashMap<String, Type>) -> Type {
+    match ty {
+        Type::Named(name) => substitutions.get(&name).cloned().unwrap_or(Type::Named(name)),
+        Type::Result(inner) => Type::Result(Box::new(substitute_type(*inner, substitutions))),
+        Type::Mut(inner) => Type::Mut(Box::new(substitute_type(*inner, substitutions))),
+        Type::Ref(inner) => Type::Ref(Box::new(substitute_type(*inner, substitutions))),
+        Type::List(inner) => Type::List(Box::new(substitute_type(*inner, substitutions))),
+        other => other,
+    }
+}
+
+fn infer_implicit_return_type(
+    function: &Function,
+    substitutions: &HashMap<String, Type>,
+) -> Option<Type> {
+    let param_types = function
+        .params
+        .iter()
+        .map(|param| (param.name.clone(), substitute_type(param.ty.clone(), substitutions)))
+        .collect::<HashMap<_, _>>();
+    infer_return_type_from_stmts(&function.body, &param_types)
+}
+
+fn infer_return_type_from_stmts(body: &[Stmt], param_types: &HashMap<String, Type>) -> Option<Type> {
+    for stmt in body {
+        match stmt {
+            Stmt::Return { value: Some(expr), .. } => {
+                if let Some(ty) = infer_expr_type_from_template(expr, param_types) {
+                    return Some(ty);
+                }
+            }
+            Stmt::If {
+                then_body,
+                else_body,
+                ..
+            } => {
+                if let Some(ty) = infer_return_type_from_stmts(then_body, param_types) {
+                    return Some(ty);
+                }
+                if let Some(ty) = infer_return_type_from_stmts(else_body, param_types) {
+                    return Some(ty);
+                }
+            }
+            Stmt::Match { arms, .. } => {
+                for arm in arms {
+                    if let Some(ty) = infer_return_type_from_stmts(&arm.body, param_types) {
+                        return Some(ty);
+                    }
+                }
+            }
+            Stmt::ForRange { body, .. }
+            | Stmt::ForEach { body, .. }
+            | Stmt::Loop { body, .. } => {
+                if let Some(ty) = infer_return_type_from_stmts(body, param_types) {
+                    return Some(ty);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+fn infer_expr_type_from_template(expr: &Expr, param_types: &HashMap<String, Type>) -> Option<Type> {
+    match expr {
+        Expr::Int(_) => Some(Type::I32),
+        Expr::String(_) => Some(Type::Ref(Box::new(Type::U8))),
+        Expr::Path(path) if path.len() == 1 => param_types.get(&path[0]).cloned(),
+        Expr::Cast { ty, .. } => Some(ty.clone()),
+        Expr::Unary { op, expr } => {
+            let inner = infer_expr_type_from_template(expr, param_types)?;
+            match op {
+                crate::ast::UnaryOp::LogicalNot => Some(Type::Bool),
+                _ => Some(inner),
+            }
+        }
+        Expr::Binary { lhs, op, rhs } => {
+            let lhs_ty = infer_expr_type_from_template(lhs, param_types)?;
+            let rhs_ty = infer_expr_type_from_template(rhs, param_types)?;
+            match op {
+                crate::ast::BinaryOp::Add
+                | crate::ast::BinaryOp::Subtract
+                | crate::ast::BinaryOp::Divide
+                | crate::ast::BinaryOp::Multiply
+                | crate::ast::BinaryOp::Modulo
+                | crate::ast::BinaryOp::BitAnd
+                | crate::ast::BinaryOp::BitOr
+                | crate::ast::BinaryOp::BitXor
+                | crate::ast::BinaryOp::ShiftLeft
+                | crate::ast::BinaryOp::ShiftRight
+                    if lhs_ty == rhs_ty =>
+                {
+                    Some(lhs_ty)
+                }
+                crate::ast::BinaryOp::LessThan
+                | crate::ast::BinaryOp::LessEqual
+                | crate::ast::BinaryOp::GreaterThan
+                | crate::ast::BinaryOp::GreaterEqual
+                | crate::ast::BinaryOp::Equal
+                | crate::ast::BinaryOp::NotEqual
+                | crate::ast::BinaryOp::LogicalAnd
+                | crate::ast::BinaryOp::LogicalOr => Some(Type::Bool),
+                _ => None,
+            }
+        }
+        _ => None,
+    }
+}
+
+fn specialization_key(name: &str, type_args: &[Type]) -> String {
+    format!("{name}[{}]", specialization_suffix(type_args))
+}
+
+fn specialization_suffix(type_args: &[Type]) -> String {
+    type_args
+        .iter()
+        .map(type_suffix_for_specialization)
+        .collect::<Vec<_>>()
+        .join("__")
+}
+
+fn type_suffix_for_specialization(ty: &Type) -> String {
+    match ty {
+        Type::Void => "void".to_string(),
+        Type::Bool => "bool".to_string(),
+        Type::I8 => "i8".to_string(),
+        Type::I16 => "i16".to_string(),
+        Type::I32 => "i32".to_string(),
+        Type::I64 => "i64".to_string(),
+        Type::Isize => "isize".to_string(),
+        Type::U8 => "u8".to_string(),
+        Type::U16 => "u16".to_string(),
+        Type::U32 => "u32".to_string(),
+        Type::U64 => "u64".to_string(),
+        Type::Usize => "usize".to_string(),
+        Type::F32 => "f32".to_string(),
+        Type::F64 => "f64".to_string(),
+        Type::Named(name) => sanitize_generic_name(name),
+        Type::Mut(inner) => format!("mut__{}", type_suffix_for_specialization(inner)),
+        Type::Ref(inner) => format!("ref__{}", type_suffix_for_specialization(inner)),
+        Type::List(inner) => format!("list__{}", type_suffix_for_specialization(inner)),
+        Type::Result(inner) => format!("result__{}", type_suffix_for_specialization(inner)),
+        Type::Error => "error".to_string(),
+        Type::None => "none".to_string(),
+    }
+}
+
+fn sanitize_generic_name(name: &str) -> String {
+    name.chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || ch == '_' {
+                ch
+            } else {
+                '_'
+            }
+        })
+        .collect()
+}
+
+fn describe_type(ty: &Type) -> String {
+    match ty {
+        Type::Void => "void".to_string(),
+        Type::Bool => "bool".to_string(),
+        Type::I8 => "i8".to_string(),
+        Type::I16 => "i16".to_string(),
+        Type::I32 => "i32".to_string(),
+        Type::I64 => "i64".to_string(),
+        Type::Isize => "isize".to_string(),
+        Type::U8 => "u8".to_string(),
+        Type::U16 => "u16".to_string(),
+        Type::U32 => "u32".to_string(),
+        Type::U64 => "u64".to_string(),
+        Type::Usize => "usize".to_string(),
+        Type::F32 => "f32".to_string(),
+        Type::F64 => "f64".to_string(),
+        Type::Named(name) => name.clone(),
+        Type::Mut(inner) => format!("mut({})", describe_type(inner)),
+        Type::Ref(inner) => format!("ref({})", describe_type(inner)),
+        Type::List(inner) => format!("list[{}]", describe_type(inner)),
+        Type::Result(inner) => format!("{}|error", describe_type(inner)),
+        Type::Error => "error".to_string(),
+        Type::None => "none".to_string(),
     }
 }
 

@@ -32,9 +32,16 @@ pub struct Function {
     pub is_pub: bool,
     pub name: String,
     pub extern_name: Option<String>,
+    pub generic_params: Vec<GenericParam>,
     pub params: Vec<Param>,
     pub return_type: Type,
     pub body: Vec<Stmt>,
+}
+
+#[derive(Debug, Clone)]
+pub struct GenericParam {
+    pub name: String,
+    pub constraints: Vec<Type>,
 }
 
 #[derive(Debug, Clone)]
@@ -230,6 +237,10 @@ pub enum Expr {
     Call {
         callee: Box<Expr>,
         args: Vec<Expr>,
+    },
+    Specialize {
+        callee: Box<Expr>,
+        type_args: Vec<Type>,
     },
     Cast {
         expr: Box<Expr>,
