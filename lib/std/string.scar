@@ -333,12 +333,12 @@ test "trim_prefix works"
 	var ac = allocators.Arena.new(1024)?
 
 	assert eql(
-		trim_prefix[allocators.Arena](ac, "foobar", "foo")?,
+		trim_prefix[_](ac, "foobar", "foo")?,
 		"bar"
 	)
 
 	assert eql(
-		trim_prefix[allocators.Arena](ac, "foobar", "baz")?,
+		trim_prefix[_](ac, "foobar", "baz")?,
 		"foobar"
 	)
 
@@ -349,12 +349,12 @@ test "trim_suffix works"
 	var ac = allocators.Arena.new(1024)?
 
 	assert eql(
-		trim_suffix[allocators.Arena](ac, "foobar", "bar")?,
+		trim_suffix[_](ac, "foobar", "bar")?,
 		"foo"
 	)
 
 	assert eql(
-		trim_suffix[allocators.Arena](ac, "foobar", "baz")?,
+		trim_suffix[_](ac, "foobar", "baz")?,
 		"foobar"
 	)
 
@@ -365,22 +365,22 @@ test "trim works"
 	var ac = allocators.Arena.new(1024)?
 
 	assert eql(
-		trim[allocators.Arena](ac, "   hello world   ")?,
+		trim[_](ac, "   hello world   ")?,
 		"hello world"
 	)
 
 	assert eql(
-		trim[allocators.Arena](ac, "\n\t hello \r\n")?,
+		trim[_](ac, "\n\t hello \r\n")?,
 		"hello"
 	)
 
 	assert eql(
-		trim[allocators.Arena](ac, "no_whitespace")?,
+		trim[_](ac, "no_whitespace")?,
 		"no_whitespace"
 	)
 
 	assert eql(
-		trim[allocators.Arena](ac, "   ")?,
+		trim[_](ac, "   ")?,
 		""
 	)
 
