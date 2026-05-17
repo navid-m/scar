@@ -1,0 +1,4 @@
+pub def main() void
+	@print("shouldnt work: {s}", {"hello" + 10})
+end
+
