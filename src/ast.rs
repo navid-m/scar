@@ -14,6 +14,7 @@ pub struct ModuleUse {
 
 #[derive(Debug, Clone)]
 pub struct TypeDef {
+    pub is_pub: bool,
     pub name: String,
     pub is_extern: bool,
     pub alias: Option<Type>,

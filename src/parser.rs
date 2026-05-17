@@ -33,15 +33,19 @@ impl Parser {
             } else if self.check_simple(&TokenKind::Test) {
                 tests.push(self.parse_test_block()?);
             } else if self.check_simple(&TokenKind::Pub)
+                && self.check_next_simple(&TokenKind::Type)
+            {
+                type_defs.push(self.parse_type_def(true, false)?);
+            } else if self.check_simple(&TokenKind::Pub)
                 && self.check_next_simple(&TokenKind::Extern)
             {
                 functions.push(self.parse_extern_function(true)?);
             } else if self.check_simple(&TokenKind::Type) {
-                type_defs.push(self.parse_type_def(false)?);
+                type_defs.push(self.parse_type_def(false, false)?);
             } else if self.check_simple(&TokenKind::Extern)
                 && self.check_next_simple(&TokenKind::Type)
             {
-                type_defs.push(self.parse_type_def(true)?);
+                type_defs.push(self.parse_type_def(false, true)?);
             } else if self.check_simple(&TokenKind::Extern) {
                 functions.push(self.parse_extern_function(false)?);
             } else {
@@ -79,7 +83,10 @@ impl Parser {
         Ok(ModuleUse { name, path })
     }
 
-    fn parse_type_def(&mut self, is_extern: bool) -> Result<TypeDef, CompileError> {
+    fn parse_type_def(&mut self, is_pub: bool, is_extern: bool) -> Result<TypeDef, CompileError> {
+        if is_pub {
+            self.expect_simple(TokenKind::Pub)?;
+        }
         if is_extern {
             self.expect_simple(TokenKind::Extern)?;
         }
@@ -95,6 +102,7 @@ impl Parser {
             let alias = Some(self.parse_type()?);
             self.expect_stmt_terminator()?;
             return Ok(TypeDef {
+                is_pub,
                 name,
                 is_extern,
                 alias,
@@ -118,6 +126,7 @@ impl Parser {
         self.expect_simple(TokenKind::End)?;
         self.consume_newlines();
         Ok(TypeDef {
+            is_pub,
             name,
             is_extern,
             alias: None,
@@ -186,7 +195,7 @@ impl Parser {
 
     fn parse_function_signature(&mut self) -> Result<(String, Vec<Param>, Type), CompileError> {
         self.expect_simple(TokenKind::Def)?;
-        let name = self.expect_ident()?;
+        let name = self.parse_qualified_name()?;
         self.expect_simple(TokenKind::LParen)?;
         self.consume_newlines();
 
@@ -216,6 +225,15 @@ impl Parser {
             Type::Void
         };
         Ok((name, params, return_type))
+    }
+
+    fn parse_qualified_name(&mut self) -> Result<String, CompileError> {
+        let mut segments = vec![self.expect_ident()?];
+        while self.check_simple(&TokenKind::Dot) {
+            self.advance();
+            segments.push(self.expect_ident()?);
+        }
+        Ok(segments.join("."))
     }
 
     fn parse_block(&mut self) -> Result<Vec<Stmt>, CompileError> {
@@ -1300,6 +1318,23 @@ mod tests {
 
         assert!(program.functions[0].is_pub);
         assert_eq!(program.functions[0].extern_name.as_deref(), Some("sleep"));
+    }
+
+    #[test]
+    fn parses_public_type_definition() {
+        let source = "pub type Arena\n\tcap usize\nend\n";
+        let program = parse_program(lex(source).unwrap()).unwrap();
+
+        assert!(program.type_defs[0].is_pub);
+        assert_eq!(program.type_defs[0].name, "Arena");
+    }
+
+    #[test]
+    fn parses_namespaced_function_definition() {
+        let source = "pub def Arena.new(cap usize) Arena\n\treturn Arena(cap: cap)\nend\n";
+        let program = parse_program(lex(source).unwrap()).unwrap();
+
+        assert_eq!(program.functions[0].name, "Arena.new");
     }
 
     #[test]

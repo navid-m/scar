@@ -317,6 +317,7 @@ fn rewrite_type_def(type_def: TypeDef, local_types: &HashMap<String, String>) ->
         .cloned()
         .unwrap_or(type_def.name);
     let is_extern = type_def.is_extern;
+    let is_pub = type_def.is_pub;
     let alias = type_def.alias.map(|ty| rewrite_type(ty, local_types));
     let fields = type_def
         .fields
@@ -327,6 +328,7 @@ fn rewrite_type_def(type_def: TypeDef, local_types: &HashMap<String, String>) ->
         })
         .collect();
     TypeDef {
+        is_pub,
         name,
         is_extern,
         alias,
@@ -703,16 +705,19 @@ fn rewrite_callee(
         Expr::FieldAccess { base, field } => {
             if let Expr::Path(path) = *base.clone() {
                 if path.len() == 1 {
-                    let module = module_aliases.get(&path[0]).ok_or_else(|| {
-                        CompileError::new(format!("unknown module `{}`", path[0]))
-                    })?;
-                    let function = module.get(&field).ok_or_else(|| {
-                        CompileError::new(format!(
-                            "module `{}` has no public function `{}`",
-                            path[0], field
-                        ))
-                    })?;
-                    return Ok(Expr::Path(vec![function.clone()]));
+                    if let Some(module) = module_aliases.get(&path[0]) {
+                        let function = module.get(&field).ok_or_else(|| {
+                            CompileError::new(format!(
+                                "module `{}` has no public function `{}`",
+                                path[0], field
+                            ))
+                        })?;
+                        return Ok(Expr::Path(vec![function.clone()]));
+                    }
+                    let qualified = format!("{}.{}", path[0], field);
+                    if let Some(function) = local_functions.get(&qualified) {
+                        return Ok(Expr::Path(vec![function.clone()]));
+                    }
                 }
             }
             rewrite_expr(
@@ -810,6 +815,25 @@ mod tests {
 
         assert_eq!(program.type_defs.len(), 1);
         assert_eq!(program.type_defs[0].name, "some_file__SomeType");
+
+        fs::remove_dir_all(temp_dir).unwrap();
+    }
+
+    #[test]
+    fn resolves_namespaced_type_functions() {
+        let temp_dir = create_temp_dir();
+        let entry = temp_dir.join("main.scar");
+
+        fs::write(
+            &entry,
+            "pub type Arena\n\tcap usize\nend\n\npub def Arena.new(cap usize) Arena\n\treturn Arena(cap: cap)\nend\n\npub def main() void\n\tval arena = Arena.new(4 as usize)\n\t@print(\"{d}\", {arena.cap})\nend\n",
+        )
+        .unwrap();
+
+        let program = resolve_entry_program(&entry).unwrap();
+
+        assert_eq!(program.type_defs[0].name, "Arena");
+        assert_eq!(program.functions[0].name, "Arena.new");
 
         fs::remove_dir_all(temp_dir).unwrap();
     }

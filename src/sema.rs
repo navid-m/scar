@@ -90,7 +90,19 @@ pub fn analyze(program: &Program) -> Result<ProgramInfo, CompileError> {
 }
 
 fn mangle_function_symbol(name: &str) -> String {
-    format!("fn__{name}")
+    format!("fn__{}", sanitize_symbol_name(name))
+}
+
+fn sanitize_symbol_name(name: &str) -> String {
+    name.chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || ch == '_' {
+                ch
+            } else {
+                '_'
+            }
+        })
+        .collect()
 }
 
 fn collect_types(program: &Program) -> Result<HashMap<String, TypeDefInfo>, CompileError> {
