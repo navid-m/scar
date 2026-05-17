@@ -29,6 +29,12 @@ impl Parser {
         while !self.is_eof() {
             if self.check_simple(&TokenKind::Val) {
                 module_uses.push(self.parse_module_use()?);
+            } else if self.check_simple(&TokenKind::Test) {
+                self.skip_test_block()?;
+            } else if self.check_simple(&TokenKind::Pub)
+                && self.check_next_simple(&TokenKind::Extern)
+            {
+                functions.push(self.parse_extern_function(true)?);
             } else if self.check_simple(&TokenKind::Type) {
                 type_defs.push(self.parse_type_def(false)?);
             } else if self.check_simple(&TokenKind::Extern)
@@ -36,7 +42,7 @@ impl Parser {
             {
                 type_defs.push(self.parse_type_def(true)?);
             } else if self.check_simple(&TokenKind::Extern) {
-                functions.push(self.parse_extern_function()?);
+                functions.push(self.parse_extern_function(false)?);
             } else {
                 functions.push(self.parse_function()?);
             }
@@ -140,7 +146,10 @@ impl Parser {
         })
     }
 
-    fn parse_extern_function(&mut self) -> Result<Function, CompileError> {
+    fn parse_extern_function(&mut self, is_pub: bool) -> Result<Function, CompileError> {
+        if is_pub {
+            self.expect_simple(TokenKind::Pub)?;
+        }
         self.expect_simple(TokenKind::Extern)?;
         let (name, params, return_type) = self.parse_function_signature()?;
         self.expect_simple(TokenKind::ColonColon)?;
@@ -151,13 +160,43 @@ impl Parser {
         self.expect_stmt_terminator()?;
 
         Ok(Function {
-            is_pub: false,
+            is_pub,
             name,
             extern_name: Some(extern_name),
             params,
             return_type,
             body: Vec::new(),
         })
+    }
+
+    fn skip_test_block(&mut self) -> Result<(), CompileError> {
+        self.expect_simple(TokenKind::Test)?;
+        let TokenKind::Str(_) = self.current().kind else {
+            return Err(self.error_at_current("expected a string literal test name"));
+        };
+        self.advance();
+        self.expect_newline("expected a newline after test name")?;
+
+        let mut depth = 1usize;
+        while !self.is_eof() {
+            match self.current().kind {
+                TokenKind::Test | TokenKind::If | TokenKind::For => {
+                    depth += 1;
+                    self.advance();
+                }
+                TokenKind::End => {
+                    depth -= 1;
+                    self.advance();
+                    if depth == 0 {
+                        self.consume_newlines();
+                        return Ok(());
+                    }
+                }
+                _ => self.advance(),
+            }
+        }
+
+        Err(self.error_at_current("unterminated test block"))
     }
 
     fn parse_function_signature(&mut self) -> Result<(String, Vec<Param>, Type), CompileError> {
@@ -1140,6 +1179,7 @@ impl Parser {
             TokenKind::Pub => "`pub`",
             TokenKind::Def => "`def`",
             TokenKind::Extern => "`extern`",
+            TokenKind::Test => "`test`",
             TokenKind::Type => "`type`",
             TokenKind::End => "`end`",
             TokenKind::Var => "`var`",
@@ -1240,6 +1280,25 @@ mod tests {
         assert_eq!(program.functions[0].extern_name.as_deref(), Some("sleep"));
         assert_eq!(program.functions[0].params[0].ty, Type::U32);
         assert!(program.functions[0].body.is_empty());
+    }
+
+    #[test]
+    fn parses_public_extern_function() {
+        let source = "pub extern def sleep(t u32) void :: \"sleep\"\n";
+        let program = parse_program(lex(source).unwrap()).unwrap();
+
+        assert!(program.functions[0].is_pub);
+        assert_eq!(program.functions[0].extern_name.as_deref(), Some("sleep"));
+    }
+
+    #[test]
+    fn ignores_top_level_test_blocks() {
+        let source = "extern def strcmp(x ref(u8), y ref(u8)) :: \"strcmp\"\n\ntest \"equals works\"\n\tassert strcmp(\"a\", \"a\")\nend\n\npub def main() void\nend\n";
+        let program = parse_program(lex(source).unwrap()).unwrap();
+
+        assert_eq!(program.functions.len(), 2);
+        assert_eq!(program.functions[0].name, "strcmp");
+        assert_eq!(program.functions[1].name, "main");
     }
 
     #[test]

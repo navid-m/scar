@@ -112,6 +112,7 @@ impl Resolver {
         let prefix = module_prefix(&module_path, &self.root_dir);
         let local_types = build_type_map(&parsed.type_defs, Some(&prefix));
         let local_functions = build_function_map(&parsed.functions, Some(&prefix));
+        let public_functions = build_public_function_map(&parsed.functions, Some(&prefix));
 
         let mut rewritten_types = Vec::new();
         for type_def in parsed.type_defs {
@@ -135,7 +136,7 @@ impl Resolver {
 
         self.visiting.pop();
         let exports = ModuleExports {
-            functions: local_functions,
+            functions: public_functions,
         };
         self.cache.insert(module_path, exports.clone());
         Ok(exports)
@@ -161,6 +162,20 @@ fn canonicalize_path(path: &Path) -> Result<PathBuf, CompileError> {
 fn build_function_map(functions: &[Function], prefix: Option<&str>) -> HashMap<String, String> {
     functions
         .iter()
+        .map(|function| {
+            let mapped = match prefix {
+                Some(prefix) => format!("{prefix}__{}", function.name),
+                None => function.name.clone(),
+            };
+            (function.name.clone(), mapped)
+        })
+        .collect()
+}
+
+fn build_public_function_map(functions: &[Function], prefix: Option<&str>) -> HashMap<String, String> {
+    functions
+        .iter()
+        .filter(|function| function.is_pub)
         .map(|function| {
             let mapped = match prefix {
                 Some(prefix) => format!("{prefix}__{}", function.name),
@@ -611,7 +626,7 @@ fn rewrite_callee(
                     })?;
                     let function = module.get(&field).ok_or_else(|| {
                         CompileError::new(format!(
-                            "module `{}` has no function `{}`",
+                            "module `{}` has no public function `{}`",
                             path[0], field
                         ))
                     })?;
@@ -662,7 +677,7 @@ mod tests {
         .unwrap();
         fs::write(
             &module,
-            "def some_function() void\n\t@puts(\"hello\")\nend\n",
+            "pub def some_function() void\n\t@puts(\"hello\")\nend\n",
         )
         .unwrap();
 
@@ -704,7 +719,7 @@ mod tests {
         .unwrap();
         fs::write(
             &module,
-            "type SomeType\n\tx i32\nend\n\ndef some_other_function() void\n\tval st = SomeType(x: 10)\n\t@print(\"{d}\", {st.x})\nend\n",
+            "type SomeType\n\tx i32\nend\n\npub def some_other_function() void\n\tval st = SomeType(x: 10)\n\t@print(\"{d}\", {st.x})\nend\n",
         )
         .unwrap();
 
@@ -712,6 +727,53 @@ mod tests {
 
         assert_eq!(program.type_defs.len(), 1);
         assert_eq!(program.type_defs[0].name, "some_file__SomeType");
+
+        fs::remove_dir_all(temp_dir).unwrap();
+    }
+
+    #[test]
+    fn rejects_private_module_function_calls() {
+        let temp_dir = create_temp_dir();
+        let entry = temp_dir.join("main.scar");
+        let module = temp_dir.join("some_file.scar");
+
+        fs::write(
+            &entry,
+            "val some_module = use(\"some_file\")\npub def main() void\n\tsome_module.hidden()\nend\n",
+        )
+        .unwrap();
+        fs::write(&module, "def hidden() void\nend\n").unwrap();
+
+        let error = resolve_entry_program(&entry).unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("module `some_module` has no public function `hidden`")
+        );
+
+        fs::remove_dir_all(temp_dir).unwrap();
+    }
+
+    #[test]
+    fn resolves_public_extern_functions_from_modules() {
+        let temp_dir = create_temp_dir();
+        let entry = temp_dir.join("main.scar");
+        let module = temp_dir.join("some_file.scar");
+
+        fs::write(
+            &entry,
+            "val some_module = use(\"some_file\")\npub def main() void\n\tsome_module.sleep(1 as u32)\nend\n",
+        )
+        .unwrap();
+        fs::write(&module, "pub extern def sleep(t u32) void :: \"sleep\"\n").unwrap();
+
+        let program = resolve_entry_program(&entry).unwrap();
+
+        assert_eq!(program.functions.len(), 2);
+        assert_eq!(program.functions[0].name, "some_file__sleep");
+        assert!(program.functions[0].is_pub);
+        assert_eq!(program.functions[0].extern_name.as_deref(), Some("sleep"));
 
         fs::remove_dir_all(temp_dir).unwrap();
     }
