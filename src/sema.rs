@@ -4,7 +4,7 @@ use crate::{
     CompileError,
     ast::{
         BinaryOp, Expr, FieldDef, Function, InterfaceMethod, MatchArmKind, Program, Stmt,
-        TestBlock, Type, UnaryOp,
+        TestBlock, Type, TypeDefKind, UnaryOp, UnionVariantDef,
     },
 };
 
@@ -16,10 +16,13 @@ pub struct FunctionSig {
 
 #[derive(Debug, Clone)]
 pub struct TypeDefInfo {
+    pub kind: TypeDefKind,
     pub fields: Vec<FieldDef>,
     pub field_map: HashMap<String, Type>,
     pub alias: Option<Type>,
     pub derives: Vec<Type>,
+    pub variants: Vec<UnionVariantDef>,
+    pub variant_map: HashMap<String, Vec<Type>>,
 }
 
 #[derive(Debug, Clone)]
@@ -137,37 +140,71 @@ fn collect_types(program: &Program) -> Result<HashMap<String, TypeDefInfo>, Comp
         }
 
         let mut field_map = HashMap::new();
-            if let Some(alias) = &type_def.alias {
-                if !type_def.fields.is_empty() {
+        let mut variant_map = HashMap::new();
+        if let Some(alias) = &type_def.alias {
+            if !type_def.fields.is_empty() || !type_def.variants.is_empty() {
                 return Err(CompileError::new(format!(
                     "type `{}` cannot declare both an alias and fields",
                     type_def.name
                 )));
             }
+            if type_def.kind != TypeDefKind::Struct {
+                return Err(CompileError::new(format!(
+                    "union `{}` cannot be declared as an alias",
+                    type_def.name
+                )));
+            }
             validate_type_with_known_names(alias, &known_type_names)?;
-            } else {
-                for derive in &type_def.derives {
-                    validate_type_with_known_names(derive, &known_type_names)?;
+        } else {
+            for derive in &type_def.derives {
+                validate_type_with_known_names(derive, &known_type_names)?;
+            }
+            match type_def.kind {
+                TypeDefKind::Struct => {
+                    for field in &type_def.fields {
+                        if field_map.contains_key(&field.name) {
+                            return Err(CompileError::new(format!(
+                                "duplicate field `{}` in type `{}`",
+                                field.name, type_def.name
+                            )));
+                        }
+                        validate_type_with_known_names(&field.ty, &known_type_names)?;
+                        field_map.insert(field.name.clone(), field.ty.clone());
+                    }
                 }
-                for field in &type_def.fields {
-                if field_map.contains_key(&field.name) {
-                    return Err(CompileError::new(format!(
-                        "duplicate field `{}` in type `{}`",
-                        field.name, type_def.name
-                    )));
+                TypeDefKind::Union => {
+                    if type_def.is_extern {
+                        return Err(CompileError::new(format!(
+                            "extern unions are not supported: `{}`",
+                            type_def.name
+                        )));
+                    }
+                    for variant in &type_def.variants {
+                        if variant_map.contains_key(&variant.name) {
+                            return Err(CompileError::new(format!(
+                                "duplicate variant `{}` in union `{}`",
+                                variant.name, type_def.name
+                            )));
+                        }
+                        for payload_ty in &variant.payload_types {
+                            validate_type_with_known_names(payload_ty, &known_type_names)?;
+                        }
+                        variant_map.insert(variant.name.clone(), variant.payload_types.clone());
+                    }
                 }
-                validate_type_with_known_names(&field.ty, &known_type_names)?;
-                field_map.insert(field.name.clone(), field.ty.clone());
             }
         }
 
-            types.insert(
+        types.insert(
             type_def.name.clone(),
             TypeDefInfo {
+                kind: type_def.kind,
                 fields: type_def.fields.clone(),
                 field_map,
                 alias: type_def.alias.clone(),
                 derives: type_def.derives.clone(),
+                variants: type_def.variants.clone(),
+                variant_map,
             },
         );
     }
@@ -629,58 +666,172 @@ fn analyze_stmt(
                     .map_err(|error| error.with_location(*line, *column))?,
                 types,
             )?;
-            let Type::Result(ok_ty) = matched_ty else {
-                return Err(
-                    CompileError::new(format!(
-                        "`match` currently requires a `T|error` expression, got {}",
-                        describe_type(&matched_ty)
-                    ))
-                    .with_location(*line, *column),
-                );
-            };
+            match matched_ty {
+                Type::Result(ok_ty) => {
+                    let mut saw_ok = false;
+                    let mut saw_error = false;
+                    for arm in arms {
+                        match &arm.kind {
+                            MatchArmKind::Ok => saw_ok = true,
+                            MatchArmKind::Error => saw_error = true,
+                            MatchArmKind::Variant(name) => {
+                                return Err(
+                                    CompileError::new(format!(
+                                        "result matches do not support variant arm `{name}`"
+                                    ))
+                                    .with_location(*line, *column),
+                                );
+                            }
+                        }
+                        if arm.bindings.len() != 1 {
+                            return Err(
+                                CompileError::new(
+                                    "result match arms require exactly one binding or `_`",
+                                )
+                                .with_location(*line, *column),
+                            );
+                        }
+                        let mut nested = scope.clone();
+                        if let Some(binding) = &arm.bindings[0] {
+                            let binding_ty = match arm.kind {
+                                MatchArmKind::Ok => (*ok_ty).clone(),
+                                MatchArmKind::Error => Type::Ref(Box::new(Type::U8)),
+                                MatchArmKind::Variant(_) => unreachable!(),
+                            };
+                            nested.insert(
+                                binding.clone(),
+                                LocalBinding {
+                                    ty: binding_ty.clone(),
+                                    mutable: true,
+                                },
+                            );
+                            function_locals.insert(binding.clone(), binding_ty);
+                        }
+                        for stmt in &arm.body {
+                            analyze_stmt(
+                                stmt,
+                                function_name,
+                                expected_return,
+                                functions,
+                                types,
+                                &mut nested,
+                                function_locals,
+                                in_loop,
+                                allow_try_panic,
+                            )?;
+                        }
+                    }
 
-            let mut saw_ok = false;
-            let mut saw_error = false;
-            for arm in arms {
-                match arm.kind {
-                    MatchArmKind::Ok => saw_ok = true,
-                    MatchArmKind::Error => saw_error = true,
+                    if !saw_ok || !saw_error {
+                        return Err(
+                            CompileError::new(
+                                "`match` on a result value requires both `ok` and `error` arms",
+                            )
+                            .with_location(*line, *column),
+                        );
+                    }
                 }
-                let mut nested = scope.clone();
-                if let Some(binding) = &arm.binding {
-                    let binding_ty = match arm.kind {
-                        MatchArmKind::Ok => (*ok_ty).clone(),
-                        MatchArmKind::Error => Type::Ref(Box::new(Type::U8)),
-                    };
-                    nested.insert(
-                        binding.clone(),
-                        LocalBinding {
-                            ty: binding_ty.clone(),
-                            mutable: true,
-                        },
-                    );
-                    function_locals.insert(binding.clone(), binding_ty);
-                }
-                for stmt in &arm.body {
-                    analyze_stmt(
-                        stmt,
-                        function_name,
-                        expected_return,
-                        functions,
-                        types,
-                        &mut nested,
-                        function_locals,
-                        in_loop,
-                        allow_try_panic,
-                    )?;
-                }
-            }
+                Type::Named(name) => {
+                    let type_info = types.get(&name).ok_or_else(|| {
+                        CompileError::new(format!("unknown type `{name}`"))
+                            .with_location(*line, *column)
+                    })?;
+                    if type_info.kind != TypeDefKind::Union {
+                        return Err(
+                            CompileError::new(format!(
+                                "`match` currently requires a union or `T|error` expression, got {}",
+                                describe_type(&Type::Named(name))
+                            ))
+                            .with_location(*line, *column),
+                        );
+                    }
+                    let mut seen_variants = HashSet::new();
+                    for arm in arms {
+                        let MatchArmKind::Variant(variant_name) = &arm.kind else {
+                            return Err(
+                                CompileError::new(
+                                    "union matches require variant arms of the form `Variant (...) => (...)`",
+                                )
+                                .with_location(*line, *column),
+                            );
+                        };
+                        let payload_types =
+                            type_info.variant_map.get(variant_name).ok_or_else(|| {
+                                CompileError::new(format!(
+                                    "union `{name}` has no variant `{variant_name}`"
+                                ))
+                                .with_location(*line, *column)
+                            })?;
+                        if !seen_variants.insert(variant_name.clone()) {
+                            return Err(
+                                CompileError::new(format!(
+                                    "duplicate match arm for variant `{variant_name}`"
+                                ))
+                                .with_location(*line, *column),
+                            );
+                        }
+                        if arm.bindings.len() != payload_types.len() {
+                            return Err(
+                                CompileError::new(format!(
+                                    "variant `{variant_name}` expects {} bindings but found {}",
+                                    payload_types.len(),
+                                    arm.bindings.len()
+                                ))
+                                .with_location(*line, *column),
+                            );
+                        }
+                        let mut nested = scope.clone();
+                        for (binding, binding_ty) in arm.bindings.iter().zip(payload_types.iter()) {
+                            if let Some(binding) = binding {
+                                nested.insert(
+                                    binding.clone(),
+                                    LocalBinding {
+                                        ty: binding_ty.clone(),
+                                        mutable: true,
+                                    },
+                                );
+                                function_locals.insert(binding.clone(), binding_ty.clone());
+                            }
+                        }
+                        for stmt in &arm.body {
+                            analyze_stmt(
+                                stmt,
+                                function_name,
+                                expected_return,
+                                functions,
+                                types,
+                                &mut nested,
+                                function_locals,
+                                in_loop,
+                                allow_try_panic,
+                            )?;
+                        }
+                    }
 
-            if !saw_ok || !saw_error {
-                return Err(
-                    CompileError::new("`match` on a result value requires both `ok` and `error` arms")
+                    if seen_variants.len() != type_info.variants.len() {
+                        let missing = type_info
+                            .variants
+                            .iter()
+                            .find(|variant| !seen_variants.contains(&variant.name))
+                            .map(|variant| variant.name.clone())
+                            .unwrap_or_else(|| "<unknown>".to_string());
+                        return Err(
+                            CompileError::new(format!(
+                                "`match` on union `{name}` is missing variant `{missing}`"
+                            ))
+                            .with_location(*line, *column),
+                        );
+                    }
+                }
+                other => {
+                    return Err(
+                        CompileError::new(format!(
+                            "`match` currently requires a union or `T|error` expression, got {}",
+                            describe_type(&other)
+                        ))
                         .with_location(*line, *column),
-                );
+                    );
+                }
             }
         }
         Stmt::Expr { line, column, expr } => {
@@ -881,6 +1032,11 @@ fn infer_expr_type(
             let type_info = types
                 .get(name)
                 .ok_or_else(|| CompileError::new(format!("unknown type `{name}`")))?;
+            if type_info.kind != TypeDefKind::Struct {
+                return Err(CompileError::new(format!(
+                    "union `{name}` cannot be initialized like a struct"
+                )));
+            }
             if type_info.alias.is_some() {
                 return Err(CompileError::new(format!(
                     "type `{name}` is an alias and cannot be initialized like a struct"
@@ -1120,6 +1276,11 @@ fn analyze_call(
 
         if path.len() == 1 {
             if let Some(type_info) = types.get(&function_name) {
+                if type_info.kind != TypeDefKind::Struct {
+                    return Err(CompileError::new(format!(
+                        "union `{function_name}` cannot be constructed positionally"
+                    )));
+                }
                 if type_info.alias.is_some() {
                     return Err(CompileError::new(format!(
                         "type `{function_name}` is an alias and cannot be initialized like a struct"
@@ -1137,6 +1298,32 @@ fn analyze_call(
                     expect_same_type(&field.ty, &actual, types, &format!("field `{}`", field.name))?;
                 }
                 return Ok(Type::Named(function_name));
+            }
+        }
+
+        if path.len() == 2 {
+            let union_name = &path[0];
+            let variant_name = &path[1];
+            if let Some(type_info) = types.get(union_name) {
+                if type_info.kind == TypeDefKind::Union {
+                    let payload_types = type_info.variant_map.get(variant_name).ok_or_else(|| {
+                        CompileError::new(format!(
+                            "union `{union_name}` has no variant `{variant_name}`"
+                        ))
+                    })?;
+                    if payload_types.len() != args.len() {
+                        return Err(CompileError::new(format!(
+                            "variant `{variant_name}` expects {} arguments but received {}",
+                            payload_types.len(),
+                            args.len()
+                        )));
+                    }
+                    for (arg, expected) in args.iter().zip(payload_types.iter()) {
+                        let actual = infer_expr_type(arg, functions, types, scope)?;
+                        expect_same_type(expected, &actual, types, "union constructor argument")?;
+                    }
+                    return Ok(Type::Named(union_name.clone()));
+                }
             }
         }
 

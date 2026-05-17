@@ -3,7 +3,7 @@ use crate::{
     ast::{
         BinaryOp, Expr, FieldDef, FieldInit, Function, GenericParam, InterfaceDef,
         InterfaceMethod, MatchArm, MatchArmKind, ModuleUse, Param, Program, Stmt, TestBlock, Type,
-        TypeDef, UnaryOp,
+        TypeDef, TypeDefKind, UnaryOp, UnionVariantDef,
     },
     lexer::{Token, TokenKind},
 };
@@ -45,11 +45,17 @@ impl Parser {
             {
                 type_defs.push(self.parse_type_def(true, false)?);
             } else if self.check_simple(&TokenKind::Pub)
+                && self.check_next_simple(&TokenKind::Union)
+            {
+                type_defs.push(self.parse_union_def(true)?);
+            } else if self.check_simple(&TokenKind::Pub)
                 && self.check_next_simple(&TokenKind::Extern)
             {
                 functions.push(self.parse_extern_function(true)?);
             } else if self.check_simple(&TokenKind::Type) {
                 type_defs.push(self.parse_type_def(false, false)?);
+            } else if self.check_simple(&TokenKind::Union) {
+                type_defs.push(self.parse_union_def(false)?);
             } else if self.check_simple(&TokenKind::Extern)
                 && self.check_next_simple(&TokenKind::Type)
             {
@@ -119,10 +125,12 @@ impl Parser {
             return Ok(TypeDef {
                 is_pub,
                 name,
+                kind: TypeDefKind::Struct,
                 is_extern,
                 alias,
                 derives,
                 fields: Vec::new(),
+                variants: Vec::new(),
             });
         }
         self.expect_newline("expected a newline after type name")?;
@@ -144,10 +152,66 @@ impl Parser {
         Ok(TypeDef {
             is_pub,
             name,
+            kind: TypeDefKind::Struct,
             is_extern,
             alias: None,
             derives,
             fields,
+            variants: Vec::new(),
+        })
+    }
+
+    fn parse_union_def(&mut self, is_pub: bool) -> Result<TypeDef, CompileError> {
+        if is_pub {
+            self.expect_simple(TokenKind::Pub)?;
+        }
+        self.expect_simple(TokenKind::Union)?;
+        let name = self.expect_ident()?;
+        self.expect_newline("expected a newline after union name")?;
+
+        let mut variants = Vec::new();
+        self.consume_newlines();
+        while !self.check_simple(&TokenKind::End) && !self.is_eof() {
+            let variant_name = self.expect_ident()?;
+            let payload_types = if self.check_simple(&TokenKind::LParen) {
+                self.advance();
+                self.consume_newlines();
+                let mut payload_types = Vec::new();
+                if !self.check_simple(&TokenKind::RParen) {
+                    loop {
+                        payload_types.push(self.parse_type()?);
+                        if self.check_simple(&TokenKind::Comma) {
+                            self.advance();
+                            self.consume_newlines();
+                        } else {
+                            self.consume_newlines();
+                            break;
+                        }
+                    }
+                }
+                self.expect_simple(TokenKind::RParen)?;
+                payload_types
+            } else {
+                Vec::new()
+            };
+            self.expect_stmt_terminator()?;
+            variants.push(UnionVariantDef {
+                name: variant_name,
+                payload_types,
+            });
+        }
+
+        self.expect_simple(TokenKind::End)?;
+        self.consume_newlines();
+        Ok(TypeDef {
+            is_pub,
+            name,
+            kind: TypeDefKind::Union,
+            is_extern: false,
+            alias: None,
+            derives: Vec::new(),
+            fields: Vec::new(),
+            variants,
         })
     }
 
@@ -632,29 +696,24 @@ impl Parser {
         let mut arms = Vec::new();
         self.consume_newlines();
         while !self.check_simple(&TokenKind::End) && !self.is_eof() {
-            let kind = match self.current().kind.clone() {
-                TokenKind::Ident(name) if name == "ok" => {
-                    self.advance();
-                    MatchArmKind::Ok
-                }
-                TokenKind::Ident(name) if name == "error" => {
-                    self.advance();
-                    MatchArmKind::Error
-                }
-                _ => return Err(self.error_at_current("expected `ok` or `error` match arm")),
-            };
-            let binding = match self.current().kind.clone() {
-                TokenKind::Ident(name) => {
-                    self.advance();
-                    if name == "_" { None } else { Some(name) }
-                }
-                _ => return Err(self.error_at_current("expected a match binding name or `_`")),
+            let arm_name = self.expect_ident()?;
+            let (kind, bindings) = if arm_name == "ok" && !self.check_simple(&TokenKind::LParen) {
+                (MatchArmKind::Ok, vec![self.parse_match_binding()?])
+            } else if arm_name == "error" && !self.check_simple(&TokenKind::LParen) {
+                (MatchArmKind::Error, vec![self.parse_match_binding()?])
+            } else {
+                let bindings = if self.check_simple(&TokenKind::LParen) {
+                    self.parse_match_bindings()?
+                } else {
+                    Vec::new()
+                };
+                (MatchArmKind::Variant(arm_name), bindings)
             };
             self.expect_simple(TokenKind::FatArrow)?;
             let body = self.parse_match_arm_body()?;
             arms.push(MatchArm {
                 kind,
-                binding,
+                bindings,
                 body,
             });
             self.consume_newlines();
@@ -676,6 +735,36 @@ impl Parser {
         let body = self.parse_block_until(&[TokenKind::RParen])?;
         self.expect_simple(TokenKind::RParen)?;
         Ok(body)
+    }
+
+    fn parse_match_binding(&mut self) -> Result<Option<String>, CompileError> {
+        match self.current().kind.clone() {
+            TokenKind::Ident(name) => {
+                self.advance();
+                Ok(if name == "_" { None } else { Some(name) })
+            }
+            _ => Err(self.error_at_current("expected a match binding name or `_`")),
+        }
+    }
+
+    fn parse_match_bindings(&mut self) -> Result<Vec<Option<String>>, CompileError> {
+        self.expect_simple(TokenKind::LParen)?;
+        self.consume_newlines();
+        let mut bindings = Vec::new();
+        if !self.check_simple(&TokenKind::RParen) {
+            loop {
+                bindings.push(self.parse_match_binding()?);
+                if self.check_simple(&TokenKind::Comma) {
+                    self.advance();
+                    self.consume_newlines();
+                } else {
+                    self.consume_newlines();
+                    break;
+                }
+            }
+        }
+        self.expect_simple(TokenKind::RParen)?;
+        Ok(bindings)
     }
 
     fn parse_pragma_stmt(&mut self) -> Result<Stmt, CompileError> {
@@ -1632,6 +1721,7 @@ impl Parser {
             TokenKind::Match => "`match`",
             TokenKind::Interface => "`interface`",
             TokenKind::Type => "`type`",
+            TokenKind::Union => "`union`",
             TokenKind::End => "`end`",
             TokenKind::Var => "`var`",
             TokenKind::Val => "`val`",

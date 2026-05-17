@@ -10,7 +10,7 @@ use std::{
 
 use crate::{
     CompileError,
-    ast::{BinaryOp, Expr, Function, MatchArmKind, Program, Stmt, Type, TypeDef, UnaryOp},
+    ast::{BinaryOp, Expr, Function, MatchArmKind, Program, Stmt, Type, TypeDef, TypeDefKind, UnaryOp},
     sema::ProgramInfo,
 };
 
@@ -177,21 +177,56 @@ fn render_type_def(type_def: &TypeDef) -> String {
     }
 
     let mut output = String::new();
-    if type_def.is_extern {
-        output.push_str("typedef struct __attribute__((packed)) {\n");
-    } else {
-        output.push_str("typedef struct {\n");
+    match type_def.kind {
+        TypeDefKind::Struct => {
+            if type_def.is_extern {
+                output.push_str("typedef struct __attribute__((packed)) {\n");
+            } else {
+                output.push_str("typedef struct {\n");
+            }
+            for field in &type_def.fields {
+                output.push_str("    ");
+                output.push_str(&c_type(&field.ty));
+                output.push(' ');
+                output.push_str(&field.name);
+                output.push_str(";\n");
+            }
+            output.push_str("} ");
+            output.push_str(&type_def.name);
+            output.push_str(";\n");
+        }
+        TypeDefKind::Union => {
+            output.push_str("enum {\n");
+            for (index, variant) in type_def.variants.iter().enumerate() {
+                output.push_str("    ");
+                output.push_str(&union_tag_symbol(&type_def.name, &variant.name));
+                output.push_str(" = ");
+                output.push_str(&index.to_string());
+                output.push_str(",\n");
+            }
+            output.push_str("};\n");
+            output.push_str("typedef struct {\n");
+            output.push_str("    int32_t tag;\n");
+            output.push_str("    union {\n");
+            for variant in &type_def.variants {
+                output.push_str("        struct {\n");
+                for (index, payload_ty) in variant.payload_types.iter().enumerate() {
+                    output.push_str("            ");
+                    output.push_str(&c_type(payload_ty));
+                    output.push(' ');
+                    output.push_str(&union_payload_field(index));
+                    output.push_str(";\n");
+                }
+                output.push_str("        } ");
+                output.push_str(&variant.name);
+                output.push_str(";\n");
+            }
+            output.push_str("    } data;\n");
+            output.push_str("} ");
+            output.push_str(&type_def.name);
+            output.push_str(";\n");
+        }
     }
-    for field in &type_def.fields {
-        output.push_str("    ");
-        output.push_str(&c_type(&field.ty));
-        output.push(' ');
-        output.push_str(&field.name);
-        output.push_str(";\n");
-    }
-    output.push_str("} ");
-    output.push_str(&type_def.name);
-    output.push_str(";\n");
     output
 }
 
@@ -208,6 +243,14 @@ fn render_result_support(ok_ty: &Type) -> String {
     output.push_str(&result_name);
     output.push_str(";\n");
     output
+}
+
+fn union_tag_symbol(union_name: &str, variant_name: &str) -> String {
+    format!("{union_name}__tag__{variant_name}")
+}
+
+fn union_payload_field(index: usize) -> String {
+    format!("_{index}")
 }
 
 fn result_c_type(ok_ty: &Type) -> String {
@@ -617,11 +660,6 @@ fn render_stmt(
         }
         Stmt::Match { expr, arms, .. } => {
             let matched_ty = infer_codegen_expr_type(expr, function, info)?;
-            let Type::Result(ok_ty) = resolve_codegen_aliases(&matched_ty, info)? else {
-                return Err(CompileError::new(
-                    "`match` expects a result value during code generation",
-                ));
-            };
             let temp_id = *next_temp_id;
             *next_temp_id += 1;
             let temp_name = format!("__scar_match_{temp_id}");
@@ -634,44 +672,113 @@ fn render_stmt(
             output.push_str(" = ");
             output.push_str(&render_expr(expr, function, info)?);
             output.push_str(";\n");
-            for (index, arm) in arms.iter().enumerate() {
-                indent(output, level + 1);
-                if index == 0 {
-                    output.push_str("if (");
-                } else {
-                    output.push_str("else if (");
-                }
-                match arm.kind {
-                    MatchArmKind::Ok => output.push_str("!"),
-                    MatchArmKind::Error => {}
-                }
-                output.push_str(&temp_name);
-                output.push_str(".is_error) {\n");
-                if let Some(binding) = &arm.binding {
-                    indent(output, level + 2);
-                    match arm.kind {
-                        MatchArmKind::Ok => {
-                            output.push_str(&c_type(ok_ty.as_ref()));
-                            output.push(' ');
-                            output.push_str(&mangle_local_symbol(binding));
-                            output.push_str(" = ");
-                            output.push_str(&temp_name);
-                            output.push_str(".ok;\n");
+            match resolve_codegen_aliases(&matched_ty, info)? {
+                Type::Result(ok_ty) => {
+                    for (index, arm) in arms.iter().enumerate() {
+                        indent(output, level + 1);
+                        if index == 0 {
+                            output.push_str("if (");
+                        } else {
+                            output.push_str("else if (");
                         }
-                        MatchArmKind::Error => {
-                            output.push_str("const char * ");
-                            output.push_str(&mangle_local_symbol(binding));
-                            output.push_str(" = ");
-                            output.push_str(&temp_name);
-                            output.push_str(".error;\n");
+                        match &arm.kind {
+                            MatchArmKind::Ok => output.push_str("!"),
+                            MatchArmKind::Error => {}
+                            MatchArmKind::Variant(name) => {
+                                return Err(CompileError::new(format!(
+                                    "unexpected union match arm `{name}` for result code generation"
+                                )));
+                            }
                         }
+                        output.push_str(&temp_name);
+                        output.push_str(".is_error) {\n");
+                        if let Some(binding) = arm.bindings.first().and_then(|binding| binding.as_ref()) {
+                            indent(output, level + 2);
+                            match &arm.kind {
+                                MatchArmKind::Ok => {
+                                    output.push_str(&c_type(ok_ty.as_ref()));
+                                    output.push(' ');
+                                    output.push_str(&mangle_local_symbol(binding));
+                                    output.push_str(" = ");
+                                    output.push_str(&temp_name);
+                                    output.push_str(".ok;\n");
+                                }
+                                MatchArmKind::Error => {
+                                    output.push_str("const char * ");
+                                    output.push_str(&mangle_local_symbol(binding));
+                                    output.push_str(" = ");
+                                    output.push_str(&temp_name);
+                                    output.push_str(".error;\n");
+                                }
+                                MatchArmKind::Variant(_) => unreachable!(),
+                            }
+                        }
+                        for stmt in &arm.body {
+                            render_stmt(output, stmt, function, info, level + 2, next_temp_id)?;
+                        }
+                        indent(output, level + 1);
+                        output.push_str("}\n");
                     }
                 }
-                for stmt in &arm.body {
-                    render_stmt(output, stmt, function, info, level + 2, next_temp_id)?;
+                Type::Named(union_name) => {
+                    let type_info = info.types.get(&union_name).ok_or_else(|| {
+                        CompileError::new(format!("unknown type `{union_name}` in match code generation"))
+                    })?;
+                    for (index, arm) in arms.iter().enumerate() {
+                        let MatchArmKind::Variant(variant_name) = &arm.kind else {
+                            return Err(CompileError::new(
+                                "result-style match arms are not supported for union code generation",
+                            ));
+                        };
+                        let payload_types = type_info.variant_map.get(variant_name).ok_or_else(|| {
+                            CompileError::new(format!(
+                                "union `{union_name}` has no variant `{variant_name}`"
+                            ))
+                        })?;
+                        indent(output, level + 1);
+                        if index == 0 {
+                            output.push_str("if (");
+                        } else {
+                            output.push_str("else if (");
+                        }
+                        output.push_str(&temp_name);
+                        output.push_str(".tag == ");
+                        output.push_str(&union_tag_symbol(&union_name, variant_name));
+                        output.push_str(") {\n");
+                        for (binding, payload_ty, payload_index) in arm
+                            .bindings
+                            .iter()
+                            .zip(payload_types.iter())
+                            .zip(0usize..)
+                            .map(|((binding, payload_ty), payload_index)| (binding, payload_ty, payload_index))
+                        {
+                            if let Some(binding) = binding {
+                                indent(output, level + 2);
+                                output.push_str(&c_type(payload_ty));
+                                output.push(' ');
+                                output.push_str(&mangle_local_symbol(binding));
+                                output.push_str(" = ");
+                                output.push_str(&temp_name);
+                                output.push_str(".data.");
+                                output.push_str(variant_name);
+                                output.push('.');
+                                output.push_str(&union_payload_field(payload_index));
+                                output.push_str(";\n");
+                            }
+                        }
+                        for stmt in &arm.body {
+                            render_stmt(output, stmt, function, info, level + 2, next_temp_id)?;
+                        }
+                        indent(output, level + 1);
+                        output.push_str("}\n");
+                    }
                 }
-                indent(output, level + 1);
-                output.push_str("}\n");
+                other => {
+                    return Err(CompileError::new(format!(
+                        "`match` expects a union or result value during code generation, got {}",
+                        describe_type(&other)
+                    )));
+                }
             }
             indent(output, level);
             output.push_str("}\n");
@@ -902,6 +1009,11 @@ fn render_expr_with_hint(
             let type_info = info.types.get(name).ok_or_else(|| {
                 CompileError::new(format!("unknown type `{name}` in code generation"))
             })?;
+            if type_info.kind != TypeDefKind::Struct {
+                return Err(CompileError::new(format!(
+                    "union `{name}` cannot be initialized like a struct"
+                )));
+            }
             let rendered_fields = fields
                 .iter()
                 .map(|field| {
@@ -1156,6 +1268,11 @@ fn render_call(
         }
         if path.len() == 1 {
             if let Some(type_info) = info.types.get(&function_name) {
+                if type_info.kind != TypeDefKind::Struct {
+                    return Err(CompileError::new(format!(
+                        "union `{function_name}` cannot be constructed positionally"
+                    )));
+                }
                 if type_info.alias.is_some() {
                     return Err(CompileError::new(format!(
                         "type `{}` is an alias and cannot be initialized like a struct",
@@ -1176,6 +1293,38 @@ fn render_call(
                     .map(|(arg, field)| render_expr_with_hint(arg, function, info, Some(&field.ty)))
                     .collect::<Result<Vec<_>, _>>()?;
                 return Ok(format!("({}){{ {} }}", function_name, rendered_args.join(", ")));
+            }
+        }
+        if path.len() == 2 {
+            let union_name = &path[0];
+            let variant_name = &path[1];
+            if let Some(type_info) = info.types.get(union_name) {
+                if type_info.kind == TypeDefKind::Union {
+                    let payload_types = type_info.variant_map.get(variant_name).ok_or_else(|| {
+                        CompileError::new(format!(
+                            "union `{union_name}` has no variant `{variant_name}`"
+                        ))
+                    })?;
+                    let rendered_args = args
+                        .iter()
+                        .zip(payload_types.iter())
+                        .map(|(arg, payload_ty)| {
+                            render_expr_with_hint(arg, function, info, Some(payload_ty))
+                        })
+                        .collect::<Result<Vec<_>, _>>()?;
+                    let rendered_fields = rendered_args
+                        .iter()
+                        .enumerate()
+                        .map(|(index, value)| format!(".{} = {}", union_payload_field(index), value))
+                        .collect::<Vec<_>>();
+                    return Ok(format!(
+                        "(({}){{ .tag = {}, .data.{} = {{ {} }} }})",
+                        union_name,
+                        union_tag_symbol(union_name, variant_name),
+                        variant_name,
+                        rendered_fields.join(", ")
+                    ));
+                }
             }
         }
         return Err(CompileError::new(format!("unknown function `{function_name}`")));
@@ -1450,17 +1599,34 @@ fn infer_codegen_expr_type(
             }
         }
         Expr::Call { callee, .. } => {
-            let Some(path) = callee.as_path() else {
+            let Some(path) = callee.callee_path() else {
                 return Err(CompileError::new(
                     "only direct calls are supported during code generation",
                 ));
             };
-            match path {
-                [name] => info
-                    .functions
-                    .get(name)
-                    .map(|sig| sig.return_type.clone())
-                    .ok_or_else(|| CompileError::new(format!("unknown function `{name}`"))),
+            match path.as_slice() {
+                [name] => {
+                    if let Some(signature) = info.functions.get(name) {
+                        Ok(signature.return_type.clone())
+                    } else if info.types.contains_key(name) {
+                        Ok(Type::Named(name.clone()))
+                    } else {
+                        Err(CompileError::new(format!("unknown function `{name}`")))
+                    }
+                }
+                [union_name, variant_name] => {
+                    if let Some(type_info) = info.types.get(union_name)
+                        && type_info.kind == TypeDefKind::Union
+                        && type_info.variant_map.contains_key(variant_name)
+                    {
+                        Ok(Type::Named(union_name.clone()))
+                    } else {
+                        Err(CompileError::new(format!(
+                            "unsupported call target `{}` in code generation",
+                            path.join(".")
+                        )))
+                    }
+                }
                 _ => Err(CompileError::new(format!(
                     "unsupported call target `{}` in code generation",
                     path.join(".")
@@ -1767,6 +1933,11 @@ fn collect_list_types(program: &Program, info: &ProgramInfo) -> Vec<Type> {
         for field in &type_def.fields {
             collect_list_types_from_type(&field.ty, &mut set);
         }
+        for variant in &type_def.variants {
+            for payload_ty in &variant.payload_types {
+                collect_list_types_from_type(payload_ty, &mut set);
+            }
+        }
     }
     for function in &program.functions {
         collect_list_types_from_type(&function.return_type, &mut set);
@@ -1793,6 +1964,11 @@ fn collect_result_types(program: &Program, info: &ProgramInfo) -> Vec<Type> {
         }
         for field in &type_def.fields {
             collect_result_types_from_type(&field.ty, &mut set);
+        }
+        for variant in &type_def.variants {
+            for payload_ty in &variant.payload_types {
+                collect_result_types_from_type(payload_ty, &mut set);
+            }
         }
     }
     for function in &program.functions {

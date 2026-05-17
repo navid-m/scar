@@ -8,7 +8,8 @@ use crate::{
     CompileError,
     ast::{
         BinaryOp, Expr, FieldDef, FieldInit, Function, GenericParam, InterfaceDef, InterfaceMethod,
-        ModuleUse, Param, Program, Stmt, TestBlock, Type, TypeDef, UnaryOp,
+        MatchArmKind, ModuleUse, Param, Program, Stmt, TestBlock, Type, TypeDef, TypeDefKind,
+        UnaryOp, UnionVariantDef,
     },
     lexer::lex,
     parser::parse_program,
@@ -465,10 +466,23 @@ fn rewrite_type_def(
     Ok(TypeDef {
         is_pub,
         name,
+        kind: type_def.kind,
         is_extern,
         alias,
         derives,
         fields,
+        variants: type_def
+            .variants
+            .into_iter()
+            .map(|variant| UnionVariantDef {
+                name: variant.name,
+                payload_types: variant
+                    .payload_types
+                    .into_iter()
+                    .map(|ty| rewrite_type(ty, local_types, module_aliases))
+                    .collect(),
+            })
+            .collect(),
     })
 }
 
@@ -674,7 +688,7 @@ fn rewrite_stmt(
                 .map(|arm| {
                     Ok(crate::ast::MatchArm {
                         kind: arm.kind,
-                        binding: arm.binding,
+                        bindings: arm.bindings,
                         body: arm
                             .body
                             .into_iter()
@@ -927,7 +941,10 @@ fn rewrite_callee(
                     .get(name)
                     .cloned()
                     .unwrap_or_else(|| name.clone()),
-            ]));
+                ]));
+        }
+        if let Some(rewritten) = rewrite_constructor_path(&path, local_types, module_aliases) {
+            return Ok(Expr::Path(rewritten));
         }
         if let Some(module) = module_aliases.get(&path[0]) {
             let member = path[1..].join(".");
@@ -952,6 +969,25 @@ fn rewrite_callee(
             module_aliases,
         ),
         other => rewrite_expr(other, local_functions, local_types, module_aliases),
+    }
+}
+
+fn rewrite_constructor_path(
+    path: &[String],
+    local_types: &HashMap<String, String>,
+    module_aliases: &ModuleAliases,
+) -> Option<Vec<String>> {
+    match path {
+        [base, variant] => local_types
+            .get(base)
+            .cloned()
+            .map(|mapped| vec![mapped, variant.clone()]),
+        [module_alias, type_name, variant] => module_aliases
+            .get(module_alias)
+            .and_then(|module| module.named_types.get(type_name))
+            .cloned()
+            .map(|mapped| vec![mapped, variant.clone()]),
+        _ => None,
     }
 }
 
@@ -1310,26 +1346,37 @@ impl GenericInstantiator {
                 column,
                 expr,
                 arms,
-            } => Stmt::Match {
-                line,
-                column,
-                expr: self.rewrite_expr_generics(expr, scope)?,
-                arms: arms
-                    .into_iter()
-                    .map(|arm| {
-                        let mut nested = scope.clone();
-                        Ok(crate::ast::MatchArm {
-                            kind: arm.kind,
-                            binding: arm.binding,
-                            body: arm
-                                .body
-                                .into_iter()
-                                .map(|stmt| self.rewrite_stmt_generics(stmt, &mut nested))
-                                .collect::<Result<Vec<_>, _>>()?,
+            } => {
+                let expr = self.rewrite_expr_generics(expr, scope)?;
+                let matched_ty = self.infer_expr_type(&expr, scope);
+                Stmt::Match {
+                    line,
+                    column,
+                    expr,
+                    arms: arms
+                        .into_iter()
+                        .map(|arm| {
+                            let mut nested = scope.clone();
+                            for (name, ty) in self.infer_match_arm_bindings(
+                                matched_ty.as_ref(),
+                                &arm.kind,
+                                &arm.bindings,
+                            ) {
+                                nested.insert(name, ty);
+                            }
+                            Ok(crate::ast::MatchArm {
+                                kind: arm.kind,
+                                bindings: arm.bindings,
+                                body: arm
+                                    .body
+                                    .into_iter()
+                                    .map(|stmt| self.rewrite_stmt_generics(stmt, &mut nested))
+                                    .collect::<Result<Vec<_>, _>>()?,
+                            })
                         })
-                    })
-                    .collect::<Result<Vec<_>, CompileError>>()?,
-            },
+                        .collect::<Result<Vec<_>, CompileError>>()?,
+                }
+            }
             Stmt::Expr { line, column, expr } => Stmt::Expr {
                 line,
                 column,
@@ -1737,9 +1784,22 @@ impl GenericInstantiator {
             Expr::StructInit { name, .. } => Some(Type::Named(name.clone())),
             Expr::BuiltinCall { name, args } => self.infer_builtin_type(name, args, scope),
             Expr::MethodCall { .. } => None,
-            Expr::Call { callee, .. } => self
-                .extract_expr_path(callee)
-                .and_then(|path| self.function_returns.get(&path.join(".")).cloned()),
+            Expr::Call { callee, .. } => {
+                let path = self.extract_expr_path(callee)?;
+                if let Some(return_ty) = self.function_returns.get(&path.join(".")) {
+                    Some(return_ty.clone())
+                } else {
+                    match path.as_slice() {
+                        [name] => self.types.get(name).map(|_| Type::Named(name.clone())),
+                        [union_name, variant_name] => self.types.get(union_name).and_then(|type_def| {
+                            (type_def.kind == TypeDefKind::Union
+                                && type_def.variants.iter().any(|variant| variant.name == *variant_name))
+                                .then(|| Type::Named(union_name.clone()))
+                        }),
+                        _ => None,
+                    }
+                }
+            }
             Expr::Specialize { .. } => None,
             Expr::Cast { ty, .. } => Some(ty.clone()),
             Expr::Error { .. } => Some(Type::Error),
@@ -1784,6 +1844,38 @@ impl GenericInstantiator {
                     _ => None,
                 }
             }
+        }
+    }
+
+    fn infer_match_arm_bindings(
+        &self,
+        matched_ty: Option<&Type>,
+        kind: &MatchArmKind,
+        bindings: &[Option<String>],
+    ) -> Vec<(String, Type)> {
+        match (matched_ty, kind) {
+            (Some(Type::Result(ok_ty)), MatchArmKind::Ok) if bindings.len() == 1 => bindings[0]
+                .clone()
+                .map(|name| vec![(name, (**ok_ty).clone())])
+                .unwrap_or_default(),
+            (Some(Type::Result(_)), MatchArmKind::Error) if bindings.len() == 1 => bindings[0]
+                .clone()
+                .map(|name| vec![(name, Type::Ref(Box::new(Type::U8)))])
+                .unwrap_or_default(),
+            (Some(Type::Named(union_name)), MatchArmKind::Variant(variant_name)) => self
+                .types
+                .get(union_name)
+                .filter(|type_def| type_def.kind == TypeDefKind::Union)
+                .and_then(|type_def| type_def.variants.iter().find(|variant| variant.name == *variant_name))
+                .map(|variant| {
+                    bindings
+                        .iter()
+                        .zip(variant.payload_types.iter())
+                        .filter_map(|(binding, ty)| binding.clone().map(|name| (name, ty.clone())))
+                        .collect()
+                })
+                .unwrap_or_default(),
+            _ => Vec::new(),
         }
     }
 
@@ -2064,7 +2156,7 @@ fn substitute_stmt(stmt: Stmt, substitutions: &HashMap<String, Type>) -> Stmt {
                 .into_iter()
                 .map(|arm| crate::ast::MatchArm {
                     kind: arm.kind,
-                    binding: arm.binding,
+                    bindings: arm.bindings,
                     body: arm
                         .body
                         .into_iter()

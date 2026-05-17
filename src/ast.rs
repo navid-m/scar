@@ -17,10 +17,18 @@ pub struct ModuleUse {
 pub struct TypeDef {
     pub is_pub: bool,
     pub name: String,
+    pub kind: TypeDefKind,
     pub is_extern: bool,
     pub alias: Option<Type>,
     pub derives: Vec<Type>,
     pub fields: Vec<FieldDef>,
+    pub variants: Vec<UnionVariantDef>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TypeDefKind {
+    Struct,
+    Union,
 }
 
 #[derive(Debug, Clone)]
@@ -42,6 +50,12 @@ pub struct InterfaceMethod {
 pub struct FieldDef {
     pub name: String,
     pub ty: Type,
+}
+
+#[derive(Debug, Clone)]
+pub struct UnionVariantDef {
+    pub name: String,
+    pub payload_types: Vec<Type>,
 }
 
 #[derive(Debug, Clone)]
@@ -76,14 +90,15 @@ pub struct TestBlock {
 #[derive(Debug, Clone)]
 pub struct MatchArm {
     pub kind: MatchArmKind,
-    pub binding: Option<String>,
+    pub bindings: Vec<Option<String>>,
     pub body: Vec<Stmt>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MatchArmKind {
     Ok,
     Error,
+    Variant(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
