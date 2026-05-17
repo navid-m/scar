@@ -12,16 +12,16 @@ Prioritizes:
 
 ```scar
 def add[T](x: T, y: T) T
-		return x + y
+	return x + y
 end
 
 def mix_add[A: i32|i64, B: f32|f64, C: f64](x: A, y: B) C
-    return (x as C) + (y as C)
+	return (x as C) + (y as C)
 end
 
 pub def main()
-		@print("{d}\n", add[i32](120, 140))
-		@print("{lf}\n", mix_add[i32, f32, f64](1, 2.0))
+	@print("{d}\n", add[i32](120, 140))
+	@print("{lf}\n", mix_add[i32, f32, f64](1, 2.0))
 end
 ```
 
