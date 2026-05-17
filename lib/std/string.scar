@@ -220,7 +220,7 @@ pub def trim[A: allocators.BumpAllocator](
 	var start usize = 0
 	var nd usize = len(x)
 
-	for (start < nd)
+	for start < nd
 		var ch u8 = @deref(@add(x, start))
 
 		if (
@@ -235,7 +235,7 @@ pub def trim[A: allocators.BumpAllocator](
 		start++
 	end
 
-	for (nd > start)
+	for nd > start
 		var ch u8 = @deref(@add(x, nd - 1))
 
 		if (

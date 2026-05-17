@@ -753,24 +753,46 @@ impl Parser {
             return Ok(Stmt::Loop { line, column, body });
         }
 
-        self.expect_simple(TokenKind::Var)?;
-        let var_name = self.expect_ident()?;
-        if self.check_simple(&TokenKind::Assign) {
+        if self.check_simple(&TokenKind::Var) {
             self.advance();
-            let start = self.parse_expr()?;
-            self.expect_simple(TokenKind::DotDot)?;
-            let end = self.parse_expr()?;
+            let var_name = self.expect_ident()?;
+            if self.check_simple(&TokenKind::Assign) {
+                self.advance();
+                let start = self.parse_expr()?;
+                self.expect_simple(TokenKind::DotDot)?;
+                let end = self.parse_expr()?;
+                self.expect_newline("expected a newline after for header")?;
+                let body = self.parse_block()?;
+                self.expect_simple(TokenKind::End)?;
+                self.consume_newlines();
+                return Ok(Stmt::ForRange {
+                    line,
+                    column,
+                    pragma,
+                    var_name,
+                    start,
+                    end,
+                    body,
+                });
+            }
+
+            if pragma.is_some() {
+                return Err(self.error_at_current(
+                    "pragma directives currently apply only to range-based `for` loops",
+                ));
+            }
+
+            self.expect_simple(TokenKind::In)?;
+            let iterable = self.parse_expr()?;
             self.expect_newline("expected a newline after for header")?;
             let body = self.parse_block()?;
             self.expect_simple(TokenKind::End)?;
             self.consume_newlines();
-            return Ok(Stmt::ForRange {
+            return Ok(Stmt::ForEach {
                 line,
                 column,
-                pragma,
                 var_name,
-                start,
-                end,
+                iterable,
                 body,
             });
         }
@@ -781,17 +803,15 @@ impl Parser {
             ));
         }
 
-        self.expect_simple(TokenKind::In)?;
-        let iterable = self.parse_expr()?;
+        let condition = self.parse_expr()?;
         self.expect_newline("expected a newline after for header")?;
         let body = self.parse_block()?;
         self.expect_simple(TokenKind::End)?;
         self.consume_newlines();
-        Ok(Stmt::ForEach {
+        Ok(Stmt::While {
             line,
             column,
-            var_name,
-            iterable,
+            condition,
             body,
         })
     }
@@ -1855,6 +1875,24 @@ mod tests {
     #[test]
     fn parses_conditional_for_loop() {
         let source = "pub def main() void\n\tfor (value < 10)\n\t\tvalue++\n\tend\nend\n";
+        let program = parse_program(lex(source).unwrap()).unwrap();
+
+        match &program.functions[0].body[0] {
+            Stmt::While {
+                condition,
+                body,
+                ..
+            } => {
+                assert!(matches!(condition, Expr::Binary { op: BinaryOp::LessThan, .. }));
+                assert!(matches!(body[0], Stmt::Increment { .. }));
+            }
+            other => panic!("expected conditional for loop, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_conditional_for_loop_without_parentheses() {
+        let source = "pub def main() void\n\tfor value < 10\n\t\tvalue++\n\tend\nend\n";
         let program = parse_program(lex(source).unwrap()).unwrap();
 
         match &program.functions[0].body[0] {
