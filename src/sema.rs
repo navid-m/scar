@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::{
     CompileError,
-    ast::{BinaryOp, Expr, FieldDef, Function, Program, Stmt, Type, UnaryOp},
+    ast::{BinaryOp, Expr, FieldDef, Function, Program, Stmt, TestBlock, Type, UnaryOp},
 };
 
 #[derive(Debug, Clone)]
@@ -76,6 +76,9 @@ pub fn analyze(program: &Program) -> Result<ProgramInfo, CompileError> {
     let mut locals = HashMap::new();
     for function in &program.functions {
         analyze_function(function, &functions, &types, &mut locals)?;
+    }
+    for test in &program.tests {
+        analyze_test_block(test, &functions, &types)?;
     }
 
     Ok(ProgramInfo {
@@ -174,6 +177,28 @@ fn analyze_function(
     }
 
     locals.insert(function.name.clone(), function_locals);
+    Ok(())
+}
+
+fn analyze_test_block(
+    test: &TestBlock,
+    functions: &HashMap<String, FunctionSig>,
+    types: &HashMap<String, TypeDefInfo>,
+) -> Result<(), CompileError> {
+    let mut scope = HashMap::new();
+    let mut function_locals = HashMap::new();
+    for stmt in &test.body {
+        analyze_stmt(
+            stmt,
+            &format!("test `{}`", test.name),
+            &Type::Void,
+            functions,
+            types,
+            &mut scope,
+            &mut function_locals,
+            false,
+        )?;
+    }
     Ok(())
 }
 
@@ -295,6 +320,23 @@ fn analyze_stmt(
             value,
         } => {
             analyze_bitwise_assignment(target, value, "^=", *line, *column, functions, types, scope)?;
+        }
+        Stmt::Assert {
+            line,
+            column,
+            condition,
+        } => {
+            let condition_ty = infer_expr_type(condition, functions, types, scope)
+                .map_err(|error| error.with_location(*line, *column))?;
+            if !is_condition_type(&condition_ty, types)? {
+                return Err(
+                    CompileError::new(format!(
+                        "`assert` conditions must be bool or integer-compatible, got {}",
+                        describe_type(&condition_ty)
+                    ))
+                    .with_location(*line, *column),
+                );
+            }
         }
         Stmt::Return {
             line,

@@ -6,11 +6,14 @@ mod resolver;
 mod sema;
 
 use std::{
+    collections::hash_map::DefaultHasher,
     env, fs,
+    hash::{Hash, Hasher},
     path::{Path, PathBuf},
     process::{Command, ExitCode},
 };
 
+use ast::{Expr, Function, Program, Stmt, Type};
 use codegen::generate_c;
 use resolver::resolve_entry_program;
 use sema::analyze;
@@ -65,30 +68,20 @@ fn main() -> ExitCode {
     match run(&cli) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
-            eprintln!("{}", format_compile_error(&error, Some(&cli.input)));
+            eprintln!(
+                "{}",
+                format_compile_error(&error, cli.default_error_path())
+            );
             ExitCode::FAILURE
         }
     }
 }
 
 fn run(cli: &Cli) -> Result<(), CompileError> {
-    let program = resolve_entry_program(&cli.input)?;
-    let info = analyze(&program)?;
-    let generated = generate_c(&program, &info)?;
-
-    if cli.emit_c {
-        write_output(&cli.output, &generated)?;
-    } else {
-        let c_path = temporary_c_path(&cli.input);
-        let result = (|| {
-            write_output(&c_path, &generated)?;
-            compile_c_to_binary(&c_path, &cli.output, cli.optimize)
-        })();
-        let _ = fs::remove_file(&c_path);
-        result?;
+    match cli {
+        Cli::Build(cli) => run_build(cli),
+        Cli::Test(cli) => run_test_command(cli),
     }
-
-    Ok(())
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -97,14 +90,37 @@ struct SourceLocation {
     column: usize,
 }
 
-struct Cli {
+enum Cli {
+    Build(BuildCli),
+    Test(TestCli),
+}
+
+impl Cli {
+    fn parse(args: impl Iterator<Item = String>) -> Result<Self, CompileError> {
+        let args: Vec<String> = args.collect();
+        if args.first().is_some_and(|arg| arg == "test") {
+            Ok(Self::Test(TestCli::parse(args.into_iter().skip(1))?))
+        } else {
+            Ok(Self::Build(BuildCli::parse(args.into_iter())?))
+        }
+    }
+
+    fn default_error_path(&self) -> Option<&Path> {
+        match self {
+            Cli::Build(cli) => Some(&cli.input),
+            Cli::Test(cli) => Some(&cli.target),
+        }
+    }
+}
+
+struct BuildCli {
     input: PathBuf,
     output: PathBuf,
     emit_c: bool,
     optimize: bool,
 }
 
-impl Cli {
+impl BuildCli {
     fn parse(args: impl Iterator<Item = String>) -> Result<Self, CompileError> {
         let mut input = None;
         let mut output = None;
@@ -157,6 +173,42 @@ impl Cli {
     }
 }
 
+struct TestCli {
+    target: PathBuf,
+    optimize: bool,
+}
+
+impl TestCli {
+    fn parse(args: impl Iterator<Item = String>) -> Result<Self, CompileError> {
+        let mut target = None;
+        let mut optimize = false;
+
+        for arg in args {
+            match arg.as_str() {
+                "-opt" | "--opt" => optimize = true,
+                _ if arg.starts_with('-') => {
+                    return Err(CompileError::new(format!("unknown flag: {arg}")));
+                }
+                _ => {
+                    if target.is_some() {
+                        return Err(CompileError::new(
+                            "expected a single file or directory after `scar test`",
+                        ));
+                    }
+                    target = Some(PathBuf::from(arg));
+                }
+            }
+        }
+
+        Ok(Self {
+            target: target.ok_or_else(|| {
+                CompileError::new("usage: scar test <file.scar|directory> [-opt]")
+            })?,
+            optimize,
+        })
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum CompilerKind {
     Tcc,
@@ -180,6 +232,192 @@ fn write_output(path: &Path, contents: &str) -> Result<(), CompileError> {
     }
     fs::write(path, contents)
         .map_err(|error| CompileError::new(format!("failed to write {}: {error}", path.display())))
+}
+
+fn run_build(cli: &BuildCli) -> Result<(), CompileError> {
+    let program = resolve_entry_program(&cli.input)?;
+    let info = analyze(&program)?;
+    emit_program(&program, &info, &cli.input, &cli.output, cli.emit_c, cli.optimize)
+}
+
+fn emit_program(
+    program: &Program,
+    info: &sema::ProgramInfo,
+    input: &Path,
+    output: &Path,
+    emit_c: bool,
+    optimize: bool,
+) -> Result<(), CompileError> {
+    let generated = generate_c(program, info)?;
+    if emit_c {
+        write_output(output, &generated)?;
+    } else {
+        let c_path = temporary_c_path(input);
+        let result = (|| {
+            write_output(&c_path, &generated)?;
+            compile_c_to_binary(&c_path, output, optimize)
+        })();
+        let _ = fs::remove_file(&c_path);
+        result?;
+    }
+    Ok(())
+}
+
+fn run_test_command(cli: &TestCli) -> Result<(), CompileError> {
+    let files = collect_test_files(&cli.target)?;
+    if files.is_empty() {
+        return Err(CompileError::new(format!(
+            "no .scar files found at {}",
+            cli.target.display()
+        )));
+    }
+
+    let mut total_tests = 0usize;
+    let mut files_with_tests = 0usize;
+    for file in files {
+        let count = run_tests_in_file(&file, cli.optimize)?;
+        if count > 0 {
+            files_with_tests += 1;
+        }
+        total_tests += count;
+    }
+
+    println!(
+        "scar: {} tests passed across {} file(s)",
+        total_tests, files_with_tests
+    );
+    Ok(())
+}
+
+fn run_tests_in_file(path: &Path, optimize: bool) -> Result<usize, CompileError> {
+    let program = resolve_entry_program(path)?;
+    let test_count = program.tests.len();
+    if test_count == 0 {
+        println!("scar: {} (0 tests)", path.display());
+        return Ok(0);
+    }
+
+    let runner = build_test_program(&program);
+    let info = analyze(&runner)?;
+    let c_path = temporary_test_c_path(path);
+    let binary_path = temporary_test_binary_path(path);
+
+    let result = (|| {
+        let generated = generate_c(&runner, &info)?;
+        write_output(&c_path, &generated)?;
+        compile_c_to_binary(&c_path, &binary_path, optimize)?;
+        run_test_binary(&binary_path)?;
+        Ok(())
+    })();
+
+    let _ = fs::remove_file(&c_path);
+    let _ = fs::remove_file(&binary_path);
+    result?;
+
+    println!("scar: {} ({} tests)", path.display(), test_count);
+    Ok(test_count)
+}
+
+fn build_test_program(program: &Program) -> Program {
+    let mut functions: Vec<Function> = program
+        .functions
+        .iter()
+        .filter(|function| function.name != "main")
+        .cloned()
+        .collect();
+    let mut main_body = Vec::new();
+
+    for (index, test) in program.tests.iter().enumerate() {
+        let fn_name = format!("__scar_test_case_{index}");
+        functions.push(Function {
+            is_pub: false,
+            name: fn_name.clone(),
+            extern_name: None,
+            params: Vec::new(),
+            return_type: Type::Void,
+            body: test.body.clone(),
+        });
+        main_body.push(Stmt::Expr {
+            line: 0,
+            column: 0,
+            expr: Expr::Call {
+                callee: Box::new(Expr::Path(vec![fn_name])),
+                args: Vec::new(),
+            },
+        });
+        main_body.push(Stmt::Expr {
+            line: 0,
+            column: 0,
+            expr: Expr::BuiltinCall {
+                name: "puts".to_string(),
+                args: vec![Expr::String(format!("[pass] {}", test.name))],
+            },
+        });
+    }
+
+    functions.push(Function {
+        is_pub: true,
+        name: "main".to_string(),
+        extern_name: None,
+        params: Vec::new(),
+        return_type: Type::Void,
+        body: main_body,
+    });
+
+    Program {
+        module_uses: Vec::new(),
+        type_defs: program.type_defs.clone(),
+        functions,
+        tests: Vec::new(),
+    }
+}
+
+fn run_test_binary(path: &Path) -> Result<(), CompileError> {
+    let status = Command::new(path).status().map_err(|error| {
+        CompileError::new(format!("failed to run test binary {}: {error}", path.display()))
+    })?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(CompileError::new(format!(
+            "tests failed in {}",
+            path.display()
+        )))
+    }
+}
+
+fn collect_test_files(target: &Path) -> Result<Vec<PathBuf>, CompileError> {
+    if target.is_file() {
+        return Ok(vec![target.to_path_buf()]);
+    }
+    if !target.is_dir() {
+        return Err(CompileError::new(format!(
+            "{} is neither a file nor a directory",
+            target.display()
+        )));
+    }
+
+    let mut files = Vec::new();
+    collect_test_files_recursive(target, &mut files)?;
+    files.sort();
+    Ok(files)
+}
+
+fn collect_test_files_recursive(dir: &Path, files: &mut Vec<PathBuf>) -> Result<(), CompileError> {
+    for entry in fs::read_dir(dir)
+        .map_err(|error| CompileError::new(format!("failed to read {}: {error}", dir.display())))?
+    {
+        let entry = entry.map_err(|error| {
+            CompileError::new(format!("failed to read {}: {error}", dir.display()))
+        })?;
+        let path = entry.path();
+        if path.is_dir() {
+            collect_test_files_recursive(&path, files)?;
+        } else if path.extension().and_then(|ext| ext.to_str()) == Some("scar") {
+            files.push(path);
+        }
+    }
+    Ok(())
 }
 
 fn compile_c_to_binary(
@@ -306,6 +544,24 @@ fn temporary_c_path(input: &Path) -> PathBuf {
     env::temp_dir().join(format!("scar-{stem}-{}.c", std::process::id()))
 }
 
+fn temporary_test_c_path(input: &Path) -> PathBuf {
+    env::temp_dir().join(format!("scar-test-{}.c", stable_path_hash(input)))
+}
+
+fn temporary_test_binary_path(input: &Path) -> PathBuf {
+    let mut path = env::temp_dir().join(format!("scar-test-{}", stable_path_hash(input)));
+    if cfg!(windows) {
+        path.set_extension("exe");
+    }
+    path
+}
+
+fn stable_path_hash(path: &Path) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    path.hash(&mut hasher);
+    hasher.finish()
+}
+
 fn format_compile_error(error: &CompileError, default_path: Option<&Path>) -> String {
     let (path, line, column, message) = resolve_error_site(error, default_path);
     let Some(line) = line else {
@@ -381,12 +637,15 @@ fn parse_location_suffix(message: &str) -> Option<(&str, usize, usize)> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Cli, CompilerKind, choose_compiler, default_output_path};
+    use super::{Cli, CompilerKind, TestCli, choose_compiler, default_output_path};
     use std::{env, path::Path};
 
     #[test]
     fn cli_defaults_to_binary_output() {
         let cli = Cli::parse(["main.scar".to_string()].into_iter()).unwrap();
+        let Cli::Build(cli) = cli else {
+            panic!("expected build cli");
+        };
 
         assert!(!cli.emit_c);
         assert_eq!(
@@ -398,9 +657,23 @@ mod tests {
     #[test]
     fn cli_emit_uses_c_output() {
         let cli = Cli::parse(["--emit".to_string(), "main.scar".to_string()].into_iter()).unwrap();
+        let Cli::Build(cli) = cli else {
+            panic!("expected build cli");
+        };
 
         assert!(cli.emit_c);
         assert_eq!(cli.output, Path::new("main.c"));
+    }
+
+    #[test]
+    fn cli_parses_test_subcommand() {
+        let cli = Cli::parse(["test".to_string(), ".".to_string()].into_iter()).unwrap();
+        let Cli::Test(TestCli { target, optimize }) = cli else {
+            panic!("expected test cli");
+        };
+
+        assert_eq!(target, Path::new("."));
+        assert!(!optimize);
     }
 
     #[test]

@@ -6,7 +6,7 @@ use std::{
 
 use crate::{
     CompileError,
-    ast::{Expr, FieldDef, FieldInit, Function, ModuleUse, Program, Stmt, Type, TypeDef},
+    ast::{Expr, FieldDef, FieldInit, Function, ModuleUse, Program, Stmt, TestBlock, Type, TypeDef},
     lexer::lex,
     parser::parse_program,
 };
@@ -43,11 +43,17 @@ pub fn resolve_entry_program(entry: &Path) -> Result<Program, CompileError> {
             &module_aliases,
         )?);
     }
+    let tests = program
+        .tests
+        .into_iter()
+        .map(|test| rewrite_test_block(test, &local_functions, &local_types, &module_aliases))
+        .collect::<Result<Vec<_>, _>>()?;
 
     Ok(Program {
         module_uses: Vec::new(),
         type_defs,
         functions,
+        tests,
     })
 }
 
@@ -277,6 +283,22 @@ fn rewrite_type_def(type_def: TypeDef, local_types: &HashMap<String, String>) ->
     }
 }
 
+fn rewrite_test_block(
+    test: TestBlock,
+    local_functions: &HashMap<String, String>,
+    local_types: &HashMap<String, String>,
+    module_aliases: &ModuleAliases,
+) -> Result<TestBlock, CompileError> {
+    Ok(TestBlock {
+        name: test.name,
+        body: test
+            .body
+            .into_iter()
+            .map(|stmt| rewrite_stmt(stmt, local_functions, local_types, module_aliases))
+            .collect::<Result<Vec<_>, _>>()?,
+    })
+}
+
 fn rewrite_stmt(
     stmt: Stmt,
     local_functions: &HashMap<String, String>,
@@ -386,6 +408,15 @@ fn rewrite_stmt(
             column,
             target: rewrite_expr(target, local_functions, local_types, module_aliases)?,
             value: rewrite_expr(value, local_functions, local_types, module_aliases)?,
+        }),
+        Stmt::Assert {
+            line,
+            column,
+            condition,
+        } => Ok(Stmt::Assert {
+            line,
+            column,
+            condition: rewrite_expr(condition, local_functions, local_types, module_aliases)?,
         }),
         Stmt::Return {
             line,

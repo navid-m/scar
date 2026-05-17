@@ -3,6 +3,7 @@ pub struct Program {
     pub module_uses: Vec<ModuleUse>,
     pub type_defs: Vec<TypeDef>,
     pub functions: Vec<Function>,
+    pub tests: Vec<TestBlock>,
 }
 
 #[derive(Debug, Clone)]
@@ -39,6 +40,12 @@ pub struct Function {
 pub struct Param {
     pub name: String,
     pub ty: Type,
+}
+
+#[derive(Debug, Clone)]
+pub struct TestBlock {
+    pub name: String,
+    pub body: Vec<Stmt>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -119,6 +126,11 @@ pub enum Stmt {
         column: usize,
         target: Expr,
         value: Expr,
+    },
+    Assert {
+        line: usize,
+        column: usize,
+        condition: Expr,
     },
     Return {
         line: usize,

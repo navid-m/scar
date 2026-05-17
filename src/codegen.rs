@@ -14,9 +14,9 @@ pub fn generate_c(program: &Program, info: &ProgramInfo) -> Result<String, Compi
     output.push_str("#include <stdlib.h>\n");
     output.push_str("#include <string.h>\n\n");
 
+    output.push_str(&render_runtime_prelude());
     let list_types = collect_list_types(program, info);
     if !list_types.is_empty() {
-        output.push_str(&render_runtime_prelude());
         for list_ty in &list_types {
             output.push_str(&render_list_support(list_ty)?);
             output.push('\n');
@@ -217,6 +217,25 @@ fn render_stmt(
             output.push_str(" ^= ");
             output.push_str(&render_expr(value, function, info)?);
             output.push_str(";\n");
+        }
+        Stmt::Assert {
+            line,
+            column,
+            condition,
+        } => {
+            indent(output, level);
+            output.push_str("if (!(");
+            output.push_str(&render_expr(condition, function, info)?);
+            output.push_str(")) {\n");
+            indent(output, level + 1);
+            output.push_str(&format!(
+                "scar_runtime_panic(\"assertion failed in {} at {}:{}\");\n",
+                escape_c_string(&function.name),
+                line,
+                column
+            ));
+            indent(output, level);
+            output.push_str("}\n");
         }
         Stmt::Return { value: None, .. } => {
             indent(output, level);

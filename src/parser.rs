@@ -1,8 +1,8 @@
 use crate::{
     CompileError,
     ast::{
-        BinaryOp, Expr, FieldDef, FieldInit, Function, ModuleUse, Param, Program, Stmt, Type,
-        TypeDef, UnaryOp,
+        BinaryOp, Expr, FieldDef, FieldInit, Function, ModuleUse, Param, Program, Stmt, TestBlock,
+        Type, TypeDef, UnaryOp,
     },
     lexer::{Token, TokenKind},
 };
@@ -25,12 +25,13 @@ impl Parser {
         let mut module_uses = Vec::new();
         let mut type_defs = Vec::new();
         let mut functions = Vec::new();
+        let mut tests = Vec::new();
         self.consume_newlines();
         while !self.is_eof() {
             if self.check_simple(&TokenKind::Val) {
                 module_uses.push(self.parse_module_use()?);
             } else if self.check_simple(&TokenKind::Test) {
-                self.skip_test_block()?;
+                tests.push(self.parse_test_block()?);
             } else if self.check_simple(&TokenKind::Pub)
                 && self.check_next_simple(&TokenKind::Extern)
             {
@@ -52,6 +53,7 @@ impl Parser {
             module_uses,
             type_defs,
             functions,
+            tests,
         })
     }
 
@@ -169,34 +171,17 @@ impl Parser {
         })
     }
 
-    fn skip_test_block(&mut self) -> Result<(), CompileError> {
+    fn parse_test_block(&mut self) -> Result<TestBlock, CompileError> {
         self.expect_simple(TokenKind::Test)?;
-        let TokenKind::Str(_) = self.current().kind else {
+        let TokenKind::Str(name) = self.current().kind.clone() else {
             return Err(self.error_at_current("expected a string literal test name"));
         };
         self.advance();
         self.expect_newline("expected a newline after test name")?;
-
-        let mut depth = 1usize;
-        while !self.is_eof() {
-            match self.current().kind {
-                TokenKind::Test | TokenKind::If | TokenKind::For => {
-                    depth += 1;
-                    self.advance();
-                }
-                TokenKind::End => {
-                    depth -= 1;
-                    self.advance();
-                    if depth == 0 {
-                        self.consume_newlines();
-                        return Ok(());
-                    }
-                }
-                _ => self.advance(),
-            }
-        }
-
-        Err(self.error_at_current("unterminated test block"))
+        let body = self.parse_block()?;
+        self.expect_simple(TokenKind::End)?;
+        self.consume_newlines();
+        Ok(TestBlock { name, body })
     }
 
     fn parse_function_signature(&mut self) -> Result<(String, Vec<Param>, Type), CompileError> {
@@ -250,6 +235,17 @@ impl Parser {
     fn parse_stmt(&mut self) -> Result<Stmt, CompileError> {
         let line = self.current().line;
         let column = self.current().column;
+
+        if matches!(&self.current().kind, TokenKind::Ident(name) if name == "assert") {
+            self.advance();
+            let condition = self.parse_expr()?;
+            self.expect_stmt_terminator()?;
+            return Ok(Stmt::Assert {
+                line,
+                column,
+                condition,
+            });
+        }
 
         if self.check_simple(&TokenKind::Var) || self.check_simple(&TokenKind::Val) {
             let mutable = self.check_simple(&TokenKind::Var);
@@ -1303,6 +1299,7 @@ mod tests {
         let program = parse_program(lex(source).unwrap()).unwrap();
 
         assert_eq!(program.functions.len(), 2);
+        assert_eq!(program.tests.len(), 1);
         assert_eq!(program.functions[0].name, "strcmp");
         assert_eq!(program.functions[1].name, "main");
     }
