@@ -842,6 +842,7 @@ fn render_expr_with_hint(
         Expr::Unary { op, expr } => match op {
             UnaryOp::Neg => Ok(format!("(-({}))", render_expr(expr, function, info)?)),
             UnaryOp::LogicalNot => Ok(format!("(!({}))", render_expr(expr, function, info)?)),
+            UnaryOp::BitNot => Ok(format!("(~({}))", render_expr(expr, function, info)?)),
         },
         Expr::Pack(_) => Err(CompileError::new(
             "packed `{...}` expressions are only valid inside @print",
@@ -1293,7 +1294,7 @@ fn infer_codegen_expr_type(
             Ok((*ok_ty).clone())
         }
         Expr::Unary { op, expr } => match op {
-            UnaryOp::Neg | UnaryOp::LogicalNot => {
+            UnaryOp::Neg | UnaryOp::LogicalNot | UnaryOp::BitNot => {
                 infer_codegen_integer_unary_type(*op, expr, function, info)
             }
         },
@@ -1426,6 +1427,10 @@ fn infer_codegen_integer_unary_type(
         UnaryOp::LogicalNot if is_codegen_condition_type(&inner_ty) => Ok(Type::Bool),
         UnaryOp::LogicalNot => Err(CompileError::new(
             "unary `!` currently requires a bool or integer operand",
+        )),
+        UnaryOp::BitNot if is_codegen_integer_type(&inner_ty) => Ok(inner_ty),
+        UnaryOp::BitNot => Err(CompileError::new(
+            "unary `~` currently requires an integer operand",
         )),
     }
 }

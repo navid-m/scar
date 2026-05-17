@@ -71,6 +71,7 @@ pub enum TokenKind {
     Caret,
     CaretEqual,
     Bang,
+    Tilde,
     Less,
     LessEqual,
     ShiftLeft,
@@ -257,6 +258,7 @@ impl Lexer {
                     };
                     tokens.push(Token { kind, line, column });
                 }
+                '~' => tokens.push(self.single(TokenKind::Tilde)),
                 '<' => {
                     let line = self.line;
                     let column = self.column;

@@ -733,7 +733,13 @@ fn infer_expr_type(
         Expr::Cast { expr, ty } => {
             let source_ty = infer_expr_type(expr, functions, types, scope)?;
             validate_type(ty, types)?;
-            if is_numeric_type(&source_ty, types)? && is_numeric_type(ty, types)? {
+            let resolved_source = resolve_aliases(&source_ty, types)?;
+            let resolved_target = resolve_aliases(ty, types)?;
+            if resolved_source == resolved_target {
+                Ok(ty.clone())
+            } else if can_cast_between_primitive_refs(&resolved_source, &resolved_target) {
+                Ok(ty.clone())
+            } else if is_numeric_type(&source_ty, types)? && is_numeric_type(ty, types)? {
                 if is_integer_type(&source_ty, types)? && is_integer_type(ty, types)? {
                     if let Some(value) = constant_integer_value(expr) {
                         validate_integer_literal_cast_range(value, ty)?;
@@ -778,6 +784,10 @@ fn infer_expr_type(
                 UnaryOp::LogicalNot if is_condition_primitive_type(&inner_ty) => Ok(Type::Bool),
                 UnaryOp::LogicalNot => Err(CompileError::new(
                     "unary `!` currently requires a bool or integer operand",
+                )),
+                UnaryOp::BitNot if is_integer_primitive_type(&inner_ty) => Ok(inner_ty),
+                UnaryOp::BitNot => Err(CompileError::new(
+                    "unary `~` currently requires an integer operand",
                 )),
             }
         }
@@ -1706,6 +1716,38 @@ fn can_compare_with_none(lhs: &Type, rhs: &Type) -> bool {
     matches!((lhs, rhs), (Type::None, Type::None))
         || (lhs == &Type::None && is_nullable_pointer_type(rhs))
         || (rhs == &Type::None && is_nullable_pointer_type(lhs))
+}
+
+fn can_cast_between_primitive_refs(source: &Type, target: &Type) -> bool {
+    primitive_ref_element_type(source).is_some() && primitive_ref_element_type(target).is_some()
+}
+
+fn primitive_ref_element_type(ty: &Type) -> Option<&Type> {
+    match ty {
+        Type::Ref(inner) => primitive_ref_base_type(inner),
+        Type::Mut(inner) => primitive_ref_element_type(inner),
+        _ => None,
+    }
+}
+
+fn primitive_ref_base_type(ty: &Type) -> Option<&Type> {
+    match ty {
+        Type::Void
+        | Type::Bool
+        | Type::I8
+        | Type::I16
+        | Type::I32
+        | Type::I64
+        | Type::Isize
+        | Type::U8
+        | Type::U16
+        | Type::U32
+        | Type::U64
+        | Type::Usize
+        | Type::F32
+        | Type::F64 => Some(ty),
+        _ => None,
+    }
 }
 
 fn is_condition_type(ty: &Type, types: &HashMap<String, TypeDefInfo>) -> Result<bool, CompileError> {

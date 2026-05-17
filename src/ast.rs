@@ -284,6 +284,7 @@ pub enum BinaryOp {
 pub enum UnaryOp {
     Neg,
     LogicalNot,
+    BitNot,
 }
 
 impl Expr {

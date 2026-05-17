@@ -841,6 +841,14 @@ impl Parser {
                 expr: Box::new(expr),
             });
         }
+        if self.check_simple(&TokenKind::Tilde) {
+            self.advance();
+            let expr = self.parse_unary()?;
+            return Ok(Expr::Unary {
+                op: UnaryOp::BitNot,
+                expr: Box::new(expr),
+            });
+        }
         self.parse_postfix()
     }
 
@@ -1360,6 +1368,7 @@ impl Parser {
             TokenKind::Caret => "`^`",
             TokenKind::CaretEqual => "`^=`",
             TokenKind::Bang => "`!`",
+            TokenKind::Tilde => "`~`",
             TokenKind::Less => "`<`",
             TokenKind::LessEqual => "`<=`",
             TokenKind::ShiftLeft => "`<<`",

@@ -6,7 +6,7 @@ end
 
 pub def Arena.new(cap usize) Arena|error
     ## Create a new arena given some cap.    
-	val mem ref(u8) = @alloc(cap) as ref(u8)
+	var mem ref(u8) = @alloc(cap) as mut(ref(u8))
 
 	if mem == none
 		return error("Arena allocation failed")
