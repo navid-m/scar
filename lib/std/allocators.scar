@@ -1,22 +1,94 @@
 pub type Arena
-    ptr ref(void)
-    cap usize
-    off usize
+	ptr ref(u8)
+	cap usize
+	off usize
 end
 
-pub def Arena.new(cap usize) Arena
-    val mem ref(void) = @alloc(cap)
+pub def Arena.new(cap usize) Arena|error
+    ## Create a new arena given some cap.    
+	val mem ref(u8) = @alloc(cap) as ref(u8)
 
-    return Arena(
-        ptr: mem,
-        cap: cap,
-        off: 0
-    )
+	if mem == none
+		return error("Arena allocation failed")
+	end
+
+	return Arena(
+		ptr: mem,
+		cap: cap,
+		off: 0
+	)
 end
 
-pub def Arena.alloc(a Arena) ref(void)
-    val base usize = @addr(a.ptr)
-    val cur usize = base + a.off
-    a.off += size
-    return cur as ref(void)
+def align_up(x usize, align usize) usize
+    ## Align value upward to next multiple of align
+	return (x + (align - 1)) & ~(align - 1)
+end
+
+pub def Arena.alloc(a ref(Arena), size usize) ref(void)|error
+	return Arena.alloc_aligned(a, size, 8)
+end
+
+pub def Arena.alloc_aligned(
+	a ref(Arena),
+	size usize,
+	align usize
+) ref(void)|error
+	if align == 0
+		return error("invalid alignment")
+	end
+
+	val aligned_off usize = align_up(a.off, align)
+	val next_off usize = aligned_off + size
+
+	if next_off > a.cap
+		return error("arena out of memory")
+	end
+
+	val out ref(u8) = @add(a.ptr, aligned_off)
+
+	a.off = next_off
+
+	return out as ref(void)
+end
+
+pub def Arena.reset(a ref(Arena))
+    ## Reset arena without freeing memory
+	a.off = 0
+end
+
+pub def Arena.destroy(a ref(Arena))
+    ## Free backing memory
+	if a.ptr != none
+		@free(a.ptr)
+	end
+
+	a.ptr = none
+	a.cap = 0
+	a.off = 0
+end
+
+test "alloc works"
+    match Arena.new(1024 as usize)
+        ok arena => (
+            var mem = Arena.alloc(arena, 500)
+            match mem
+                ok m => (
+                    @puts("it worked")
+                )
+                error _ => (
+                    @puts("some other bad thing happened")
+                )
+            end
+            Arena.destroy(arena)    
+        )
+        error _ => (
+            @puts("something bad happened")
+        )
+    end
+end
+
+test "alloc with unwrap works"
+    var arena = Arena.new(1024 as usize)?
+    var mem = Arena.alloc(arena, 500)?
+    Arena.destroy(arena)
 end
