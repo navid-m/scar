@@ -522,6 +522,7 @@ fn analyze_stmt(
             value,
         } => match (expected_return, value) {
             (Type::Void, None) => {}
+            (Type::Result(inner), None) if inner.as_ref() == &Type::Void => {}
             (Type::Void, Some(_)) => {
                 return Err(
                     CompileError::new("void functions cannot return a value")
@@ -1672,12 +1673,7 @@ fn validate_type(ty: &Type, types: &HashMap<String, TypeDefInfo>) -> Result<(), 
                 Err(CompileError::new(format!("unknown type `{name}`")))
             }
         }
-        Type::Result(inner) => {
-            if inner.as_ref() == &Type::Void {
-                return Err(CompileError::new("`void|error` is not a valid result type"));
-            }
-            validate_type(inner, types)
-        }
+        Type::Result(inner) => validate_type(inner, types),
         Type::Mut(inner) => validate_type(inner, types),
         Type::Ref(inner) => validate_type(inner, types),
         Type::List(inner) => validate_type(inner, types),
@@ -1709,12 +1705,7 @@ fn validate_type_with_known_names(ty: &Type, known: &HashSet<String>) -> Result<
                 Err(CompileError::new(format!("unknown type `{name}`")))
             }
         }
-        Type::Result(inner) => {
-            if inner.as_ref() == &Type::Void {
-                return Err(CompileError::new("`void|error` is not a valid result type"));
-            }
-            validate_type_with_known_names(inner, known)
-        }
+        Type::Result(inner) => validate_type_with_known_names(inner, known),
         Type::Mut(inner) => validate_type_with_known_names(inner, known),
         Type::Ref(inner) => validate_type_with_known_names(inner, known),
         Type::List(inner) => validate_type_with_known_names(inner, known),

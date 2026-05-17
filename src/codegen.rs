@@ -147,6 +147,13 @@ fn render_function(
         output.push_str("    ");
         output.push_str(&c_type(&function.return_type));
         output.push_str(" __scar_return_value;\n");
+        if let Type::Result(ok_ty) = &function.return_type {
+            if ok_ty.as_ref() == &Type::Void {
+                output.push_str("    __scar_return_value = ");
+                output.push_str(&render_result_ok_value(ok_ty, "0"));
+                output.push_str(";\n");
+            }
+        }
     }
     for stmt in &function.body {
         render_stmt(output, stmt, function, info, 1, &mut next_temp_id)?;
@@ -191,7 +198,7 @@ fn render_result_support(ok_ty: &Type) -> String {
     output.push_str("typedef struct {\n");
     output.push_str("    int32_t is_error;\n");
     output.push_str("    ");
-    output.push_str(&c_type(ok_ty));
+    output.push_str(&result_ok_storage_c_type(ok_ty));
     output.push_str(" ok;\n");
     output.push_str("    const char *error;\n");
     output.push_str("} ");
@@ -208,7 +215,7 @@ fn render_result_ok_value(ok_ty: &Type, value: &str) -> String {
     format!(
         "(({}){{ .is_error = 0, .ok = {}, .error = NULL }})",
         result_c_type(ok_ty),
-        value
+        result_ok_storage_value(ok_ty, value)
     )
 }
 
@@ -216,9 +223,25 @@ fn render_result_error_value(ok_ty: &Type, message: &str) -> String {
     format!(
         "(({}){{ .is_error = 1, .ok = ({}){{0}}, .error = {} }})",
         result_c_type(ok_ty),
-        c_type(ok_ty),
+        result_ok_storage_c_type(ok_ty),
         message
     )
+}
+
+fn result_ok_storage_c_type(ok_ty: &Type) -> String {
+    if ok_ty == &Type::Void {
+        "uint8_t".to_string()
+    } else {
+        c_type(ok_ty)
+    }
+}
+
+fn result_ok_storage_value(ok_ty: &Type, value: &str) -> String {
+    if ok_ty == &Type::Void {
+        "0".to_string()
+    } else {
+        value.to_string()
+    }
 }
 
 fn render_signature(function: &Function, info: &ProgramInfo) -> String {
@@ -470,6 +493,14 @@ fn render_stmt(
         }
         Stmt::Return { value: None, .. } => {
             indent(output, level);
+            if let Type::Result(ok_ty) = &function.return_type {
+                if ok_ty.as_ref() == &Type::Void {
+                    output.push_str("__scar_return_value = ");
+                    output.push_str(&render_result_ok_value(ok_ty, "0"));
+                    output.push_str(";\n");
+                    indent(output, level);
+                }
+            }
             output.push_str("goto __scar_return;\n");
         }
         Stmt::Return {

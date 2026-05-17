@@ -1,8 +1,43 @@
+pub interface GeneralAllocator
+	pub def alloc(a ref(GeneralAllocator), size usize) ref(void)|error
+	pub def realloc(a ref(GeneralAllocator), ptr ref(void), size usize) ref(void)|error
+	pub def free(a ref(GeneralAllocator), ptr ref(void))
+end
+
 pub interface BumpAllocator
 	pub def alloc(a ref(BumpAllocator), size usize) ref(void)|error
 	pub def alloc_aligned(a ref(BumpAllocator), size usize, align usize) ref(void)|error
 	pub def reset(a ref(BumpAllocator))
 	pub def destroy(a ref(BumpAllocator))
+end
+
+pub type HeapAllocator : GeneralAllocator
+end
+
+pub def HeapAllocator.alloc(a ref(HeapAllocator), size usize) ref(void)|error
+	var mem ref(u8) = @alloc(size) as mut(ref(u8))
+	if mem == none
+		return error("heap allocation failed")
+	end
+	return mem as ref(void)
+end
+
+pub def HeapAllocator.realloc(
+	a ref(HeapAllocator),
+	ptr ref(void),
+	size usize
+) ref(void)|error
+	var mem ref(u8) = @realloc(ptr, size) as mut(ref(u8))
+	if mem == none
+		return error("heap reallocation failed")
+	end
+	return mem as ref(void)
+end
+
+pub def HeapAllocator.free(a ref(HeapAllocator), ptr ref(void))
+	if ptr != none
+		@free(ptr)
+	end
 end
 
 pub type Arena : BumpAllocator
@@ -81,6 +116,12 @@ def test_bump_alloc[A: BumpAllocator](a ref(A))
 	A.destroy(a)
 end
 
+def test_general_alloc[A: GeneralAllocator](a ref(A)) void|error
+	var mem = A.alloc(a, 256)?
+	var resized = A.realloc(a, mem, 512)?
+	A.free(a, resized)
+end
+
 test "alloc works"
     match Arena.new(1024 as usize)
         ok arena => (
@@ -110,4 +151,9 @@ end
 test "generic bump allocator"
 	var arena = Arena.new(1024 as usize)?
 	test_bump_alloc[Arena](@addr(arena))
+end
+
+test "generic heap allocator"
+	var heap = HeapAllocator()
+	test_general_alloc[HeapAllocator](@addr(heap))
 end
