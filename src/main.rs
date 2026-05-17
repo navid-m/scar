@@ -175,16 +175,29 @@ impl BuildCli {
 
 struct TestCli {
     target: PathBuf,
+    output: Option<PathBuf>,
+    emit_c: bool,
     optimize: bool,
 }
 
 impl TestCli {
     fn parse(args: impl Iterator<Item = String>) -> Result<Self, CompileError> {
         let mut target = None;
+        let mut output = None;
+        let mut pending_output = false;
+        let mut emit_c = false;
         let mut optimize = false;
 
         for arg in args {
+            if pending_output {
+                output = Some(PathBuf::from(arg));
+                pending_output = false;
+                continue;
+            }
+
             match arg.as_str() {
+                "-o" | "--output" => pending_output = true,
+                "--emit" => emit_c = true,
                 "-opt" | "--opt" => optimize = true,
                 _ if arg.starts_with('-') => {
                     return Err(CompileError::new(format!("unknown flag: {arg}")));
@@ -200,10 +213,16 @@ impl TestCli {
             }
         }
 
+        if pending_output {
+            return Err(CompileError::new("expected a path after -o/--output"));
+        }
+
         Ok(Self {
             target: target.ok_or_else(|| {
-                CompileError::new("usage: scar test <file.scar|directory> [-opt]")
+                CompileError::new("usage: scar test <file.scar|directory> [--emit] [-opt] [-o output]")
             })?,
+            output,
+            emit_c,
             optimize,
         })
     }
@@ -248,7 +267,7 @@ fn emit_program(
     emit_c: bool,
     optimize: bool,
 ) -> Result<(), CompileError> {
-    let generated = generate_c(program, info)?;
+    let generated = generate_c(program, info, !optimize)?;
     if emit_c {
         write_output(output, &generated)?;
     } else {
@@ -271,25 +290,37 @@ fn run_test_command(cli: &TestCli) -> Result<(), CompileError> {
             cli.target.display()
         )));
     }
+    if cli.output.is_some() && files.len() > 1 {
+        return Err(CompileError::new(
+            "`scar test -o/--output` only supports a single input file",
+        ));
+    }
 
     let mut total_tests = 0usize;
     let mut files_with_tests = 0usize;
     for file in files {
-        let count = run_tests_in_file(&file, cli.optimize)?;
+        let count = run_tests_in_file(&file, cli)?;
         if count > 0 {
             files_with_tests += 1;
         }
         total_tests += count;
     }
 
-    println!(
-        "scar: {} tests passed across {} file(s)",
-        total_tests, files_with_tests
-    );
+    if cli.emit_c {
+        println!(
+            "scar: emitted test C for {} file(s) covering {} tests",
+            files_with_tests, total_tests
+        );
+    } else {
+        println!(
+            "scar: {} tests passed across {} file(s)",
+            total_tests, files_with_tests
+        );
+    }
     Ok(())
 }
 
-fn run_tests_in_file(path: &Path, optimize: bool) -> Result<usize, CompileError> {
+fn run_tests_in_file(path: &Path, cli: &TestCli) -> Result<usize, CompileError> {
     let program = resolve_entry_program(path)?;
     let test_count = program.tests.len();
     if test_count == 0 {
@@ -299,13 +330,24 @@ fn run_tests_in_file(path: &Path, optimize: bool) -> Result<usize, CompileError>
 
     let runner = build_test_program(&program);
     let info = analyze(&runner)?;
+    let generated = generate_c(&runner, &info, !cli.optimize)?;
+
+    if cli.emit_c {
+        let output = cli
+            .output
+            .clone()
+            .unwrap_or_else(|| default_test_output_path(path));
+        write_output(&output, &generated)?;
+        println!("scar: emitted {} ({} tests)", output.display(), test_count);
+        return Ok(test_count);
+    }
+
     let c_path = temporary_test_c_path(path);
     let binary_path = temporary_test_binary_path(path);
 
     let result = (|| {
-        let generated = generate_c(&runner, &info)?;
         write_output(&c_path, &generated)?;
-        compile_c_to_binary(&c_path, &binary_path, optimize)?;
+        compile_c_to_binary(&c_path, &binary_path, cli.optimize)?;
         run_test_binary(&binary_path)?;
         Ok(())
     })();
@@ -556,6 +598,15 @@ fn temporary_test_binary_path(input: &Path) -> PathBuf {
     path
 }
 
+fn default_test_output_path(input: &Path) -> PathBuf {
+    let parent = input.parent().unwrap_or_else(|| Path::new(""));
+    let stem = input
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .unwrap_or("scar-test");
+    parent.join(format!("{stem}.test.c"))
+}
+
 fn stable_path_hash(path: &Path) -> u64 {
     let mut hasher = DefaultHasher::new();
     path.hash(&mut hasher);
@@ -668,11 +719,19 @@ mod tests {
     #[test]
     fn cli_parses_test_subcommand() {
         let cli = Cli::parse(["test".to_string(), ".".to_string()].into_iter()).unwrap();
-        let Cli::Test(TestCli { target, optimize }) = cli else {
+        let Cli::Test(TestCli {
+            target,
+            output,
+            emit_c,
+            optimize,
+        }) = cli
+        else {
             panic!("expected test cli");
         };
 
         assert_eq!(target, Path::new("."));
+        assert!(output.is_none());
+        assert!(!emit_c);
         assert!(!optimize);
     }
 

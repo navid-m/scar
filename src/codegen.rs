@@ -6,15 +6,27 @@ use crate::{
     sema::ProgramInfo,
 };
 
-pub fn generate_c(program: &Program, info: &ProgramInfo) -> Result<String, CompileError> {
+pub fn generate_c(
+    program: &Program,
+    info: &ProgramInfo,
+    install_debug_handlers: bool,
+) -> Result<String, CompileError> {
     let mut output = String::new();
     output.push_str("#include <inttypes.h>\n");
+    output.push_str("#include <signal.h>\n");
     output.push_str("#include <stdint.h>\n");
     output.push_str("#include <stdio.h>\n");
     output.push_str("#include <stdlib.h>\n");
     output.push_str("#include <string.h>\n\n");
 
-    output.push_str(&render_runtime_prelude());
+    if install_debug_handlers {
+        output.push_str("#if !defined(_WIN32)\n");
+        output.push_str("#include <execinfo.h>\n");
+        output.push_str("#include <unistd.h>\n");
+        output.push_str("#endif\n\n");
+    }
+
+    output.push_str(&render_runtime_prelude(install_debug_handlers));
     let list_types = collect_list_types(program, info);
     if !list_types.is_empty() {
         for list_ty in &list_types {
@@ -41,19 +53,42 @@ pub fn generate_c(program: &Program, info: &ProgramInfo) -> Result<String, Compi
         if function.extern_name.is_some() {
             continue;
         }
-        render_function(&mut output, function, info)?;
+        render_function(&mut output, function, info, install_debug_handlers)?;
         output.push('\n');
     }
 
     Ok(output)
 }
 
-fn render_runtime_prelude() -> String {
+fn render_runtime_prelude(install_debug_handlers: bool) -> String {
     let mut output = String::new();
     output.push_str("static void scar_runtime_panic(const char *message) {\n");
     output.push_str("    fprintf(stderr, \"scar: panic: %s\\n\", message);\n");
     output.push_str("    exit(1);\n");
     output.push_str("}\n\n");
+    if install_debug_handlers {
+        output.push_str("static void scar_runtime_signal_handler(int signal_number) {\n");
+        output.push_str("    fprintf(stderr, \"scar: fatal signal %d\\n\", signal_number);\n");
+        output.push_str("#if !defined(_WIN32)\n");
+        output.push_str("    void *frames[64];\n");
+        output.push_str("    int frame_count = backtrace(frames, 64);\n");
+        output.push_str("    backtrace_symbols_fd(frames, frame_count, STDERR_FILENO);\n");
+        output.push_str("#endif\n");
+        output.push_str("    _Exit(128 + signal_number);\n");
+        output.push_str("}\n\n");
+        output.push_str("static void scar_runtime_install_signal_handlers(void) {\n");
+        output.push_str("    signal(SIGSEGV, scar_runtime_signal_handler);\n");
+        output.push_str("#ifdef SIGBUS\n");
+        output.push_str("    signal(SIGBUS, scar_runtime_signal_handler);\n");
+        output.push_str("#endif\n");
+        output.push_str("#ifdef SIGILL\n");
+        output.push_str("    signal(SIGILL, scar_runtime_signal_handler);\n");
+        output.push_str("#endif\n");
+        output.push_str("#ifdef SIGABRT\n");
+        output.push_str("    signal(SIGABRT, scar_runtime_signal_handler);\n");
+        output.push_str("#endif\n");
+        output.push_str("}\n\n");
+    }
     output
 }
 
@@ -61,10 +96,15 @@ fn render_function(
     output: &mut String,
     function: &Function,
     info: &ProgramInfo,
+    install_debug_handlers: bool,
 ) -> Result<(), CompileError> {
     let mut next_temp_id = 0usize;
     output.push_str(&render_signature(function, info));
     output.push_str(" {\n");
+    if function.name == "main" && install_debug_handlers {
+        indent(output, 1);
+        output.push_str("scar_runtime_install_signal_handlers();\n");
+    }
     for stmt in &function.body {
         render_stmt(output, stmt, function, info, 1, &mut next_temp_id)?;
     }
