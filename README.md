@@ -27,12 +27,10 @@ end
 
 #### Resources
 
-Documentation is available [here](https://scarlang-docs.pages.dev).
+Documentation is [here](https://scarlang-docs.pages.dev).
 
-The VSCode extension is available [here](https://marketplace.visualstudio.com/items?itemName=NavidM.scar).
+VSCode extension is [here](https://marketplace.visualstudio.com/items?itemName=NavidM.scar).
 
 ---
 
 <font color="grey">(Under construction)</font>
-
-<img src="assets/wip.jpg" style="border-radius: 5px;" width=45%>
