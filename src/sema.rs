@@ -330,10 +330,10 @@ fn analyze_stmt(
         } => {
             let condition_ty = infer_expr_type(condition, functions, types, scope)
                 .map_err(|error| error.with_location(*line, *column))?;
-            if !is_integer_type(&condition_ty, types)? {
+            if !is_condition_type(&condition_ty, types)? {
                 return Err(
                     CompileError::new(format!(
-                        "`if` conditions must be integer-compatible, got {}",
+                        "`if` conditions must be bool or integer-compatible, got {}",
                         describe_type(&condition_ty)
                     ))
                     .with_location(*line, *column),
@@ -584,9 +584,9 @@ fn infer_expr_type(
                 UnaryOp::Neg => Err(CompileError::new(
                     "unary `-` currently requires a signed numeric operand",
                 )),
-                UnaryOp::LogicalNot if is_integer_type(&inner_ty, types)? => Ok(Type::I32),
+                UnaryOp::LogicalNot if is_condition_primitive_type(&inner_ty) => Ok(Type::Bool),
                 UnaryOp::LogicalNot => Err(CompileError::new(
-                    "unary `!` currently requires an integer operand",
+                    "unary `!` currently requires a bool or integer operand",
                 )),
             }
         }
@@ -621,12 +621,13 @@ fn infer_expr_type(
                     "`%` currently requires compatible integer operands",
                 )),
                 BinaryOp::LogicalAnd | BinaryOp::LogicalOr
-                    if is_integer_type(&lhs_ty, types)? && is_integer_type(&rhs_ty, types)? =>
+                    if is_condition_primitive_type(&lhs_ty)
+                        && is_condition_primitive_type(&rhs_ty) =>
                 {
-                    Ok(Type::I32)
+                    Ok(Type::Bool)
                 }
                 BinaryOp::LogicalAnd | BinaryOp::LogicalOr => Err(CompileError::new(
-                    "logical operators currently require integer operands",
+                    "logical operators currently require bool or integer operands",
                 )),
                 BinaryOp::BitAnd | BinaryOp::BitOr | BinaryOp::BitXor
                     if common_integer_type(&lhs_ty, &rhs_ty).is_some() =>
@@ -651,8 +652,9 @@ fn infer_expr_type(
                 | BinaryOp::Equal
                     if common_numeric_type(&lhs_ty, &rhs_ty).is_some() =>
                 {
-                    Ok(Type::I32)
+                    Ok(Type::Bool)
                 }
+                BinaryOp::Equal if lhs_ty == Type::Bool && rhs_ty == Type::Bool => Ok(Type::Bool),
                 BinaryOp::LessThan
                 | BinaryOp::LessEqual
                 | BinaryOp::GreaterThan
@@ -1185,6 +1187,7 @@ fn print_marker_name(marker: PrintMarker) -> &'static str {
 fn validate_type(ty: &Type, types: &HashMap<String, TypeDefInfo>) -> Result<(), CompileError> {
     match ty {
         Type::Void
+        | Type::Bool
         | Type::I8
         | Type::I16
         | Type::I32
@@ -1212,6 +1215,7 @@ fn validate_type(ty: &Type, types: &HashMap<String, TypeDefInfo>) -> Result<(), 
 fn validate_type_with_known_names(ty: &Type, known: &HashSet<String>) -> Result<(), CompileError> {
     match ty {
         Type::Void
+        | Type::Bool
         | Type::I8
         | Type::I16
         | Type::I32
@@ -1269,6 +1273,10 @@ fn is_string_compatible(ty: &Type) -> bool {
     matches!(ty, Type::U8) || matches!(ty, Type::Ref(inner) if inner.as_ref() == &Type::U8)
 }
 
+fn is_condition_type(ty: &Type, types: &HashMap<String, TypeDefInfo>) -> Result<bool, CompileError> {
+    Ok(is_condition_primitive_type(&resolve_aliases(ty, types)?))
+}
+
 fn is_numeric_type(ty: &Type, types: &HashMap<String, TypeDefInfo>) -> Result<bool, CompileError> {
     Ok(is_numeric_primitive_type(&resolve_aliases(ty, types)?))
 }
@@ -1280,6 +1288,10 @@ fn is_integer_type(ty: &Type, types: &HashMap<String, TypeDefInfo>) -> Result<bo
 
 fn is_numeric_primitive_type(ty: &Type) -> bool {
     is_integer_primitive_type(ty) || matches!(ty, Type::F32 | Type::F64)
+}
+
+fn is_condition_primitive_type(ty: &Type) -> bool {
+    matches!(ty, Type::Bool) || is_integer_primitive_type(ty)
 }
 
 fn is_integer_primitive_type(ty: &Type) -> bool {
@@ -1391,6 +1403,7 @@ fn resolve_aliases(ty: &Type, types: &HashMap<String, TypeDefInfo>) -> Result<Ty
 fn describe_type(ty: &Type) -> String {
     match ty {
         Type::Void => "void".to_string(),
+        Type::Bool => "bool".to_string(),
         Type::I8 => "i8".to_string(),
         Type::I16 => "i16".to_string(),
         Type::I32 => "i32".to_string(),
@@ -1477,6 +1490,14 @@ mod tests {
     #[test]
     fn accepts_numeric_widening_and_float_print_markers() {
         let source = "pub def main() void\n\tval wide i64 = 1\n\tval sum i64 = wide + 2\n\tval small f32 = 3 as f32\n\tval big f64 = 4 as f64\n\t@print(\"{d} {f} {lf}\", {sum, small, big})\nend\n";
+        let program = parse_program(lex(source).unwrap()).unwrap();
+
+        analyze(&program).unwrap();
+    }
+
+    #[test]
+    fn accepts_bool_return_types_from_comparisons() {
+        let source = "pub def same(x i32, y i32) bool\n\treturn x == y\nend\n";
         let program = parse_program(lex(source).unwrap()).unwrap();
 
         analyze(&program).unwrap();

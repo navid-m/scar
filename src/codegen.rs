@@ -827,12 +827,12 @@ fn infer_codegen_expr_type(
                     "`%` currently requires compatible integer operands",
                 )),
                 BinaryOp::LogicalAnd | BinaryOp::LogicalOr
-                    if is_codegen_integer_type(&lhs_ty) && is_codegen_integer_type(&rhs_ty) =>
+                    if is_codegen_condition_type(&lhs_ty) && is_codegen_condition_type(&rhs_ty) =>
                 {
-                    Ok(Type::I32)
+                    Ok(Type::Bool)
                 }
                 BinaryOp::LogicalAnd | BinaryOp::LogicalOr => Err(CompileError::new(
-                    "logical operators currently require integer operands",
+                    "logical operators currently require bool or integer operands",
                 )),
                 BinaryOp::BitAnd | BinaryOp::BitOr | BinaryOp::BitXor
                     if common_codegen_integer_type(&lhs_ty, &rhs_ty).is_some() =>
@@ -854,7 +854,19 @@ fn infer_codegen_expr_type(
                 | BinaryOp::LessEqual
                 | BinaryOp::GreaterThan
                 | BinaryOp::GreaterEqual
-                | BinaryOp::Equal => Ok(Type::I32),
+                | BinaryOp::Equal
+                    if common_codegen_numeric_type(&lhs_ty, &rhs_ty).is_some()
+                        || (lhs_ty == Type::Bool && rhs_ty == Type::Bool) =>
+                {
+                    Ok(Type::Bool)
+                }
+                BinaryOp::LessThan
+                | BinaryOp::LessEqual
+                | BinaryOp::GreaterThan
+                | BinaryOp::GreaterEqual
+                | BinaryOp::Equal => Err(CompileError::new(
+                    "comparison operators currently require compatible numeric or bool operands",
+                )),
             }
         }
     }
@@ -905,9 +917,9 @@ fn infer_codegen_integer_unary_type(
         UnaryOp::Neg => Err(CompileError::new(
             "unary `-` currently requires a signed numeric operand",
         )),
-        UnaryOp::LogicalNot if is_codegen_integer_type(&inner_ty) => Ok(Type::I32),
+        UnaryOp::LogicalNot if is_codegen_condition_type(&inner_ty) => Ok(Type::Bool),
         UnaryOp::LogicalNot => Err(CompileError::new(
-            "unary `!` currently requires an integer operand",
+            "unary `!` currently requires a bool or integer operand",
         )),
     }
 }
@@ -1253,6 +1265,7 @@ fn list_helper_prefix(element_ty: &Type) -> String {
 fn type_suffix(ty: &Type) -> String {
     match ty {
         Type::Void => "void".to_string(),
+        Type::Bool => "bool".to_string(),
         Type::I8 => "i8".to_string(),
         Type::I16 => "i16".to_string(),
         Type::I32 => "i32".to_string(),
@@ -1280,6 +1293,7 @@ fn sanitize_identifier(name: &str) -> String {
 fn c_type(ty: &Type) -> String {
     match ty {
         Type::Void => "void".to_string(),
+        Type::Bool => "int32_t".to_string(),
         Type::I8 => "int8_t".to_string(),
         Type::I16 => "int16_t".to_string(),
         Type::I32 => "int32_t".to_string(),
@@ -1324,6 +1338,10 @@ fn infer_index_type(ty: &Type) -> Result<Type, CompileError> {
 
 fn is_codegen_integer_type(ty: &Type) -> bool {
     codegen_integer_rank(ty).is_some()
+}
+
+fn is_codegen_condition_type(ty: &Type) -> bool {
+    matches!(ty, Type::Bool) || is_codegen_integer_type(ty)
 }
 
 fn is_codegen_signed_numeric_type(ty: &Type) -> bool {
@@ -1509,6 +1527,7 @@ fn escape_c_string(value: &str) -> String {
 fn describe_type(ty: &Type) -> String {
     match ty {
         Type::Void => "void".to_string(),
+        Type::Bool => "bool".to_string(),
         Type::I8 => "i8".to_string(),
         Type::I16 => "i16".to_string(),
         Type::I32 => "i32".to_string(),

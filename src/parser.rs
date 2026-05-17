@@ -928,6 +928,10 @@ impl Parser {
                 self.advance();
                 Ok(Type::Void)
             }
+            TokenKind::Bool => {
+                self.advance();
+                Ok(Type::Bool)
+            }
             TokenKind::I8 => {
                 self.advance();
                 Ok(Type::I8)
@@ -1002,6 +1006,7 @@ impl Parser {
         matches!(
             self.current().kind,
             TokenKind::Void
+                | TokenKind::Bool
                 | TokenKind::I8
                 | TokenKind::I16
                 | TokenKind::I32
@@ -1195,6 +1200,7 @@ impl Parser {
             TokenKind::Ref => "`ref`",
             TokenKind::List => "`list`",
             TokenKind::Void => "`void`",
+            TokenKind::Bool => "`bool`",
             TokenKind::I8 => "`i8`",
             TokenKind::I16 => "`i16`",
             TokenKind::I32 => "`i32`",
@@ -1407,13 +1413,13 @@ mod tests {
 
     #[test]
     fn parses_extended_numeric_primitive_types() {
-        let source = "def numerics(a i64, b f64, c usize) i16\n\treturn 0 as i16\nend\n";
+        let source = "def numerics(a i64, b f64, c usize) bool\n\treturn 0 == 0\nend\n";
         let program = parse_program(lex(source).unwrap()).unwrap();
 
         assert_eq!(program.functions[0].params[0].ty, Type::I64);
         assert_eq!(program.functions[0].params[1].ty, Type::F64);
         assert_eq!(program.functions[0].params[2].ty, Type::Usize);
-        assert_eq!(program.functions[0].return_type, Type::I16);
+        assert_eq!(program.functions[0].return_type, Type::Bool);
     }
 
     #[test]
