@@ -444,6 +444,11 @@ impl Parser {
             self.expect_stmt_terminator()?;
             return Ok(Stmt::Continue { line, column });
         }
+        if self.check_simple(&TokenKind::Break) {
+            self.advance();
+            self.expect_stmt_terminator()?;
+            return Ok(Stmt::Break { line, column });
+        }
 
         let expr = self.parse_expr()?;
         if self.check_simple(&TokenKind::Assign) {
@@ -1610,6 +1615,7 @@ impl Parser {
             TokenKind::If => "`if`",
             TokenKind::Guard => "`guard`",
             TokenKind::Else => "`else`",
+            TokenKind::Break => "`break`",
             TokenKind::Continue => "`continue`",
             TokenKind::Parallel => "`parallel`",
             TokenKind::For => "`for`",
@@ -2214,5 +2220,18 @@ mod tests {
         }
         assert!(matches!(program.functions[0].body[1], Stmt::Increment { .. }));
         assert!(matches!(program.functions[0].body[2], Stmt::Decrement { .. }));
+    }
+
+    #[test]
+    fn parses_break_statement() {
+        let source = "pub def main() void\n\tfor\n\t\tbreak\n\tend\nend\n";
+        let program = parse_program(lex(source).unwrap()).unwrap();
+
+        match &program.functions[0].body[0] {
+            Stmt::Loop { body, .. } => {
+                assert!(matches!(body[0], Stmt::Break { .. }));
+            }
+            other => panic!("expected loop, got {other:?}"),
+        }
     }
 }

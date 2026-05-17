@@ -838,6 +838,10 @@ fn render_stmt(
             indent(output, level);
             output.push_str("continue;\n");
         }
+        Stmt::Break { .. } => {
+            indent(output, level);
+            output.push_str("break;\n");
+        }
     }
     Ok(())
 }

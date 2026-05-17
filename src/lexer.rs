@@ -23,6 +23,7 @@ pub enum TokenKind {
     If,
     Guard,
     Else,
+    Break,
     Continue,
     Parallel,
     For,
@@ -612,6 +613,7 @@ impl Lexer {
             "if" => TokenKind::If,
             "guard" => TokenKind::Guard,
             "else" => TokenKind::Else,
+            "break" => TokenKind::Break,
             "continue" => TokenKind::Continue,
             "parallel" => TokenKind::Parallel,
             "for" => TokenKind::For,
@@ -727,5 +729,12 @@ mod tests {
             .any(|token| matches!(token.kind, TokenKind::Char(value) if value == b'\n')));
         assert!(tokens.iter().any(|token| matches!(token.kind, TokenKind::PlusPlus)));
         assert!(tokens.iter().any(|token| matches!(token.kind, TokenKind::MinusMinus)));
+    }
+
+    #[test]
+    fn lexes_break_keyword() {
+        let tokens = lex("for\n\tbreak\nend\n").unwrap();
+
+        assert!(tokens.iter().any(|token| matches!(token.kind, TokenKind::Break)));
     }
 }

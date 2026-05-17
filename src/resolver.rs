@@ -739,6 +739,7 @@ fn rewrite_stmt(
                 .collect::<Result<Vec<_>, _>>()?,
         }),
         Stmt::Continue { line, column } => Ok(Stmt::Continue { line, column }),
+        Stmt::Break { line, column } => Ok(Stmt::Break { line, column }),
     }
 }
 
@@ -1343,6 +1344,7 @@ impl GenericInstantiator {
                     .collect::<Result<Vec<_>, _>>()?,
             },
             Stmt::Continue { line, column } => Stmt::Continue { line, column },
+            Stmt::Break { line, column } => Stmt::Break { line, column },
         })
     }
 
@@ -1781,6 +1783,7 @@ fn substitute_stmt(stmt: Stmt, substitutions: &HashMap<String, Type>) -> Stmt {
                 .collect(),
         },
         Stmt::Continue { line, column } => Stmt::Continue { line, column },
+        Stmt::Break { line, column } => Stmt::Break { line, column },
     }
 }
 

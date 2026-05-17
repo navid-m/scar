@@ -238,6 +238,10 @@ pub enum Stmt {
         line: usize,
         column: usize,
     },
+    Break {
+        line: usize,
+        column: usize,
+    },
 }
 
 #[derive(Debug, Clone)]

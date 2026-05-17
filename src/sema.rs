@@ -845,6 +845,14 @@ fn analyze_stmt(
                 );
             }
         }
+        Stmt::Break { line, column } => {
+            if !in_loop {
+                return Err(
+                    CompileError::new("`break` may only appear inside a loop")
+                        .with_location(*line, *column),
+                );
+            }
+        }
     }
     Ok(())
 }
@@ -2311,6 +2319,15 @@ mod tests {
         let program = parse_program(lex(source).unwrap()).unwrap();
 
         analyze(&program).unwrap();
+    }
+
+    #[test]
+    fn rejects_break_outside_loop() {
+        let source = "pub def main() void\n\tbreak\nend\n";
+        let program = parse_program(lex(source).unwrap()).unwrap();
+
+        let error = analyze(&program).unwrap_err();
+        assert_eq!(error.to_string(), "`break` may only appear inside a loop");
     }
 
     #[test]
