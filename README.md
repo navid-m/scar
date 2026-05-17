@@ -11,7 +11,6 @@ Prioritizes:
 -  immutability
 -  minimalism
 -  readability
--  easy parallelism
 
 #### Example
 
