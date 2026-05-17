@@ -49,6 +49,19 @@ pub struct TestBlock {
     pub body: Vec<Stmt>,
 }
 
+#[derive(Debug, Clone)]
+pub struct MatchArm {
+    pub kind: MatchArmKind,
+    pub binding: Option<String>,
+    pub body: Vec<Stmt>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MatchArmKind {
+    Ok,
+    Error,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Type {
     Void,
@@ -69,6 +82,9 @@ pub enum Type {
     Mut(Box<Type>),
     Ref(Box<Type>),
     List(Box<Type>),
+    Result(Box<Type>),
+    Error,
+    None,
 }
 
 #[derive(Debug, Clone)]
@@ -146,6 +162,12 @@ pub enum Stmt {
         then_body: Vec<Stmt>,
         else_body: Vec<Stmt>,
     },
+    Match {
+        line: usize,
+        column: usize,
+        expr: Expr,
+        arms: Vec<MatchArm>,
+    },
     Expr {
         line: usize,
         column: usize,
@@ -213,6 +235,11 @@ pub enum Expr {
         expr: Box<Expr>,
         ty: Type,
     },
+    None,
+    Error {
+        message: Box<Expr>,
+    },
+    Try(Box<Expr>),
     Unary {
         op: UnaryOp,
         expr: Box<Expr>,
@@ -250,6 +277,7 @@ pub enum BinaryOp {
     GreaterThan,
     GreaterEqual,
     Equal,
+    NotEqual,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

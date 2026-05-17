@@ -1,8 +1,8 @@
 use crate::{
     CompileError,
     ast::{
-        BinaryOp, Expr, FieldDef, FieldInit, Function, ModuleUse, Param, Program, Stmt, TestBlock,
-        Type, TypeDef, UnaryOp,
+        BinaryOp, Expr, FieldDef, FieldInit, Function, MatchArm, MatchArmKind, ModuleUse, Param,
+        Program, Stmt, TestBlock, Type, TypeDef, UnaryOp,
     },
     lexer::{Token, TokenKind},
 };
@@ -306,6 +306,10 @@ impl Parser {
             return self.parse_if_stmt();
         }
 
+        if self.check_simple(&TokenKind::Match) {
+            return self.parse_match_stmt();
+        }
+
         if self.check_simple(&TokenKind::At) && self.check_next_simple(&TokenKind::LParen) {
             return self.parse_pragma_stmt();
         }
@@ -455,6 +459,62 @@ impl Parser {
             then_body,
             else_body,
         })
+    }
+
+    fn parse_match_stmt(&mut self) -> Result<Stmt, CompileError> {
+        let line = self.current().line;
+        let column = self.current().column;
+        self.expect_simple(TokenKind::Match)?;
+        let expr = self.parse_expr()?;
+        self.expect_newline("expected a newline after match expression")?;
+
+        let mut arms = Vec::new();
+        self.consume_newlines();
+        while !self.check_simple(&TokenKind::End) && !self.is_eof() {
+            let kind = match self.current().kind.clone() {
+                TokenKind::Ident(name) if name == "ok" => {
+                    self.advance();
+                    MatchArmKind::Ok
+                }
+                TokenKind::Ident(name) if name == "error" => {
+                    self.advance();
+                    MatchArmKind::Error
+                }
+                _ => return Err(self.error_at_current("expected `ok` or `error` match arm")),
+            };
+            let binding = match self.current().kind.clone() {
+                TokenKind::Ident(name) => {
+                    self.advance();
+                    if name == "_" { None } else { Some(name) }
+                }
+                _ => return Err(self.error_at_current("expected a match binding name or `_`")),
+            };
+            self.expect_simple(TokenKind::FatArrow)?;
+            let body = self.parse_match_arm_body()?;
+            arms.push(MatchArm {
+                kind,
+                binding,
+                body,
+            });
+            self.consume_newlines();
+        }
+
+        self.expect_simple(TokenKind::End)?;
+        self.consume_newlines();
+        Ok(Stmt::Match {
+            line,
+            column,
+            expr,
+            arms,
+        })
+    }
+
+    fn parse_match_arm_body(&mut self) -> Result<Vec<Stmt>, CompileError> {
+        self.expect_simple(TokenKind::LParen)?;
+        self.consume_newlines();
+        let body = self.parse_block_until(&[TokenKind::RParen])?;
+        self.expect_simple(TokenKind::RParen)?;
+        Ok(body)
     }
 
     fn parse_pragma_stmt(&mut self) -> Result<Stmt, CompileError> {
@@ -646,13 +706,19 @@ impl Parser {
 
     fn parse_equality(&mut self) -> Result<Expr, CompileError> {
         let mut expr = self.parse_comparison()?;
-        while self.check_simple(&TokenKind::EqualEqual) {
+        while self.check_simple(&TokenKind::EqualEqual) || self.check_simple(&TokenKind::BangEqual)
+        {
+            let op = if self.check_simple(&TokenKind::EqualEqual) {
+                BinaryOp::Equal
+            } else {
+                BinaryOp::NotEqual
+            };
             self.advance();
             self.consume_newlines();
             let rhs = self.parse_comparison()?;
             expr = Expr::Binary {
                 lhs: Box::new(expr),
-                op: BinaryOp::Equal,
+                op,
                 rhs: Box::new(rhs),
             };
         }
@@ -823,10 +889,24 @@ impl Parser {
                 }
 
                 let args = self.parse_call_args()?;
-                expr = Expr::Call {
-                    callee: Box::new(expr),
-                    args,
+                let is_error_constructor =
+                    matches!(expr.as_path(), Some(path) if path.len() == 1 && path[0] == "error");
+                expr = if is_error_constructor && args.len() == 1 {
+                    Expr::Error {
+                        message: Box::new(args.into_iter().next().expect("checked length")),
+                    }
+                } else {
+                    Expr::Call {
+                        callee: Box::new(expr),
+                        args,
+                    }
                 };
+                continue;
+            }
+
+            if self.check_simple(&TokenKind::Question) {
+                self.advance();
+                expr = Expr::Try(Box::new(expr));
                 continue;
             }
 
@@ -869,7 +949,12 @@ impl Parser {
     }
 
     fn parse_name(&mut self) -> Result<Expr, CompileError> {
-        Ok(Expr::Path(vec![self.expect_ident()?]))
+        let name = self.expect_ident()?;
+        if name == "none" {
+            Ok(Expr::None)
+        } else {
+            Ok(Expr::Path(vec![name]))
+        }
     }
 
     fn parse_struct_init(&mut self, name: String) -> Result<Expr, CompileError> {
@@ -937,89 +1022,102 @@ impl Parser {
     }
 
     fn parse_type(&mut self) -> Result<Type, CompileError> {
-        match self.current().kind.clone() {
+        let ty = match self.current().kind.clone() {
             TokenKind::Void => {
                 self.advance();
-                Ok(Type::Void)
+                Type::Void
             }
             TokenKind::Bool => {
                 self.advance();
-                Ok(Type::Bool)
+                Type::Bool
             }
             TokenKind::I8 => {
                 self.advance();
-                Ok(Type::I8)
+                Type::I8
             }
             TokenKind::I16 => {
                 self.advance();
-                Ok(Type::I16)
+                Type::I16
             }
             TokenKind::I32 => {
                 self.advance();
-                Ok(Type::I32)
+                Type::I32
             }
             TokenKind::I64 => {
                 self.advance();
-                Ok(Type::I64)
+                Type::I64
             }
             TokenKind::Isize => {
                 self.advance();
-                Ok(Type::Isize)
+                Type::Isize
             }
             TokenKind::U16 => {
                 self.advance();
-                Ok(Type::U16)
+                Type::U16
             }
             TokenKind::U32 => {
                 self.advance();
-                Ok(Type::U32)
+                Type::U32
             }
             TokenKind::U64 => {
                 self.advance();
-                Ok(Type::U64)
+                Type::U64
             }
             TokenKind::Usize => {
                 self.advance();
-                Ok(Type::Usize)
+                Type::Usize
             }
             TokenKind::U8 => {
                 self.advance();
-                Ok(Type::U8)
+                Type::U8
             }
             TokenKind::F32 => {
                 self.advance();
-                Ok(Type::F32)
+                Type::F32
             }
             TokenKind::F64 => {
                 self.advance();
-                Ok(Type::F64)
+                Type::F64
             }
             TokenKind::Mut => {
                 self.advance();
                 self.expect_simple(TokenKind::LParen)?;
                 let inner = self.parse_type()?;
                 self.expect_simple(TokenKind::RParen)?;
-                Ok(Type::Mut(Box::new(inner)))
+                Type::Mut(Box::new(inner))
             }
             TokenKind::Ident(name) => {
                 self.advance();
-                Ok(Type::Named(name))
+                Type::Named(name)
             }
             TokenKind::Ref => {
                 self.advance();
                 self.expect_simple(TokenKind::LParen)?;
                 let inner = self.parse_type()?;
                 self.expect_simple(TokenKind::RParen)?;
-                Ok(Type::Ref(Box::new(inner)))
+                Type::Ref(Box::new(inner))
             }
             TokenKind::List => {
                 self.advance();
                 self.expect_simple(TokenKind::LBracket)?;
                 let inner = self.parse_type()?;
                 self.expect_simple(TokenKind::RBracket)?;
-                Ok(Type::List(Box::new(inner)))
+                Type::List(Box::new(inner))
             }
-            _ => Err(self.error_at_current("expected a type")),
+            _ => return Err(self.error_at_current("expected a type")),
+        };
+
+        if self.check_simple(&TokenKind::Pipe) {
+            self.advance();
+            match self.current().kind.clone() {
+                TokenKind::Ident(name) if name == "error" => {
+                    self.advance();
+                    Ok(Type::Result(Box::new(ty)))
+                }
+                _ => Err(self.error_at_current("expected `error` after `|` in a result type")),
+            }
+        } else {
+            Ok(ty)
         }
     }
 
@@ -1207,6 +1305,7 @@ impl Parser {
             TokenKind::Def => "`def`",
             TokenKind::Extern => "`extern`",
             TokenKind::Test => "`test`",
+            TokenKind::Match => "`match`",
             TokenKind::Type => "`type`",
             TokenKind::End => "`end`",
             TokenKind::Var => "`var`",
@@ -1251,6 +1350,7 @@ impl Parser {
             TokenKind::DotDot => "`..`",
             TokenKind::Assign => "`=`",
             TokenKind::EqualEqual => "`==`",
+            TokenKind::BangEqual => "`!=`",
             TokenKind::Amp => "`&`",
             TokenKind::AmpAmp => "`&&`",
             TokenKind::AmpEqual => "`&=`",
@@ -1275,6 +1375,8 @@ impl Parser {
             TokenKind::MinusEqual => "`-=`",
             TokenKind::Plus => "`+`",
             TokenKind::PlusEqual => "`+=`",
+            TokenKind::FatArrow => "`=>`",
+            TokenKind::Question => "`?`",
             TokenKind::Eof => "end of file",
             TokenKind::Ident(_) => "an identifier",
             TokenKind::Int(_) => "an integer",

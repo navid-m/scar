@@ -2,7 +2,9 @@ use std::collections::{HashMap, HashSet};
 
 use crate::{
     CompileError,
-    ast::{BinaryOp, Expr, FieldDef, Function, Program, Stmt, TestBlock, Type, UnaryOp},
+    ast::{
+        BinaryOp, Expr, FieldDef, Function, MatchArmKind, Program, Stmt, TestBlock, Type, UnaryOp,
+    },
 };
 
 #[derive(Debug, Clone)]
@@ -189,6 +191,7 @@ fn analyze_function(
             &mut scope,
             &mut function_locals,
             false,
+            function.name == "main" || function.name.starts_with("__scar_test_case_"),
         )?;
     }
 
@@ -213,6 +216,7 @@ fn analyze_test_block(
             &mut scope,
             &mut function_locals,
             false,
+            true,
         )?;
     }
     Ok(())
@@ -227,6 +231,7 @@ fn analyze_stmt(
     scope: &mut HashMap<String, LocalBinding>,
     function_locals: &mut HashMap<String, Type>,
     in_loop: bool,
+    allow_try_panic: bool,
 ) -> Result<(), CompileError> {
     match stmt {
         Stmt::VarDecl {
@@ -245,6 +250,8 @@ fn analyze_stmt(
             let ty = match declared_type {
                 Some(expected) => {
                     validate_type(expected, types)?;
+                    validate_try_usage(init, expected_return, allow_try_panic)
+                        .map_err(|error| error.with_location(*line, *column))?;
                     if let Expr::ListLiteral(values) = init {
                         infer_list_literal_type(values, Some(expected), functions, types, scope)
                             .map_err(|error| error.with_location(*line, *column))?
@@ -256,8 +263,22 @@ fn analyze_stmt(
                         expected.clone()
                     }
                 }
-                None => infer_expr_type(init, functions, types, scope)
-                    .map_err(|error| error.with_location(*line, *column))?,
+                None => {
+                    validate_try_usage(init, expected_return, allow_try_panic)
+                        .map_err(|error| error.with_location(*line, *column))?;
+                    let inferred = infer_expr_type(init, functions, types, scope)
+                        .map_err(|error| error.with_location(*line, *column))?;
+                    if matches!(inferred, Type::Error | Type::None) {
+                        return Err(
+                            CompileError::new(format!(
+                                "cannot infer a variable type from {} alone",
+                                describe_type(&inferred)
+                            ))
+                            .with_location(*line, *column),
+                        );
+                    }
+                    inferred
+                }
             };
             scope.insert(
                 name.clone(),
@@ -275,6 +296,8 @@ fn analyze_stmt(
             value,
         } => {
             let target_ty = infer_mutable_target(target, functions, types, scope)
+                .map_err(|error| error.with_location(*line, *column))?;
+            validate_try_usage(value, expected_return, allow_try_panic)
                 .map_err(|error| error.with_location(*line, *column))?;
             let value_ty = infer_expr_type(value, functions, types, scope)
                 .map_err(|error| error.with_location(*line, *column))?;
@@ -342,6 +365,8 @@ fn analyze_stmt(
             column,
             condition,
         } => {
+            validate_try_usage(condition, expected_return, allow_try_panic)
+                .map_err(|error| error.with_location(*line, *column))?;
             let condition_ty = infer_expr_type(condition, functions, types, scope)
                 .map_err(|error| error.with_location(*line, *column))?;
             if !is_condition_type(&condition_ty, types)? {
@@ -367,9 +392,11 @@ fn analyze_stmt(
                 );
             }
             (expected, Some(expr)) => {
+                validate_try_usage(expr, expected_return, allow_try_panic)
+                    .map_err(|error| error.with_location(*line, *column))?;
                 let actual = infer_expr_type(expr, functions, types, scope)
                     .map_err(|error| error.with_location(*line, *column))?;
-                expect_same_type(expected, &actual, types, "return")
+                expect_return_type(expected, &actual, types)
                     .map_err(|error| error.with_location(*line, *column))?;
             }
             (_, None) => {
@@ -408,6 +435,7 @@ fn analyze_stmt(
                     &mut then_scope,
                     function_locals,
                     in_loop,
+                    allow_try_panic,
                 )?;
             }
             let mut else_scope = scope.clone();
@@ -421,10 +449,80 @@ fn analyze_stmt(
                     &mut else_scope,
                     function_locals,
                     in_loop,
+                    allow_try_panic,
                 )?;
             }
         }
+        Stmt::Match {
+            line,
+            column,
+            expr,
+            arms,
+        } => {
+            validate_try_usage(expr, expected_return, allow_try_panic)
+                .map_err(|error| error.with_location(*line, *column))?;
+            let matched_ty = resolve_aliases(
+                &infer_expr_type(expr, functions, types, scope)
+                    .map_err(|error| error.with_location(*line, *column))?,
+                types,
+            )?;
+            let Type::Result(ok_ty) = matched_ty else {
+                return Err(
+                    CompileError::new(format!(
+                        "`match` currently requires a `T|error` expression, got {}",
+                        describe_type(&matched_ty)
+                    ))
+                    .with_location(*line, *column),
+                );
+            };
+
+            let mut saw_ok = false;
+            let mut saw_error = false;
+            for arm in arms {
+                match arm.kind {
+                    MatchArmKind::Ok => saw_ok = true,
+                    MatchArmKind::Error => saw_error = true,
+                }
+                let mut nested = scope.clone();
+                if let Some(binding) = &arm.binding {
+                    let binding_ty = match arm.kind {
+                        MatchArmKind::Ok => (*ok_ty).clone(),
+                        MatchArmKind::Error => Type::Ref(Box::new(Type::U8)),
+                    };
+                    nested.insert(
+                        binding.clone(),
+                        LocalBinding {
+                            ty: binding_ty.clone(),
+                            mutable: true,
+                        },
+                    );
+                    function_locals.insert(binding.clone(), binding_ty);
+                }
+                for stmt in &arm.body {
+                    analyze_stmt(
+                        stmt,
+                        function_name,
+                        expected_return,
+                        functions,
+                        types,
+                        &mut nested,
+                        function_locals,
+                        in_loop,
+                        allow_try_panic,
+                    )?;
+                }
+            }
+
+            if !saw_ok || !saw_error {
+                return Err(
+                    CompileError::new("`match` on a result value requires both `ok` and `error` arms")
+                        .with_location(*line, *column),
+                );
+            }
+        }
         Stmt::Expr { line, column, expr } => {
+            validate_try_usage(expr, expected_return, allow_try_panic)
+                .map_err(|error| error.with_location(*line, *column))?;
             infer_expr_type(expr, functions, types, scope)
                 .map_err(|error| error.with_location(*line, *column))?;
         }
@@ -437,6 +535,10 @@ fn analyze_stmt(
             body,
             ..
         } => {
+            validate_try_usage(start, expected_return, allow_try_panic)
+                .map_err(|error| error.with_location(*line, *column))?;
+            validate_try_usage(end, expected_return, allow_try_panic)
+                .map_err(|error| error.with_location(*line, *column))?;
             let start_ty = resolve_aliases(
                 &infer_expr_type(start, functions, types, scope)
                     .map_err(|error| error.with_location(*line, *column))?,
@@ -471,6 +573,7 @@ fn analyze_stmt(
                     &mut nested,
                     function_locals,
                     true,
+                    allow_try_panic,
                 )?;
             }
         }
@@ -481,6 +584,8 @@ fn analyze_stmt(
             iterable,
             body,
         } => {
+            validate_try_usage(iterable, expected_return, allow_try_panic)
+                .map_err(|error| error.with_location(*line, *column))?;
             let iterable_ty = resolve_aliases(
                 &infer_expr_type(iterable, functions, types, scope)
                     .map_err(|error| error.with_location(*line, *column))?,
@@ -513,6 +618,7 @@ fn analyze_stmt(
                     &mut nested,
                     function_locals,
                     true,
+                    allow_try_panic,
                 )?;
             }
         }
@@ -528,6 +634,7 @@ fn analyze_stmt(
                     &mut nested,
                     function_locals,
                     true,
+                    allow_try_panic,
                 )?;
             }
         }
@@ -552,6 +659,7 @@ fn infer_expr_type(
     match expr {
         Expr::Int(_) => Ok(Type::I32),
         Expr::String(_) => Ok(Type::Ref(Box::new(Type::U8))),
+        Expr::None => Ok(Type::None),
         Expr::ListLiteral(values) => infer_list_literal_type(values, None, functions, types, scope),
         Expr::Index { base, index } => {
             let base_ty = infer_expr_type(base, functions, types, scope)?;
@@ -640,6 +748,26 @@ fn infer_expr_type(
                 )))
             }
         }
+        Expr::Error { message } => {
+            let message_ty = resolve_aliases(&infer_expr_type(message, functions, types, scope)?, types)?;
+            if !is_string_compatible(&message_ty) {
+                return Err(CompileError::new(format!(
+                    "`error(...)` expects a string-compatible message, got {}",
+                    describe_type(&message_ty)
+                )));
+            }
+            Ok(Type::Error)
+        }
+        Expr::Try(inner) => {
+            let inner_ty = resolve_aliases(&infer_expr_type(inner, functions, types, scope)?, types)?;
+            let Type::Result(ok_ty) = inner_ty else {
+                return Err(CompileError::new(format!(
+                    "`?` requires a `T|error` expression, got {}",
+                    describe_type(&inner_ty)
+                )));
+            };
+            Ok((*ok_ty).clone())
+        }
         Expr::Unary { op, expr } => {
             let inner_ty = resolve_aliases(&infer_expr_type(expr, functions, types, scope)?, types)?;
             match op {
@@ -713,18 +841,29 @@ fn infer_expr_type(
                 | BinaryOp::GreaterThan
                 | BinaryOp::GreaterEqual
                 | BinaryOp::Equal
+                | BinaryOp::NotEqual
                     if common_numeric_type(&lhs_ty, &rhs_ty).is_some() =>
                 {
                     Ok(Type::Bool)
                 }
-                BinaryOp::Equal if lhs_ty == Type::Bool && rhs_ty == Type::Bool => Ok(Type::Bool),
+                BinaryOp::Equal | BinaryOp::NotEqual
+                    if lhs_ty == Type::Bool && rhs_ty == Type::Bool =>
+                {
+                    Ok(Type::Bool)
+                }
+                BinaryOp::Equal | BinaryOp::NotEqual
+                    if can_compare_with_none(&lhs_ty, &rhs_ty) =>
+                {
+                    Ok(Type::Bool)
+                }
                 BinaryOp::LessThan
                 | BinaryOp::LessEqual
                 | BinaryOp::GreaterThan
                 | BinaryOp::GreaterEqual
-                | BinaryOp::Equal => Err(
+                | BinaryOp::Equal
+                | BinaryOp::NotEqual => Err(
                     CompileError::new(
-                        "comparison operators currently require compatible numeric operands",
+                        "comparison operators currently require compatible numeric, bool, or pointer/null operands",
                     ),
                 ),
             }
@@ -1372,13 +1511,21 @@ fn validate_type(ty: &Type, types: &HashMap<String, TypeDefInfo>) -> Result<(), 
         | Type::Usize
         | Type::U8
         | Type::F32
-        | Type::F64 => Ok(()),
+        | Type::F64
+        | Type::Error
+        | Type::None => Ok(()),
         Type::Named(name) => {
             if types.contains_key(name) {
                 Ok(())
             } else {
                 Err(CompileError::new(format!("unknown type `{name}`")))
             }
+        }
+        Type::Result(inner) => {
+            if inner.as_ref() == &Type::Void {
+                return Err(CompileError::new("`void|error` is not a valid result type"));
+            }
+            validate_type(inner, types)
         }
         Type::Mut(inner) => validate_type(inner, types),
         Type::Ref(inner) => validate_type(inner, types),
@@ -1401,13 +1548,21 @@ fn validate_type_with_known_names(ty: &Type, known: &HashSet<String>) -> Result<
         | Type::Usize
         | Type::U8
         | Type::F32
-        | Type::F64 => Ok(()),
+        | Type::F64
+        | Type::Error
+        | Type::None => Ok(()),
         Type::Named(name) => {
             if known.contains(name) {
                 Ok(())
             } else {
                 Err(CompileError::new(format!("unknown type `{name}`")))
             }
+        }
+        Type::Result(inner) => {
+            if inner.as_ref() == &Type::Void {
+                return Err(CompileError::new("`void|error` is not a valid result type"));
+            }
+            validate_type_with_known_names(inner, known)
         }
         Type::Mut(inner) => validate_type_with_known_names(inner, known),
         Type::Ref(inner) => validate_type_with_known_names(inner, known),
@@ -1432,6 +1587,79 @@ fn expect_same_type(
     }
 }
 
+fn expect_return_type(
+    expected: &Type,
+    actual: &Type,
+    types: &HashMap<String, TypeDefInfo>,
+) -> Result<(), CompileError> {
+    if types_compatible(expected, actual, types)? {
+        Ok(())
+    } else {
+        Err(CompileError::new(format!(
+            "return expects type {} but found {}",
+            describe_type(expected),
+            describe_type(actual)
+        )))
+    }
+}
+
+fn validate_try_usage(
+    expr: &Expr,
+    expected_return: &Type,
+    allow_try_panic: bool,
+) -> Result<(), CompileError> {
+    if matches!(expr, Expr::Try(_))
+        && !allow_try_panic
+        && !matches!(expected_return, Type::Result(_))
+    {
+        return Err(CompileError::new(
+            "`?` may only be used in functions returning `T|error`, in `main`, or in test blocks",
+        ));
+    }
+    match expr {
+        Expr::Index { base, index } => {
+            validate_try_usage(base, expected_return, allow_try_panic)?;
+            validate_try_usage(index, expected_return, allow_try_panic)?;
+        }
+        Expr::FieldAccess { base, .. } => validate_try_usage(base, expected_return, allow_try_panic)?,
+        Expr::StructInit { fields, .. } => {
+            for field in fields {
+                validate_try_usage(&field.value, expected_return, allow_try_panic)?;
+            }
+        }
+        Expr::BuiltinCall { args, .. }
+        | Expr::MethodCall { args, .. }
+        | Expr::Call { args, .. }
+        | Expr::Pack(args) => {
+            for arg in args {
+                validate_try_usage(arg, expected_return, allow_try_panic)?;
+            }
+            if let Expr::MethodCall { receiver, .. } = expr {
+                validate_try_usage(receiver, expected_return, allow_try_panic)?;
+            }
+            if let Expr::Call { callee, .. } = expr {
+                validate_try_usage(callee, expected_return, allow_try_panic)?;
+            }
+        }
+        Expr::Cast { expr, .. }
+        | Expr::Try(expr)
+        | Expr::Error { message: expr }
+        | Expr::Unary { expr, .. } => validate_try_usage(expr, expected_return, allow_try_panic)?,
+        Expr::Binary { lhs, rhs, .. } => {
+            validate_try_usage(lhs, expected_return, allow_try_panic)?;
+            validate_try_usage(rhs, expected_return, allow_try_panic)?;
+        }
+        Expr::Int(_) | Expr::String(_) | Expr::Path(_) | Expr::ListLiteral(_) | Expr::None => {
+            if let Expr::ListLiteral(values) = expr {
+                for value in values {
+                    validate_try_usage(value, expected_return, allow_try_panic)?;
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 fn types_compatible(
     expected: &Type,
     actual: &Type,
@@ -1439,9 +1667,26 @@ fn types_compatible(
 ) -> Result<bool, CompileError> {
     let expected = resolve_aliases(expected, types)?;
     let actual = resolve_aliases(actual, types)?;
-    Ok(expected == actual
+    Ok(types_compatible_resolved(&expected, &actual)
         || (is_string_compatible(&expected) && is_string_compatible(&actual))
         || can_implicitly_convert_numeric(&actual, &expected))
+}
+
+fn types_compatible_resolved(expected: &Type, actual: &Type) -> bool {
+    if expected == actual {
+        return true;
+    }
+    match (expected, actual) {
+        (Type::Result(expected_ok), Type::Result(actual_ok)) => {
+            types_compatible_resolved(expected_ok, actual_ok)
+        }
+        (Type::Result(_expected_ok), Type::Error) => true,
+        (Type::Result(expected_ok), other) => types_compatible_resolved(expected_ok, other),
+        (expected, Type::None) | (Type::None, expected) => {
+            expected == &Type::None || is_nullable_pointer_type(expected)
+        }
+        _ => false,
+    }
 }
 
 fn is_string_compatible(ty: &Type) -> bool {
@@ -1451,6 +1696,16 @@ fn is_string_compatible(ty: &Type) -> bool {
 
 fn is_memory_pointer_type(ty: &Type) -> bool {
     matches!(ty, Type::Ref(_) | Type::Mut(_)) || is_string_compatible(ty)
+}
+
+fn is_nullable_pointer_type(ty: &Type) -> bool {
+    matches!(ty, Type::Ref(_) | Type::Mut(_)) || is_string_compatible(ty)
+}
+
+fn can_compare_with_none(lhs: &Type, rhs: &Type) -> bool {
+    matches!((lhs, rhs), (Type::None, Type::None))
+        || (lhs == &Type::None && is_nullable_pointer_type(rhs))
+        || (rhs == &Type::None && is_nullable_pointer_type(lhs))
 }
 
 fn is_condition_type(ty: &Type, types: &HashMap<String, TypeDefInfo>) -> Result<bool, CompileError> {
@@ -1629,6 +1884,7 @@ fn resolve_aliases(ty: &Type, types: &HashMap<String, TypeDefInfo>) -> Result<Ty
                 Ok(Type::Named(name.clone()))
             }
         }
+        Type::Result(inner) => Ok(Type::Result(Box::new(resolve_aliases(inner, types)?))),
         Type::Mut(inner) => Ok(Type::Mut(Box::new(resolve_aliases(inner, types)?))),
         Type::Ref(inner) => Ok(Type::Ref(Box::new(resolve_aliases(inner, types)?))),
         Type::List(inner) => Ok(Type::List(Box::new(resolve_aliases(inner, types)?))),
@@ -1656,6 +1912,9 @@ fn describe_type(ty: &Type) -> String {
         Type::Mut(inner) => format!("mut({})", describe_type(inner)),
         Type::Ref(inner) => format!("ref({})", describe_type(inner)),
         Type::List(inner) => format!("list[{}]", describe_type(inner)),
+        Type::Result(inner) => format!("{}|error", describe_type(inner)),
+        Type::Error => "error".to_string(),
+        Type::None => "none".to_string(),
     }
 }
 

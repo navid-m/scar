@@ -13,6 +13,7 @@ pub enum TokenKind {
     Def,
     Extern,
     Test,
+    Match,
     Type,
     End,
     Var,
@@ -60,6 +61,7 @@ pub enum TokenKind {
     DotDot,
     Assign,
     EqualEqual,
+    BangEqual,
     Amp,
     AmpAmp,
     AmpEqual,
@@ -84,6 +86,8 @@ pub enum TokenKind {
     MinusEqual,
     Plus,
     PlusEqual,
+    FatArrow,
+    Question,
     Eof,
 }
 
@@ -184,6 +188,13 @@ impl Lexer {
                             line,
                             column,
                         });
+                    } else if self.peek() == Some('>') {
+                        self.bump();
+                        tokens.push(Token {
+                            kind: TokenKind::FatArrow,
+                            line,
+                            column,
+                        });
                     } else {
                         tokens.push(Token {
                             kind: TokenKind::Assign,
@@ -234,7 +245,18 @@ impl Lexer {
                     };
                     tokens.push(Token { kind, line, column });
                 }
-                '!' => tokens.push(self.single(TokenKind::Bang)),
+                '!' => {
+                    let line = self.line;
+                    let column = self.column;
+                    self.bump();
+                    let kind = if self.peek() == Some('=') {
+                        self.bump();
+                        TokenKind::BangEqual
+                    } else {
+                        TokenKind::Bang
+                    };
+                    tokens.push(Token { kind, line, column });
+                }
                 '<' => {
                     let line = self.line;
                     let column = self.column;
@@ -353,6 +375,7 @@ impl Lexer {
                         });
                     }
                 }
+                '?' => tokens.push(self.single(TokenKind::Question)),
                 '"' => tokens.push(self.string()?),
                 '0'..='9' => tokens.push(self.number()?),
                 _ if is_ident_start(ch) => tokens.push(self.ident_or_keyword()),
@@ -482,6 +505,7 @@ impl Lexer {
             "extern" => TokenKind::Extern,
             "type" => TokenKind::Type,
             "test" => TokenKind::Test,
+            "match" => TokenKind::Match,
             "end" => TokenKind::End,
             "var" => TokenKind::Var,
             "val" => TokenKind::Val,

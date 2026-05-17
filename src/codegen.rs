@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use crate::{
     CompileError,
-    ast::{BinaryOp, Expr, Function, Program, Stmt, Type, TypeDef, UnaryOp},
+    ast::{BinaryOp, Expr, Function, MatchArmKind, Program, Stmt, Type, TypeDef, UnaryOp},
     sema::ProgramInfo,
 };
 
@@ -38,6 +38,14 @@ pub fn generate_c(
     for type_def in &program.type_defs {
         output.push_str(&render_type_def(type_def));
         output.push('\n');
+    }
+
+    let result_types = collect_result_types(program, info);
+    if !result_types.is_empty() {
+        for result_ty in &result_types {
+            output.push_str(&render_result_support(result_ty));
+            output.push('\n');
+        }
     }
 
     for function in &program.functions {
@@ -126,8 +134,19 @@ fn render_function(
     let mut next_temp_id = 0usize;
     output.push_str(&render_signature(function, info));
     output.push_str(" {\n");
+    if !matches!(function.return_type, Type::Void) {
+        output.push_str("    ");
+        output.push_str(&c_type(&function.return_type));
+        output.push_str(" __scar_return_value;\n");
+    }
     for stmt in &function.body {
         render_stmt(output, stmt, function, info, 1, &mut next_temp_id)?;
+    }
+    output.push_str("__scar_return:\n");
+    if matches!(function.return_type, Type::Void) {
+        output.push_str("    return;\n");
+    } else {
+        output.push_str("    return __scar_return_value;\n");
     }
     output.push_str("}\n");
     Ok(())
@@ -155,6 +174,42 @@ fn render_type_def(type_def: &TypeDef) -> String {
     output.push_str(&type_def.name);
     output.push_str(";\n");
     output
+}
+
+fn render_result_support(ok_ty: &Type) -> String {
+    let mut output = String::new();
+    let result_name = result_c_type(ok_ty);
+    output.push_str("typedef struct {\n");
+    output.push_str("    int32_t is_error;\n");
+    output.push_str("    ");
+    output.push_str(&c_type(ok_ty));
+    output.push_str(" ok;\n");
+    output.push_str("    const char *error;\n");
+    output.push_str("} ");
+    output.push_str(&result_name);
+    output.push_str(";\n");
+    output
+}
+
+fn result_c_type(ok_ty: &Type) -> String {
+    format!("scar_result__{}", type_suffix(ok_ty))
+}
+
+fn render_result_ok_value(ok_ty: &Type, value: &str) -> String {
+    format!(
+        "(({}){{ .is_error = 0, .ok = {}, .error = NULL }})",
+        result_c_type(ok_ty),
+        value
+    )
+}
+
+fn render_result_error_value(ok_ty: &Type, message: &str) -> String {
+    format!(
+        "(({}){{ .is_error = 1, .ok = ({}){{0}}, .error = {} }})",
+        result_c_type(ok_ty),
+        c_type(ok_ty),
+        message
+    )
 }
 
 fn render_signature(function: &Function, info: &ProgramInfo) -> String {
@@ -207,6 +262,56 @@ fn render_stmt(
                         function.name
                     ))
                 })?;
+            if let Expr::Try(inner) = init {
+                let result_ty = infer_codegen_expr_type(inner, function, info)?;
+                let Type::Result(ok_ty) = resolve_codegen_aliases(&result_ty, info)? else {
+                    return Err(CompileError::new("`?` requires a result value during code generation"));
+                };
+                let temp_id = *next_temp_id;
+                *next_temp_id += 1;
+                let temp_name = format!("__scar_try_{temp_id}");
+                indent(output, level);
+                output.push_str(&c_type(&result_ty));
+                output.push(' ');
+                output.push_str(&temp_name);
+                output.push_str(" = ");
+                output.push_str(&render_expr(inner, function, info)?);
+                output.push_str(";\n");
+                indent(output, level);
+                output.push_str("if (");
+                output.push_str(&temp_name);
+                output.push_str(".is_error) {\n");
+                if function_allows_try_panic(function) {
+                    indent(output, level + 1);
+                    output.push_str("scar_runtime_panic(");
+                    output.push_str(&temp_name);
+                    output.push_str(".error);\n");
+                } else if let Type::Result(function_ok_ty) = &function.return_type {
+                    indent(output, level + 1);
+                    output.push_str("__scar_return_value = ");
+                    output.push_str(&render_result_error_value(function_ok_ty, &format!("{temp_name}.error")));
+                    output.push_str(";\n");
+                    indent(output, level + 1);
+                    output.push_str("goto __scar_return;\n");
+                } else {
+                    return Err(CompileError::new(
+                        "`?` propagation requires a result-returning function during code generation",
+                    ));
+                }
+                indent(output, level);
+                output.push_str("}\n");
+                indent(output, level);
+                if !mutable {
+                    output.push_str("const ");
+                }
+                output.push_str(&c_type(ty));
+                output.push(' ');
+                output.push_str(&mangle_local_symbol(name));
+                output.push_str(" = ");
+                output.push_str(&format!("{temp_name}.ok"));
+                output.push_str(";\n");
+                return Ok(());
+            }
             indent(output, level);
             if !mutable {
                 output.push_str("const ");
@@ -219,10 +324,56 @@ fn render_stmt(
             output.push_str(";\n");
         }
         Stmt::Assign { target, value, .. } => {
+            let target_ty = infer_codegen_expr_type(target, function, info)?;
+            if let Expr::Try(inner) = value {
+                let result_ty = infer_codegen_expr_type(inner, function, info)?;
+                let Type::Result(_ok_ty) = resolve_codegen_aliases(&result_ty, info)? else {
+                    return Err(CompileError::new("`?` requires a result value during code generation"));
+                };
+                let temp_id = *next_temp_id;
+                *next_temp_id += 1;
+                let temp_name = format!("__scar_try_{temp_id}");
+                indent(output, level);
+                output.push_str(&c_type(&result_ty));
+                output.push(' ');
+                output.push_str(&temp_name);
+                output.push_str(" = ");
+                output.push_str(&render_expr(inner, function, info)?);
+                output.push_str(";\n");
+                indent(output, level);
+                output.push_str("if (");
+                output.push_str(&temp_name);
+                output.push_str(".is_error) {\n");
+                if function_allows_try_panic(function) {
+                    indent(output, level + 1);
+                    output.push_str("scar_runtime_panic(");
+                    output.push_str(&temp_name);
+                    output.push_str(".error);\n");
+                } else if let Type::Result(function_ok_ty) = &function.return_type {
+                    indent(output, level + 1);
+                    output.push_str("__scar_return_value = ");
+                    output.push_str(&render_result_error_value(function_ok_ty, &format!("{temp_name}.error")));
+                    output.push_str(";\n");
+                    indent(output, level + 1);
+                    output.push_str("goto __scar_return;\n");
+                } else {
+                    return Err(CompileError::new(
+                        "`?` propagation requires a result-returning function during code generation",
+                    ));
+                }
+                indent(output, level);
+                output.push_str("}\n");
+                indent(output, level);
+                output.push_str(&render_expr(target, function, info)?);
+                output.push_str(" = ");
+                output.push_str(&format!("{temp_name}.ok"));
+                output.push_str(";\n");
+                return Ok(());
+            }
             indent(output, level);
             output.push_str(&render_expr(target, function, info)?);
             output.push_str(" = ");
-            output.push_str(&render_expr(value, function, info)?);
+            output.push_str(&render_expr_with_hint(value, function, info, Some(&target_ty))?);
             output.push_str(";\n");
         }
         Stmt::AddAssign { target, value, .. } => {
@@ -295,15 +446,67 @@ fn render_stmt(
         }
         Stmt::Return { value: None, .. } => {
             indent(output, level);
-            output.push_str("return;\n");
+            output.push_str("goto __scar_return;\n");
         }
         Stmt::Return {
             value: Some(value), ..
         } => {
+            if let Expr::Try(inner) = value {
+                let result_ty = infer_codegen_expr_type(inner, function, info)?;
+                let Type::Result(ok_ty) = resolve_codegen_aliases(&result_ty, info)? else {
+                    return Err(CompileError::new("`?` requires a result value during code generation"));
+                };
+                let temp_id = *next_temp_id;
+                *next_temp_id += 1;
+                let temp_name = format!("__scar_try_{temp_id}");
+                indent(output, level);
+                output.push_str(&c_type(&result_ty));
+                output.push(' ');
+                output.push_str(&temp_name);
+                output.push_str(" = ");
+                output.push_str(&render_expr(inner, function, info)?);
+                output.push_str(";\n");
+                indent(output, level);
+                output.push_str("if (");
+                output.push_str(&temp_name);
+                output.push_str(".is_error) {\n");
+                if function_allows_try_panic(function) {
+                    indent(output, level + 1);
+                    output.push_str("scar_runtime_panic(");
+                    output.push_str(&temp_name);
+                    output.push_str(".error);\n");
+                } else if let Type::Result(function_ok_ty) = &function.return_type {
+                    indent(output, level + 1);
+                    output.push_str("__scar_return_value = ");
+                    output.push_str(&render_result_error_value(function_ok_ty, &format!("{temp_name}.error")));
+                    output.push_str(";\n");
+                    indent(output, level + 1);
+                    output.push_str("goto __scar_return;\n");
+                } else {
+                    return Err(CompileError::new(
+                        "`?` propagation requires a result-returning function during code generation",
+                    ));
+                }
+                indent(output, level);
+                output.push_str("}\n");
+                indent(output, level);
+                output.push_str("__scar_return_value = ");
+                if let Type::Result(function_ok_ty) = &function.return_type {
+                    output.push_str(&render_result_ok_value(function_ok_ty, &format!("{temp_name}.ok")));
+                } else {
+                    output.push_str(&format!("{temp_name}.ok"));
+                }
+                output.push_str(";\n");
+                indent(output, level);
+                output.push_str("goto __scar_return;\n");
+                return Ok(());
+            }
             indent(output, level);
-            output.push_str("return ");
-            output.push_str(&render_expr(value, function, info)?);
+            output.push_str("__scar_return_value = ");
+            output.push_str(&render_expr_with_hint(value, function, info, Some(&function.return_type))?);
             output.push_str(";\n");
+            indent(output, level);
+            output.push_str("goto __scar_return;\n");
         }
         Stmt::If {
             condition,
@@ -331,7 +534,106 @@ fn render_stmt(
                 output.push_str("}\n");
             }
         }
+        Stmt::Match { expr, arms, .. } => {
+            let matched_ty = infer_codegen_expr_type(expr, function, info)?;
+            let Type::Result(ok_ty) = resolve_codegen_aliases(&matched_ty, info)? else {
+                return Err(CompileError::new("`match` expects a result value during code generation"));
+            };
+            let temp_id = *next_temp_id;
+            *next_temp_id += 1;
+            let temp_name = format!("__scar_match_{temp_id}");
+            indent(output, level);
+            output.push_str("{\n");
+            indent(output, level + 1);
+            output.push_str(&c_type(&matched_ty));
+            output.push(' ');
+            output.push_str(&temp_name);
+            output.push_str(" = ");
+            output.push_str(&render_expr(expr, function, info)?);
+            output.push_str(";\n");
+            for (index, arm) in arms.iter().enumerate() {
+                indent(output, level + 1);
+                if index == 0 {
+                    output.push_str("if (");
+                } else {
+                    output.push_str("else if (");
+                }
+                match arm.kind {
+                    MatchArmKind::Ok => output.push_str("!"),
+                    MatchArmKind::Error => {}
+                }
+                output.push_str(&temp_name);
+                output.push_str(".is_error) {\n");
+                if let Some(binding) = &arm.binding {
+                    indent(output, level + 2);
+                    match arm.kind {
+                        MatchArmKind::Ok => {
+                            output.push_str(&c_type(ok_ty.as_ref()));
+                            output.push(' ');
+                            output.push_str(&mangle_local_symbol(binding));
+                            output.push_str(" = ");
+                            output.push_str(&temp_name);
+                            output.push_str(".ok;\n");
+                        }
+                        MatchArmKind::Error => {
+                            output.push_str("const char * ");
+                            output.push_str(&mangle_local_symbol(binding));
+                            output.push_str(" = ");
+                            output.push_str(&temp_name);
+                            output.push_str(".error;\n");
+                        }
+                    }
+                }
+                for stmt in &arm.body {
+                    render_stmt(output, stmt, function, info, level + 2, next_temp_id)?;
+                }
+                indent(output, level + 1);
+                output.push_str("}\n");
+            }
+            indent(output, level);
+            output.push_str("}\n");
+        }
         Stmt::Expr { expr, .. } => {
+            if let Expr::Try(inner) = expr {
+                let result_ty = infer_codegen_expr_type(inner, function, info)?;
+                let Type::Result(_ok_ty) = resolve_codegen_aliases(&result_ty, info)? else {
+                    return Err(CompileError::new("`?` requires a result value during code generation"));
+                };
+                let temp_id = *next_temp_id;
+                *next_temp_id += 1;
+                let temp_name = format!("__scar_try_{temp_id}");
+                indent(output, level);
+                output.push_str(&c_type(&result_ty));
+                output.push(' ');
+                output.push_str(&temp_name);
+                output.push_str(" = ");
+                output.push_str(&render_expr(inner, function, info)?);
+                output.push_str(";\n");
+                indent(output, level);
+                output.push_str("if (");
+                output.push_str(&temp_name);
+                output.push_str(".is_error) {\n");
+                if function_allows_try_panic(function) {
+                    indent(output, level + 1);
+                    output.push_str("scar_runtime_panic(");
+                    output.push_str(&temp_name);
+                    output.push_str(".error);\n");
+                } else if let Type::Result(function_ok_ty) = &function.return_type {
+                    indent(output, level + 1);
+                    output.push_str("__scar_return_value = ");
+                    output.push_str(&render_result_error_value(function_ok_ty, &format!("{temp_name}.error")));
+                    output.push_str(";\n");
+                    indent(output, level + 1);
+                    output.push_str("goto __scar_return;\n");
+                } else {
+                    return Err(CompileError::new(
+                        "`?` propagation requires a result-returning function during code generation",
+                    ));
+                }
+                indent(output, level);
+                output.push_str("}\n");
+                return Ok(());
+            }
             indent(output, level);
             output.push_str(&render_expr(expr, function, info)?);
             output.push_str(";\n");
@@ -453,9 +755,29 @@ fn render_expr_with_hint(
     info: &ProgramInfo,
     hint: Option<&Type>,
 ) -> Result<String, CompileError> {
+    if let Some(Type::Result(ok_ty)) = hint {
+        let actual_ty = resolve_codegen_aliases(&infer_codegen_expr_type(expr, function, info)?, info)?;
+        return match actual_ty {
+            Type::Result(_) => render_expr_with_hint(expr, function, info, None),
+            Type::Error => match expr {
+                Expr::Error { message } => Ok(render_result_error_value(
+                    ok_ty,
+                    &render_expr(message, function, info)?,
+                )),
+                _ => Err(CompileError::new(
+                    "missing error constructor payload during code generation",
+                )),
+            },
+            _ => Ok(render_result_ok_value(
+                ok_ty,
+                &render_expr_with_hint(expr, function, info, Some(ok_ty))?,
+            )),
+        };
+    }
     match expr {
         Expr::Int(value) => Ok(value.to_string()),
         Expr::String(value) => Ok(format!("\"{}\"", escape_c_string(value))),
+        Expr::None => Ok("NULL".to_string()),
         Expr::ListLiteral(values) => {
             let list_ty = match hint {
                 Some(Type::List(_)) => hint.cloned().ok_or_else(|| {
@@ -468,13 +790,20 @@ fn render_expr_with_hint(
         Expr::Index { base, index } => render_index_expr(base, index, function, info),
         Expr::FieldAccess { base, field } => render_field_access(base, field, function, info),
         Expr::StructInit { name, fields } => {
+            let type_info = info
+                .types
+                .get(name)
+                .ok_or_else(|| CompileError::new(format!("unknown type `{name}` in code generation")))?;
             let rendered_fields = fields
                 .iter()
                 .map(|field| {
+                    let field_ty = type_info.field_map.get(&field.name).ok_or_else(|| {
+                        CompileError::new(format!("type `{name}` has no field `{}`", field.name))
+                    })?;
                     Ok(format!(
                         ".{} = {}",
                         field.name,
-                        render_expr(&field.value, function, info)?
+                        render_expr_with_hint(&field.value, function, info, Some(field_ty))?
                     ))
                 })
                 .collect::<Result<Vec<_>, CompileError>>()?;
@@ -504,6 +833,12 @@ fn render_expr_with_hint(
                 render_expr(expr, function, info)?
             ))
         }
+        Expr::Error { .. } => Err(CompileError::new(
+            "`error(...)` requires a `T|error` context during code generation",
+        )),
+        Expr::Try(_) => Err(CompileError::new(
+            "`?` is only supported in statement positions during code generation",
+        )),
         Expr::Unary { op, expr } => match op {
             UnaryOp::Neg => Ok(format!("(-({}))", render_expr(expr, function, info)?)),
             UnaryOp::LogicalNot => Ok(format!("(!({}))", render_expr(expr, function, info)?)),
@@ -532,6 +867,7 @@ fn render_expr_with_hint(
                 BinaryOp::GreaterThan => ">",
                 BinaryOp::GreaterEqual => ">=",
                 BinaryOp::Equal => "==",
+                BinaryOp::NotEqual => "!=",
                 BinaryOp::ShiftRight => unreachable!("handled above"),
             };
             Ok(format!(
@@ -564,6 +900,16 @@ fn render_entrypoint(
             output.push_str(&format!("    {main_symbol}();\n"));
             output.push_str("    return 0;\n");
         }
+        Type::Result(ref _ok_ty) => {
+            output.push_str(&format!(
+                "    {} __scar_main_result = {main_symbol}();\n",
+                c_type(&main_function.return_type)
+            ));
+            output.push_str("    if (__scar_main_result.is_error) {\n");
+            output.push_str("        scar_runtime_panic(__scar_main_result.error);\n");
+            output.push_str("    }\n");
+            output.push_str(&format!("    return (int)(__scar_main_result.ok);\n"));
+        }
         _ => {
             output.push_str(&format!("    return (int)({main_symbol}());\n"));
         }
@@ -589,6 +935,10 @@ fn render_symbol_name(name: &str, function: &Function, info: &ProgramInfo) -> St
 
 fn mangle_local_symbol(name: &str) -> String {
     format!("loc__{name}")
+}
+
+fn function_allows_try_panic(function: &Function) -> bool {
+    function.name == "main" || function.name.starts_with("__scar_test_case_")
 }
 
 fn render_field_access(
@@ -628,35 +978,43 @@ fn render_call(
     function: &Function,
     info: &ProgramInfo,
 ) -> Result<String, CompileError> {
-        if let Some(path) = callee.as_path() {
-            if path.len() == 1 {
+    if let Some(path) = callee.as_path() {
+        if path.len() == 1 {
+            if let Some(signature) = info.functions.get(&path[0]) {
                 let rendered_args = args
                     .iter()
-                    .map(|arg| render_expr(arg, function, info))
+                    .zip(signature.params.iter())
+                    .map(|(arg, param_ty)| render_expr_with_hint(arg, function, info, Some(param_ty)))
                     .collect::<Result<Vec<_>, _>>()?;
                 if let Some(symbol) = info.function_symbols.get(&path[0]).cloned() {
                     return Ok(format!("{symbol}({})", rendered_args.join(", ")));
                 }
-                if let Some(type_info) = info.types.get(&path[0]) {
-                    if type_info.alias.is_some() {
-                        return Err(CompileError::new(format!(
-                            "type `{}` is an alias and cannot be initialized like a struct",
-                            path[0]
-                        )));
-                    }
-                    if type_info.fields.len() != args.len() {
-                        return Err(CompileError::new(format!(
-                            "type `{}` expects {} constructor arguments but received {}",
-                            path[0],
-                            type_info.fields.len(),
-                            args.len()
-                        )));
-                    }
-                    return Ok(format!("({}){{ {} }}", path[0], rendered_args.join(", ")));
-                }
-                return Err(CompileError::new(format!("unknown function `{}`", path[0])));
             }
+            if let Some(type_info) = info.types.get(&path[0]) {
+                if type_info.alias.is_some() {
+                    return Err(CompileError::new(format!(
+                        "type `{}` is an alias and cannot be initialized like a struct",
+                        path[0]
+                    )));
+                }
+                if type_info.fields.len() != args.len() {
+                    return Err(CompileError::new(format!(
+                        "type `{}` expects {} constructor arguments but received {}",
+                        path[0],
+                        type_info.fields.len(),
+                        args.len()
+                    )));
+                }
+                let rendered_args = args
+                    .iter()
+                    .zip(type_info.fields.iter())
+                    .map(|(arg, field)| render_expr_with_hint(arg, function, info, Some(&field.ty)))
+                    .collect::<Result<Vec<_>, _>>()?;
+                return Ok(format!("({}){{ {} }}", path[0], rendered_args.join(", ")));
+            }
+            return Err(CompileError::new(format!("unknown function `{}`", path[0])));
         }
+    }
 
     Err(CompileError::new(
         "only direct function calls and @builtin calls are currently supported in codegen",
@@ -824,6 +1182,7 @@ fn infer_codegen_expr_type(
     match expr {
         Expr::Int(_) => Ok(Type::I32),
         Expr::String(_) => Ok(Type::Ref(Box::new(Type::U8))),
+        Expr::None => Ok(Type::None),
         Expr::ListLiteral(values) => {
             if values.is_empty() {
                 return Err(CompileError::new(
@@ -922,6 +1281,17 @@ fn infer_codegen_expr_type(
             }
         }
         Expr::Cast { ty, .. } => Ok(ty.clone()),
+        Expr::Error { .. } => Ok(Type::Error),
+        Expr::Try(inner) => {
+            let inner_ty = resolve_codegen_aliases(&infer_codegen_expr_type(inner, function, info)?, info)?;
+            let Type::Result(ok_ty) = inner_ty else {
+                return Err(CompileError::new(format!(
+                    "`?` requires a `T|error` expression, got {}",
+                    describe_type(&inner_ty)
+                )));
+            };
+            Ok((*ok_ty).clone())
+        }
         Expr::Unary { op, expr } => match op {
             UnaryOp::Neg | UnaryOp::LogicalNot => {
                 infer_codegen_integer_unary_type(*op, expr, function, info)
@@ -988,8 +1358,10 @@ fn infer_codegen_expr_type(
                 | BinaryOp::GreaterThan
                 | BinaryOp::GreaterEqual
                 | BinaryOp::Equal
+                | BinaryOp::NotEqual
                     if common_codegen_numeric_type(&lhs_ty, &rhs_ty).is_some()
-                        || (lhs_ty == Type::Bool && rhs_ty == Type::Bool) =>
+                        || (lhs_ty == Type::Bool && rhs_ty == Type::Bool)
+                        || can_codegen_compare_with_none(&lhs_ty, &rhs_ty) =>
                 {
                     Ok(Type::Bool)
                 }
@@ -997,8 +1369,9 @@ fn infer_codegen_expr_type(
                 | BinaryOp::LessEqual
                 | BinaryOp::GreaterThan
                 | BinaryOp::GreaterEqual
-                | BinaryOp::Equal => Err(CompileError::new(
-                    "comparison operators currently require compatible numeric or bool operands",
+                | BinaryOp::Equal
+                | BinaryOp::NotEqual => Err(CompileError::new(
+                    "comparison operators currently require compatible numeric, bool, or pointer/null operands",
                 )),
             }
         }
@@ -1198,12 +1571,52 @@ fn collect_list_types(program: &Program, info: &ProgramInfo) -> Vec<Type> {
     list_types
 }
 
+fn collect_result_types(program: &Program, info: &ProgramInfo) -> Vec<Type> {
+    let mut set = HashSet::new();
+    for type_def in &program.type_defs {
+        if let Some(alias) = &type_def.alias {
+            collect_result_types_from_type(alias, &mut set);
+        }
+        for field in &type_def.fields {
+            collect_result_types_from_type(&field.ty, &mut set);
+        }
+    }
+    for function in &program.functions {
+        collect_result_types_from_type(&function.return_type, &mut set);
+        for param in &function.params {
+            collect_result_types_from_type(&param.ty, &mut set);
+        }
+    }
+    for locals in info.locals.values() {
+        for ty in locals.values() {
+            collect_result_types_from_type(ty, &mut set);
+        }
+    }
+    let mut result_types: Vec<_> = set.into_iter().collect();
+    result_types.sort_by_key(describe_type);
+    result_types
+}
+
+fn collect_result_types_from_type(ty: &Type, set: &mut HashSet<Type>) {
+    match ty {
+        Type::Result(inner) => {
+            collect_result_types_from_type(inner, set);
+            set.insert((**inner).clone());
+        }
+        Type::List(inner) => collect_result_types_from_type(inner, set),
+        Type::Mut(inner) => collect_result_types_from_type(inner, set),
+        Type::Ref(inner) => collect_result_types_from_type(inner, set),
+        _ => {}
+    }
+}
+
 fn collect_list_types_from_type(ty: &Type, set: &mut HashSet<Type>) {
     match ty {
         Type::List(inner) => {
             collect_list_types_from_type(inner, set);
             set.insert(ty.clone());
         }
+        Type::Result(inner) => collect_list_types_from_type(inner, set),
         Type::Mut(inner) => collect_list_types_from_type(inner, set),
         Type::Ref(inner) => collect_list_types_from_type(inner, set),
         _ => {}
@@ -1427,6 +1840,9 @@ fn type_suffix(ty: &Type) -> String {
         Type::Mut(inner) => format!("mut__{}", type_suffix(inner)),
         Type::Ref(inner) => format!("ref__{}", type_suffix(inner)),
         Type::List(inner) => format!("list__{}", type_suffix(inner)),
+        Type::Result(inner) => format!("result__{}", type_suffix(inner)),
+        Type::Error => "error".to_string(),
+        Type::None => "none".to_string(),
     }
 }
 
@@ -1466,6 +1882,9 @@ fn c_type(ty: &Type) -> String {
             }
         }
         Type::List(inner) => format!("scar_list__{}", type_suffix(inner)),
+        Type::Result(inner) => result_c_type(inner),
+        Type::Error => "const char *".to_string(),
+        Type::None => "void *".to_string(),
     }
 }
 
@@ -1494,6 +1913,16 @@ fn is_codegen_condition_type(ty: &Type) -> bool {
 fn is_codegen_string_compatible(ty: &Type) -> bool {
     matches!(ty, Type::Ref(inner) if inner.as_ref() == &Type::U8)
         || matches!(ty, Type::Mut(inner) if matches!(inner.as_ref(), Type::Ref(inner) if inner.as_ref() == &Type::U8))
+}
+
+fn is_codegen_nullable_pointer_type(ty: &Type) -> bool {
+    matches!(ty, Type::Ref(_) | Type::Mut(_)) || is_codegen_string_compatible(ty)
+}
+
+fn can_codegen_compare_with_none(lhs: &Type, rhs: &Type) -> bool {
+    matches!((lhs, rhs), (Type::None, Type::None))
+        || (lhs == &Type::None && is_codegen_nullable_pointer_type(rhs))
+        || (rhs == &Type::None && is_codegen_nullable_pointer_type(lhs))
 }
 
 fn is_codegen_signed_numeric_type(ty: &Type) -> bool {
@@ -1665,6 +2094,7 @@ fn resolve_codegen_aliases(ty: &Type, info: &ProgramInfo) -> Result<Type, Compil
                 Ok(Type::Named(name.clone()))
             }
         }
+        Type::Result(inner) => Ok(Type::Result(Box::new(resolve_codegen_aliases(inner, info)?))),
         Type::Mut(inner) => Ok(Type::Mut(Box::new(resolve_codegen_aliases(inner, info)?))),
         Type::Ref(inner) => Ok(Type::Ref(Box::new(resolve_codegen_aliases(inner, info)?))),
         Type::List(inner) => Ok(Type::List(Box::new(resolve_codegen_aliases(inner, info)?))),
@@ -1716,6 +2146,9 @@ fn describe_type(ty: &Type) -> String {
         Type::Mut(inner) => format!("mut({})", describe_type(inner)),
         Type::Ref(inner) => format!("ref({})", describe_type(inner)),
         Type::List(inner) => format!("list[{}]", describe_type(inner)),
+        Type::Result(inner) => format!("{}|error", describe_type(inner)),
+        Type::Error => "error".to_string(),
+        Type::None => "none".to_string(),
     }
 }
 

@@ -506,6 +506,32 @@ fn rewrite_stmt(
                 .map(|stmt| rewrite_stmt(stmt, local_functions, local_types, module_aliases))
                 .collect::<Result<Vec<_>, _>>()?,
         }),
+        Stmt::Match {
+            line,
+            column,
+            expr,
+            arms,
+        } => Ok(Stmt::Match {
+            line,
+            column,
+            expr: rewrite_expr(expr, local_functions, local_types, module_aliases)?,
+            arms: arms
+                .into_iter()
+                .map(|arm| {
+                    Ok(crate::ast::MatchArm {
+                        kind: arm.kind,
+                        binding: arm.binding,
+                        body: arm
+                            .body
+                            .into_iter()
+                            .map(|stmt| {
+                                rewrite_stmt(stmt, local_functions, local_types, module_aliases)
+                            })
+                            .collect::<Result<Vec<_>, _>>()?,
+                    })
+                })
+                .collect::<Result<Vec<_>, CompileError>>()?,
+        }),
         Stmt::ForRange {
             line,
             column,
@@ -561,7 +587,7 @@ fn rewrite_expr(
     module_aliases: &ModuleAliases,
 ) -> Result<Expr, CompileError> {
     match expr {
-        Expr::Int(_) | Expr::String(_) | Expr::Path(_) => Ok(expr),
+        Expr::Int(_) | Expr::String(_) | Expr::Path(_) | Expr::None => Ok(expr),
         Expr::ListLiteral(values) => Ok(Expr::ListLiteral(
             values
                 .into_iter()
@@ -653,6 +679,20 @@ fn rewrite_expr(
             )?),
             ty: rewrite_type(ty, local_types),
         }),
+        Expr::Error { message } => Ok(Expr::Error {
+            message: Box::new(rewrite_expr(
+                *message,
+                local_functions,
+                local_types,
+                module_aliases,
+            )?),
+        }),
+        Expr::Try(expr) => Ok(Expr::Try(Box::new(rewrite_expr(
+            *expr,
+            local_functions,
+            local_types,
+            module_aliases,
+        )?))),
         Expr::Unary { op, expr } => Ok(Expr::Unary {
             op,
             expr: Box::new(rewrite_expr(
@@ -734,6 +774,7 @@ fn rewrite_callee(
 fn rewrite_type(ty: Type, local_types: &HashMap<String, String>) -> Type {
     match ty {
         Type::Named(name) => Type::Named(local_types.get(&name).cloned().unwrap_or(name)),
+        Type::Result(inner) => Type::Result(Box::new(rewrite_type(*inner, local_types))),
         Type::Mut(inner) => Type::Mut(Box::new(rewrite_type(*inner, local_types))),
         Type::Ref(inner) => Type::Ref(Box::new(rewrite_type(*inner, local_types))),
         Type::List(inner) => Type::List(Box::new(rewrite_type(*inner, local_types))),
