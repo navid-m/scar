@@ -1,3 +1,5 @@
+val str = use("std/string")
+
 type Complex
     re i64
     im i64
@@ -56,15 +58,15 @@ def render_mandelbrot(width i32, height i32, max_iter i32)
             var iter = mandelbrot_iter(c, max_iter)
 
             if iter == max_iter
-                line = line + "#"
+                line = str.raw_concat_alloc(line, "#")
             else
                 if iter > (max_iter / 2)
-                    line = line + "*"
+                    line = str.raw_concat_alloc(line, "*")
                 else
                     if iter > (max_iter / 4)
-                        line = line + "+"
+                        line = str.raw_concat_alloc(line, "+")
                     else
-                        line = line + "."
+                        line = str.raw_concat_alloc(line, ".")
                     end
                 end
             end
