@@ -427,7 +427,7 @@ end
 test "stringbuilder works"
 	var ac = allocators.Arena.new(1024)?
 
-	var sb StringBuilder = StringBuilder.new[allocators.Arena](ac, 128)?
+	var sb StringBuilder = StringBuilder.new[_](ac, 128)?
 
 	assert StringBuilder.append(@as_mut(@addr(sb)), "hello")
 	assert StringBuilder.append(@as_mut(@addr(sb)), " ")

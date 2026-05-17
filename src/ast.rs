@@ -102,6 +102,7 @@ pub enum Type {
     U8,
     F32,
     F64,
+    Infer,
     Named(String),
     Mut(Box<Type>),
     Ref(Box<Type>),

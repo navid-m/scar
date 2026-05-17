@@ -1,15 +1,14 @@
 use std::{
     collections::{HashMap, HashSet},
-    env,
-    fs,
+    env, fs,
     path::{Path, PathBuf},
 };
 
 use crate::{
     CompileError,
     ast::{
-        Expr, FieldDef, FieldInit, Function, GenericParam, InterfaceDef, InterfaceMethod, ModuleUse,
-        Param, Program, Stmt, TestBlock, Type, TypeDef,
+        BinaryOp, Expr, FieldDef, FieldInit, Function, GenericParam, InterfaceDef, InterfaceMethod,
+        ModuleUse, Param, Program, Stmt, TestBlock, Type, TypeDef, UnaryOp,
     },
     lexer::lex,
     parser::parse_program,
@@ -142,7 +141,8 @@ impl Resolver {
         let parsed = parse_program_file(&module_path)?;
         let module_aliases = self.resolve_module_uses(&parsed.module_uses, &module_path)?;
         let prefix = module_prefix(&module_path, &self.root_dir);
-        let local_types = build_named_type_map(&parsed.type_defs, &parsed.interface_defs, Some(&prefix));
+        let local_types =
+            build_named_type_map(&parsed.type_defs, &parsed.interface_defs, Some(&prefix));
         let local_functions = build_function_map(&parsed.functions, Some(&prefix));
         let public_functions = build_public_function_map(&parsed.functions, Some(&prefix));
         let public_types = build_public_named_type_map(&parsed.type_defs, Some(&prefix));
@@ -258,7 +258,10 @@ fn build_function_map(functions: &[Function], prefix: Option<&str>) -> HashMap<S
         .collect()
 }
 
-fn build_public_function_map(functions: &[Function], prefix: Option<&str>) -> HashMap<String, String> {
+fn build_public_function_map(
+    functions: &[Function],
+    prefix: Option<&str>,
+) -> HashMap<String, String> {
     functions
         .iter()
         .filter(|function| function.is_pub)
@@ -297,7 +300,10 @@ fn build_named_type_map(
     named
 }
 
-fn build_public_named_type_map(type_defs: &[TypeDef], prefix: Option<&str>) -> HashMap<String, String> {
+fn build_public_named_type_map(
+    type_defs: &[TypeDef],
+    prefix: Option<&str>,
+) -> HashMap<String, String> {
     type_defs
         .iter()
         .filter(|type_def| type_def.is_pub)
@@ -1026,9 +1032,11 @@ fn instantiate_generic_functions(program: Program) -> Result<Program, CompileErr
         })
         .collect::<HashMap<_, _>>();
     let mut templates = HashMap::new();
+    let mut function_returns = HashMap::new();
     let mut concrete_functions = Vec::new();
     for function in program.functions {
         if function.generic_params.is_empty() {
+            function_returns.insert(function.name.clone(), function.return_type.clone());
             concrete_functions.push(function);
         } else {
             if function.extern_name.is_some() {
@@ -1043,6 +1051,13 @@ fn instantiate_generic_functions(program: Program) -> Result<Program, CompileErr
 
     let mut instantiator = GenericInstantiator {
         templates,
+        function_returns,
+        types: program
+            .type_defs
+            .iter()
+            .cloned()
+            .map(|type_def| (type_def.name.clone(), type_def))
+            .collect(),
         instantiated_names: HashMap::new(),
         generated_functions: Vec::new(),
         interface_names,
@@ -1073,6 +1088,8 @@ fn instantiate_generic_functions(program: Program) -> Result<Program, CompileErr
 
 struct GenericInstantiator {
     templates: HashMap<String, Function>,
+    function_returns: HashMap<String, Type>,
+    types: HashMap<String, TypeDef>,
     instantiated_names: HashMap<String, String>,
     generated_functions: Vec<Function>,
     interface_names: HashSet<String>,
@@ -1081,24 +1098,34 @@ struct GenericInstantiator {
 
 impl GenericInstantiator {
     fn rewrite_function_body(&mut self, mut function: Function) -> Result<Function, CompileError> {
+        let mut scope = function
+            .params
+            .iter()
+            .map(|param| (param.name.clone(), param.ty.clone()))
+            .collect::<HashMap<_, _>>();
         function.body = function
             .body
             .into_iter()
-            .map(|stmt| self.rewrite_stmt_generics(stmt))
+            .map(|stmt| self.rewrite_stmt_generics(stmt, &mut scope))
             .collect::<Result<Vec<_>, _>>()?;
         Ok(function)
     }
 
     fn rewrite_test_body(&mut self, mut test: TestBlock) -> Result<TestBlock, CompileError> {
+        let mut scope = HashMap::new();
         test.body = test
             .body
             .into_iter()
-            .map(|stmt| self.rewrite_stmt_generics(stmt))
+            .map(|stmt| self.rewrite_stmt_generics(stmt, &mut scope))
             .collect::<Result<Vec<_>, _>>()?;
         Ok(test)
     }
 
-    fn rewrite_stmt_generics(&mut self, stmt: Stmt) -> Result<Stmt, CompileError> {
+    fn rewrite_stmt_generics(
+        &mut self,
+        stmt: Stmt,
+        scope: &mut HashMap<String, Type>,
+    ) -> Result<Stmt, CompileError> {
         Ok(match stmt {
             Stmt::VarDecl {
                 line,
@@ -1107,14 +1134,26 @@ impl GenericInstantiator {
                 name,
                 declared_type,
                 init,
-            } => Stmt::VarDecl {
-                line,
-                column,
-                mutable,
-                name,
-                declared_type,
-                init: self.rewrite_expr_generics(init)?,
-            },
+            } => {
+                let init = self.rewrite_expr_generics(init, scope)?;
+                let binding_ty = match &declared_type {
+                    Some(ty) => ty.clone(),
+                    None => self.infer_expr_type(&init, scope).ok_or_else(|| {
+                        CompileError::new(format!(
+                            "cannot infer local type for `{name}` during generic rewriting"
+                        ))
+                    })?,
+                };
+                scope.insert(name.clone(), binding_ty);
+                Stmt::VarDecl {
+                    line,
+                    column,
+                    mutable,
+                    name,
+                    declared_type,
+                    init,
+                }
+            }
             Stmt::Assign {
                 line,
                 column,
@@ -1123,8 +1162,8 @@ impl GenericInstantiator {
             } => Stmt::Assign {
                 line,
                 column,
-                target: self.rewrite_expr_generics(target)?,
-                value: self.rewrite_expr_generics(value)?,
+                target: self.rewrite_expr_generics(target, scope)?,
+                value: self.rewrite_expr_generics(value, scope)?,
             },
             Stmt::AddAssign {
                 line,
@@ -1134,8 +1173,8 @@ impl GenericInstantiator {
             } => Stmt::AddAssign {
                 line,
                 column,
-                target: self.rewrite_expr_generics(target)?,
-                value: self.rewrite_expr_generics(value)?,
+                target: self.rewrite_expr_generics(target, scope)?,
+                value: self.rewrite_expr_generics(value, scope)?,
             },
             Stmt::MulAssign {
                 line,
@@ -1145,8 +1184,8 @@ impl GenericInstantiator {
             } => Stmt::MulAssign {
                 line,
                 column,
-                target: self.rewrite_expr_generics(target)?,
-                value: self.rewrite_expr_generics(value)?,
+                target: self.rewrite_expr_generics(target, scope)?,
+                value: self.rewrite_expr_generics(value, scope)?,
             },
             Stmt::SubAssign {
                 line,
@@ -1156,8 +1195,8 @@ impl GenericInstantiator {
             } => Stmt::SubAssign {
                 line,
                 column,
-                target: self.rewrite_expr_generics(target)?,
-                value: self.rewrite_expr_generics(value)?,
+                target: self.rewrite_expr_generics(target, scope)?,
+                value: self.rewrite_expr_generics(value, scope)?,
             },
             Stmt::DivAssign {
                 line,
@@ -1167,8 +1206,8 @@ impl GenericInstantiator {
             } => Stmt::DivAssign {
                 line,
                 column,
-                target: self.rewrite_expr_generics(target)?,
-                value: self.rewrite_expr_generics(value)?,
+                target: self.rewrite_expr_generics(target, scope)?,
+                value: self.rewrite_expr_generics(value, scope)?,
             },
             Stmt::BitAndAssign {
                 line,
@@ -1178,8 +1217,8 @@ impl GenericInstantiator {
             } => Stmt::BitAndAssign {
                 line,
                 column,
-                target: self.rewrite_expr_generics(target)?,
-                value: self.rewrite_expr_generics(value)?,
+                target: self.rewrite_expr_generics(target, scope)?,
+                value: self.rewrite_expr_generics(value, scope)?,
             },
             Stmt::BitOrAssign {
                 line,
@@ -1189,8 +1228,8 @@ impl GenericInstantiator {
             } => Stmt::BitOrAssign {
                 line,
                 column,
-                target: self.rewrite_expr_generics(target)?,
-                value: self.rewrite_expr_generics(value)?,
+                target: self.rewrite_expr_generics(target, scope)?,
+                value: self.rewrite_expr_generics(value, scope)?,
             },
             Stmt::BitXorAssign {
                 line,
@@ -1200,8 +1239,8 @@ impl GenericInstantiator {
             } => Stmt::BitXorAssign {
                 line,
                 column,
-                target: self.rewrite_expr_generics(target)?,
-                value: self.rewrite_expr_generics(value)?,
+                target: self.rewrite_expr_generics(target, scope)?,
+                value: self.rewrite_expr_generics(value, scope)?,
             },
             Stmt::Increment {
                 line,
@@ -1210,7 +1249,7 @@ impl GenericInstantiator {
             } => Stmt::Increment {
                 line,
                 column,
-                target: self.rewrite_expr_generics(target)?,
+                target: self.rewrite_expr_generics(target, scope)?,
             },
             Stmt::Decrement {
                 line,
@@ -1219,7 +1258,7 @@ impl GenericInstantiator {
             } => Stmt::Decrement {
                 line,
                 column,
-                target: self.rewrite_expr_generics(target)?,
+                target: self.rewrite_expr_generics(target, scope)?,
             },
             Stmt::Assert {
                 line,
@@ -1228,13 +1267,17 @@ impl GenericInstantiator {
             } => Stmt::Assert {
                 line,
                 column,
-                condition: self.rewrite_expr_generics(condition)?,
+                condition: self.rewrite_expr_generics(condition, scope)?,
             },
-            Stmt::Return { line, column, value } => Stmt::Return {
+            Stmt::Return {
+                line,
+                column,
+                value,
+            } => Stmt::Return {
                 line,
                 column,
                 value: value
-                    .map(|expr| self.rewrite_expr_generics(expr))
+                    .map(|expr| self.rewrite_expr_generics(expr, scope))
                     .transpose()?,
             },
             Stmt::If {
@@ -1246,15 +1289,21 @@ impl GenericInstantiator {
             } => Stmt::If {
                 line,
                 column,
-                condition: self.rewrite_expr_generics(condition)?,
-                then_body: then_body
-                    .into_iter()
-                    .map(|stmt| self.rewrite_stmt_generics(stmt))
-                    .collect::<Result<Vec<_>, _>>()?,
-                else_body: else_body
-                    .into_iter()
-                    .map(|stmt| self.rewrite_stmt_generics(stmt))
-                    .collect::<Result<Vec<_>, _>>()?,
+                condition: self.rewrite_expr_generics(condition, scope)?,
+                then_body: {
+                    let mut nested = scope.clone();
+                    then_body
+                        .into_iter()
+                        .map(|stmt| self.rewrite_stmt_generics(stmt, &mut nested))
+                        .collect::<Result<Vec<_>, _>>()?
+                },
+                else_body: {
+                    let mut nested = scope.clone();
+                    else_body
+                        .into_iter()
+                        .map(|stmt| self.rewrite_stmt_generics(stmt, &mut nested))
+                        .collect::<Result<Vec<_>, _>>()?
+                },
             },
             Stmt::Match {
                 line,
@@ -1264,17 +1313,18 @@ impl GenericInstantiator {
             } => Stmt::Match {
                 line,
                 column,
-                expr: self.rewrite_expr_generics(expr)?,
+                expr: self.rewrite_expr_generics(expr, scope)?,
                 arms: arms
                     .into_iter()
                     .map(|arm| {
+                        let mut nested = scope.clone();
                         Ok(crate::ast::MatchArm {
                             kind: arm.kind,
                             binding: arm.binding,
                             body: arm
                                 .body
                                 .into_iter()
-                                .map(|stmt| self.rewrite_stmt_generics(stmt))
+                                .map(|stmt| self.rewrite_stmt_generics(stmt, &mut nested))
                                 .collect::<Result<Vec<_>, _>>()?,
                         })
                     })
@@ -1283,7 +1333,7 @@ impl GenericInstantiator {
             Stmt::Expr { line, column, expr } => Stmt::Expr {
                 line,
                 column,
-                expr: self.rewrite_expr_generics(expr)?,
+                expr: self.rewrite_expr_generics(expr, scope)?,
             },
             Stmt::ForRange {
                 line,
@@ -1297,13 +1347,16 @@ impl GenericInstantiator {
                 line,
                 column,
                 pragma,
-                var_name,
-                start: self.rewrite_expr_generics(start)?,
-                end: self.rewrite_expr_generics(end)?,
-                body: body
-                    .into_iter()
-                    .map(|stmt| self.rewrite_stmt_generics(stmt))
-                    .collect::<Result<Vec<_>, _>>()?,
+                var_name: var_name.clone(),
+                start: self.rewrite_expr_generics(start, scope)?,
+                end: self.rewrite_expr_generics(end, scope)?,
+                body: {
+                    let mut nested = scope.clone();
+                    nested.insert(var_name.clone(), Type::I32);
+                    body.into_iter()
+                        .map(|stmt| self.rewrite_stmt_generics(stmt, &mut nested))
+                        .collect::<Result<Vec<_>, _>>()?
+                },
             },
             Stmt::ForEach {
                 line,
@@ -1311,16 +1364,26 @@ impl GenericInstantiator {
                 var_name,
                 iterable,
                 body,
-            } => Stmt::ForEach {
-                line,
-                column,
-                var_name,
-                iterable: self.rewrite_expr_generics(iterable)?,
-                body: body
-                    .into_iter()
-                    .map(|stmt| self.rewrite_stmt_generics(stmt))
-                    .collect::<Result<Vec<_>, _>>()?,
-            },
+            } => {
+                let iterable = self.rewrite_expr_generics(iterable, scope)?;
+                Stmt::ForEach {
+                    line,
+                    column,
+                    var_name: var_name.clone(),
+                    iterable: iterable.clone(),
+                    body: {
+                        let mut nested = scope.clone();
+                        if let Some(iterable_ty) = self.infer_expr_type(&iterable, scope) {
+                            if let Type::List(inner) = iterable_ty {
+                                nested.insert(var_name.clone(), *inner);
+                            }
+                        }
+                        body.into_iter()
+                            .map(|stmt| self.rewrite_stmt_generics(stmt, &mut nested))
+                            .collect::<Result<Vec<_>, _>>()?
+                    },
+                }
+            }
             Stmt::While {
                 line,
                 column,
@@ -1329,39 +1392,47 @@ impl GenericInstantiator {
             } => Stmt::While {
                 line,
                 column,
-                condition: self.rewrite_expr_generics(condition)?,
-                body: body
-                    .into_iter()
-                    .map(|stmt| self.rewrite_stmt_generics(stmt))
-                    .collect::<Result<Vec<_>, _>>()?,
+                condition: self.rewrite_expr_generics(condition, scope)?,
+                body: {
+                    let mut nested = scope.clone();
+                    body.into_iter()
+                        .map(|stmt| self.rewrite_stmt_generics(stmt, &mut nested))
+                        .collect::<Result<Vec<_>, _>>()?
+                },
             },
             Stmt::Loop { line, column, body } => Stmt::Loop {
                 line,
                 column,
-                body: body
-                    .into_iter()
-                    .map(|stmt| self.rewrite_stmt_generics(stmt))
-                    .collect::<Result<Vec<_>, _>>()?,
+                body: {
+                    let mut nested = scope.clone();
+                    body.into_iter()
+                        .map(|stmt| self.rewrite_stmt_generics(stmt, &mut nested))
+                        .collect::<Result<Vec<_>, _>>()?
+                },
             },
             Stmt::Continue { line, column } => Stmt::Continue { line, column },
             Stmt::Break { line, column } => Stmt::Break { line, column },
         })
     }
 
-    fn rewrite_expr_generics(&mut self, expr: Expr) -> Result<Expr, CompileError> {
+    fn rewrite_expr_generics(
+        &mut self,
+        expr: Expr,
+        scope: &HashMap<String, Type>,
+    ) -> Result<Expr, CompileError> {
         Ok(match expr {
             Expr::ListLiteral(values) => Expr::ListLiteral(
                 values
                     .into_iter()
-                    .map(|value| self.rewrite_expr_generics(value))
+                    .map(|value| self.rewrite_expr_generics(value, scope))
                     .collect::<Result<Vec<_>, _>>()?,
             ),
             Expr::Index { base, index } => Expr::Index {
-                base: Box::new(self.rewrite_expr_generics(*base)?),
-                index: Box::new(self.rewrite_expr_generics(*index)?),
+                base: Box::new(self.rewrite_expr_generics(*base, scope)?),
+                index: Box::new(self.rewrite_expr_generics(*index, scope)?),
             },
             Expr::FieldAccess { base, field } => Expr::FieldAccess {
-                base: Box::new(self.rewrite_expr_generics(*base)?),
+                base: Box::new(self.rewrite_expr_generics(*base, scope)?),
                 field,
             },
             Expr::StructInit { name, fields } => Expr::StructInit {
@@ -1371,7 +1442,7 @@ impl GenericInstantiator {
                     .map(|field| {
                         Ok(FieldInit {
                             name: field.name,
-                            value: self.rewrite_expr_generics(field.value)?,
+                            value: self.rewrite_expr_generics(field.value, scope)?,
                         })
                     })
                     .collect::<Result<Vec<_>, CompileError>>()?,
@@ -1380,7 +1451,7 @@ impl GenericInstantiator {
                 name,
                 args: args
                     .into_iter()
-                    .map(|arg| self.rewrite_expr_generics(arg))
+                    .map(|arg| self.rewrite_expr_generics(arg, scope))
                     .collect::<Result<Vec<_>, _>>()?,
             },
             Expr::MethodCall {
@@ -1388,18 +1459,18 @@ impl GenericInstantiator {
                 method,
                 args,
             } => Expr::MethodCall {
-                receiver: Box::new(self.rewrite_expr_generics(*receiver)?),
+                receiver: Box::new(self.rewrite_expr_generics(*receiver, scope)?),
                 method,
                 args: args
                     .into_iter()
-                    .map(|arg| self.rewrite_expr_generics(arg))
+                    .map(|arg| self.rewrite_expr_generics(arg, scope))
                     .collect::<Result<Vec<_>, _>>()?,
             },
             Expr::Call { callee, args } => {
-                let callee = self.rewrite_expr_generics(*callee)?;
+                let callee = self.rewrite_expr_generics(*callee, scope)?;
                 let args = args
                     .into_iter()
-                    .map(|arg| self.rewrite_expr_generics(arg))
+                    .map(|arg| self.rewrite_expr_generics(arg, scope))
                     .collect::<Result<Vec<_>, _>>()?;
                 if let Expr::Specialize { callee, type_args } = callee {
                     let Some(path) = extract_callee_path(&callee) else {
@@ -1408,7 +1479,7 @@ impl GenericInstantiator {
                         ));
                     };
                     let specialized =
-                        self.instantiate_specialization(&path.join("."), &type_args)?;
+                        self.instantiate_specialization(&path.join("."), &type_args, &args, scope)?;
                     Expr::Call {
                         callee: Box::new(Expr::Path(vec![specialized])),
                         args,
@@ -1421,31 +1492,31 @@ impl GenericInstantiator {
                 }
             }
             Expr::Specialize { callee, type_args } => Expr::Specialize {
-                callee: Box::new(self.rewrite_expr_generics(*callee)?),
+                callee: Box::new(self.rewrite_expr_generics(*callee, scope)?),
                 type_args,
             },
             Expr::Cast { expr, ty } => Expr::Cast {
-                expr: Box::new(self.rewrite_expr_generics(*expr)?),
+                expr: Box::new(self.rewrite_expr_generics(*expr, scope)?),
                 ty,
             },
             Expr::Error { message } => Expr::Error {
-                message: Box::new(self.rewrite_expr_generics(*message)?),
+                message: Box::new(self.rewrite_expr_generics(*message, scope)?),
             },
-            Expr::Try(expr) => Expr::Try(Box::new(self.rewrite_expr_generics(*expr)?)),
+            Expr::Try(expr) => Expr::Try(Box::new(self.rewrite_expr_generics(*expr, scope)?)),
             Expr::Unary { op, expr } => Expr::Unary {
                 op,
-                expr: Box::new(self.rewrite_expr_generics(*expr)?),
+                expr: Box::new(self.rewrite_expr_generics(*expr, scope)?),
             },
             Expr::Pack(values) => Expr::Pack(
                 values
                     .into_iter()
-                    .map(|value| self.rewrite_expr_generics(value))
+                    .map(|value| self.rewrite_expr_generics(value, scope))
                     .collect::<Result<Vec<_>, _>>()?,
             ),
             Expr::Binary { lhs, op, rhs } => Expr::Binary {
-                lhs: Box::new(self.rewrite_expr_generics(*lhs)?),
+                lhs: Box::new(self.rewrite_expr_generics(*lhs, scope)?),
                 op,
-                rhs: Box::new(self.rewrite_expr_generics(*rhs)?),
+                rhs: Box::new(self.rewrite_expr_generics(*rhs, scope)?),
             },
             other => other,
         })
@@ -1455,11 +1526,9 @@ impl GenericInstantiator {
         &mut self,
         name: &str,
         type_args: &[Type],
+        args: &[Expr],
+        scope: &HashMap<String, Type>,
     ) -> Result<String, CompileError> {
-        let key = specialization_key(name, type_args);
-        if let Some(existing) = self.instantiated_names.get(&key) {
-            return Ok(existing.clone());
-        }
         let template = self
             .templates
             .get(name)
@@ -1476,6 +1545,32 @@ impl GenericInstantiator {
 
         let mut substitutions = HashMap::new();
         for (param, type_arg) in template.generic_params.iter().zip(type_args.iter()) {
+            if *type_arg != Type::Infer {
+                substitutions.insert(param.name.clone(), type_arg.clone());
+            }
+        }
+
+        if template.params.len() == args.len() {
+            for (param, arg) in template.params.iter().zip(args.iter()) {
+                let Some(actual_ty) = self.infer_expr_type(arg, scope) else {
+                    continue;
+                };
+                self.infer_substitutions_from_types(
+                    &param.ty,
+                    &actual_ty,
+                    &template.generic_params,
+                    &mut substitutions,
+                );
+            }
+        }
+
+        for param in &template.generic_params {
+            if !substitutions.contains_key(&param.name) {
+                return Err(CompileError::new(
+                    "cannot infer type from type argument, specify it manually.",
+                ));
+            }
+            let type_arg = substitutions.get(&param.name).expect("checked above");
             if !param.constraints.is_empty()
                 && !param
                     .constraints
@@ -1489,10 +1584,29 @@ impl GenericInstantiator {
                     describe_type(type_arg)
                 )));
             }
-            substitutions.insert(param.name.clone(), type_arg.clone());
         }
 
-        let specialized_name = format!("{}__generic__{}", template.name, specialization_suffix(type_args));
+        let resolved_type_args = template
+            .generic_params
+            .iter()
+            .map(|param| {
+                substitutions
+                    .get(&param.name)
+                    .cloned()
+                    .expect("checked above")
+            })
+            .collect::<Vec<_>>();
+
+        let key = specialization_key(name, &resolved_type_args);
+        if let Some(existing) = self.instantiated_names.get(&key) {
+            return Ok(existing.clone());
+        }
+
+        let specialized_name = format!(
+            "{}__generic__{}",
+            template.name,
+            specialization_suffix(&resolved_type_args)
+        );
         self.instantiated_names
             .insert(key, specialized_name.clone());
 
@@ -1519,9 +1633,245 @@ impl GenericInstantiator {
             .map(|stmt| substitute_stmt(stmt, &substitutions))
             .collect();
         specialized = self.rewrite_function_body(specialized)?;
+        self.function_returns
+            .insert(specialized.name.clone(), specialized.return_type.clone());
         self.generated_functions.push(specialized);
 
         Ok(specialized_name)
+    }
+
+    fn infer_substitutions_from_types(
+        &self,
+        template_ty: &Type,
+        actual_ty: &Type,
+        generic_params: &[GenericParam],
+        substitutions: &mut HashMap<String, Type>,
+    ) {
+        match template_ty {
+            Type::Named(name) => {
+                if generic_params.iter().any(|param| param.name == *name) {
+                    substitutions
+                        .entry(name.clone())
+                        .or_insert_with(|| actual_ty.clone());
+                }
+            }
+            Type::Mut(inner) => {
+                if let Type::Mut(actual_inner) = actual_ty {
+                    self.infer_substitutions_from_types(
+                        inner,
+                        actual_inner,
+                        generic_params,
+                        substitutions,
+                    );
+                }
+            }
+            Type::Ref(inner) => {
+                if let Type::Ref(actual_inner) = actual_ty {
+                    self.infer_substitutions_from_types(
+                        inner,
+                        actual_inner,
+                        generic_params,
+                        substitutions,
+                    );
+                }
+            }
+            Type::List(inner) => {
+                if let Type::List(actual_inner) = actual_ty {
+                    self.infer_substitutions_from_types(
+                        inner,
+                        actual_inner,
+                        generic_params,
+                        substitutions,
+                    );
+                }
+            }
+            Type::Result(inner) => {
+                if let Type::Result(actual_inner) = actual_ty {
+                    self.infer_substitutions_from_types(
+                        inner,
+                        actual_inner,
+                        generic_params,
+                        substitutions,
+                    );
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn infer_expr_type(&self, expr: &Expr, scope: &HashMap<String, Type>) -> Option<Type> {
+        match expr {
+            Expr::Int(_) => Some(Type::I32),
+            Expr::Char(_) => Some(Type::U8),
+            Expr::Bool(_) => Some(Type::Bool),
+            Expr::Float(_) => Some(Type::F32),
+            Expr::String(_) => Some(Type::Ref(Box::new(Type::U8))),
+            Expr::None => Some(Type::None),
+            Expr::Path(path) => {
+                if path.len() == 1 {
+                    scope.get(&path[0]).cloned()
+                } else {
+                    self.function_returns.get(&path.join(".")).cloned()
+                }
+            }
+            Expr::ListLiteral(values) => {
+                let first = self.infer_expr_type(values.first()?, scope)?;
+                if values
+                    .iter()
+                    .skip(1)
+                    .all(|value| self.infer_expr_type(value, scope) == Some(first.clone()))
+                {
+                    Some(Type::List(Box::new(first)))
+                } else {
+                    None
+                }
+            }
+            Expr::Index { base, .. } => match self.infer_expr_type(base, scope)? {
+                Type::List(inner) => Some(*inner),
+                _ => None,
+            },
+            Expr::FieldAccess { base, field } => {
+                let base_ty = self.infer_expr_type(base, scope)?;
+                self.infer_field_type(&base_ty, field)
+            }
+            Expr::StructInit { name, .. } => Some(Type::Named(name.clone())),
+            Expr::BuiltinCall { name, args } => self.infer_builtin_type(name, args, scope),
+            Expr::MethodCall { .. } => None,
+            Expr::Call { callee, .. } => self
+                .extract_expr_path(callee)
+                .and_then(|path| self.function_returns.get(&path.join(".")).cloned()),
+            Expr::Specialize { .. } => None,
+            Expr::Cast { ty, .. } => Some(ty.clone()),
+            Expr::Error { .. } => Some(Type::Error),
+            Expr::Try(inner) => match self.infer_expr_type(inner, scope)? {
+                Type::Result(inner) => Some(*inner),
+                _ => None,
+            },
+            Expr::Unary { op, expr } => {
+                let inner = self.infer_expr_type(expr, scope)?;
+                match op {
+                    UnaryOp::LogicalNot => Some(Type::Bool),
+                    _ => Some(inner),
+                }
+            }
+            Expr::Pack(_) => None,
+            Expr::Binary { lhs, op, rhs } => {
+                let lhs_ty = self.infer_expr_type(lhs, scope)?;
+                let rhs_ty = self.infer_expr_type(rhs, scope)?;
+                match op {
+                    BinaryOp::Add
+                    | BinaryOp::Subtract
+                    | BinaryOp::Divide
+                    | BinaryOp::Multiply
+                    | BinaryOp::Modulo
+                    | BinaryOp::BitAnd
+                    | BinaryOp::BitOr
+                    | BinaryOp::BitXor
+                    | BinaryOp::ShiftLeft
+                    | BinaryOp::ShiftRight
+                        if lhs_ty == rhs_ty =>
+                    {
+                        Some(lhs_ty)
+                    }
+                    BinaryOp::LessThan
+                    | BinaryOp::LessEqual
+                    | BinaryOp::GreaterThan
+                    | BinaryOp::GreaterEqual
+                    | BinaryOp::Equal
+                    | BinaryOp::NotEqual
+                    | BinaryOp::LogicalAnd
+                    | BinaryOp::LogicalOr => Some(Type::Bool),
+                    _ => None,
+                }
+            }
+        }
+    }
+
+    fn infer_builtin_type(
+        &self,
+        name: &str,
+        args: &[Expr],
+        scope: &HashMap<String, Type>,
+    ) -> Option<Type> {
+        match name {
+            "puts" | "print" | "free" | "memcpy" => Some(Type::Void),
+            "alloc" | "realloc" => Some(Type::Mut(Box::new(Type::Ref(Box::new(Type::U8))))),
+            "addr" => Some(Type::Ref(Box::new(
+                self.infer_expr_type(args.first()?, scope)?,
+            ))),
+            "as_mut" => Some(Type::Mut(Box::new(
+                self.infer_expr_type(args.first()?, scope)?,
+            ))),
+            "add" => Some(pointer_arithmetic_type(
+                &self.infer_expr_type(args.first()?, scope)?,
+            )),
+            "deref" => match self.infer_expr_type(args.first()?, scope)? {
+                Type::Ref(inner) | Type::Mut(inner) => Some(*inner),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
+    fn infer_field_type(&self, base_ty: &Type, field: &str) -> Option<Type> {
+        match self.resolve_aliases(base_ty) {
+            Type::Named(name) => self
+                .types
+                .get(&name)
+                .and_then(|type_def| {
+                    type_def
+                        .fields
+                        .iter()
+                        .find(|field_def| field_def.name == field)
+                        .map(|field_def| field_def.ty.clone())
+                })
+                .or_else(|| {
+                    self.types.get(&name).and_then(|type_def| {
+                        type_def
+                            .alias
+                            .as_ref()
+                            .and_then(|alias| self.infer_field_type(alias, field))
+                    })
+                }),
+            other => match deref_type_refs(&other) {
+                Type::Named(name) => self.types.get(name).and_then(|type_def| {
+                    type_def
+                        .fields
+                        .iter()
+                        .find(|field_def| field_def.name == field)
+                        .map(|field_def| field_def.ty.clone())
+                }),
+                _ => None,
+            },
+        }
+    }
+
+    fn resolve_aliases(&self, ty: &Type) -> Type {
+        match ty {
+            Type::Named(name) => self
+                .types
+                .get(name)
+                .and_then(|type_def| type_def.alias.as_ref())
+                .map(|alias| self.resolve_aliases(alias))
+                .unwrap_or_else(|| Type::Named(name.clone())),
+            Type::Result(inner) => Type::Result(Box::new(self.resolve_aliases(inner))),
+            Type::Mut(inner) => Type::Mut(Box::new(self.resolve_aliases(inner))),
+            Type::Ref(inner) => Type::Ref(Box::new(self.resolve_aliases(inner))),
+            Type::List(inner) => Type::List(Box::new(self.resolve_aliases(inner))),
+            other => other.clone(),
+        }
+    }
+
+    fn extract_expr_path(&self, expr: &Expr) -> Option<Vec<String>> {
+        match expr {
+            Expr::Path(path) => Some(path.clone()),
+            Expr::FieldAccess { base, field } => {
+                let mut path = self.extract_expr_path(base)?;
+                path.push(field.clone());
+                Some(path)
+            }
+            _ => None,
+        }
     }
 
     fn constraint_matches(&self, constraint: &Type, type_arg: &Type) -> bool {
@@ -1673,7 +2023,11 @@ fn substitute_stmt(stmt: Stmt, substitutions: &HashMap<String, Type>) -> Stmt {
             column,
             condition: substitute_expr(condition, substitutions),
         },
-        Stmt::Return { line, column, value } => Stmt::Return {
+        Stmt::Return {
+            line,
+            column,
+            value,
+        } => Stmt::Return {
             line,
             column,
             value: value.map(|expr| substitute_expr(expr, substitutions)),
@@ -1894,12 +2248,38 @@ fn substitute_expr(expr: Expr, substitutions: &HashMap<String, Type>) -> Expr {
 
 fn substitute_type(ty: Type, substitutions: &HashMap<String, Type>) -> Type {
     match ty {
-        Type::Named(name) => substitutions.get(&name).cloned().unwrap_or(Type::Named(name)),
+        Type::Infer => Type::Infer,
+        Type::Named(name) => substitutions
+            .get(&name)
+            .cloned()
+            .unwrap_or(Type::Named(name)),
         Type::Result(inner) => Type::Result(Box::new(substitute_type(*inner, substitutions))),
         Type::Mut(inner) => Type::Mut(Box::new(substitute_type(*inner, substitutions))),
         Type::Ref(inner) => Type::Ref(Box::new(substitute_type(*inner, substitutions))),
         Type::List(inner) => Type::List(Box::new(substitute_type(*inner, substitutions))),
         other => other,
+    }
+}
+
+fn deref_type_refs(mut ty: &Type) -> &Type {
+    loop {
+        match ty {
+            Type::Ref(inner) | Type::Mut(inner) => ty = inner,
+            _ => return ty,
+        }
+    }
+}
+
+fn pointer_arithmetic_type(ty: &Type) -> Type {
+    match ty {
+        Type::Ref(inner) if inner.as_ref() == &Type::Void => Type::Ref(Box::new(Type::U8)),
+        Type::Mut(inner) => match inner.as_ref() {
+            Type::Ref(pointee) if pointee.as_ref() == &Type::Void => {
+                Type::Mut(Box::new(Type::Ref(Box::new(Type::U8))))
+            }
+            _ => ty.clone(),
+        },
+        _ => ty.clone(),
     }
 }
 
@@ -1910,15 +2290,25 @@ fn infer_implicit_return_type(
     let param_types = function
         .params
         .iter()
-        .map(|param| (param.name.clone(), substitute_type(param.ty.clone(), substitutions)))
+        .map(|param| {
+            (
+                param.name.clone(),
+                substitute_type(param.ty.clone(), substitutions),
+            )
+        })
         .collect::<HashMap<_, _>>();
     infer_return_type_from_stmts(&function.body, &param_types)
 }
 
-fn infer_return_type_from_stmts(body: &[Stmt], param_types: &HashMap<String, Type>) -> Option<Type> {
+fn infer_return_type_from_stmts(
+    body: &[Stmt],
+    param_types: &HashMap<String, Type>,
+) -> Option<Type> {
     for stmt in body {
         match stmt {
-            Stmt::Return { value: Some(expr), .. } => {
+            Stmt::Return {
+                value: Some(expr), ..
+            } => {
                 if let Some(ty) = infer_expr_type_from_template(expr, param_types) {
                     return Some(ty);
                 }
@@ -2019,6 +2409,7 @@ fn specialization_suffix(type_args: &[Type]) -> String {
 
 fn type_suffix_for_specialization(ty: &Type) -> String {
     match ty {
+        Type::Infer => "infer".to_string(),
         Type::Void => "void".to_string(),
         Type::Bool => "bool".to_string(),
         Type::I8 => "i8".to_string(),
@@ -2071,6 +2462,7 @@ fn describe_type(ty: &Type) -> String {
         Type::Usize => "usize".to_string(),
         Type::F32 => "f32".to_string(),
         Type::F64 => "f64".to_string(),
+        Type::Infer => "_".to_string(),
         Type::Named(name) => name.clone(),
         Type::Mut(inner) => format!("mut({})", describe_type(inner)),
         Type::Ref(inner) => format!("ref({})", describe_type(inner)),
@@ -2192,9 +2584,55 @@ mod tests {
 
         assert_eq!(program.functions.len(), 2);
         assert_eq!(program.functions[0].name, "main");
-        assert!(program.functions[1]
-            .name
-            .starts_with("StringBuilder.new__generic__Arena"));
+        assert!(
+            program.functions[1]
+                .name
+                .starts_with("StringBuilder.new__generic__Arena")
+        );
+
+        fs::remove_dir_all(temp_dir).unwrap();
+    }
+
+    #[test]
+    fn infers_underscore_generic_type_arguments_from_call_args() {
+        let temp_dir = create_temp_dir();
+        let entry = temp_dir.join("main.scar");
+
+        fs::write(
+            &entry,
+            "pub type Arena\n\tcap usize\nend\n\npub def Arena.new(cap usize) Arena\n\treturn Arena(cap: cap)\nend\n\npub def StringBuilder.new[A](ac A, cap usize) usize\n\treturn cap\nend\n\npub def main() void\n\tvar ac = Arena.new(1 as usize)\n\tStringBuilder.new[_](ac, 4 as usize)\nend\n",
+        )
+        .unwrap();
+
+        let program = resolve_entry_program(&entry).unwrap();
+
+        assert_eq!(program.functions.len(), 3);
+        assert!(program.functions.iter().any(|function| {
+            function
+                .name
+                .starts_with("StringBuilder.new__generic__Arena")
+        }));
+
+        fs::remove_dir_all(temp_dir).unwrap();
+    }
+
+    #[test]
+    fn rejects_uninferrable_underscore_generic_type_arguments() {
+        let temp_dir = create_temp_dir();
+        let entry = temp_dir.join("main.scar");
+
+        fs::write(
+            &entry,
+            "pub def helper[T](value i32) i32\n\treturn value\nend\n\npub def main() void\n\thelper[_](1)\nend\n",
+        )
+        .unwrap();
+
+        let error = resolve_entry_program(&entry).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "cannot infer type from type argument, specify it manually."
+        );
 
         fs::remove_dir_all(temp_dir).unwrap();
     }

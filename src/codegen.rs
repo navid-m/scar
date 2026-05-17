@@ -2050,6 +2050,7 @@ fn type_suffix(ty: &Type) -> String {
         Type::U8 => "u8".to_string(),
         Type::F32 => "f32".to_string(),
         Type::F64 => "f64".to_string(),
+        Type::Infer => "infer".to_string(),
         Type::Named(name) => sanitize_identifier(name),
         Type::Mut(inner) => format!("mut__{}", type_suffix(inner)),
         Type::Ref(inner) => format!("ref__{}", type_suffix(inner)),
@@ -2082,6 +2083,7 @@ fn c_type(ty: &Type) -> String {
         Type::U8 => "uint8_t".to_string(),
         Type::F32 => "float".to_string(),
         Type::F64 => "double".to_string(),
+        Type::Infer => "void".to_string(),
         Type::Named(name) => name.clone(),
         Type::Mut(inner) => c_type_mut(inner),
         Type::Ref(inner) => {
@@ -2403,6 +2405,7 @@ fn describe_type(ty: &Type) -> String {
         Type::U8 => "u8".to_string(),
         Type::F32 => "f32".to_string(),
         Type::F64 => "f64".to_string(),
+        Type::Infer => "_".to_string(),
         Type::Named(name) => name.clone(),
         Type::Mut(inner) => format!("mut({})", describe_type(inner)),
         Type::Ref(inner) => format!("ref({})", describe_type(inner)),

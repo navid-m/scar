@@ -1744,6 +1744,9 @@ fn validate_type(ty: &Type, types: &HashMap<String, TypeDefInfo>) -> Result<(), 
         | Type::F64
         | Type::Error
         | Type::None => Ok(()),
+        Type::Infer => Err(CompileError::new(
+            "cannot infer type from type argument, specify it manually.",
+        )),
         Type::Named(name) => {
             if types.contains_key(name) {
                 Ok(())
@@ -1776,6 +1779,9 @@ fn validate_type_with_known_names(ty: &Type, known: &HashSet<String>) -> Result<
         | Type::F64
         | Type::Error
         | Type::None => Ok(()),
+        Type::Infer => Err(CompileError::new(
+            "cannot infer type from type argument, specify it manually.",
+        )),
         Type::Named(name) => {
             if known.contains(name) {
                 Ok(())
@@ -2206,6 +2212,7 @@ fn describe_type(ty: &Type) -> String {
         Type::U8 => "u8".to_string(),
         Type::F32 => "f32".to_string(),
         Type::F64 => "f64".to_string(),
+        Type::Infer => "_".to_string(),
         Type::Named(name) => name.clone(),
         Type::Mut(inner) => format!("mut({})", describe_type(inner)),
         Type::Ref(inner) => format!("ref({})", describe_type(inner)),

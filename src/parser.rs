@@ -1354,6 +1354,10 @@ impl Parser {
                 Ok(Type::Mut(Box::new(inner)))
             }
             TokenKind::Ident(name) => {
+                if name == "_" {
+                    self.advance();
+                    return Ok(Type::Infer);
+                }
                 let mut segments = vec![name];
                 self.advance();
                 while self.check_simple(&TokenKind::Dot) {
@@ -2258,6 +2262,25 @@ mod tests {
         }
         assert!(matches!(program.functions[0].body[1], Stmt::Increment { .. }));
         assert!(matches!(program.functions[0].body[2], Stmt::Decrement { .. }));
+    }
+
+    #[test]
+    fn parses_infer_type_argument() {
+        let source = "pub def main() void\n\thelper[_](value)\nend\n";
+        let program = parse_program(lex(source).unwrap()).unwrap();
+
+        match &program.functions[0].body[0] {
+            Stmt::Expr {
+                expr: Expr::Call { callee, .. },
+                ..
+            } => match callee.as_ref() {
+                Expr::Specialize { type_args, .. } => {
+                    assert!(matches!(type_args.as_slice(), [Type::Infer]));
+                }
+                other => panic!("expected specialized call, got {other:?}"),
+            },
+            other => panic!("expected expression statement, got {other:?}"),
+        }
     }
 
     #[test]
