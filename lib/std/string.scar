@@ -1,8 +1,14 @@
 val allocators = use("allocators")
 
-extern def strcmp(x ref(u8), y ref(u8)) i32               :: "strcmp"
-extern def strcat(dest mut(ref(u8)), src ref(u8)) ref(u8) :: "strcat"
-extern def strlen(x ref(u8)) usize                        :: "strlen"
+extern def strcmp(x ref(u8), y ref(u8)) i32                :: "strcmp"
+extern def strcat(dest mut(ref(u8)), src ref(u8)) ref(u8)  :: "strcat"
+extern def strlen(x ref(u8)) usize                         :: "strlen"
+
+pub type StringBuilder
+	ptr ref(u8)
+	cap usize
+	len usize
+end
 
 pub def eql(x ref(u8), y ref(u8)) bool
 	guard (y != none && x != none) else
@@ -18,6 +24,50 @@ pub def len(x ref(u8)) usize
 	return strlen(x)
 end
 
+pub def starts_with(x ref(u8), prefix ref(u8)) bool
+	guard (x != none && prefix != none) else
+		return false
+	end
+
+	var len_x usize = len(x)
+	var len_prefix usize = len(prefix)
+
+	if len_prefix > len_x
+		return false
+	end
+
+	for var i = 0 .. len_prefix as i32
+		if @deref(@add(x, i)) != @deref(@add(prefix, i))
+			return false
+		end
+	end
+
+	return true
+end
+
+pub def ends_with(x ref(u8), suffix ref(u8)) bool
+	guard (x != none && suffix != none) else
+		return false
+	end
+
+	var len_x usize = len(x)
+	var len_suffix usize = len(suffix)
+
+	if len_suffix > len_x
+		return false
+	end
+
+	var start usize = len_x - len_suffix
+
+	for var i = 0 .. len_suffix as i32
+		if @deref(@add(x, start + i)) != @deref(@add(suffix, i))
+			return false
+		end
+	end
+
+	return true
+end
+
 pub def rconcat_buf(dest mut(ref(u8)), src ref(u8)) ref(u8)
 	## This requires dest to be a writable buffer.
 	## Do not confuse it with an in-place concat.
@@ -31,11 +81,69 @@ pub def rconcat[A: allocators.BumpAllocator](
 ) ref(u8)|error
 	var len_a usize = len(a)
 	var len_b usize = len(b)
-	var out ref(void) = A.alloc(@addr(ac), len_a + len_b + 1 as usize)?
+
+	var out ref(void) = A.alloc(
+		@addr(ac),
+		len_a + len_b + 1 as usize
+	)?
+
 	@memcpy(out, a, len_a)
 	@memcpy(@add(out, len_a), b, len_b)
+
 	@deref(@add(out, len_a + len_b)) = 0 as u8
+
 	return out as ref(u8)
+end
+
+pub def StringBuilder.new[A: allocators.BumpAllocator](
+	ac A,
+	cap usize
+) StringBuilder|error
+	var ptr ref(void) = A.alloc(@addr(ac), cap)?
+
+	@deref(ptr as ref(u8)) = 0 as u8
+
+	return StringBuilder(
+		ptr: ptr as ref(u8),
+		cap: cap,
+		len: 0
+	)
+end
+
+pub def StringBuilder.append(
+	sb mut(ref(StringBuilder)),
+	s ref(u8)
+) bool
+	guard (s != none) else
+		return true
+	end
+
+	var s_len usize = len(s)
+
+	if sb.len + s_len + 1 > sb.cap
+		return false
+	end
+
+	@memcpy(
+		@add(sb.ptr, sb.len),
+		s,
+		s_len
+	)
+
+	sb.len = sb.len + s_len
+
+	@deref(@add(sb.ptr, sb.len)) = 0 as u8
+
+	return true
+end
+
+pub def StringBuilder.clear(sb mut(ref(StringBuilder))) void
+	sb.len = 0
+	@deref(sb.ptr) = 0 as u8
+end
+
+pub def StringBuilder.str(sb ref(StringBuilder)) ref(u8)
+	return sb.ptr
 end
 
 test "equals works"
@@ -43,10 +151,58 @@ test "equals works"
 	assert !eql("hello", "something else")
 end
 
+test "starts_with works"
+	assert starts_with("hello world", "hello")
+	assert starts_with("abc", "a")
+	assert !starts_with("abc", "z")
+	assert !starts_with("abc", "abcd")
+end
+
+test "ends_with works"
+	assert ends_with("hello world", "world")
+	assert ends_with("abc", "c")
+	assert !ends_with("abc", "z")
+	assert !ends_with("abc", "abcd")
+end
+
 test "concat works"
 	var ac = allocators.Arena.new(1024)?
+
 	var buffer mut(ref(u8)) = @alloc(1024)
-	assert eql(rconcat[allocators.Arena](ac, buffer, "world")?, "world")
-	assert eql(rconcat[allocators.Arena](ac, "hello", " world")?, "hello world")
+
+	assert eql(
+		rconcat[allocators.Arena](ac, buffer, "world")?,
+		"world"
+	)
+
+	assert eql(
+		rconcat[allocators.Arena](ac, "hello", " world")?,
+		"hello world"
+	)
+
+	allocators.Arena.destroy(@addr(ac))
+end
+
+test "stringbuilder works"
+	var ac = allocators.Arena.new(1024)?
+
+	var sb StringBuilder = StringBuilder.new[allocators.Arena](ac, 128)?
+
+	assert StringBuilder.append(@addr(sb), "hello")
+	assert StringBuilder.append(@addr(sb), " ")
+	assert StringBuilder.append(@addr(sb), "world")
+
+	assert eql(
+		StringBuilder.str(@addr(sb)),
+		"hello world"
+	)
+
+	StringBuilder.clear(@addr(sb))
+
+	assert eql(
+		StringBuilder.str(@addr(sb)),
+		""
+	)
+
 	allocators.Arena.destroy(@addr(ac))
 end
