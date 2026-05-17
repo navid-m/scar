@@ -19,8 +19,11 @@ pub def Arena.new(cap usize) Arena|error
 	)
 end
 
-def align_up(x usize, align usize) usize
+def align_up(x usize, align usize) usize|error
     ## Align value upward to next multiple of align
+	if (align == 0) || ((align & (align - 1)) != 0)
+	    return error("alignment must be power of two")
+	end
 	return (x + (align - 1)) & ~(align - 1)
 end
 
@@ -37,7 +40,7 @@ pub def Arena.alloc_aligned(
 		return error("invalid alignment")
 	end
 
-	val aligned_off usize = align_up(a.off, align)
+	val aligned_off usize = align_up(a.off, align)?
 	val next_off usize = aligned_off + size
 
 	if next_off > a.cap
