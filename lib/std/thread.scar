@@ -1,0 +1,118 @@
+def thread_error[T](message ref(u8)) T|error
+	return error(message)
+end
+
+pub def sleep_secs(seconds u32) void|error
+	return sleep_ms((seconds as u64) * (1000 as u64))
+end
+
+when windows
+	extern "windows.h"
+
+	extern def Sleep(milliseconds u32) void :: "Sleep"
+	extern def SwitchToThread() i32 :: "SwitchToThread"
+	extern def GetCurrentThreadId() u32 :: "GetCurrentThreadId"
+
+	pub def sleep_ms(duration u64) void|error
+		var remaining u64 = duration
+
+		for remaining > 4294967295 as u64
+			Sleep(4294967295 as u32)
+			remaining -= 4294967295 as u64
+		end
+
+		Sleep(remaining as u32)
+	end
+
+	pub def yield_now() void|error
+		SwitchToThread()
+	end
+
+	pub def current_id() u64
+		return GetCurrentThreadId() as u64
+	end
+end
+
+when posix
+	extern "sched.h"
+	extern "pthread.h"
+
+	extern def usleep(usec u32) i32 :: "usleep"
+	extern def sched_yield() i32 :: "sched_yield"
+	extern def pthread_self() usize :: "pthread_self"
+
+	pub def sleep_ms(duration u64) void|error
+		var remaining u64 = duration
+
+		for remaining > 0 as u64
+			var chunk_ms u64 = remaining
+			if chunk_ms > 4294967 as u64
+				chunk_ms = 4294967 as u64
+			end
+
+			if usleep((chunk_ms * (1000 as u64)) as u32) != 0
+				return thread_error[void]("failed to sleep thread")
+			end
+
+			remaining -= chunk_ms
+		end
+	end
+
+	pub def yield_now() void|error
+		if sched_yield() != 0
+			return thread_error[void]("failed to yield thread")
+		end
+	end
+
+	pub def current_id() u64
+		return pthread_self() as u64
+	end
+end
+
+when redox
+	pub def sleep_ms(duration u64) void|error
+		return thread_error[void](
+			"std/thread is not supported on this platform yet"
+		)
+	end
+
+	pub def yield_now() void|error
+		return thread_error[void](
+			"std/thread is not supported on this platform yet"
+		)
+	end
+
+	pub def current_id() u64
+		return 0 as u64
+	end
+end
+
+when plan9
+	pub def sleep_ms(duration u64) void|error
+		return thread_error[void](
+			"std/thread is not supported on this platform yet"
+		)
+	end
+
+	pub def yield_now() void|error
+		return thread_error[void](
+			"std/thread is not supported on this platform yet"
+		)
+	end
+
+	pub def current_id() u64
+		return 0 as u64
+	end
+end
+
+test "thread helpers work"
+	var first u64 = current_id()
+	var second u64 = current_id()
+
+	assert first == second
+	assert first != 0 as u64
+
+	sleep_ms(1 as u64)?
+	sleep_secs(0 as u32)?
+	yield_now()?
+end

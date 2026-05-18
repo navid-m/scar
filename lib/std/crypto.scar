@@ -1,0 +1,344 @@
+val str = use("std/string")
+
+def crypto_error[T](message ref(u8)) T|error
+	return error(message)
+end
+
+pub def constant_time_eql(
+	x ref(u8),
+	y ref(u8),
+	len usize
+) bool
+	if len == 0 as usize
+		return true
+	end
+
+	guard x != none && y != none else
+		return false
+	end
+
+	var diff usize = 0 as usize
+
+	for var i = 0 .. len as i32
+		var bx usize = @deref(@add(x, i)) as usize
+		var by usize = @deref(@add(y, i)) as usize
+		diff = diff | (bx ^ by)
+	end
+
+	return diff == 0 as usize
+end
+
+pub def constant_time_str_eql(x ref(u8), y ref(u8)) bool
+	guard x != none && y != none else
+		return false
+	end
+
+	var len_x usize = str.len(x)
+	var len_y usize = str.len(y)
+	var limit usize = len_x
+
+	if len_y > limit
+		limit = len_y
+	end
+
+	var diff usize = len_x ^ len_y
+
+	for var i = 0 .. limit as i32
+		var bx usize = 0 as usize
+		var by usize = 0 as usize
+
+		if i < len_x
+			bx = @deref(@add(x, i)) as usize
+		end
+
+		if i < len_y
+			by = @deref(@add(y, i)) as usize
+		end
+
+		diff = diff | (bx ^ by)
+	end
+
+	return diff == 0 as usize
+end
+
+when windows
+	extern "stdlib.h"
+
+	extern def rand_s(value_out mut(ref(u32))) i32 :: "rand_s"
+
+	pub def fill_random(buffer mut(ref(u8)), len usize) void|error
+		if len == 0 as usize
+			return
+		end
+
+		guard buffer != none else
+			return crypto_error[void]("secure random buffer is null")
+		end
+
+		var offset usize = 0 as usize
+
+		for offset < len
+			var value u32 = 0 as u32
+			if rand_s(@as_mut(@addr(value))) != 0
+				return crypto_error[void]("failed to read secure random bytes")
+			end
+
+			var remaining usize = len - offset
+			var chunk usize = 4 as usize
+
+			if remaining < chunk
+				chunk = remaining
+			end
+
+			@memcpy(@add(buffer, offset), @addr(value), chunk)
+			offset += chunk
+		end
+	end
+end
+
+when posix
+	when linux
+		extern "sys/random.h"
+
+		extern def getrandom(
+			buffer mut(ref(u8)),
+			len usize,
+			flags u32
+		) isize :: "getrandom"
+
+		def platform_fill_random(
+			buffer mut(ref(u8)),
+			len usize
+		) void|error
+			var offset usize = 0 as usize
+
+			for offset < len
+				var read isize = getrandom(
+					@add(buffer, offset),
+					len - offset,
+					0 as u32
+				)
+
+				if read < 0
+					return crypto_error[void](
+						"failed to read secure random bytes"
+					)
+				end
+
+				if read == 0
+					return crypto_error[void](
+						"secure random source returned no data"
+					)
+				end
+
+				offset += read as usize
+			end
+		end
+	end
+
+	when android
+		extern "sys/random.h"
+
+		extern def getrandom(
+			buffer mut(ref(u8)),
+			len usize,
+			flags u32
+		) isize :: "getrandom"
+
+		def platform_fill_random(
+			buffer mut(ref(u8)),
+			len usize
+		) void|error
+			var offset usize = 0 as usize
+
+			for offset < len
+				var read isize = getrandom(
+					@add(buffer, offset),
+					len - offset,
+					0 as u32
+				)
+
+				if read < 0
+					return crypto_error[void](
+						"failed to read secure random bytes"
+					)
+				end
+
+				if read == 0
+					return crypto_error[void](
+						"secure random source returned no data"
+					)
+				end
+
+				offset += read as usize
+			end
+		end
+	end
+
+	when darwin
+		extern def arc4random_buf(
+			buffer mut(ref(u8)),
+			len usize
+		) void :: "arc4random_buf"
+
+		def platform_fill_random(
+			buffer mut(ref(u8)),
+			len usize
+		) void|error
+			arc4random_buf(buffer, len)
+		end
+	end
+
+	when ios
+		extern def arc4random_buf(
+			buffer mut(ref(u8)),
+			len usize
+		) void :: "arc4random_buf"
+
+		def platform_fill_random(
+			buffer mut(ref(u8)),
+			len usize
+		) void|error
+			arc4random_buf(buffer, len)
+		end
+	end
+
+	when freebsd
+		extern def arc4random_buf(
+			buffer mut(ref(u8)),
+			len usize
+		) void :: "arc4random_buf"
+
+		def platform_fill_random(
+			buffer mut(ref(u8)),
+			len usize
+		) void|error
+			arc4random_buf(buffer, len)
+		end
+	end
+
+	when openbsd
+		extern def arc4random_buf(
+			buffer mut(ref(u8)),
+			len usize
+		) void :: "arc4random_buf"
+
+		def platform_fill_random(
+			buffer mut(ref(u8)),
+			len usize
+		) void|error
+			arc4random_buf(buffer, len)
+		end
+	end
+
+	when netbsd
+		extern def arc4random_buf(
+			buffer mut(ref(u8)),
+			len usize
+		) void :: "arc4random_buf"
+
+		def platform_fill_random(
+			buffer mut(ref(u8)),
+			len usize
+		) void|error
+			arc4random_buf(buffer, len)
+		end
+	end
+
+	when dragonflybsd
+		extern def arc4random_buf(
+			buffer mut(ref(u8)),
+			len usize
+		) void :: "arc4random_buf"
+
+		def platform_fill_random(
+			buffer mut(ref(u8)),
+			len usize
+		) void|error
+			arc4random_buf(buffer, len)
+		end
+	end
+
+	pub def fill_random(buffer mut(ref(u8)), len usize) void|error
+		if len == 0 as usize
+			return
+		end
+
+		guard buffer != none else
+			return crypto_error[void]("secure random buffer is null")
+		end
+
+		return platform_fill_random(buffer, len)
+	end
+end
+
+when redox
+	pub def fill_random(buffer mut(ref(u8)), len usize) void|error
+		return crypto_error[void](
+			"std/crypto is not supported on this platform yet"
+		)
+	end
+end
+
+when plan9
+	pub def fill_random(buffer mut(ref(u8)), len usize) void|error
+		return crypto_error[void](
+			"std/crypto is not supported on this platform yet"
+		)
+	end
+end
+
+pub def random_u32() u32|error
+	var value u32 = 0 as u32
+	fill_random(@as_mut(@addr(value)) as mut(ref(u8)), 4 as usize)?
+	return value
+end
+
+pub def random_u64() u64|error
+	var value u64 = 0 as u64
+	fill_random(@as_mut(@addr(value)) as mut(ref(u8)), 8 as usize)?
+	return value
+end
+
+test "constant time byte compare works"
+	assert constant_time_eql("scar", "scar", 4 as usize)
+	assert !constant_time_eql("scar", "scan", 4 as usize)
+	assert !constant_time_eql("scars", "scare", 5 as usize)
+end
+
+test "constant time string compare works"
+	assert constant_time_str_eql("scar", "scar")
+	assert !constant_time_str_eql("scar", "scan")
+	assert !constant_time_str_eql("scar", "scar-lang")
+end
+
+test "secure random generation works"
+	var first mut(ref(u8)) = @alloc(32 as usize)
+	var second mut(ref(u8)) = @alloc(32 as usize)
+
+	fill_random(first, 32 as usize)?
+	fill_random(second, 32 as usize)?
+
+	var saw_non_zero bool = false
+	var saw_difference bool = false
+
+	for var i = 0 .. 32
+		var left u8 = @deref(@add(first, i))
+		var right u8 = @deref(@add(second, i))
+
+		if left != 0 as u8 || right != 0 as u8
+			saw_non_zero = true
+		end
+
+		if left != right
+			saw_difference = true
+		end
+	end
+
+	assert saw_non_zero
+	assert saw_difference
+	assert random_u32()? != 0 as u32 || random_u64()? != 0 as u64
+
+	@free(first)
+	@free(second)
+end
