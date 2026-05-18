@@ -44,7 +44,8 @@ impl CompileError {
     }
 
     pub fn location(&self) -> Option<(usize, usize)> {
-        self.location.map(|location| (location.line, location.column))
+        self.location
+            .map(|location| (location.line, location.column))
     }
 }
 
@@ -68,10 +69,7 @@ fn main() -> ExitCode {
     match run(&cli) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
-            eprintln!(
-                "{}",
-                format_compile_error(&error, cli.default_error_path())
-            );
+            eprintln!("{}", format_compile_error(&error, cli.default_error_path()));
             ExitCode::FAILURE
         }
     }
@@ -219,7 +217,9 @@ impl TestCli {
 
         Ok(Self {
             target: target.ok_or_else(|| {
-                CompileError::new("usage: scar test <file.scar|directory> [--emit] [-opt] [-o output]")
+                CompileError::new(
+                    "usage: scar test <file.scar|directory> [--emit] [-opt] [-o output]",
+                )
             })?,
             output,
             emit_c,
@@ -241,7 +241,10 @@ struct CompilerSpec {
 }
 
 fn write_output(path: &Path, contents: &str) -> Result<(), CompileError> {
-    if let Some(parent) = path.parent().filter(|parent| !parent.as_os_str().is_empty()) {
+    if let Some(parent) = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
         fs::create_dir_all(parent).map_err(|error| {
             CompileError::new(format!(
                 "failed to create output directory {}: {error}",
@@ -256,7 +259,14 @@ fn write_output(path: &Path, contents: &str) -> Result<(), CompileError> {
 fn run_build(cli: &BuildCli) -> Result<(), CompileError> {
     let program = resolve_entry_program(&cli.input)?;
     let info = analyze(&program)?;
-    emit_program(&program, &info, &cli.input, &cli.output, cli.emit_c, cli.optimize)
+    emit_program(
+        &program,
+        &info,
+        &cli.input,
+        &cli.output,
+        cli.emit_c,
+        cli.optimize,
+    )
 }
 
 fn emit_program(
@@ -419,7 +429,10 @@ fn build_test_program(program: &Program) -> Program {
 
 fn run_test_binary(path: &Path) -> Result<(), CompileError> {
     let status = Command::new(path).status().map_err(|error| {
-        CompileError::new(format!("failed to run test binary {}: {error}", path.display()))
+        CompileError::new(format!(
+            "failed to run test binary {}: {error}",
+            path.display()
+        ))
     })?;
     if status.success() {
         Ok(())
@@ -470,7 +483,10 @@ fn compile_c_to_binary(
     output_path: &Path,
     optimize: bool,
 ) -> Result<(), CompileError> {
-    if let Some(parent) = output_path.parent().filter(|parent| !parent.as_os_str().is_empty()) {
+    if let Some(parent) = output_path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
         fs::create_dir_all(parent).map_err(|error| {
             CompileError::new(format!(
                 "failed to create output directory {}: {error}",
@@ -510,7 +526,7 @@ fn compile_c_to_binary(
         Ok(())
     } else {
         Err(CompileError::new(format!(
-            "{compiler_name} failed to compile {}",
+            "{compiler_name} failed to link {}",
             c_path.display()
         )))
     }
