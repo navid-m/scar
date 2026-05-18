@@ -1,0 +1,489 @@
+val allocators = use("std/allocators")
+val str = use("std/string")
+
+extern def scar_runtime_fs_last_error() ref(u8) :: "scar_runtime_fs_last_error"
+extern def scar_runtime_fs_free(ptr ref(void)) void :: "scar_runtime_fs_free"
+extern def scar_runtime_fs_read_text(path ref(u8), out_len mut(ref(usize))) ref(void) :: "scar_runtime_fs_read_text"
+extern def scar_runtime_fs_write_text(path ref(u8), data ref(u8)) i32 :: "scar_runtime_fs_write_text"
+extern def scar_runtime_fs_read_dir(path ref(u8), out_len mut(ref(usize))) ref(void) :: "scar_runtime_fs_read_dir"
+extern def scar_runtime_fs_create_dir(path ref(u8)) i32 :: "scar_runtime_fs_create_dir"
+extern def scar_runtime_fs_create_dir_all(path ref(u8)) i32 :: "scar_runtime_fs_create_dir_all"
+extern def scar_runtime_fs_remove_dir(path ref(u8)) i32 :: "scar_runtime_fs_remove_dir"
+extern def scar_runtime_fs_remove_dir_all(path ref(u8)) i32 :: "scar_runtime_fs_remove_dir_all"
+extern def scar_runtime_fs_exists(path ref(u8)) i32 :: "scar_runtime_fs_exists"
+extern def scar_runtime_fs_is_file(path ref(u8)) i32 :: "scar_runtime_fs_is_file"
+extern def scar_runtime_fs_is_dir(path ref(u8)) i32 :: "scar_runtime_fs_is_dir"
+
+pub type DirEntry
+	name ref(u8)
+	path ref(u8)
+	is_file bool
+	is_dir bool
+end
+
+def fs_error[T]() T|error
+	return error(scar_runtime_fs_last_error())
+end
+
+def is_sep(ch u8) bool
+	return ch == '/'
+end
+
+def copy_bytes[A: allocators.BumpAllocator](
+	ac ref(A),
+	src ref(u8),
+	count usize
+) ref(u8)|error
+	var out ref(void) = A.alloc(ac, count + 1 as usize)?
+
+	if count > 0 as usize
+		@memcpy(out, src, count)
+	end
+
+	@deref(@as_mut(@add(out, count))) = 0 as u8
+	return out as ref(u8)
+end
+
+def copy_string[A: allocators.BumpAllocator](
+	ac ref(A),
+	src ref(u8)
+) ref(u8)|error
+	guard src != none else
+		return none
+	end
+
+	return copy_bytes[A](ac, src, str.len(src))
+end
+
+def trimmed_len(path ref(u8)) usize
+	var out usize = str.len(path)
+
+	for out > 1 as usize && is_sep(@deref(@add(path, out - 1 as usize)))
+		out--
+	end
+
+	return out
+end
+
+def basename_start(path ref(u8), end usize) usize
+	var start usize = 0
+	var i usize = 0
+
+	for i < end
+		if is_sep(@deref(@add(path, i))) && i + 1 as usize < end
+			start = i + 1 as usize
+		end
+		i++
+	end
+
+	return start
+end
+
+def find_extension_dot(path ref(u8), start usize, end usize) isize
+	var i usize = end
+
+	for i > start
+		i--
+
+		if @deref(@add(path, i)) == '.'
+			if i == start
+				return -1 as isize
+			end
+			return i as isize
+		end
+	end
+
+	return -1 as isize
+end
+
+pub def read_text[A: allocators.BumpAllocator](
+	ac ref(A),
+	path ref(u8)
+) ref(u8)|error
+	var byte_len usize = 0
+	var raw ref(void) =
+		scar_runtime_fs_read_text(
+			path,
+			@as_mut(@addr(byte_len))
+		)
+
+	if raw == none
+		return fs_error[ref(u8)]()
+	end
+
+	var result =
+		copy_bytes[A](ac, raw as ref(u8), byte_len)
+
+	scar_runtime_fs_free(raw)
+	return result
+end
+
+pub def write_text(path ref(u8), data ref(u8)) void|error
+	if scar_runtime_fs_write_text(path, data) != 0
+		return fs_error[void]()
+	end
+end
+
+pub def read_dir[A: allocators.BumpAllocator](
+	ac ref(A),
+	path ref(u8)
+) list[DirEntry]|error
+	var byte_len usize = 0
+	var raw ref(void) =
+		scar_runtime_fs_read_dir(
+			path,
+			@as_mut(@addr(byte_len))
+		)
+
+	if raw == none
+		return fs_error[list[DirEntry]]()
+	end
+
+	var entries list[DirEntry] = []
+	var cursor usize = 0
+	var bytes ref(u8) = raw as ref(u8)
+
+	for cursor < byte_len
+		if @deref(@add(bytes, cursor)) == 0 as u8
+			break
+		end
+
+		var kind u8 = @deref(@add(bytes, cursor))
+		cursor++
+
+		var name_start usize = cursor
+
+		for cursor < byte_len && @deref(@add(bytes, cursor)) != 0 as u8
+			cursor++
+		end
+
+		var name =
+			copy_bytes[A](
+				ac,
+				@add(bytes, name_start),
+				cursor - name_start
+			)?
+
+		var full_path = join[A](ac, path, name)?
+
+		@append(
+			entries,
+			DirEntry(
+				name: name,
+				path: full_path,
+				is_file: kind == 'f',
+				is_dir: kind == 'd'
+			)
+		)
+
+		cursor++
+	end
+
+	scar_runtime_fs_free(raw)
+	return entries
+end
+
+pub def create_dir(path ref(u8)) void|error
+	if scar_runtime_fs_create_dir(path) != 0
+		return fs_error[void]()
+	end
+end
+
+pub def create_dir_all(path ref(u8)) void|error
+	if scar_runtime_fs_create_dir_all(path) != 0
+		return fs_error[void]()
+	end
+end
+
+pub def remove_dir(path ref(u8)) void|error
+	if scar_runtime_fs_remove_dir(path) != 0
+		return fs_error[void]()
+	end
+end
+
+pub def remove_dir_all(path ref(u8)) void|error
+	if scar_runtime_fs_remove_dir_all(path) != 0
+		return fs_error[void]()
+	end
+end
+
+pub def join[A: allocators.BumpAllocator](
+	ac ref(A),
+	a ref(u8),
+	b ref(u8)
+) ref(u8)|error
+	guard a != none else
+		return copy_string[A](ac, b)
+	end
+
+	guard b != none else
+		return copy_string[A](ac, a)
+	end
+
+	var len_a usize = trimmed_len(a)
+	var len_b usize = str.len(b)
+	var start_b usize = 0
+
+	if is_absolute(b)
+		return copy_bytes[A](ac, b, len_b)
+	end
+
+	for start_b + 1 as usize < len_b && is_sep(@deref(@add(b, start_b)))
+		start_b++
+	end
+
+	if len_a == 0 as usize
+		return copy_bytes[A](ac, @add(b, start_b), len_b - start_b)
+	end
+
+	if start_b >= len_b
+		return copy_bytes[A](ac, a, len_a)
+	end
+
+	var needs_sep bool =
+		!is_sep(@deref(@add(a, len_a - 1 as usize)))
+
+	var out_len usize =
+		len_a +
+		(len_b - start_b)
+
+	if needs_sep
+		out_len++
+	end
+
+	var out ref(void) = A.alloc(ac, out_len + 1 as usize)?
+	var cursor usize = 0
+
+	@memcpy(out, a, len_a)
+	cursor = len_a
+
+	if needs_sep
+		@deref(@as_mut(@add(out, cursor))) = '/' as u8
+		cursor++
+	end
+
+	@memcpy(
+		@add(out, cursor),
+		@add(b, start_b),
+		len_b - start_b
+	)
+
+	cursor += len_b - start_b
+	@deref(@as_mut(@add(out, cursor))) = 0 as u8
+
+	return out as ref(u8)
+end
+
+pub def dirname[A: allocators.BumpAllocator](
+	ac ref(A),
+	path ref(u8)
+) ref(u8)|error
+	guard path != none else
+		return none
+	end
+
+	var end usize = trimmed_len(path)
+
+	if end == 0 as usize
+		return copy_string[A](ac, ".")
+	end
+
+	if end == 1 as usize && is_sep(@deref(path))
+		return copy_bytes[A](ac, path, 1 as usize)
+	end
+
+	var i usize = end
+
+	for i > 0 as usize
+		i--
+
+		if is_sep(@deref(@add(path, i)))
+			for i > 1 as usize && is_sep(@deref(@add(path, i - 1 as usize)))
+				i--
+			end
+
+			if i == 0 as usize
+				return copy_string[A](ac, "/")
+			end
+
+			return copy_bytes[A](ac, path, i)
+		end
+	end
+
+	return copy_string[A](ac, ".")
+end
+
+pub def basename[A: allocators.BumpAllocator](
+	ac ref(A),
+	path ref(u8)
+) ref(u8)|error
+	guard path != none else
+		return none
+	end
+
+	var end usize = trimmed_len(path)
+
+	if end == 0 as usize
+		return copy_string[A](ac, "")
+	end
+
+	if end == 1 as usize && is_sep(@deref(path))
+		return copy_string[A](ac, "/")
+	end
+
+	var start usize = basename_start(path, end)
+	return copy_bytes[A](ac, @add(path, start), end - start)
+end
+
+pub def extension[A: allocators.BumpAllocator](
+	ac ref(A),
+	path ref(u8)
+) ref(u8)|error
+	guard path != none else
+		return none
+	end
+
+	var end usize = trimmed_len(path)
+	var start usize = basename_start(path, end)
+	var dot isize = find_extension_dot(path, start, end)
+
+	if dot < 0
+		return copy_string[A](ac, "")
+	end
+
+	var offset usize = dot as usize + 1 as usize
+	return copy_bytes[A](ac, @add(path, offset), end - offset)
+end
+
+pub def strip_extension[A: allocators.BumpAllocator](
+	ac ref(A),
+	path ref(u8)
+) ref(u8)|error
+	guard path != none else
+		return none
+	end
+
+	var end usize = trimmed_len(path)
+	var start usize = basename_start(path, end)
+	var dot isize = find_extension_dot(path, start, end)
+
+	if dot < 0
+		return copy_bytes[A](ac, path, end)
+	end
+
+	return copy_bytes[A](ac, path, dot as usize)
+end
+
+pub def is_absolute(path ref(u8)) bool
+	return (
+		path != none &&
+		str.len(path) > 0 as usize &&
+		is_sep(@deref(path))
+	)
+end
+
+pub def exists(path ref(u8)) bool
+	return scar_runtime_fs_exists(path) != 0
+end
+
+pub def is_file(path ref(u8)) bool
+	return scar_runtime_fs_is_file(path) != 0
+end
+
+pub def is_dir(path ref(u8)) bool
+	return scar_runtime_fs_is_dir(path) != 0
+end
+
+test "path helpers work"
+	var ac = allocators.Arena.new(4096 as usize)?
+
+	assert str.eql(
+		join[_](@addr(ac), "tmp/fs", "note.txt")?,
+		"tmp/fs/note.txt"
+	)
+	assert str.eql(
+		dirname[_](@addr(ac), "tmp/fs/note.txt")?,
+		"tmp/fs"
+	)
+	assert str.eql(
+		basename[_](@addr(ac), "tmp/fs/note.txt")?,
+		"note.txt"
+	)
+	assert str.eql(
+		extension[_](@addr(ac), "tmp/fs/note.txt")?,
+		"txt"
+	)
+	assert str.eql(
+		strip_extension[_](@addr(ac), "tmp/fs/note.txt")?,
+		"tmp/fs/note"
+	)
+	assert is_absolute("/tmp/fs")
+	assert !is_absolute("tmp/fs")
+
+	allocators.Arena.destroy(@addr(ac))
+end
+
+test "read and write text work"
+	var ac = allocators.Arena.new(8192 as usize)?
+	var root = join[_](@addr(ac), "scar-out", "fs-tests-text")?
+	var file = join[_](@addr(ac), root, "hello.txt")?
+
+	if exists(root)
+		remove_dir_all(root)?
+	end
+
+	create_dir_all(root)?
+	write_text(file, "hello from scar")?
+
+	assert exists(file)
+	assert is_file(file)
+	assert str.eql(
+		read_text[_](@addr(ac), file)?,
+		"hello from scar"
+	)
+
+	remove_dir_all(root)?
+	assert !exists(root)
+
+	allocators.Arena.destroy(@addr(ac))
+end
+
+test "read_dir reports files and directories"
+	var ac = allocators.Arena.new(16384 as usize)?
+	var root = join[_](@addr(ac), "scar-out", "fs-tests-dir")?
+	var child_dir = join[_](@addr(ac), root, "child")?
+	var file = join[_](@addr(ac), root, "note.txt")?
+
+	if exists(root)
+		remove_dir_all(root)?
+	end
+
+	create_dir_all(child_dir)?
+	write_text(file, "hello")?
+
+	var entries = read_dir[_](@addr(ac), root)?
+	var saw_dir bool = false
+	var saw_file bool = false
+	var count i32 = 0
+
+	for var entry in entries
+		count++
+
+		if entry.is_dir && str.eql(entry.name, "child")
+			saw_dir = true
+			assert str.eql(entry.path, child_dir)
+		end
+
+		if entry.is_file && str.eql(entry.name, "note.txt")
+			saw_file = true
+			assert str.eql(entry.path, file)
+		end
+	end
+
+	assert count == 2
+	assert saw_dir
+	assert saw_file
+
+	remove_dir_all(root)?
+	allocators.Arena.destroy(@addr(ac))
+end

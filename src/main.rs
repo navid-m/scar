@@ -900,13 +900,7 @@ mod tests {
             extra_compiler_flags(CompilerKind::Clang, CompileMode::FastRun),
             ["-pipe"]
         );
-        assert_eq!(
-            extra_compiler_flags(CompilerKind::Tcc, CompileMode::FastRun),
-            []
-        );
-        assert_eq!(
-            extra_compiler_flags(CompilerKind::Clang, CompileMode::Standard),
-            []
-        );
+        assert!(extra_compiler_flags(CompilerKind::Tcc, CompileMode::FastRun).is_empty());
+        assert!(extra_compiler_flags(CompilerKind::Clang, CompileMode::Standard).is_empty());
     }
 }

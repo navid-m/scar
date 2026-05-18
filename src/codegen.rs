@@ -2679,6 +2679,6 @@ mod tests {
         let output = generate_c(&program, &info, false).unwrap();
 
         assert!(output.contains("fn__Arena_alloc_aligned"));
-        assert!(output.contains("fn__Arena_alloc(loc__a, loc__size, 8)"));
+        assert!(output.contains("fn__Arena_alloc_aligned(loc__a, loc__size, 8)"));
     }
 }

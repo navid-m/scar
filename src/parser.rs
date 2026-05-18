@@ -17,63 +17,102 @@ struct Parser {
     pos: usize,
 }
 
+#[derive(Default)]
+struct TopLevelItems {
+    module_uses: Vec<ModuleUse>,
+    interface_defs: Vec<InterfaceDef>,
+    type_defs: Vec<TypeDef>,
+    functions: Vec<Function>,
+    tests: Vec<TestBlock>,
+}
+
+impl TopLevelItems {
+    fn append(&mut self, mut other: Self) {
+        self.module_uses.append(&mut other.module_uses);
+        self.interface_defs.append(&mut other.interface_defs);
+        self.type_defs.append(&mut other.type_defs);
+        self.functions.append(&mut other.functions);
+        self.tests.append(&mut other.tests);
+    }
+}
+
 impl Parser {
     fn new(tokens: Vec<Token>) -> Self {
         Self { tokens, pos: 0 }
     }
 
     fn parse_program(&mut self) -> Result<Program, CompileError> {
-        let mut module_uses = Vec::new();
-        let mut interface_defs = Vec::new();
-        let mut type_defs = Vec::new();
-        let mut functions = Vec::new();
-        let mut tests = Vec::new();
+        let items = self.parse_top_level_items_until(&[])?;
+        Ok(Program {
+            module_uses: items.module_uses,
+            interface_defs: items.interface_defs,
+            type_defs: items.type_defs,
+            functions: items.functions,
+            tests: items.tests,
+        })
+    }
+
+    fn parse_top_level_items_until(
+        &mut self,
+        terminators: &[TokenKind],
+    ) -> Result<TopLevelItems, CompileError> {
+        let mut items = TopLevelItems::default();
         self.consume_newlines();
-        while !self.is_eof() {
-            if self.check_simple(&TokenKind::Val) {
-                module_uses.push(self.parse_module_use()?);
+        while !self.check_any_simple(terminators) && !self.is_eof() {
+            if self.check_simple(&TokenKind::When) {
+                items.append(self.parse_when_top_level_items()?);
+            } else if self.check_simple(&TokenKind::Val) {
+                items.module_uses.push(self.parse_module_use()?);
             } else if self.check_simple(&TokenKind::Test) {
-                tests.push(self.parse_test_block()?);
+                items.tests.push(self.parse_test_block()?);
             } else if self.check_simple(&TokenKind::Pub)
                 && self.check_next_simple(&TokenKind::Interface)
             {
-                interface_defs.push(self.parse_interface_def(true)?);
+                items.interface_defs.push(self.parse_interface_def(true)?);
             } else if self.check_simple(&TokenKind::Interface) {
-                interface_defs.push(self.parse_interface_def(false)?);
+                items.interface_defs.push(self.parse_interface_def(false)?);
             } else if self.check_simple(&TokenKind::Pub)
                 && self.check_next_simple(&TokenKind::Type)
             {
-                type_defs.push(self.parse_type_def(true, false)?);
+                items.type_defs.push(self.parse_type_def(true, false)?);
             } else if self.check_simple(&TokenKind::Pub)
                 && self.check_next_simple(&TokenKind::Union)
             {
-                type_defs.push(self.parse_union_def(true)?);
+                items.type_defs.push(self.parse_union_def(true)?);
             } else if self.check_simple(&TokenKind::Pub)
                 && self.check_next_simple(&TokenKind::Extern)
             {
-                functions.push(self.parse_extern_function(true)?);
+                items.functions.push(self.parse_extern_function(true)?);
             } else if self.check_simple(&TokenKind::Type) {
-                type_defs.push(self.parse_type_def(false, false)?);
+                items.type_defs.push(self.parse_type_def(false, false)?);
             } else if self.check_simple(&TokenKind::Union) {
-                type_defs.push(self.parse_union_def(false)?);
+                items.type_defs.push(self.parse_union_def(false)?);
             } else if self.check_simple(&TokenKind::Extern)
                 && self.check_next_simple(&TokenKind::Type)
             {
-                type_defs.push(self.parse_type_def(false, true)?);
+                items.type_defs.push(self.parse_type_def(false, true)?);
             } else if self.check_simple(&TokenKind::Extern) {
-                functions.push(self.parse_extern_function(false)?);
+                items.functions.push(self.parse_extern_function(false)?);
             } else {
-                functions.push(self.parse_function()?);
+                items.functions.push(self.parse_function()?);
             }
             self.consume_newlines();
         }
-        Ok(Program {
-            module_uses,
-            interface_defs,
-            type_defs,
-            functions,
-            tests,
-        })
+        Ok(items)
+    }
+
+    fn parse_when_top_level_items(&mut self) -> Result<TopLevelItems, CompileError> {
+        self.expect_simple(TokenKind::When)?;
+        let platform = self.parse_platform_name()?;
+        self.expect_newline("expected a newline after platform selector")?;
+        let items = self.parse_top_level_items_until(&[TokenKind::End])?;
+        self.expect_simple(TokenKind::End)?;
+        self.consume_newlines();
+        if platform_matches(&platform) {
+            Ok(items)
+        } else {
+            Ok(TopLevelItems::default())
+        }
     }
 
     fn parse_module_use(&mut self) -> Result<ModuleUse, CompileError> {
@@ -420,10 +459,41 @@ impl Parser {
         let mut body = Vec::new();
         self.consume_newlines();
         while !self.check_any_simple(terminators) && !self.is_eof() {
-            body.push(self.parse_stmt()?);
+            if self.check_simple(&TokenKind::When) {
+                body.extend(self.parse_when_stmt_block()?);
+            } else {
+                body.push(self.parse_stmt()?);
+            }
             self.consume_newlines();
         }
         Ok(body)
+    }
+
+    fn parse_when_stmt_block(&mut self) -> Result<Vec<Stmt>, CompileError> {
+        self.expect_simple(TokenKind::When)?;
+        let platform = self.parse_platform_name()?;
+        self.expect_newline("expected a newline after platform selector")?;
+        let body = self.parse_block()?;
+        self.expect_simple(TokenKind::End)?;
+        self.consume_newlines();
+        if platform_matches(&platform) {
+            Ok(body)
+        } else {
+            Ok(Vec::new())
+        }
+    }
+
+    fn parse_platform_name(&mut self) -> Result<String, CompileError> {
+        let TokenKind::Ident(platform) = self.current().kind.clone() else {
+            return Err(self.error_at_current("expected a platform name after `when`"));
+        };
+        if !is_supported_platform_name(&platform) {
+            return Err(self.error_at_current(format!(
+                "unsupported platform selector `{platform}`"
+            )));
+        }
+        self.advance();
+        Ok(platform)
     }
 
     fn parse_stmt(&mut self) -> Result<Stmt, CompileError> {
@@ -906,11 +976,11 @@ impl Parser {
     }
 
     fn parse_expr(&mut self) -> Result<Expr, CompileError> {
-        self.parse_cast()
+        self.parse_logical_or()
     }
 
     fn parse_cast(&mut self) -> Result<Expr, CompileError> {
-        let mut expr = self.parse_logical_or()?;
+        let mut expr = self.parse_unary()?;
         while self.check_simple(&TokenKind::As) {
             self.advance();
             let ty = self.parse_type()?;
@@ -1093,7 +1163,7 @@ impl Parser {
     }
 
     fn parse_multiplicative(&mut self) -> Result<Expr, CompileError> {
-        let mut expr = self.parse_unary()?;
+        let mut expr = self.parse_cast()?;
         while self.check_simple(&TokenKind::Star)
             || self.check_simple(&TokenKind::Slash)
             || self.check_simple(&TokenKind::Percent)
@@ -1107,7 +1177,7 @@ impl Parser {
             };
             self.advance();
             self.consume_newlines();
-            let rhs = self.parse_unary()?;
+            let rhs = self.parse_cast()?;
             expr = Expr::Binary {
                 lhs: Box::new(expr),
                 op,
@@ -1733,6 +1803,7 @@ impl Parser {
             TokenKind::Continue => "`continue`",
             TokenKind::Parallel => "`parallel`",
             TokenKind::For => "`for`",
+            TokenKind::When => "`when`",
             TokenKind::In => "`in`",
             TokenKind::As => "`as`",
             TokenKind::Mut => "`mut`",
@@ -1804,6 +1875,43 @@ impl Parser {
             TokenKind::Char(_) => "a character",
             TokenKind::Str(_) => "a string",
         }
+    }
+}
+
+fn is_supported_platform_name(name: &str) -> bool {
+    matches!(
+        name,
+        "linux"
+            | "windows"
+            | "darwin"
+            | "macos"
+            | "dragonflybsd"
+            | "freebsd"
+            | "openbsd"
+            | "netbsd"
+            | "redox"
+            | "plan9"
+            | "android"
+            | "ios"
+            | "posix"
+    )
+}
+
+fn platform_matches(name: &str) -> bool {
+    match name {
+        "linux" => cfg!(target_os = "linux"),
+        "windows" => cfg!(target_os = "windows"),
+        "darwin" | "macos" => cfg!(target_os = "macos"),
+        "dragonflybsd" => cfg!(target_os = "dragonfly"),
+        "freebsd" => cfg!(target_os = "freebsd"),
+        "openbsd" => cfg!(target_os = "openbsd"),
+        "netbsd" => cfg!(target_os = "netbsd"),
+        "redox" => cfg!(target_os = "redox"),
+        "plan9" => cfg!(target_os = "plan9"),
+        "android" => cfg!(target_os = "android"),
+        "ios" => cfg!(target_os = "ios"),
+        "posix" => cfg!(unix),
+        _ => false,
     }
 }
 
@@ -2000,6 +2108,109 @@ mod tests {
             }
             other => panic!("expected conditional for loop, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn parses_complex_conditional_for_loop_without_parentheses() {
+        let source = "pub def main() void\n\tfor out > 1 as usize && ready()\n\t\tout--\n\tend\nend\n";
+        let program = parse_program(lex(source).unwrap()).unwrap();
+
+        match &program.functions[0].body[0] {
+            Stmt::While {
+                condition: Expr::Binary {
+                    op: BinaryOp::LogicalAnd,
+                    lhs,
+                    rhs,
+                },
+                body,
+                ..
+            } => {
+                assert!(matches!(
+                    lhs.as_ref(),
+                    Expr::Binary {
+                        op: BinaryOp::GreaterThan,
+                        rhs,
+                        ..
+                    } if matches!(
+                        rhs.as_ref(),
+                        Expr::Cast { ty: Type::Usize, .. }
+                    )
+                ));
+                assert!(matches!(rhs.as_ref(), Expr::Call { .. }));
+                assert!(matches!(body[0], Stmt::Decrement { .. }));
+            }
+            other => panic!("expected conditional for loop, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_complex_parenthesized_conditional_for_loop() {
+        let source =
+            "pub def main() void\n\tfor (out > 1 as usize && !done)\n\t\tout--\n\tend\nend\n";
+        let program = parse_program(lex(source).unwrap()).unwrap();
+
+        match &program.functions[0].body[0] {
+            Stmt::While {
+                condition: Expr::Binary {
+                    op: BinaryOp::LogicalAnd,
+                    lhs,
+                    rhs,
+                },
+                ..
+            } => {
+                assert!(matches!(
+                    lhs.as_ref(),
+                    Expr::Binary {
+                        op: BinaryOp::GreaterThan,
+                        rhs,
+                        ..
+                    } if matches!(
+                        rhs.as_ref(),
+                        Expr::Cast { ty: Type::Usize, .. }
+                    )
+                ));
+                assert!(matches!(
+                    rhs.as_ref(),
+                    Expr::Unary {
+                        op: UnaryOp::LogicalNot,
+                        ..
+                    }
+                ));
+            }
+            other => panic!("expected conditional for loop, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_top_level_when_blocks_for_current_platform() {
+        let source = "when posix\n\tpub def posix_only() void\n\tend\nend\n\npub def main() void\nend\n";
+        let program = parse_program(lex(source).unwrap()).unwrap();
+
+        assert_eq!(program.functions.len(), if cfg!(unix) { 2 } else { 1 });
+        assert_eq!(program.functions.last().unwrap().name, "main");
+    }
+
+    #[test]
+    fn parses_statement_when_blocks_for_current_platform() {
+        let source = "pub def main() void\n\twhen posix\n\t\t@puts(\"posix\")\n\tend\n\twhen windows\n\t\t@puts(\"windows\")\n\tend\nend\n";
+        let program = parse_program(lex(source).unwrap()).unwrap();
+
+        let body = &program.functions[0].body;
+        if cfg!(unix) {
+            assert_eq!(body.len(), 1);
+            assert!(matches!(body[0], Stmt::Expr { .. }));
+        } else {
+            assert_eq!(body.len(), 1);
+            assert!(matches!(body[0], Stmt::Expr { .. }));
+        }
+    }
+
+    #[test]
+    fn rejects_unknown_platform_selector() {
+        let source = "pub def main() void\n\twhen solarpunk\n\t\t@puts(\"nope\")\n\tend\nend\n";
+        let error = parse_program(lex(source).unwrap()).unwrap_err();
+
+        assert!(error.message.contains("unsupported platform selector `solarpunk`"));
     }
 
     #[test]

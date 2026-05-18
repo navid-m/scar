@@ -28,6 +28,7 @@ pub enum TokenKind {
     Continue,
     Parallel,
     For,
+    When,
     In,
     As,
     Mut,
@@ -619,6 +620,7 @@ impl Lexer {
             "continue" => TokenKind::Continue,
             "parallel" => TokenKind::Parallel,
             "for" => TokenKind::For,
+            "when" => TokenKind::When,
             "in" => TokenKind::In,
             "as" => TokenKind::As,
             "mut" => TokenKind::Mut,
@@ -738,5 +740,12 @@ mod tests {
         let tokens = lex("for\n\tbreak\nend\n").unwrap();
 
         assert!(tokens.iter().any(|token| matches!(token.kind, TokenKind::Break)));
+    }
+
+    #[test]
+    fn lexes_when_keyword() {
+        let tokens = lex("when linux\nend\n").unwrap();
+
+        assert!(tokens.iter().any(|token| matches!(token.kind, TokenKind::When)));
     }
 }
