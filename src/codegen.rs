@@ -21,6 +21,7 @@ pub fn generate_c(
     info: &ProgramInfo,
     install_debug_handlers: bool,
 ) -> Result<String, CompileError> {
+    let mut seen_headers = HashSet::new();
     let mut output = String::new();
     output.push_str("#include <inttypes.h>\n");
     output.push_str("#include <signal.h>\n");
@@ -33,6 +34,15 @@ pub fn generate_c(
     output.push_str("#if !defined(_WIN32)\n");
     output.push_str("#include <unistd.h>\n");
     output.push_str("#endif\n\n");
+
+    for header in &program.extern_headers {
+        if seen_headers.insert(header.clone()) {
+            output.push_str(&format!("#include \"{header}\"\n"));
+        }
+    }
+    if !program.extern_headers.is_empty() {
+        output.push('\n');
+    }
 
     if install_debug_handlers {
         output.push_str("#if !defined(_WIN32)\n");
@@ -2750,5 +2760,16 @@ mod tests {
 
         assert!(output.contains("fn__Arena_alloc_aligned"));
         assert!(output.contains("fn__Arena_alloc_aligned(loc__a, loc__size, 8)"));
+    }
+
+    #[test]
+    fn emits_extern_header_includes() {
+        let source = "extern \"windows.h\"\nextern def GetTickCount() u32 :: \"GetTickCount\"\npub def main() void\n\tGetTickCount()\nend\n";
+        let program = parse_program(lex(source).unwrap()).unwrap();
+        let info = analyze(&program).unwrap();
+
+        let output = generate_c(&program, &info, false).unwrap();
+
+        assert!(output.contains("#include \"windows.h\""));
     }
 }

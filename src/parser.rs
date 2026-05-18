@@ -20,6 +20,7 @@ struct Parser {
 #[derive(Default)]
 struct TopLevelItems {
     module_uses: Vec<ModuleUse>,
+    extern_headers: Vec<String>,
     interface_defs: Vec<InterfaceDef>,
     type_defs: Vec<TypeDef>,
     functions: Vec<Function>,
@@ -29,6 +30,7 @@ struct TopLevelItems {
 impl TopLevelItems {
     fn append(&mut self, mut other: Self) {
         self.module_uses.append(&mut other.module_uses);
+        self.extern_headers.append(&mut other.extern_headers);
         self.interface_defs.append(&mut other.interface_defs);
         self.type_defs.append(&mut other.type_defs);
         self.functions.append(&mut other.functions);
@@ -45,6 +47,7 @@ impl Parser {
         let items = self.parse_top_level_items_until(&[])?;
         Ok(Program {
             module_uses: items.module_uses,
+            extern_headers: items.extern_headers,
             interface_defs: items.interface_defs,
             type_defs: items.type_defs,
             functions: items.functions,
@@ -91,6 +94,10 @@ impl Parser {
                 && self.check_next_simple(&TokenKind::Type)
             {
                 items.type_defs.push(self.parse_type_def(false, true)?);
+            } else if self.check_simple(&TokenKind::Extern)
+                && matches!(self.next_non_newline_kind(self.pos + 1), Some(TokenKind::Str(_)))
+            {
+                items.extern_headers.push(self.parse_extern_header()?);
             } else if self.check_simple(&TokenKind::Extern) {
                 items.functions.push(self.parse_extern_function(false)?);
             } else {
@@ -339,6 +346,16 @@ impl Parser {
             return_type,
             body: Vec::new(),
         })
+    }
+
+    fn parse_extern_header(&mut self) -> Result<String, CompileError> {
+        self.expect_simple(TokenKind::Extern)?;
+        let TokenKind::Str(header) = self.current().kind.clone() else {
+            return Err(self.error_at_current("expected a string literal header name"));
+        };
+        self.advance();
+        self.expect_stmt_terminator()?;
+        Ok(header)
     }
 
     fn parse_test_block(&mut self) -> Result<TestBlock, CompileError> {
@@ -1950,6 +1967,15 @@ mod tests {
 
         assert!(program.functions[0].is_pub);
         assert_eq!(program.functions[0].extern_name.as_deref(), Some("sleep"));
+    }
+
+    #[test]
+    fn parses_extern_header_include() {
+        let source = "extern \"windows.h\"\nextern def sleep(t u32) void :: \"sleep\"\n";
+        let program = parse_program(lex(source).unwrap()).unwrap();
+
+        assert_eq!(program.extern_headers, vec!["windows.h"]);
+        assert_eq!(program.functions.len(), 1);
     }
 
     #[test]

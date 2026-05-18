@@ -1,6 +1,7 @@
 #[derive(Debug, Clone)]
 pub struct Program {
     pub module_uses: Vec<ModuleUse>,
+    pub extern_headers: Vec<String>,
     pub interface_defs: Vec<InterfaceDef>,
     pub type_defs: Vec<TypeDef>,
     pub functions: Vec<Function>,

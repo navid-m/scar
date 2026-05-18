@@ -66,6 +66,7 @@ pub fn resolve_entry_program(entry: &Path) -> Result<Program, CompileError> {
 
     instantiate_generic_functions(Program {
         module_uses: Vec::new(),
+        extern_headers: program.extern_headers,
         interface_defs,
         type_defs,
         functions,
@@ -1115,6 +1116,7 @@ fn instantiate_generic_functions(program: Program) -> Result<Program, CompileErr
 
     Ok(Program {
         module_uses: program.module_uses,
+        extern_headers: program.extern_headers,
         interface_defs: program.interface_defs,
         type_defs: program.type_defs,
         functions: all_functions,
