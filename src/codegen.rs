@@ -323,6 +323,22 @@ fn render_stmt(
     level: usize,
     next_temp_id: &mut usize,
 ) -> Result<(), CompileError> {
+    let result = render_stmt_inner(output, stmt, function, info, level, next_temp_id);
+    if let Some((line, column)) = stmt_location(stmt) {
+        result.map_err(|error| error.with_location(line, column))
+    } else {
+        result
+    }
+}
+
+fn render_stmt_inner(
+    output: &mut String,
+    stmt: &Stmt,
+    function: &Function,
+    info: &ProgramInfo,
+    level: usize,
+    next_temp_id: &mut usize,
+) -> Result<(), CompileError> {
     match stmt {
         Stmt::VarDecl {
             mutable,
@@ -951,6 +967,33 @@ fn render_stmt(
         }
     }
     Ok(())
+}
+
+fn stmt_location(stmt: &Stmt) -> Option<(usize, usize)> {
+    match stmt {
+        Stmt::VarDecl { line, column, .. }
+        | Stmt::Assign { line, column, .. }
+        | Stmt::AddAssign { line, column, .. }
+        | Stmt::MulAssign { line, column, .. }
+        | Stmt::SubAssign { line, column, .. }
+        | Stmt::DivAssign { line, column, .. }
+        | Stmt::BitAndAssign { line, column, .. }
+        | Stmt::BitOrAssign { line, column, .. }
+        | Stmt::BitXorAssign { line, column, .. }
+        | Stmt::Increment { line, column, .. }
+        | Stmt::Decrement { line, column, .. }
+        | Stmt::Assert { line, column, .. }
+        | Stmt::Return { line, column, .. }
+        | Stmt::If { line, column, .. }
+        | Stmt::Match { line, column, .. }
+        | Stmt::Expr { line, column, .. }
+        | Stmt::ForRange { line, column, .. }
+        | Stmt::ForEach { line, column, .. }
+        | Stmt::While { line, column, .. }
+        | Stmt::Loop { line, column, .. }
+        | Stmt::Continue { line, column }
+        | Stmt::Break { line, column } => Some((*line, *column)),
+    }
 }
 
 fn render_expr(
@@ -1604,11 +1647,13 @@ fn infer_codegen_expr_type(
                     "only direct calls are supported during code generation",
                 ));
             };
+            let function_name = path.join(".");
+            if let Some(signature) = info.functions.get(&function_name) {
+                return Ok(signature.return_type.clone());
+            }
             match path.as_slice() {
                 [name] => {
-                    if let Some(signature) = info.functions.get(name) {
-                        Ok(signature.return_type.clone())
-                    } else if info.types.contains_key(name) {
+                    if info.types.contains_key(name) {
                         Ok(Type::Named(name.clone()))
                     } else {
                         Err(CompileError::new(format!("unknown function `{name}`")))
@@ -1622,14 +1667,14 @@ fn infer_codegen_expr_type(
                         Ok(Type::Named(union_name.clone()))
                     } else {
                         Err(CompileError::new(format!(
-                            "unsupported call target `{}` in code generation",
-                            path.join(".")
+                            "unsupported call target `{}` in code generation; expected a resolved function or union variant constructor",
+                            function_name
                         )))
                     }
                 }
                 _ => Err(CompileError::new(format!(
-                    "unsupported call target `{}` in code generation",
-                    path.join(".")
+                    "unsupported call target `{}` in code generation; expected a resolved function or union variant constructor",
+                    function_name
                 ))),
             }
         }
@@ -2617,5 +2662,23 @@ fn is_reference_like(ty: &Type) -> bool {
 fn indent(output: &mut String, level: usize) {
     for _ in 0..level {
         output.push_str("    ");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::generate_c;
+    use crate::{lexer::lex, parser::parse_program, sema::analyze};
+
+    #[test]
+    fn generates_qualified_function_calls_in_expression_context() {
+        let source = "type Arena\n\tcap usize\nend\n\npub def Arena.alloc_aligned(a ref(Arena), size usize, align usize) ref(void)|error\n\treturn none\nend\n\npub def Arena.alloc(a ref(Arena), size usize) ref(void)|error\n\treturn Arena.alloc_aligned(a, size, 8)\nend\n\npub def main() void\nend\n";
+        let program = parse_program(lex(source).unwrap()).unwrap();
+        let info = analyze(&program).unwrap();
+
+        let output = generate_c(&program, &info, false).unwrap();
+
+        assert!(output.contains("fn__Arena_alloc_aligned"));
+        assert!(output.contains("fn__Arena_alloc(loc__a, loc__size, 8)"));
     }
 }
