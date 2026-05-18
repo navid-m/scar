@@ -1,4 +1,5 @@
 val str = use("std/string")
+val allocators = use("std/allocators")
 
 type Complex
     re i64
@@ -44,9 +45,9 @@ def mandelbrot_iter(c Complex, max_iter i32) i32
     return max_iter
 end
 
-def render_mandelbrot(width i32, height i32, max_iter i32)
+def render_mandelbrot(width i32, height i32, max_iter i32) void|error
     var y = 0
-
+    var ac = allocators.Arena.new(1024 as usize)?
     for var iy = 0 .. height
         var line = ""
 
@@ -58,15 +59,15 @@ def render_mandelbrot(width i32, height i32, max_iter i32)
             var iter = mandelbrot_iter(c, max_iter)
 
             if iter == max_iter
-                line = str.raw_concat_alloc(line, "#")
+                line = str.rconcat[_](ac, line, "#")?
             else
                 if iter > (max_iter / 2)
-                    line = str.raw_concat_alloc(line, "*")
+                    line = str.rconcat[_](ac, line, "*")?
                 else
                     if iter > (max_iter / 4)
-                        line = str.raw_concat_alloc(line, "+")
+                        line = str.rconcat[_](ac, line, "+")?
                     else
-                        line = str.raw_concat_alloc(line, ".")
+                        line = str.rconcat[_](ac, line, ".")?
                     end
                 end
             end
