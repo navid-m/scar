@@ -10,7 +10,9 @@ use std::{
 
 use crate::{
     CompileError,
-    ast::{BinaryOp, Expr, Function, MatchArmKind, Program, Stmt, Type, TypeDef, TypeDefKind, UnaryOp},
+    ast::{
+        BinaryOp, Expr, Function, MatchArmKind, Program, Stmt, Type, TypeDef, TypeDefKind, UnaryOp,
+    },
     sema::ProgramInfo,
 };
 
@@ -40,17 +42,33 @@ pub fn generate_c(
     }
 
     output.push_str(&render_runtime_prelude(install_debug_handlers));
+
+    for type_def in &program.type_defs {
+        if let Some(fwd) = render_type_def_forward_decl(type_def) {
+            output.push_str(&fwd);
+        }
+    }
+    if program.type_defs.iter().any(|td| td.alias.is_none()) {
+        output.push('\n');
+    }
     let list_types = collect_list_types(program, info);
     if !list_types.is_empty() {
         for list_ty in &list_types {
-            output.push_str(&render_list_support(list_ty)?);
-            output.push('\n');
+            output.push_str(&render_list_typedef(list_ty)?);
         }
+        output.push('\n');
     }
 
     for type_def in &program.type_defs {
         output.push_str(&render_type_def(type_def));
         output.push('\n');
+    }
+
+    if !list_types.is_empty() {
+        for list_ty in &list_types {
+            output.push_str(&render_list_helpers(list_ty)?);
+            output.push('\n');
+        }
     }
 
     let result_types = collect_result_types(program, info);
@@ -146,7 +164,7 @@ fn render_function(
     output: &mut String,
     function: &Function,
     info: &ProgramInfo,
-    install_debug_handlers: bool,
+    _: bool,
 ) -> Result<(), CompileError> {
     let mut next_temp_id = 0usize;
     output.push_str(&render_signature(function, info));
@@ -176,19 +194,37 @@ fn render_function(
     Ok(())
 }
 
+fn type_def_struct_tag(name: &str) -> String {
+    format!("{name}_scar_tag")
+}
+
+fn render_type_def_forward_decl(type_def: &TypeDef) -> Option<String> {
+    if type_def.alias.is_some() {
+        return None;
+    }
+    Some(format!(
+        "typedef struct {} {};\n",
+        type_def_struct_tag(&type_def.name),
+        type_def.name
+    ))
+}
+
 fn render_type_def(type_def: &TypeDef) -> String {
     if let Some(alias) = &type_def.alias {
         return format!("typedef {} {};\n", c_type(alias), type_def.name);
     }
 
+    let tag = type_def_struct_tag(&type_def.name);
     let mut output = String::new();
     match type_def.kind {
         TypeDefKind::Struct => {
             if type_def.is_extern {
-                output.push_str("typedef struct __attribute__((packed)) {\n");
+                output.push_str("typedef struct __attribute__((packed)) ");
             } else {
-                output.push_str("typedef struct {\n");
+                output.push_str("typedef struct ");
             }
+            output.push_str(&tag);
+            output.push_str(" {\n");
             for field in &type_def.fields {
                 output.push_str("    ");
                 output.push_str(&c_type(&field.ty));
@@ -210,7 +246,9 @@ fn render_type_def(type_def: &TypeDef) -> String {
                 output.push_str(",\n");
             }
             output.push_str("};\n");
-            output.push_str("typedef struct {\n");
+            output.push_str("typedef struct ");
+            output.push_str(&tag);
+            output.push_str(" {\n");
             output.push_str("    int32_t tag;\n");
             output.push_str("    union {\n");
             for variant in &type_def.variants {
@@ -363,7 +401,7 @@ fn render_stmt_inner(
                 })?;
             if let Expr::Try(inner) = init {
                 let result_ty = infer_codegen_expr_type(inner, function, info)?;
-                let Type::Result(ok_ty) = resolve_codegen_aliases(&result_ty, info)? else {
+                let Type::Result(_) = resolve_codegen_aliases(&result_ty, info)? else {
                     return Err(CompileError::new(
                         "`?` requires a result value during code generation",
                     ));
@@ -585,7 +623,7 @@ fn render_stmt_inner(
         } => {
             if let Expr::Try(inner) = value {
                 let result_ty = infer_codegen_expr_type(inner, function, info)?;
-                let Type::Result(ok_ty) = resolve_codegen_aliases(&result_ty, info)? else {
+                let Type::Result(_) = resolve_codegen_aliases(&result_ty, info)? else {
                     return Err(CompileError::new(
                         "`?` requires a result value during code generation",
                     ));
@@ -713,7 +751,9 @@ fn render_stmt_inner(
                         }
                         output.push_str(&temp_name);
                         output.push_str(".is_error) {\n");
-                        if let Some(binding) = arm.bindings.first().and_then(|binding| binding.as_ref()) {
+                        if let Some(binding) =
+                            arm.bindings.first().and_then(|binding| binding.as_ref())
+                        {
                             indent(output, level + 2);
                             match &arm.kind {
                                 MatchArmKind::Ok => {
@@ -743,7 +783,9 @@ fn render_stmt_inner(
                 }
                 Type::Named(union_name) => {
                     let type_info = info.types.get(&union_name).ok_or_else(|| {
-                        CompileError::new(format!("unknown type `{union_name}` in match code generation"))
+                        CompileError::new(format!(
+                            "unknown type `{union_name}` in match code generation"
+                        ))
                     })?;
                     for (index, arm) in arms.iter().enumerate() {
                         let MatchArmKind::Variant(variant_name) = &arm.kind else {
@@ -751,11 +793,12 @@ fn render_stmt_inner(
                                 "result-style match arms are not supported for union code generation",
                             ));
                         };
-                        let payload_types = type_info.variant_map.get(variant_name).ok_or_else(|| {
-                            CompileError::new(format!(
-                                "union `{union_name}` has no variant `{variant_name}`"
-                            ))
-                        })?;
+                        let payload_types =
+                            type_info.variant_map.get(variant_name).ok_or_else(|| {
+                                CompileError::new(format!(
+                                    "union `{union_name}` has no variant `{variant_name}`"
+                                ))
+                            })?;
                         indent(output, level + 1);
                         if index == 0 {
                             output.push_str("if (");
@@ -771,7 +814,9 @@ fn render_stmt_inner(
                             .iter()
                             .zip(payload_types.iter())
                             .zip(0usize..)
-                            .map(|((binding, payload_ty), payload_index)| (binding, payload_ty, payload_index))
+                            .map(|((binding, payload_ty), payload_index)| {
+                                (binding, payload_ty, payload_index)
+                            })
                         {
                             if let Some(binding) = binding {
                                 indent(output, level + 2);
@@ -1038,7 +1083,11 @@ fn render_expr_with_hint(
     match expr {
         Expr::Int(value) => Ok(value.to_string()),
         Expr::Char(value) => Ok(value.to_string()),
-        Expr::Bool(value) => Ok(if *value { "1".to_string() } else { "0".to_string() }),
+        Expr::Bool(value) => Ok(if *value {
+            "1".to_string()
+        } else {
+            "0".to_string()
+        }),
         Expr::Float(value) => Ok(value.to_string()),
         Expr::String(value) => Ok(format!("\"{}\"", escape_c_string(value))),
         Expr::None => Ok("NULL".to_string()),
@@ -1306,9 +1355,7 @@ fn render_call(
             let rendered_args = args
                 .iter()
                 .zip(signature.params.iter())
-                .map(|(arg, param_ty)| {
-                    render_expr_with_hint(arg, function, info, Some(param_ty))
-                })
+                .map(|(arg, param_ty)| render_expr_with_hint(arg, function, info, Some(param_ty)))
                 .collect::<Result<Vec<_>, _>>()?;
             if let Some(symbol) = info.function_symbols.get(&function_name).cloned() {
                 return Ok(format!("{symbol}({})", rendered_args.join(", ")));
@@ -1340,7 +1387,11 @@ fn render_call(
                     .zip(type_info.fields.iter())
                     .map(|(arg, field)| render_expr_with_hint(arg, function, info, Some(&field.ty)))
                     .collect::<Result<Vec<_>, _>>()?;
-                return Ok(format!("({}){{ {} }}", function_name, rendered_args.join(", ")));
+                return Ok(format!(
+                    "({}){{ {} }}",
+                    function_name,
+                    rendered_args.join(", ")
+                ));
             }
         }
         if path.len() == 2 {
@@ -1348,11 +1399,12 @@ fn render_call(
             let variant_name = &path[1];
             if let Some(type_info) = info.types.get(union_name) {
                 if type_info.kind == TypeDefKind::Union {
-                    let payload_types = type_info.variant_map.get(variant_name).ok_or_else(|| {
-                        CompileError::new(format!(
-                            "union `{union_name}` has no variant `{variant_name}`"
-                        ))
-                    })?;
+                    let payload_types =
+                        type_info.variant_map.get(variant_name).ok_or_else(|| {
+                            CompileError::new(format!(
+                                "union `{union_name}` has no variant `{variant_name}`"
+                            ))
+                        })?;
                     let rendered_args = args
                         .iter()
                         .zip(payload_types.iter())
@@ -1363,7 +1415,9 @@ fn render_call(
                     let rendered_fields = rendered_args
                         .iter()
                         .enumerate()
-                        .map(|(index, value)| format!(".{} = {}", union_payload_field(index), value))
+                        .map(|(index, value)| {
+                            format!(".{} = {}", union_payload_field(index), value)
+                        })
                         .collect::<Vec<_>>();
                     return Ok(format!(
                         "(({}){{ .tag = {}, .data.{} = {{ {} }} }})",
@@ -1375,7 +1429,9 @@ fn render_call(
                 }
             }
         }
-        return Err(CompileError::new(format!("unknown function `{function_name}`")));
+        return Err(CompileError::new(format!(
+            "unknown function `{function_name}`"
+        )));
     }
 
     Err(CompileError::new(
@@ -1882,7 +1938,9 @@ fn infer_builtin_type(
             if args.len() != 1 {
                 return Err(CompileError::new("@as_mut expects exactly one argument"));
             }
-            Ok(as_mut_type(infer_codegen_expr_type(&args[0], function, info)?))
+            Ok(as_mut_type(infer_codegen_expr_type(
+                &args[0], function, info,
+            )?))
         }
         "deref" => match infer_codegen_expr_type(&args[0], function, info)? {
             Type::Ref(inner) => Ok(*inner),
@@ -2063,13 +2121,11 @@ fn collect_list_types_from_type(ty: &Type, set: &mut HashSet<Type>) {
     }
 }
 
-fn render_list_support(list_ty: &Type) -> Result<String, CompileError> {
+fn render_list_typedef(list_ty: &Type) -> Result<String, CompileError> {
     let element_ty = list_element_type(list_ty)?;
     let list_name = c_type(list_ty);
     let element_c_ty = c_type(element_ty);
-    let helper_prefix = list_helper_prefix(element_ty);
     let mut output = String::new();
-
     output.push_str("typedef struct {\n");
     output.push_str("    ");
     output.push_str(&element_c_ty);
@@ -2078,7 +2134,16 @@ fn render_list_support(list_ty: &Type) -> Result<String, CompileError> {
     output.push_str("    int32_t cap;\n");
     output.push_str("} ");
     output.push_str(&list_name);
-    output.push_str(";\n\n");
+    output.push_str(";\n");
+    Ok(output)
+}
+
+fn render_list_helpers(list_ty: &Type) -> Result<String, CompileError> {
+    let element_ty = list_element_type(list_ty)?;
+    let list_name = c_type(list_ty);
+    let element_c_ty = c_type(element_ty);
+    let helper_prefix = list_helper_prefix(element_ty);
+    let mut output = String::new();
 
     output.push_str("static ");
     output.push_str(&list_name);
