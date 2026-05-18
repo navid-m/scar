@@ -78,6 +78,7 @@ fn main() -> ExitCode {
 fn run(cli: &Cli) -> Result<(), CompileError> {
     match cli {
         Cli::Build(cli) => run_build(cli),
+        Cli::Run(cli) => run_run_command(cli),
         Cli::Test(cli) => run_test_command(cli),
     }
 }
@@ -90,13 +91,16 @@ struct SourceLocation {
 
 enum Cli {
     Build(BuildCli),
+    Run(RunCli),
     Test(TestCli),
 }
 
 impl Cli {
     fn parse(args: impl Iterator<Item = String>) -> Result<Self, CompileError> {
         let args: Vec<String> = args.collect();
-        if args.first().is_some_and(|arg| arg == "test") {
+        if args.first().is_some_and(|arg| arg == "run") {
+            Ok(Self::Run(RunCli::parse(args.into_iter().skip(1))?))
+        } else if args.first().is_some_and(|arg| arg == "test") {
             Ok(Self::Test(TestCli::parse(args.into_iter().skip(1))?))
         } else {
             Ok(Self::Build(BuildCli::parse(args.into_iter())?))
@@ -106,6 +110,7 @@ impl Cli {
     fn default_error_path(&self) -> Option<&Path> {
         match self {
             Cli::Build(cli) => Some(&cli.input),
+            Cli::Run(cli) => Some(&cli.input),
             Cli::Test(cli) => Some(&cli.target),
         }
     }
@@ -167,6 +172,35 @@ impl BuildCli {
             output,
             emit_c,
             optimize,
+        })
+    }
+}
+
+struct RunCli {
+    input: PathBuf,
+}
+
+impl RunCli {
+    fn parse(args: impl Iterator<Item = String>) -> Result<Self, CompileError> {
+        let mut input = None;
+
+        for arg in args {
+            if arg.starts_with('-') {
+                return Err(CompileError::new(format!("unknown flag: {arg}")));
+            }
+
+            if input.is_some() {
+                return Err(CompileError::new(
+                    "expected a single input file after `scar run`",
+                ));
+            }
+
+            input = Some(PathBuf::from(arg));
+        }
+
+        Ok(Self {
+            input: input
+                .ok_or_else(|| CompileError::new("usage: scar run <input.scar>"))?,
         })
     }
 }
@@ -235,6 +269,12 @@ enum CompilerKind {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CompileMode {
+    Standard,
+    FastRun,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct CompilerSpec {
     kind: CompilerKind,
     opt_flag: &'static str,
@@ -269,6 +309,24 @@ fn run_build(cli: &BuildCli) -> Result<(), CompileError> {
     )
 }
 
+fn run_run_command(cli: &RunCli) -> Result<(), CompileError> {
+    let program = resolve_entry_program(&cli.input)?;
+    let info = analyze(&program)?;
+    let generated = generate_c(&program, &info, true)?;
+    let c_path = temporary_c_path(&cli.input);
+    let binary_path = temporary_run_binary_path(&cli.input);
+
+    let result = (|| {
+        write_output(&c_path, &generated)?;
+        compile_c_to_binary(&c_path, &binary_path, false, CompileMode::FastRun)?;
+        run_program_binary(&binary_path)
+    })();
+
+    let _ = fs::remove_file(&c_path);
+    let _ = fs::remove_file(&binary_path);
+    result
+}
+
 fn emit_program(
     program: &Program,
     info: &sema::ProgramInfo,
@@ -284,7 +342,7 @@ fn emit_program(
         let c_path = temporary_c_path(input);
         let result = (|| {
             write_output(&c_path, &generated)?;
-            compile_c_to_binary(&c_path, output, optimize)
+            compile_c_to_binary(&c_path, output, optimize, CompileMode::Standard)
         })();
         let _ = fs::remove_file(&c_path);
         result?;
@@ -357,7 +415,7 @@ fn run_tests_in_file(path: &Path, cli: &TestCli) -> Result<usize, CompileError> 
 
     let result = (|| {
         write_output(&c_path, &generated)?;
-        compile_c_to_binary(&c_path, &binary_path, cli.optimize)?;
+        compile_c_to_binary(&c_path, &binary_path, cli.optimize, CompileMode::Standard)?;
         run_test_binary(&binary_path)?;
         Ok(())
     })();
@@ -444,6 +502,23 @@ fn run_test_binary(path: &Path) -> Result<(), CompileError> {
     }
 }
 
+fn run_program_binary(path: &Path) -> Result<(), CompileError> {
+    let status = Command::new(path).status().map_err(|error| {
+        CompileError::new(format!(
+            "failed to run program binary {}: {error}",
+            path.display()
+        ))
+    })?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(CompileError::new(format!(
+            "program exited unsuccessfully: {}",
+            path.display()
+        )))
+    }
+}
+
 fn collect_test_files(target: &Path) -> Result<Vec<PathBuf>, CompileError> {
     if target.is_file() {
         return Ok(vec![target.to_path_buf()]);
@@ -482,6 +557,7 @@ fn compile_c_to_binary(
     c_path: &Path,
     output_path: &Path,
     optimize: bool,
+    mode: CompileMode,
 ) -> Result<(), CompileError> {
     if let Some(parent) = output_path
         .parent()
@@ -511,6 +587,7 @@ fn compile_c_to_binary(
         .arg("-std=c99")
         .arg(use_flag)
         .arg(compiler.opt_flag)
+        .args(extra_compiler_flags(compiler.kind, mode))
         .arg(c_path)
         .arg("-o")
         .arg(output_path)
@@ -529,6 +606,13 @@ fn compile_c_to_binary(
             "{compiler_name} failed to link {}",
             c_path.display()
         )))
+    }
+}
+
+fn extra_compiler_flags(kind: CompilerKind, mode: CompileMode) -> &'static [&'static str] {
+    match (kind, mode) {
+        (CompilerKind::Clang, CompileMode::FastRun) => &["-pipe"],
+        _ => &[],
     }
 }
 
@@ -611,6 +695,18 @@ fn temporary_test_c_path(input: &Path) -> PathBuf {
 
 fn temporary_test_binary_path(input: &Path) -> PathBuf {
     let mut path = env::temp_dir().join(format!("scar-test-{}", stable_path_hash(input)));
+    if cfg!(windows) {
+        path.set_extension("exe");
+    }
+    path
+}
+
+fn temporary_run_binary_path(input: &Path) -> PathBuf {
+    let stem = input
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .unwrap_or("scar-run");
+    let mut path = env::temp_dir().join(format!("scar-run-{stem}-{}", std::process::id()));
     if cfg!(windows) {
         path.set_extension("exe");
     }
@@ -707,7 +803,10 @@ fn parse_location_suffix(message: &str) -> Option<(&str, usize, usize)> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Cli, CompilerKind, TestCli, choose_compiler, default_output_path};
+    use super::{
+        Cli, CompileMode, CompilerKind, RunCli, TestCli, choose_compiler, default_output_path,
+        extra_compiler_flags,
+    };
     use std::{env, path::Path};
 
     #[test]
@@ -755,6 +854,16 @@ mod tests {
     }
 
     #[test]
+    fn cli_parses_run_subcommand() {
+        let cli = Cli::parse(["run".to_string(), "main.scar".to_string()].into_iter()).unwrap();
+        let Cli::Run(RunCli { input }) = cli else {
+            panic!("expected run cli");
+        };
+
+        assert_eq!(input, Path::new("main.scar"));
+    }
+
+    #[test]
     fn default_binary_output_uses_invocation_directory() {
         let output = default_output_path(Path::new("nested/main.scar"), false).unwrap();
         let mut expected = env::current_dir().unwrap();
@@ -783,5 +892,21 @@ mod tests {
         let compiler = choose_compiler(false, true, false).unwrap();
         assert_eq!(compiler.kind, CompilerKind::Clang);
         assert_eq!(compiler.opt_flag, "-O0");
+    }
+
+    #[test]
+    fn fast_run_adds_pipe_for_clang() {
+        assert_eq!(
+            extra_compiler_flags(CompilerKind::Clang, CompileMode::FastRun),
+            ["-pipe"]
+        );
+        assert_eq!(
+            extra_compiler_flags(CompilerKind::Tcc, CompileMode::FastRun),
+            []
+        );
+        assert_eq!(
+            extra_compiler_flags(CompilerKind::Clang, CompileMode::Standard),
+            []
+        );
     }
 }
