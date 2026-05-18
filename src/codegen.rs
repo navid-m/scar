@@ -25,7 +25,12 @@ pub fn generate_c(
     output.push_str("#include <stdint.h>\n");
     output.push_str("#include <stdio.h>\n");
     output.push_str("#include <stdlib.h>\n");
-    output.push_str("#include <string.h>\n\n");
+    output.push_str("#include <string.h>\n");
+    output.push_str("#include <errno.h>\n");
+    output.push_str("#include <sys/stat.h>\n");
+    output.push_str("#if !defined(_WIN32)\n");
+    output.push_str("#include <unistd.h>\n");
+    output.push_str("#endif\n\n");
 
     if install_debug_handlers {
         output.push_str("#if !defined(_WIN32)\n");

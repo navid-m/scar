@@ -1,19 +1,6 @@
 val allocators = use("std/allocators")
 val str = use("std/string")
 
-extern def scar_runtime_fs_last_error() ref(u8) :: "scar_runtime_fs_last_error"
-extern def scar_runtime_fs_free(ptr ref(void)) void :: "scar_runtime_fs_free"
-extern def scar_runtime_fs_read_text(path ref(u8), out_len mut(ref(usize))) ref(void) :: "scar_runtime_fs_read_text"
-extern def scar_runtime_fs_write_text(path ref(u8), data ref(u8)) i32 :: "scar_runtime_fs_write_text"
-extern def scar_runtime_fs_read_dir(path ref(u8), out_len mut(ref(usize))) ref(void) :: "scar_runtime_fs_read_dir"
-extern def scar_runtime_fs_create_dir(path ref(u8)) i32 :: "scar_runtime_fs_create_dir"
-extern def scar_runtime_fs_create_dir_all(path ref(u8)) i32 :: "scar_runtime_fs_create_dir_all"
-extern def scar_runtime_fs_remove_dir(path ref(u8)) i32 :: "scar_runtime_fs_remove_dir"
-extern def scar_runtime_fs_remove_dir_all(path ref(u8)) i32 :: "scar_runtime_fs_remove_dir_all"
-extern def scar_runtime_fs_exists(path ref(u8)) i32 :: "scar_runtime_fs_exists"
-extern def scar_runtime_fs_is_file(path ref(u8)) i32 :: "scar_runtime_fs_is_file"
-extern def scar_runtime_fs_is_dir(path ref(u8)) i32 :: "scar_runtime_fs_is_dir"
-
 pub type DirEntry
 	name ref(u8)
 	path ref(u8)
@@ -21,8 +8,12 @@ pub type DirEntry
 	is_dir bool
 end
 
-def fs_error[T]() T|error
-	return error(scar_runtime_fs_last_error())
+def unsupported_fs[T]() T|error
+	return error("std/fs is not supported on this platform yet")
+end
+
+def io_error[T](message ref(u8)) T|error
+	return error(message)
 end
 
 def is_sep(ch u8) bool
@@ -65,12 +56,12 @@ def trimmed_len(path ref(u8)) usize
 	return out
 end
 
-def basename_start(path ref(u8), end usize) usize
+def basename_start(path ref(u8), nd usize) usize
 	var start usize = 0
 	var i usize = 0
 
-	for i < end
-		if is_sep(@deref(@add(path, i))) && i + 1 as usize < end
+	for i < nd
+		if is_sep(@deref(@add(path, i))) && i + 1 as usize < nd
 			start = i + 1 as usize
 		end
 		i++
@@ -79,8 +70,8 @@ def basename_start(path ref(u8), end usize) usize
 	return start
 end
 
-def find_extension_dot(path ref(u8), start usize, end usize) isize
-	var i usize = end
+def find_extension_dot(path ref(u8), start usize, nd usize) isize
+	var i usize = nd
 
 	for i > start
 		i--
@@ -94,117 +85,6 @@ def find_extension_dot(path ref(u8), start usize, end usize) isize
 	end
 
 	return -1 as isize
-end
-
-pub def read_text[A: allocators.BumpAllocator](
-	ac ref(A),
-	path ref(u8)
-) ref(u8)|error
-	var byte_len usize = 0
-	var raw ref(void) =
-		scar_runtime_fs_read_text(
-			path,
-			@as_mut(@addr(byte_len))
-		)
-
-	if raw == none
-		return fs_error[ref(u8)]()
-	end
-
-	var result =
-		copy_bytes[A](ac, raw as ref(u8), byte_len)
-
-	scar_runtime_fs_free(raw)
-	return result
-end
-
-pub def write_text(path ref(u8), data ref(u8)) void|error
-	if scar_runtime_fs_write_text(path, data) != 0
-		return fs_error[void]()
-	end
-end
-
-pub def read_dir[A: allocators.BumpAllocator](
-	ac ref(A),
-	path ref(u8)
-) list[DirEntry]|error
-	var byte_len usize = 0
-	var raw ref(void) =
-		scar_runtime_fs_read_dir(
-			path,
-			@as_mut(@addr(byte_len))
-		)
-
-	if raw == none
-		return fs_error[list[DirEntry]]()
-	end
-
-	var entries list[DirEntry] = []
-	var cursor usize = 0
-	var bytes ref(u8) = raw as ref(u8)
-
-	for cursor < byte_len
-		if @deref(@add(bytes, cursor)) == 0 as u8
-			break
-		end
-
-		var kind u8 = @deref(@add(bytes, cursor))
-		cursor++
-
-		var name_start usize = cursor
-
-		for cursor < byte_len && @deref(@add(bytes, cursor)) != 0 as u8
-			cursor++
-		end
-
-		var name =
-			copy_bytes[A](
-				ac,
-				@add(bytes, name_start),
-				cursor - name_start
-			)?
-
-		var full_path = join[A](ac, path, name)?
-
-		@append(
-			entries,
-			DirEntry(
-				name: name,
-				path: full_path,
-				is_file: kind == 'f',
-				is_dir: kind == 'd'
-			)
-		)
-
-		cursor++
-	end
-
-	scar_runtime_fs_free(raw)
-	return entries
-end
-
-pub def create_dir(path ref(u8)) void|error
-	if scar_runtime_fs_create_dir(path) != 0
-		return fs_error[void]()
-	end
-end
-
-pub def create_dir_all(path ref(u8)) void|error
-	if scar_runtime_fs_create_dir_all(path) != 0
-		return fs_error[void]()
-	end
-end
-
-pub def remove_dir(path ref(u8)) void|error
-	if scar_runtime_fs_remove_dir(path) != 0
-		return fs_error[void]()
-	end
-end
-
-pub def remove_dir_all(path ref(u8)) void|error
-	if scar_runtime_fs_remove_dir_all(path) != 0
-		return fs_error[void]()
-	end
 end
 
 pub def join[A: allocators.BumpAllocator](
@@ -240,12 +120,9 @@ pub def join[A: allocators.BumpAllocator](
 		return copy_bytes[A](ac, a, len_a)
 	end
 
-	var needs_sep bool =
-		!is_sep(@deref(@add(a, len_a - 1 as usize)))
+	var needs_sep bool = !is_sep(@deref(@add(a, len_a - 1 as usize)))
 
-	var out_len usize =
-		len_a +
-		(len_b - start_b)
+	var out_len usize =	len_a +	(len_b - start_b)
 
 	if needs_sep
 		out_len++
@@ -282,17 +159,17 @@ pub def dirname[A: allocators.BumpAllocator](
 		return none
 	end
 
-	var end usize = trimmed_len(path)
+	var nd usize = trimmed_len(path)
 
-	if end == 0 as usize
+	if nd == 0 as usize
 		return copy_string[A](ac, ".")
 	end
 
-	if end == 1 as usize && is_sep(@deref(path))
+	if nd == 1 as usize && is_sep(@deref(path))
 		return copy_bytes[A](ac, path, 1 as usize)
 	end
 
-	var i usize = end
+	var i usize = nd
 
 	for i > 0 as usize
 		i--
@@ -321,18 +198,18 @@ pub def basename[A: allocators.BumpAllocator](
 		return none
 	end
 
-	var end usize = trimmed_len(path)
+	var nd usize = trimmed_len(path)
 
-	if end == 0 as usize
+	if nd == 0 as usize
 		return copy_string[A](ac, "")
 	end
 
-	if end == 1 as usize && is_sep(@deref(path))
+	if nd == 1 as usize && is_sep(@deref(path))
 		return copy_string[A](ac, "/")
 	end
 
-	var start usize = basename_start(path, end)
-	return copy_bytes[A](ac, @add(path, start), end - start)
+	var start usize = basename_start(path, nd)
+	return copy_bytes[A](ac, @add(path, start), nd - start)
 end
 
 pub def extension[A: allocators.BumpAllocator](
@@ -343,16 +220,16 @@ pub def extension[A: allocators.BumpAllocator](
 		return none
 	end
 
-	var end usize = trimmed_len(path)
-	var start usize = basename_start(path, end)
-	var dot isize = find_extension_dot(path, start, end)
+	var nd usize = trimmed_len(path)
+	var start usize = basename_start(path, nd)
+	var dot isize = find_extension_dot(path, start, nd)
 
 	if dot < 0
 		return copy_string[A](ac, "")
 	end
 
 	var offset usize = dot as usize + 1 as usize
-	return copy_bytes[A](ac, @add(path, offset), end - offset)
+	return copy_bytes[A](ac, @add(path, offset), nd - offset)
 end
 
 pub def strip_extension[A: allocators.BumpAllocator](
@@ -363,12 +240,12 @@ pub def strip_extension[A: allocators.BumpAllocator](
 		return none
 	end
 
-	var end usize = trimmed_len(path)
-	var start usize = basename_start(path, end)
-	var dot isize = find_extension_dot(path, start, end)
+	var nd usize = trimmed_len(path)
+	var start usize = basename_start(path, nd)
+	var dot isize = find_extension_dot(path, start, nd)
 
 	if dot < 0
-		return copy_bytes[A](ac, path, end)
+		return copy_bytes[A](ac, path, nd)
 	end
 
 	return copy_bytes[A](ac, path, dot as usize)
@@ -382,16 +259,567 @@ pub def is_absolute(path ref(u8)) bool
 	)
 end
 
-pub def exists(path ref(u8)) bool
-	return scar_runtime_fs_exists(path) != 0
+when posix
+	extern def fopen(path ref(u8), mode ref(u8)) ref(void) :: "fopen"
+	extern def fclose(file ref(void)) i32 :: "fclose"
+	extern def fseek(file ref(void), offset i64, whence i32) i32 :: "fseek"
+	extern def ftell(file ref(void)) i64 :: "ftell"
+	extern def fread(
+		ptr ref(void),
+		size usize,
+		count usize,
+		file ref(void)
+	) usize :: "fread"
+	extern def fwrite(
+		ptr ref(void),
+		size usize,
+		count usize,
+		file ref(void)
+	) usize :: "fwrite"
+	extern def mkdir(path ref(u8), mode i32) i32 :: "mkdir"
+	extern def rmdir(path ref(u8)) i32 :: "rmdir"
+	extern def popen(command ref(u8), mode ref(u8)) ref(void) :: "popen"
+	extern def pclose(pipe ref(void)) i32 :: "pclose"
+	extern def fgets(
+		buffer mut(ref(u8)),
+		size i32,
+		stream ref(void)
+	) ref(u8) :: "fgets"
+	extern def system(command ref(u8)) i32 :: "system"
+	extern def strerror(code i32) ref(u8) :: "strerror"
+
+	when linux
+		extern def __errno_location() mut(ref(i32)) :: "__errno_location"
+
+		def errno_ptr() mut(ref(i32))
+			return __errno_location()
+		end
+	end
+
+	when android
+		extern def __errno_location() mut(ref(i32)) :: "__errno_location"
+
+		def errno_ptr() mut(ref(i32))
+			return __errno_location()
+		end
+	end
+
+	when darwin
+		extern def __error() mut(ref(i32)) :: "__error"
+
+		def errno_ptr() mut(ref(i32))
+			return __error()
+		end
+	end
+
+	when ios
+		extern def __error() mut(ref(i32)) :: "__error"
+
+		def errno_ptr() mut(ref(i32))
+			return __error()
+		end
+	end
+
+	when freebsd
+		extern def __error() mut(ref(i32)) :: "__error"
+
+		def errno_ptr() mut(ref(i32))
+			return __error()
+		end
+	end
+
+	when openbsd
+		extern def __error() mut(ref(i32)) :: "__error"
+
+		def errno_ptr() mut(ref(i32))
+			return __error()
+		end
+	end
+
+	when netbsd
+		extern def __error() mut(ref(i32)) :: "__error"
+
+		def errno_ptr() mut(ref(i32))
+			return __error()
+		end
+	end
+
+	when dragonflybsd
+		extern def __error() mut(ref(i32)) :: "__error"
+
+		def errno_ptr() mut(ref(i32))
+			return __error()
+		end
+	end
+
+	def last_errno_message(fallback ref(u8)) ref(u8)
+		val ptr = errno_ptr()
+		guard ptr != none else
+			return fallback
+		end
+		return strerror(@deref(ptr))
+	end
+
+	def heap_alloc(size usize) ref(u8)|error
+		var mem ref(u8) = @alloc(size) as mut(ref(u8))
+		if mem == none
+			return error("heap allocation failed")
+		end
+		return mem
+	end
+
+	def shell_quote(path ref(u8)) ref(u8)|error
+		guard path != none else
+			return copy_literal("")
+		end
+
+		var len_path usize = str.len(path)
+		var out ref(u8) = heap_alloc(len_path * 4 as usize + 3 as usize)?
+		var write usize = 0
+
+		@deref(out) = '\'' as u8
+		write++
+
+		for var i = 0 .. len_path as i32
+			var ch u8 = @deref(@add(path, i))
+
+			if ch == '\'' as u8
+				@deref(@add(out, write)) = '\'' as u8
+				write++
+				@deref(@add(out, write)) = '\\' as u8
+				write++
+				@deref(@add(out, write)) = '\'' as u8
+				write++
+				@deref(@add(out, write)) = '\'' as u8
+				write++
+			else
+				@deref(@add(out, write)) = ch
+				write++
+			end
+		end
+
+		@deref(@add(out, write)) = '\'' as u8
+		write++
+		@deref(@add(out, write)) = 0 as u8
+
+		return out
+	end
+
+	def copy_literal(text ref(u8)) ref(u8)|error
+		var len_text usize = str.len(text)
+		var out ref(u8) = heap_alloc(len_text + 1 as usize)?
+		@memcpy(out, text, len_text)
+		@deref(@add(out, len_text)) = 0 as u8
+		return out
+	end
+
+	def build_command(
+		prefix ref(u8),
+		path ref(u8),
+		suffix ref(u8)
+	) ref(u8)|error
+		var quoted = shell_quote(path)?
+		var len_prefix usize = str.len(prefix)
+		var len_path usize = str.len(quoted)
+		var len_suffix usize = str.len(suffix)
+		var out ref(u8) =	heap_alloc(
+				len_prefix + len_path + len_suffix + 1 as usize
+			)?
+
+		@memcpy(out, prefix, len_prefix)
+		@memcpy(@add(out, len_prefix), quoted, len_path)
+		@memcpy(
+			@add(out, len_prefix + len_path),
+			suffix,
+			len_suffix
+		)
+		@deref(@add(out, len_prefix + len_path + len_suffix)) = 0 as u8
+
+		@free(quoted)
+		return out
+	end
+
+	def run_shell_bool(
+		prefix ref(u8),
+		path ref(u8),
+		suffix ref(u8)
+	) bool
+		match build_command(prefix, path, suffix)
+			ok command => (
+				val status = system(command)
+				@free(command)
+				return status == 0
+			)
+			error _ => (
+				return false
+			)
+		end
+	end
+
+	def trim_line_end(line mut(ref(u8))) void
+		var len_line usize = str.len(line)
+
+		for len_line > 0 as usize
+			var ch u8 = @deref(@add(line, len_line - 1 as usize))
+			if ch != '\n' && ch != '\r'
+				break
+			end
+			len_line--
+			@deref(@add(line, len_line)) = 0 as u8
+		end
+	end
+
+	def allocate_line[A: allocators.BumpAllocator](
+		ac ref(A),
+		line ref(u8)
+	) ref(u8)|error
+		return copy_bytes[A](ac, line, str.len(line))
+	end
+
+	pub def read_text[A: allocators.BumpAllocator](
+		ac ref(A),
+		path ref(u8)
+	) ref(u8)|error
+		var file = fopen(path, "rb")
+		if file == none
+			return io_error[ref(u8)](
+				last_errno_message("failed to open file")
+			)
+		end
+
+		if fseek(file, 0, 2) != 0
+			fclose(file)
+			return io_error[ref(u8)](
+				last_errno_message("failed to seek file")
+			)
+		end
+
+		var size i64 = ftell(file)
+		if size < 0
+			fclose(file)
+			return io_error[ref(u8)](
+				last_errno_message("failed to read file size")
+			)
+		end
+
+		if fseek(file, 0, 0) != 0
+			fclose(file)
+			return io_error[ref(u8)](
+				last_errno_message("failed to rewind file")
+			)
+		end
+
+		var out ref(void) = A.alloc(ac, size as usize + 1 as usize)?
+		var read_count usize = fread(out, 1 as usize, size as usize, file)
+
+		fclose(file)
+
+		if read_count != size as usize
+			return io_error[ref(u8)](
+				last_errno_message("failed to read file")
+			)
+		end
+
+		@deref(@as_mut(@add(out, read_count))) = 0 as u8
+		return out as ref(u8)
+	end
+
+	pub def write_text(path ref(u8), data ref(u8)) void|error
+		var file = fopen(path, "wb")
+		if file == none
+			return io_error[void](
+				last_errno_message("failed to open file")
+			)
+		end
+
+		var len_data usize = str.len(data)
+		var wrote usize = fwrite(data as ref(void), 1 as usize, len_data, file)
+
+		if fclose(file) != 0
+			return io_error[void](
+				last_errno_message("failed to close file")
+			)
+		end
+
+		if wrote != len_data
+			return io_error[void](
+				last_errno_message("failed to write file")
+			)
+		end
+	end
+
+	pub def read_dir[A: allocators.BumpAllocator](
+		ac ref(A),
+		path ref(u8)
+	) list[DirEntry]|error
+		var command = build_command(
+				"ls -1Ap ",
+				path,
+				" 2>/dev/null"
+			)?
+		var pipe = popen(command, "r")
+		@free(command)
+
+		if pipe == none
+			return io_error[list[DirEntry]](
+				last_errno_message("failed to read directory")
+			)
+		end
+
+		var entries list[DirEntry] = []
+		var buffer mut(ref(u8)) = heap_alloc(4096 as usize)?
+
+		for fgets(buffer, 4096, pipe) != none
+			trim_line_end(buffer)
+
+			if str.len(buffer) == 0 as usize
+				continue
+			end
+
+			var kind_dir bool = false
+			var entry_name ref(u8) = buffer
+			var len_name usize = str.len(buffer)
+
+			if len_name > 0 as usize && @deref(@add(buffer, len_name - 1 as usize)) == '/' as u8
+				kind_dir = true
+				@deref(@add(buffer, len_name - 1 as usize)) = 0 as u8
+				entry_name = buffer
+			end
+
+			var name_copy = allocate_line[A](ac, entry_name)?
+			var full_path = join[A](ac, path, name_copy)?
+
+			@append(
+				entries,
+				DirEntry(
+					name: name_copy,
+					path: full_path,
+					is_file: !kind_dir,
+					is_dir: kind_dir
+				)
+			)
+		end
+
+		@free(buffer)
+
+		if pclose(pipe) != 0
+			return io_error[list[DirEntry]]("failed to read directory")
+		end
+
+		return entries
+	end
+
+	pub def create_dir(path ref(u8)) void|error
+		if mkdir(path, 511) != 0
+			return io_error[void](
+				last_errno_message("failed to create directory")
+			)
+		end
+	end
+
+	pub def create_dir_all(path ref(u8)) void|error
+		var command = build_command(
+				"mkdir -p ",
+				path,
+				""
+			)?
+		val status = system(command)
+		@free(command)
+
+		if status != 0
+			return io_error[void]("failed to create directory")
+		end
+	end
+
+	pub def remove_dir(path ref(u8)) void|error
+		if rmdir(path) != 0
+			return io_error[void](
+				last_errno_message("failed to remove directory")
+			)
+		end
+	end
+
+	pub def remove_dir_all(path ref(u8)) void|error
+		var command = build_command(
+				"rm -rf ",
+				path,
+				""
+			)?
+		val status = system(command)
+		@free(command)
+
+		if status != 0
+			return io_error[void]("failed to remove directory tree")
+		end
+	end
+
+	pub def exists(path ref(u8)) bool
+		return run_shell_bool(
+			"test -e ",
+			path,
+			" >/dev/null 2>&1"
+		)
+	end
+
+	pub def is_file(path ref(u8)) bool
+		return run_shell_bool(
+			"test -f ",
+			path,
+			" >/dev/null 2>&1"
+		)
+	end
+
+	pub def is_dir(path ref(u8)) bool
+		return run_shell_bool(
+			"test -d ",
+			path,
+			" >/dev/null 2>&1"
+		)
+	end
 end
 
-pub def is_file(path ref(u8)) bool
-	return scar_runtime_fs_is_file(path) != 0
+when windows
+	pub def read_text[A: allocators.BumpAllocator](
+		ac ref(A),
+		path ref(u8)
+	) ref(u8)|error
+		return unsupported_fs[ref(u8)]()
+	end
+
+	pub def write_text(path ref(u8), data ref(u8)) void|error
+		return unsupported_fs[void]()
+	end
+
+	pub def read_dir[A: allocators.BumpAllocator](
+		ac ref(A),
+		path ref(u8)
+	) list[DirEntry]|error
+		return unsupported_fs[list[DirEntry]]()
+	end
+
+	pub def create_dir(path ref(u8)) void|error
+		return unsupported_fs[void]()
+	end
+
+	pub def create_dir_all(path ref(u8)) void|error
+		return unsupported_fs[void]()
+	end
+
+	pub def remove_dir(path ref(u8)) void|error
+		return unsupported_fs[void]()
+	end
+
+	pub def remove_dir_all(path ref(u8)) void|error
+		return unsupported_fs[void]()
+	end
+
+	pub def exists(path ref(u8)) bool
+		return false
+	end
+
+	pub def is_file(path ref(u8)) bool
+		return false
+	end
+
+	pub def is_dir(path ref(u8)) bool
+		return false
+	end
 end
 
-pub def is_dir(path ref(u8)) bool
-	return scar_runtime_fs_is_dir(path) != 0
+when redox
+	pub def read_text[A: allocators.BumpAllocator](
+		ac ref(A),
+		path ref(u8)
+	) ref(u8)|error
+		return unsupported_fs[ref(u8)]()
+	end
+
+	pub def write_text(path ref(u8), data ref(u8)) void|error
+		return unsupported_fs[void]()
+	end
+
+	pub def read_dir[A: allocators.BumpAllocator](
+		ac ref(A),
+		path ref(u8)
+	) list[DirEntry]|error
+		return unsupported_fs[list[DirEntry]]()
+	end
+
+	pub def create_dir(path ref(u8)) void|error
+		return unsupported_fs[void]()
+	end
+
+	pub def create_dir_all(path ref(u8)) void|error
+		return unsupported_fs[void]()
+	end
+
+	pub def remove_dir(path ref(u8)) void|error
+		return unsupported_fs[void]()
+	end
+
+	pub def remove_dir_all(path ref(u8)) void|error
+		return unsupported_fs[void]()
+	end
+
+	pub def exists(path ref(u8)) bool
+		return false
+	end
+
+	pub def is_file(path ref(u8)) bool
+		return false
+	end
+
+	pub def is_dir(path ref(u8)) bool
+		return false
+	end
+end
+
+when plan9
+	pub def read_text[A: allocators.BumpAllocator](
+		ac ref(A),
+		path ref(u8)
+	) ref(u8)|error
+		return unsupported_fs[ref(u8)]()
+	end
+
+	pub def write_text(path ref(u8), data ref(u8)) void|error
+		return unsupported_fs[void]()
+	end
+
+	pub def read_dir[A: allocators.BumpAllocator](
+		ac ref(A),
+		path ref(u8)
+	) list[DirEntry]|error
+		return unsupported_fs[list[DirEntry]]()
+	end
+
+	pub def create_dir(path ref(u8)) void|error
+		return unsupported_fs[void]()
+	end
+
+	pub def create_dir_all(path ref(u8)) void|error
+		return unsupported_fs[void]()
+	end
+
+	pub def remove_dir(path ref(u8)) void|error
+		return unsupported_fs[void]()
+	end
+
+	pub def remove_dir_all(path ref(u8)) void|error
+		return unsupported_fs[void]()
+	end
+
+	pub def exists(path ref(u8)) bool
+		return false
+	end
+
+	pub def is_file(path ref(u8)) bool
+		return false
+	end
+
+	pub def is_dir(path ref(u8)) bool
+		return false
+	end
 end
 
 test "path helpers work"
@@ -423,67 +851,69 @@ test "path helpers work"
 	allocators.Arena.destroy(@addr(ac))
 end
 
-test "read and write text work"
-	var ac = allocators.Arena.new(8192 as usize)?
-	var root = join[_](@addr(ac), "scar-out", "fs-tests-text")?
-	var file = join[_](@addr(ac), root, "hello.txt")?
+when posix
+	test "read and write text work"
+		var ac = allocators.Arena.new(8192 as usize)?
+		var root = join[_](@addr(ac), "scar-out", "fs-tests-text")?
+		var file = join[_](@addr(ac), root, "hello.txt")?
 
-	if exists(root)
-		remove_dir_all(root)?
-	end
-
-	create_dir_all(root)?
-	write_text(file, "hello from scar")?
-
-	assert exists(file)
-	assert is_file(file)
-	assert str.eql(
-		read_text[_](@addr(ac), file)?,
-		"hello from scar"
-	)
-
-	remove_dir_all(root)?
-	assert !exists(root)
-
-	allocators.Arena.destroy(@addr(ac))
-end
-
-test "read_dir reports files and directories"
-	var ac = allocators.Arena.new(16384 as usize)?
-	var root = join[_](@addr(ac), "scar-out", "fs-tests-dir")?
-	var child_dir = join[_](@addr(ac), root, "child")?
-	var file = join[_](@addr(ac), root, "note.txt")?
-
-	if exists(root)
-		remove_dir_all(root)?
-	end
-
-	create_dir_all(child_dir)?
-	write_text(file, "hello")?
-
-	var entries = read_dir[_](@addr(ac), root)?
-	var saw_dir bool = false
-	var saw_file bool = false
-	var count i32 = 0
-
-	for var entry in entries
-		count++
-
-		if entry.is_dir && str.eql(entry.name, "child")
-			saw_dir = true
-			assert str.eql(entry.path, child_dir)
+		if exists(root)
+			remove_dir_all(root)?
 		end
 
-		if entry.is_file && str.eql(entry.name, "note.txt")
-			saw_file = true
-			assert str.eql(entry.path, file)
-		end
+		create_dir_all(root)?
+		write_text(file, "hello from scar")?
+
+		assert exists(file)
+		assert is_file(file)
+		assert str.eql(
+			read_text[_](@addr(ac), file)?,
+			"hello from scar"
+		)
+
+		remove_dir_all(root)?
+		assert !exists(root)
+
+		allocators.Arena.destroy(@addr(ac))
 	end
 
-	assert count == 2
-	assert saw_dir
-	assert saw_file
+	test "read_dir reports files and directories"
+		var ac = allocators.Arena.new(16384 as usize)?
+		var root = join[_](@addr(ac), "scar-out", "fs-tests-dir")?
+		var child_dir = join[_](@addr(ac), root, "child")?
+		var file = join[_](@addr(ac), root, "note.txt")?
 
-	remove_dir_all(root)?
-	allocators.Arena.destroy(@addr(ac))
+		if exists(root)
+			remove_dir_all(root)?
+		end
+
+		create_dir_all(child_dir)?
+		write_text(file, "hello")?
+
+		var entries = read_dir[_](@addr(ac), root)?
+		var saw_dir bool = false
+		var saw_file bool = false
+		var count i32 = 0
+
+		for var entry in entries
+			count++
+
+			if entry.is_dir && str.eql(entry.name, "child")
+				saw_dir = true
+				assert str.eql(entry.path, child_dir)
+			end
+
+			if entry.is_file && str.eql(entry.name, "note.txt")
+				saw_file = true
+				assert str.eql(entry.path, file)
+			end
+		end
+
+		assert count == 2
+		assert saw_dir
+		assert saw_file
+
+		remove_dir_all(root)?
+		allocators.Arena.destroy(@addr(ac))
+	end
 end
