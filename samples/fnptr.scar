@@ -7,6 +7,6 @@ def my_callback(x: i32) void
 end
 
 pub def main()
-    var cb1 (fn(i32) void) = my_callback
+    val cb1 (fn(i32) void) = my_callback
     process_callback(cb1, 100)
 end
