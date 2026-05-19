@@ -3,27 +3,17 @@ val str        = use("std/string")
 val crypto     = use("std/crypto")
 
 pub type Array[T]
-    ptr  ref(T)
-    len  usize
-    cap  usize
+    ptr ref(T)
+    len usize
+    cap usize
 end
 
-pub def Array.new[T](cap usize) Array[T]|error
-    ## Allocate a new Array with the given capacity.
-    var mem ref(T) = @alloc(cap * @sizeof(T)) as mut(ref(T))
-    if mem == none
-        return error("array allocation failed")
-    end
-    return Array[T](ptr: mem, len: 0, cap: cap)
-end
-
-pub def Array.destroy[T](a mut(ref(Array[T])))
-    if a.ptr != none
-        @free(a.ptr)
-    end
-    a.ptr = none
-    a.len = 0
-    a.cap = 0
+pub def Array.new[T, A: allocators.BumpAllocator](
+    ac:  A,
+    cap: usize
+) Array[T]|error
+    var mem ref(void) = A.alloc(@addr(ac), cap * @sizeof(T))?
+    return Array[T](ptr: mem as ref(T), len: 0, cap: cap)
 end
 
 pub def Array.push[T](a mut(ref(Array[T])), value T) bool
@@ -37,7 +27,6 @@ pub def Array.push[T](a mut(ref(Array[T])), value T) bool
 end
 
 pub def Array.get[T](a ref(Array[T]), index usize) ref(T)
-    ## Returns a reference to the element, or none if out of bounds.
     if index >= a.len
         return none
     end
@@ -60,48 +49,58 @@ pub def Array.clear[T](a mut(ref(Array[T])))
     a.len = 0
 end
 
+
 pub type List[T]
-    ptr  ref(T)
-    len  usize
-    cap  usize
+    ptr ref(T)
+    len usize
+    cap usize
 end
 
-def list_grow[T](l mut(ref(List[T]))) bool
+def list_grow[T, A: allocators.GeneralAllocator](
+    l  mut(ref(List[T])),
+    ac ref(A)
+) bool
     var new_cap usize = l.cap * 2 as usize
     if new_cap == 0 as usize
         new_cap = 8 as usize
     end
-    var new_ptr ref(T) = @realloc(l.ptr, new_cap * @sizeof(T)) as mut(ref(T))
-    if new_ptr == none
-        return false
+    var new_ptr ref(void) = A.realloc(ac, l.ptr as ref(void), new_cap * @sizeof(T))
+    match new_ptr
+        ok p => (
+            l.ptr = p as ref(T)
+            l.cap = new_cap
+            return true
+        )
+        error _ => (
+            return false
+        )
     end
-    l.ptr = new_ptr
-    l.cap = new_cap
-    return true
 end
 
-pub def List.new[T]() List[T]|error
-    ## Create an empty List.
-    var mem ref(T) = @alloc(8 as usize * @sizeof(T)) as mut(ref(T))
-    if mem == none
-        return error("list allocation failed")
-    end
-    return List[T](ptr: mem, len: 0, cap: 8)
+pub def List.new[T, A: allocators.GeneralAllocator](ac: A) List[T]|error
+    var mem ref(void) = A.alloc(@addr(ac), 8 as usize * @sizeof(T))?
+    return List[T](ptr: mem as ref(T), len: 0, cap: 8)
 end
 
-pub def List.destroy[T](l mut(ref(List[T])))
+pub def List.destroy[T, A: allocators.GeneralAllocator](
+    l  mut(ref(List[T])),
+    ac: A
+)
     if l.ptr != none
-        @free(l.ptr)
+        A.free(@addr(ac), l.ptr as ref(void))
     end
     l.ptr = none
     l.len = 0
     l.cap = 0
 end
 
-pub def List.push[T](l mut(ref(List[T])), value T) bool
-    ## Append a value, growing if needed. Returns false on allocation failure.
+pub def List.push[T, A: allocators.GeneralAllocator](
+    l  mut(ref(List[T])),
+    ac: A,
+    value T
+) bool
     if l.len >= l.cap
-        if !list_grow[T](l)
+        if !list_grow[T, A](l, @addr(ac))
             return false
         end
     end
@@ -111,7 +110,6 @@ pub def List.push[T](l mut(ref(List[T])), value T) bool
 end
 
 pub def List.pop[T](l mut(ref(List[T]))) ref(T)
-    ## Remove and return a reference to the last element, or none if empty.
     if l.len == 0 as usize
         return none
     end
@@ -143,7 +141,6 @@ pub def List.clear[T](l mut(ref(List[T])))
 end
 
 pub def List.remove[T](l mut(ref(List[T])), index usize) bool
-    ## Remove element at index, shifting remaining elements left.
     if index >= l.len
         return false
     end
@@ -165,19 +162,14 @@ pub type MapEntry[K, V]
 end
 
 pub type Map[K, V]
-    buckets  ref(MapEntry[K, V])
-    cap      usize
-    len      usize
-    hash_fn  (fn(ref(K)) u32)
-    eq_fn    (fn(ref(K), ref(K)) bool)
+    buckets ref(MapEntry[K, V])
+    cap     usize
+    len     usize
+    hash_fn (fn(ref(K)) u32)
+    eq_fn   (fn(ref(K), ref(K)) bool)
 end
 
-def map_probe[K, V](
-    m   ref(Map[K, V]),
-    key ref(K)
-) usize
-    ## Linear probe – returns the index of the matching slot or the first
-    ## empty (never-used) slot.  Caller must check .used to distinguish.
+def map_probe[K, V](m ref(Map[K, V]), key ref(K)) usize
     var h u32 = m.hash_fn(key)
     var idx usize = (h as usize) % m.cap
     var i usize = 0 as usize
@@ -192,52 +184,52 @@ def map_probe[K, V](
         idx = (idx + 1 as usize) % m.cap
         i++
     end
-    return m.cap   ## full – should not happen if load < 1
+    return m.cap
 end
 
-def map_rehash[K, V](m mut(ref(Map[K, V]))) bool
+def map_rehash[K, V, A: allocators.GeneralAllocator](
+    m  mut(ref(Map[K, V])),
+    ac ref(A)
+) bool
     var new_cap usize = m.cap * 2 as usize
     var entry_size usize = @sizeof(MapEntry[K, V])
-    var new_buckets ref(MapEntry[K, V]) = @alloc(new_cap * entry_size) as mut(ref(MapEntry[K, V]))
-    if new_buckets == none
-        return false
+    var new_mem ref(void) = A.alloc(ac, new_cap * entry_size)
+    match new_mem
+        ok p => (
+            @memset(p, 0, new_cap * entry_size)
+            var old_buckets ref(MapEntry[K, V]) = m.buckets
+            var old_cap usize = m.cap
+            m.buckets = p as ref(MapEntry[K, V])
+            m.cap     = new_cap
+            m.len     = 0 as usize
+            for var i = 0 .. old_cap as i32
+                var slot ref(MapEntry[K, V]) = @add(old_buckets, i)
+                if slot.used
+                    var idx usize = map_probe[K, V](m, @addr(slot.key))
+                    @deref(@as_mut(@add(m.buckets, idx))) = @deref(slot)
+                    m.len++
+                end
+            end
+            A.free(ac, old_buckets as ref(void))
+            return true
+        )
+        error _ => (
+            return false
+        )
     end
-    @memset(new_buckets, 0, new_cap * entry_size)
-
-    var old_buckets ref(MapEntry[K, V]) = m.buckets
-    var old_cap usize = m.cap
-
-    m.buckets = new_buckets
-    m.cap     = new_cap
-    m.len     = 0 as usize
-
-    for var i = 0 .. old_cap as i32
-        var slot ref(MapEntry[K, V]) = @add(old_buckets, i)
-        if slot.used
-            var idx usize = map_probe[K, V](m, @addr(slot.key))
-            var dest ref(MapEntry[K, V]) = @add(m.buckets, idx)
-            @deref(@as_mut(dest)) = @deref(slot)
-            m.len++
-        end
-    end
-
-    @free(old_buckets)
-    return true
 end
 
-pub def Map.new[K, V](
-    hash_fn (fn(ref(K)) u32),
-    eq_fn   (fn(ref(K), ref(K)) bool)
+pub def Map.new[K, V, A: allocators.GeneralAllocator](
+    ac:      A,
+    hash_fn: (fn(ref(K)) u32),
+    eq_fn:   (fn(ref(K), ref(K)) bool)
 ) Map[K, V]|error
     var cap usize = 16 as usize
     var entry_size usize = @sizeof(MapEntry[K, V])
-    var buckets ref(MapEntry[K, V]) = @alloc(cap * entry_size) as mut(ref(MapEntry[K, V]))
-    if buckets == none
-        return error("map allocation failed")
-    end
-    @memset(buckets, 0, cap * entry_size)
+    var mem ref(void) = A.alloc(@addr(ac), cap * entry_size)?
+    @memset(mem, 0, cap * entry_size)
     return Map[K, V](
-        buckets: buckets,
+        buckets: mem as ref(MapEntry[K, V]),
         cap:     cap,
         len:     0,
         hash_fn: hash_fn,
@@ -245,20 +237,26 @@ pub def Map.new[K, V](
     )
 end
 
-pub def Map.destroy[K, V](m mut(ref(Map[K, V])))
+pub def Map.destroy[K, V, A: allocators.GeneralAllocator](
+    m  mut(ref(Map[K, V])),
+    ac: A
+)
     if m.buckets != none
-        @free(m.buckets)
+        A.free(@addr(ac), m.buckets as ref(void))
     end
     m.buckets = none
     m.cap = 0
     m.len = 0
 end
 
-pub def Map.insert[K, V](m mut(ref(Map[K, V])), key K, value V) bool
-    ## Insert or update. Returns false on allocation failure.
-    ## Rehashes when load factor exceeds 70%.
+pub def Map.insert[K, V, A: allocators.GeneralAllocator](
+    m     mut(ref(Map[K, V])),
+    ac:   A,
+    key   K,
+    value V
+) bool
     if m.len * 10 as usize >= m.cap * 7 as usize
-        if !map_rehash[K, V](m)
+        if !map_rehash[K, V, A](m, @addr(ac))
             return false
         end
     end
@@ -280,7 +278,6 @@ pub def Map.insert[K, V](m mut(ref(Map[K, V])), key K, value V) bool
 end
 
 pub def Map.get[K, V](m ref(Map[K, V]), key ref(K)) ref(V)
-    ## Returns a reference to the value, or none if not found.
     var idx usize = map_probe[K, V](m, key)
     if idx >= m.cap
         return none
@@ -329,17 +326,6 @@ pub type StringMap[V]
     len     usize
 end
 
-def strmap_hash(key ref(ref(u8))) u32
-    guard @deref(key) != none else
-        return 0 as u32
-    end
-    return crypto.fnv1a_str(@deref(key))
-end
-
-def strmap_eq(a ref(ref(u8)), b ref(ref(u8))) bool
-    return str.eql(@deref(a), @deref(b))
-end
-
 def strmap_probe[V](m ref(StringMap[V]), key ref(u8)) usize
     var h u32 = crypto.fnv1a_str(key)
     var idx usize = (h as usize) % m.cap
@@ -358,59 +344,66 @@ def strmap_probe[V](m ref(StringMap[V]), key ref(u8)) usize
     return m.cap
 end
 
-def strmap_rehash[V](m mut(ref(StringMap[V]))) bool
+def strmap_rehash[V, A: allocators.GeneralAllocator](
+    m  mut(ref(StringMap[V])),
+    ac ref(A)
+) bool
     var new_cap usize = m.cap * 2 as usize
     var entry_size usize = @sizeof(StringMapEntry[V])
-    var new_buckets ref(StringMapEntry[V]) = @alloc(new_cap * entry_size) as mut(ref(StringMapEntry[V]))
-    if new_buckets == none
-        return false
+    var new_mem ref(void) = A.alloc(ac, new_cap * entry_size)
+    match new_mem
+        ok p => (
+            @memset(p, 0, new_cap * entry_size)
+            var old_buckets ref(StringMapEntry[V]) = m.buckets
+            var old_cap usize = m.cap
+            m.buckets = p as ref(StringMapEntry[V])
+            m.cap     = new_cap
+            m.len     = 0 as usize
+            for var i = 0 .. old_cap as i32
+                var slot ref(StringMapEntry[V]) = @add(old_buckets, i)
+                if slot.used
+                    var idx usize = strmap_probe[V](m, slot.key)
+                    @deref(@as_mut(@add(m.buckets, idx))) = @deref(slot)
+                    m.len++
+                end
+            end
+            A.free(ac, old_buckets as ref(void))
+            return true
+        )
+        error _ => (
+            return false
+        )
     end
-    @memset(new_buckets, 0, new_cap * entry_size)
-
-    var old_buckets ref(StringMapEntry[V]) = m.buckets
-    var old_cap usize = m.cap
-
-    m.buckets = new_buckets
-    m.cap     = new_cap
-    m.len     = 0 as usize
-
-    for var i = 0 .. old_cap as i32
-        var slot ref(StringMapEntry[V]) = @add(old_buckets, i)
-        if slot.used
-            var idx usize = strmap_probe[V](m, slot.key)
-            var dest ref(StringMapEntry[V]) = @add(m.buckets, idx)
-            @deref(@as_mut(dest)) = @deref(slot)
-            m.len++
-        end
-    end
-
-    @free(old_buckets)
-    return true
 end
 
-pub def StringMap.new[V]() StringMap[V]|error
+pub def StringMap.new[V, A: allocators.GeneralAllocator](ac: A) StringMap[V]|error
     var cap usize = 16 as usize
     var entry_size usize = @sizeof(StringMapEntry[V])
-    var buckets ref(StringMapEntry[V]) = @alloc(cap * entry_size) as mut(ref(StringMapEntry[V]))
-    if buckets == none
-        return error("allocation failed for StringMap")
-    end
-    @memset(buckets, 0, cap * entry_size)
-    return StringMap[V](buckets: buckets, cap: cap, len: 0)
+    var mem ref(void) = A.alloc(@addr(ac), cap * entry_size)?
+    @memset(mem, 0, cap * entry_size)
+    return StringMap[V](buckets: mem as ref(StringMapEntry[V]), cap: cap, len: 0)
 end
 
-pub def StringMap.destroy[V](m mut(ref(StringMap[V])))
+pub def StringMap.destroy[V, A: allocators.GeneralAllocator](
+    m  mut(ref(StringMap[V])),
+    ac: A
+)
     if m.buckets != none
-        @free(m.buckets)
+        A.free(@addr(ac), m.buckets as ref(void))
     end
     m.buckets = none
     m.cap = 0
     m.len = 0
 end
 
-pub def StringMap.insert[V](m mut(ref(StringMap[V])), key ref(u8), value V) bool
+pub def StringMap.insert[V, A: allocators.GeneralAllocator](
+    m     mut(ref(StringMap[V])),
+    ac:   A,
+    key   ref(u8),
+    value V
+) bool
     if m.len * 10 as usize >= m.cap * 7 as usize
-        if !strmap_rehash[V](m)
+        if !strmap_rehash[V, A](m, @addr(ac))
             return false
         end
     end
@@ -499,49 +492,49 @@ def set_probe[T](s ref(Set[T]), key ref(T)) usize
     return s.cap
 end
 
-def set_rehash[T](s mut(ref(Set[T]))) bool
+def set_rehash[T, A: allocators.GeneralAllocator](
+    s  mut(ref(Set[T])),
+    ac ref(A)
+) bool
     var new_cap usize = s.cap * 2 as usize
     var entry_size usize = @sizeof(SetEntry[T])
-    var new_buckets ref(SetEntry[T]) = @alloc(new_cap * entry_size) as mut(ref(SetEntry[T]))
-    if new_buckets == none
-        return false
+    var new_mem ref(void) = A.alloc(ac, new_cap * entry_size)
+    match new_mem
+        ok p => (
+            @memset(p, 0, new_cap * entry_size)
+            var old_buckets ref(SetEntry[T]) = s.buckets
+            var old_cap usize = s.cap
+            s.buckets = p as ref(SetEntry[T])
+            s.cap     = new_cap
+            s.len     = 0 as usize
+            for var i = 0 .. old_cap as i32
+                var slot ref(SetEntry[T]) = @add(old_buckets, i)
+                if slot.used
+                    var idx usize = set_probe[T](s, @addr(slot.key))
+                    @deref(@as_mut(@add(s.buckets, idx))) = @deref(slot)
+                    s.len++
+                end
+            end
+            A.free(ac, old_buckets as ref(void))
+            return true
+        )
+        error _ => (
+            return false
+        )
     end
-    @memset(new_buckets, 0, new_cap * entry_size)
-
-    var old_buckets ref(SetEntry[T]) = s.buckets
-    var old_cap usize = s.cap
-
-    s.buckets = new_buckets
-    s.cap     = new_cap
-    s.len     = 0 as usize
-
-    for var i = 0 .. old_cap as i32
-        var slot ref(SetEntry[T]) = @add(old_buckets, i)
-        if slot.used
-            var idx usize = set_probe[T](s, @addr(slot.key))
-            var dest ref(SetEntry[T]) = @add(s.buckets, idx)
-            @deref(@as_mut(dest)) = @deref(slot)
-            s.len++
-        end
-    end
-
-    @free(old_buckets)
-    return true
 end
 
-pub def Set.new[T](
-    hash_fn (fn(ref(T)) u32),
-    eq_fn   (fn(ref(T), ref(T)) bool)
+pub def Set.new[T, A: allocators.GeneralAllocator](
+    ac:      A,
+    hash_fn: (fn(ref(T)) u32),
+    eq_fn:   (fn(ref(T), ref(T)) bool)
 ) Set[T]|error
     var cap usize = 16 as usize
     var entry_size usize = @sizeof(SetEntry[T])
-    var buckets ref(SetEntry[T]) = @alloc(cap * entry_size) as mut(ref(SetEntry[T]))
-    if buckets == none
-        return error("set allocation failed")
-    end
-    @memset(buckets, 0, cap * entry_size)
+    var mem ref(void) = A.alloc(@addr(ac), cap * entry_size)?
+    @memset(mem, 0, cap * entry_size)
     return Set[T](
-        buckets: buckets,
+        buckets: mem as ref(SetEntry[T]),
         cap:     cap,
         len:     0,
         hash_fn: hash_fn,
@@ -549,18 +542,25 @@ pub def Set.new[T](
     )
 end
 
-pub def Set.destroy[T](s mut(ref(Set[T])))
+pub def Set.destroy[T, A: allocators.GeneralAllocator](
+    s  mut(ref(Set[T])),
+    ac: A
+)
     if s.buckets != none
-        @free(s.buckets)
+        A.free(@addr(ac), s.buckets as ref(void))
     end
     s.buckets = none
     s.cap = 0
     s.len = 0
 end
 
-pub def Set.insert[T](s mut(ref(Set[T])), key T) bool
+pub def Set.insert[T, A: allocators.GeneralAllocator](
+    s     mut(ref(Set[T])),
+    ac:   A,
+    key   T
+) bool
     if s.len * 10 as usize >= s.cap * 7 as usize
-        if !set_rehash[T](s)
+        if !set_rehash[T, A](s, @addr(ac))
             return false
         end
     end
@@ -603,9 +603,9 @@ pub def Set.len[T](s ref(Set[T])) usize
     return s.len
 end
 
-
 test "Array basic operations"
-    var a = Array.new[i32](8)?
+    var ac = allocators.Arena.new(4096 as usize)?
+    var a = Array.new[i32, _](ac, 8)?
     assert Array.push[i32](@as_mut(@addr(a)), 10)
     assert Array.push[i32](@as_mut(@addr(a)), 20)
     assert Array.push[i32](@as_mut(@addr(a)), 30)
@@ -618,32 +618,7 @@ test "Array basic operations"
     assert @deref(Array.get[i32](@addr(a), 1)) == 99
     Array.clear[i32](@as_mut(@addr(a)))
     assert Array.len[i32](@addr(a)) == 0 as usize
-    Array.destroy[i32](@as_mut(@addr(a)))
-end
-
-test "List push, pop, remove"
-    var l = List.new[i32]()?
-    assert List.push[i32](@as_mut(@addr(l)), 1)
-    assert List.push[i32](@as_mut(@addr(l)), 2)
-    assert List.push[i32](@as_mut(@addr(l)), 3)
-    assert List.len[i32](@addr(l)) == 3 as usize
-    var top = List.pop[i32](@as_mut(@addr(l)))
-    assert @deref(top) == 3
-    assert List.len[i32](@addr(l)) == 2 as usize
-    assert List.remove[i32](@as_mut(@addr(l)), 0)
-    assert List.len[i32](@addr(l)) == 1 as usize
-    assert @deref(List.get[i32](@addr(l), 0)) == 2
-    List.destroy[i32](@as_mut(@addr(l)))
-end
-
-test "List grows beyond initial capacity"
-    var l = List.new[i32]()?
-    for var i = 0 .. 64
-        assert List.push[i32](@as_mut(@addr(l)), i)
-    end
-    assert List.len[i32](@addr(l)) == 64 as usize
-    assert @deref(List.get[i32](@addr(l), 63)) == 63
-    List.destroy[i32](@as_mut(@addr(l)))
+    allocators.Arena.destroy(@addr(ac))
 end
 
 def hash_i32(key ref(i32)) u32
@@ -655,11 +630,39 @@ def eq_i32(a ref(i32), b ref(i32)) bool
     return @deref(a) == @deref(b)
 end
 
+test "List push, pop, remove"
+    var ac = allocators.HeapAllocator()
+    var l = List.new[i32, _](ac)?
+    assert List.push[i32, _](@as_mut(@addr(l)), ac, 1)
+    assert List.push[i32, _](@as_mut(@addr(l)), ac, 2)
+    assert List.push[i32, _](@as_mut(@addr(l)), ac, 3)
+    assert List.len[i32](@addr(l)) == 3 as usize
+    var top = List.pop[i32](@as_mut(@addr(l)))
+    assert @deref(top) == 3
+    assert List.len[i32](@addr(l)) == 2 as usize
+    assert List.remove[i32](@as_mut(@addr(l)), 0)
+    assert List.len[i32](@addr(l)) == 1 as usize
+    assert @deref(List.get[i32](@addr(l), 0)) == 2
+    List.destroy[i32, _](@as_mut(@addr(l)), ac)
+end
+
+test "List grows beyond initial capacity"
+    var ac = allocators.HeapAllocator()
+    var l = List.new[i32, _](ac)?
+    for var i = 0 .. 64
+        assert List.push[i32, _](@as_mut(@addr(l)), ac, i)
+    end
+    assert List.len[i32](@addr(l)) == 64 as usize
+    assert @deref(List.get[i32](@addr(l), 63)) == 63
+    List.destroy[i32, _](@as_mut(@addr(l)), ac)
+end
+
 test "Map insert, get, remove"
-    var m = Map.new[i32, i32](hash_i32, eq_i32)?
-    assert Map.insert[i32, i32](@as_mut(@addr(m)), 1, 100)
-    assert Map.insert[i32, i32](@as_mut(@addr(m)), 2, 200)
-    assert Map.insert[i32, i32](@as_mut(@addr(m)), 3, 300)
+    var ac = allocators.HeapAllocator()
+    var m = Map.new[i32, i32, _](ac, hash_i32, eq_i32)?
+    assert Map.insert[i32, i32, _](@as_mut(@addr(m)), ac, 1, 100)
+    assert Map.insert[i32, i32, _](@as_mut(@addr(m)), ac, 2, 200)
+    assert Map.insert[i32, i32, _](@as_mut(@addr(m)), ac, 3, 300)
     assert Map.len[i32, i32](@addr(m)) == 3 as usize
     assert @deref(Map.get[i32, i32](@addr(m), @addr(1))) == 100
     assert @deref(Map.get[i32, i32](@addr(m), @addr(2))) == 200
@@ -668,23 +671,38 @@ test "Map insert, get, remove"
     assert Map.remove[i32, i32](@as_mut(@addr(m)), @addr(2))
     assert !Map.contains[i32, i32](@addr(m), @addr(2))
     assert Map.len[i32, i32](@addr(m)) == 2 as usize
-    Map.destroy[i32, i32](@as_mut(@addr(m)))
+    Map.destroy[i32, i32, _](@as_mut(@addr(m)), ac)
 end
 
 test "Map update existing key"
-    var m = Map.new[i32, i32](hash_i32, eq_i32)?
-    assert Map.insert[i32, i32](@as_mut(@addr(m)), 42, 1)
-    assert Map.insert[i32, i32](@as_mut(@addr(m)), 42, 2)
+    var ac = allocators.HeapAllocator()
+    var m = Map.new[i32, i32, _](ac, hash_i32, eq_i32)?
+    assert Map.insert[i32, i32, _](@as_mut(@addr(m)), ac, 42, 1)
+    assert Map.insert[i32, i32, _](@as_mut(@addr(m)), ac, 42, 2)
     assert Map.len[i32, i32](@addr(m)) == 1 as usize
     assert @deref(Map.get[i32, i32](@addr(m), @addr(42))) == 2
-    Map.destroy[i32, i32](@as_mut(@addr(m)))
+    Map.destroy[i32, i32, _](@as_mut(@addr(m)), ac)
+end
+
+test "Map rehashes under load"
+    var ac = allocators.HeapAllocator()
+    var m = Map.new[i32, i32, _](ac, hash_i32, eq_i32)?
+    for var i = 0 .. 50
+        assert Map.insert[i32, i32, _](@as_mut(@addr(m)), ac, i, i * 10)
+    end
+    assert Map.len[i32, i32](@addr(m)) == 50 as usize
+    for var i = 0 .. 50
+        assert @deref(Map.get[i32, i32](@addr(m), @addr(i))) == i * 10
+    end
+    Map.destroy[i32, i32, _](@as_mut(@addr(m)), ac)
 end
 
 test "StringMap insert, get, remove"
-    var m = StringMap.new[i32]()?
-    assert StringMap.insert[i32](@as_mut(@addr(m)), "foo", 1)
-    assert StringMap.insert[i32](@as_mut(@addr(m)), "bar", 2)
-    assert StringMap.insert[i32](@as_mut(@addr(m)), "baz", 3)
+    var ac = allocators.HeapAllocator()
+    var m = StringMap.new[i32, _](ac)?
+    assert StringMap.insert[i32, _](@as_mut(@addr(m)), ac, "foo", 1)
+    assert StringMap.insert[i32, _](@as_mut(@addr(m)), ac, "bar", 2)
+    assert StringMap.insert[i32, _](@as_mut(@addr(m)), ac, "baz", 3)
     assert StringMap.len[i32](@addr(m)) == 3 as usize
     assert @deref(StringMap.get[i32](@addr(m), "foo")) == 1
     assert @deref(StringMap.get[i32](@addr(m), "bar")) == 2
@@ -693,36 +711,25 @@ test "StringMap insert, get, remove"
     assert StringMap.remove[i32](@as_mut(@addr(m)), "bar")
     assert !StringMap.contains[i32](@addr(m), "bar")
     assert StringMap.len[i32](@addr(m)) == 2 as usize
-    StringMap.destroy[i32](@as_mut(@addr(m)))
+    StringMap.destroy[i32, _](@as_mut(@addr(m)), ac)
 end
 
 test "Set insert, contains, remove"
-    var s = Set.new[i32](hash_i32, eq_i32)?
-    assert Set.insert[i32](@as_mut(@addr(s)), 10)
-    assert Set.insert[i32](@as_mut(@addr(s)), 20)
-    assert Set.insert[i32](@as_mut(@addr(s)), 30)
+    var ac = allocators.HeapAllocator()
+    var s = Set.new[i32, _](ac, hash_i32, eq_i32)?
+    assert Set.insert[i32, _](@as_mut(@addr(s)), ac, 10)
+    assert Set.insert[i32, _](@as_mut(@addr(s)), ac, 20)
+    assert Set.insert[i32, _](@as_mut(@addr(s)), ac, 30)
     assert Set.len[i32](@addr(s)) == 3 as usize
     assert Set.contains[i32](@addr(s), @addr(10))
     assert !Set.contains[i32](@addr(s), @addr(99))
     ## inserting duplicate should not grow len
-    assert Set.insert[i32](@as_mut(@addr(s)), 10)
+    assert Set.insert[i32, _](@as_mut(@addr(s)), ac, 10)
     assert Set.len[i32](@addr(s)) == 3 as usize
     assert Set.remove[i32](@as_mut(@addr(s)), @addr(20))
     assert !Set.contains[i32](@addr(s), @addr(20))
     assert Set.len[i32](@addr(s)) == 2 as usize
-    Set.destroy[i32](@as_mut(@addr(s)))
-end
-
-test "Map rehashes under load"
-    var m = Map.new[i32, i32](hash_i32, eq_i32)?
-    for var i = 0 .. 50
-        assert Map.insert[i32, i32](@as_mut(@addr(m)), i, i * 10)
-    end
-    assert Map.len[i32, i32](@addr(m)) == 50 as usize
-    for var i = 0 .. 50
-        assert @deref(Map.get[i32, i32](@addr(m), @addr(i))) == i * 10
-    end
-    Map.destroy[i32, i32](@as_mut(@addr(m)))
+    Set.destroy[i32, _](@as_mut(@addr(s)), ac)
 end
 
 test "fnv1a hashing is consistent"

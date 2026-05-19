@@ -1052,9 +1052,12 @@ fn rewrite_callee(
         }
         if let Some(module) = module_aliases.get(&path[0]) {
             let member = path[1..].join(".");
+            if let Some(ty_name) = module.named_types.get(&member) {
+                return Ok(Expr::Path(vec![ty_name.clone()]));
+            }
             let function = module.functions.get(&member).ok_or_else(|| {
                 CompileError::new(format!(
-                    "module `{}` has no public function `{}`",
+                    "module `{}` has no public function or type `{}`",
                     path[0], member
                 ))
             })?;
@@ -2850,6 +2853,13 @@ fn substitute_type(ty: Type, substitutions: &HashMap<String, Type>) -> Type {
         Type::Mut(inner) => Type::Mut(Box::new(substitute_type(*inner, substitutions))),
         Type::Ref(inner) => Type::Ref(Box::new(substitute_type(*inner, substitutions))),
         Type::List(inner) => Type::List(Box::new(substitute_type(*inner, substitutions))),
+        Type::FnPtr(params, ret) => Type::FnPtr(
+            params
+                .into_iter()
+                .map(|p| substitute_type(p, substitutions))
+                .collect(),
+            Box::new(substitute_type(*ret, substitutions)),
+        ),
         other => other,
     }
 }
