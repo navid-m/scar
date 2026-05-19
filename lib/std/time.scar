@@ -1,0 +1,316 @@
+def unsupported_platform[T]() T|error
+	return error("std/time is not supported on this platform yet")
+end
+
+pub type DateTime
+	year  i32
+	month i32  
+	day   i32  
+	hour  i32  
+	min   i32  
+	sec   i32  
+end
+
+def DAYS_IN_MONTH [2][12]i32 = [
+	[31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31],
+	[31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+]
+
+pub def is_leap_year(year i32) bool
+	if (year % 400) == 0
+		return true
+	end
+	if (year % 100) == 0
+		return false
+	end
+	return (year % 4) == 0
+end
+
+pub def DateTime.from_epoch(unix_secs i64) DateTime
+	var secs i64 = unix_secs
+
+	var s_per_min  i64 = 60 as i64
+	var s_per_hour i64 = 3600 as i64
+	var s_per_day  i64 = 86400 as i64
+
+	var sec  i32 = (secs % s_per_min) as i32
+	var min  i32 = ((secs % s_per_hour) / s_per_min) as i32
+	var hour i32 = ((secs % s_per_day) / s_per_hour) as i32
+
+	var days i64 = secs / s_per_day
+
+	var year i32 = 1970
+	for
+		var days_in_year i64 = 366 as i64
+		if !is_leap_year(year)
+			days_in_year = 365 as i64
+		end
+		if days < days_in_year
+			break
+		end
+		days = days - days_in_year
+		year++
+	end
+
+	var leap i32 = 0
+	if is_leap_year(year)
+		leap = 1
+	end
+
+	var month i32 = 1
+	for month <= 12
+		var dim i64 = DAYS_IN_MONTH[leap][month - 1] as i64
+		if days < dim
+			break
+		end
+		days = days - dim
+		month++
+	end
+
+	var day i32 = (days + 1 as i64) as i32
+
+	return DateTime(
+		year:  year,
+		month: month,
+		day:   day,
+		hour:  hour,
+		min:   min,
+		sec:   sec
+	)
+end
+
+pub def DateTime.to_epoch(dt ref(DateTime)) i64
+	var days i64 = 0 as i64
+	var y i32 = 1970
+	for y < dt.year
+		if is_leap_year(y)
+			days = days + 366 as i64
+		else
+			days = days + 365 as i64
+		end
+		y++
+	end
+
+	var leap i32 = 0
+	if is_leap_year(dt.year)
+		leap = 1
+	end
+
+	var m i32 = 1
+	for m < dt.month
+		days = days + (DAYS_IN_MONTH[leap][m - 1] as i64)
+		m++
+	end
+
+	days = days + ((dt.day - 1) as i64)
+
+	return days * 86400 as i64
+		 + (dt.hour as i64) * 3600 as i64
+		 + (dt.min  as i64) * 60 as i64
+		 + (dt.sec  as i64)
+end
+
+pub def DateTime.is_valid(dt ref(DateTime)) bool
+	if dt.month < 1 || dt.month > 12
+		return false
+	end
+	if dt.hour < 0 || dt.hour > 23
+		return false
+	end
+	if dt.min < 0 || dt.min > 59
+		return false
+	end
+	if dt.sec < 0 || dt.sec > 59
+		return false
+	end
+	var leap i32 = 0
+	if is_leap_year(dt.year)
+		leap = 1
+	end
+	var max_day i32 = DAYS_IN_MONTH[leap][dt.month - 1]
+	return dt.day >= 1 && dt.day <= max_day
+end
+
+when posix
+	extern def time(t mut(ref(i64))) i64 :: "time"
+	extern def gettimeofday(tv ref(mut(i64)), tz ref(mut(i64))) i32 :: "gettimeofday"
+	extern def clock() i64 :: "clock"
+
+	extern def nanosleep(tv_sec ref(i64), tv_nsec ref(i64)) i32 :: "nanosleep"
+
+	pub def now() i64
+		var tv = 0 as i64
+		gettimeofday(@addr(tv), @addr(0 as i64))
+		return @deref(@addr(tv))
+	end
+
+	pub def epoch() i64
+		return time(none)
+	end
+
+	pub def clock_time() i64
+		return clock()
+	end
+
+	pub def sleep_ms(milliseconds u64) void|error
+		var tv_sec  i64 = (milliseconds / 1000 as u64) as i64
+		var tv_nsec i64 = ((milliseconds % 1000 as u64) * 1000000 as u64) as i64
+		if nanosleep(@addr(tv_sec), @addr(tv_nsec)) != 0
+			return error("sleep failed")
+		end
+	end
+
+	pub def sleep_seconds(seconds f64) void|error
+		var tv_sec  i64 = seconds as i64
+		var tv_nsec i64 = ((seconds - (tv_sec as f64)) * 1000000000.0) as i64
+		if nanosleep(@addr(tv_sec), @addr(tv_nsec)) != 0
+			return error("sleep failed")
+		end
+	end
+
+	pub def now_datetime() DateTime
+		return DateTime.from_epoch(epoch())
+	end
+end
+
+when windows
+	extern "windows.h"
+
+	extern def GetTickCount64() u64 :: "GetTickCount64"
+	extern def QueryPerformanceCounter(freq mut(ref(i64))) i64 :: "QueryPerformanceCounter"
+	extern def QueryPerformanceFrequency(freq mut(ref(i64))) i64 :: "QueryPerformanceCounter"
+	extern def Sleep(dwMilliseconds u32) void :: "Sleep"
+	extern def GetSystemTimeAsFileTime(lpSystemTimeAsFileTime mut(ref(i64))) void :: "GetSystemTimeAsFileTime"
+
+	pub def now() i64
+		var ft i64 = 0 as i64
+		GetSystemTimeAsFileTime(@addr(ft))
+		var unix_epoch_offset i64 = 11644473600 as i64
+		unix_epoch_offset = unix_epoch_offset * 10000000 as i64
+		return (ft / 10000000 as i64) - unix_epoch_offset
+	end
+
+	pub def epoch() i64
+		return now()
+	end
+
+	pub def clock_time() i64
+		return (GetTickCount64() as i64) * 1000 as i64
+	end
+
+	pub def sleep_ms(milliseconds u64) void|error
+		Sleep(milliseconds as u32)
+	end
+
+	pub def sleep_seconds(seconds f64) void|error
+		Sleep((seconds * 1000.0) as u32)
+	end
+
+	pub def now_datetime() DateTime
+		return DateTime.from_epoch(epoch())
+	end
+end
+
+when redox
+	pub def now() i64|error
+		return unsupported_platform[i64]()
+	end
+
+	pub def epoch() i64|error
+		return unsupported_platform[i64]()
+	end
+
+	pub def clock_time() i64|error
+		return unsupported_platform[i64]()
+	end
+
+	pub def sleep_ms(milliseconds u64) void|error
+		return unsupported_platform[void]()
+	end
+
+	pub def sleep_seconds(seconds f64) void|error
+		return unsupported_platform[void]()
+	end
+end
+
+when plan9
+	pub def now() i64|error
+		return unsupported_platform[i64]()
+	end
+
+	pub def epoch() i64|error
+		return unsupported_platform[i64]()
+	end
+
+	pub def clock_time() i64|error
+		return unsupported_platform[i64]()
+	end
+
+	pub def sleep_ms(milliseconds u64) void|error
+		return unsupported_platform[void]()
+	end
+
+	pub def sleep_seconds(seconds f64) void|error
+		return unsupported_platform[void]()
+	end
+end
+
+test "time functions work"
+	var start = clock_time()
+	assert start > 0 as i64
+	sleep_ms(10 as u64)?
+	var elapsed = clock_time() - start
+	assert elapsed > 0 as i64
+end
+
+test "epoch returns reasonable value"
+	var t = epoch()
+	assert t > 1609459200 as i64  
+end
+
+test "is_leap_year works"
+	assert is_leap_year(2000)
+	assert is_leap_year(2024)
+	assert !is_leap_year(1900)
+	assert !is_leap_year(2023)
+end
+
+test "DateTime.from_epoch works"
+	var dt = DateTime.from_epoch(1710502245 as i64)
+	assert dt.year  == 2024
+	assert dt.month == 3
+	assert dt.day   == 15
+	assert dt.hour  == 12
+	assert dt.min   == 30
+	assert dt.sec   == 45
+end
+
+test "DateTime.to_epoch round-trips"
+	var dt = DateTime(
+		year:  2024,
+		month: 3,
+		day:   15,
+		hour:  12,
+		min:   30,
+		sec:   45
+	)
+	assert DateTime.to_epoch(@addr(dt)) == 1710502245 as i64
+end
+
+test "DateTime.is_valid works"
+	var good = DateTime(year: 2024, month: 2, day: 29, hour: 0, min: 0, sec: 0)
+	assert DateTime.is_valid(@addr(good))
+
+	var bad_month = DateTime(year: 2024, month: 13, day: 1, hour: 0, min: 0, sec: 0)
+	assert !DateTime.is_valid(@addr(bad_month))
+
+	var bad_leap = DateTime(year: 2023, month: 2, day: 29, hour: 0, min: 0, sec: 0)
+	assert !DateTime.is_valid(@addr(bad_leap))
+end
+
+test "epoch and from_epoch are consistent"
+	var t = epoch()
+	var dt = DateTime.from_epoch(t)
+	assert DateTime.is_valid(@addr(dt))
+	assert dt.year >= 2024
+end
