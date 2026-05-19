@@ -1,11 +1,12 @@
 val some_module = use("some_file")
+val str = use("std/string")
 
 def print_address_of(x ref(void))
 	@print("{p}", {@addr(x)})
 end
 
 def modify_in_place(x ref(u8))
-	@deref(x) = "modified"
+	str.copy(x, "modified")
 end
 
 def declare_and_use() i32
