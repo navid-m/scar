@@ -3,8 +3,8 @@ use std::collections::{HashMap, HashSet};
 use crate::{
     CompileError,
     ast::{
-        BinaryOp, Expr, FieldDef, Function, InterfaceMethod, MatchArmKind, Program, Stmt,
-        TestBlock, Type, TypeDefKind, UnaryOp, UnionVariantDef,
+        BinaryOp, Expr, FieldDef, Function, GlobalVar, InterfaceMethod, MatchArmKind, Program,
+        Stmt, TestBlock, Type, TypeDefKind, UnaryOp, UnionVariantDef,
     },
 };
 
@@ -36,6 +36,7 @@ pub struct ProgramInfo {
     pub function_symbols: HashMap<String, String>,
     pub types: HashMap<String, TypeDefInfo>,
     pub locals: HashMap<String, HashMap<String, Type>>,
+    pub globals: HashMap<String, (Type, bool)>, // name -> (type, mutable)
 }
 
 #[derive(Debug, Clone)]
@@ -76,7 +77,9 @@ pub fn analyze(program: &Program) -> Result<ProgramInfo, CompileError> {
                         validate_type(&param.ty, &types).map_err(|e| {
                             CompileError::new(format!(
                                 "in function `{}`, parameter `{}`: {}",
-                                function.name, param.name, e.message()
+                                function.name,
+                                param.name,
+                                e.message()
                             ))
                             .with_location(param.line, param.column)
                         })?;
@@ -96,8 +99,37 @@ pub fn analyze(program: &Program) -> Result<ProgramInfo, CompileError> {
     }
 
     let mut locals = HashMap::new();
+    let mut globals = HashMap::new();
+
+    for global in &program.globals {
+        validate_type(&global.ty, &types).map_err(|e| {
+            CompileError::new(format!("in global `{}`: {}", global.name, e.message()))
+                .with_location(global.line, global.column)
+        })?;
+        let actual = infer_expr_type(&global.init, &functions, &types, &HashMap::new())
+            .map_err(|e| e.with_location(global.line, global.column))?;
+        if !matches!(global.init, Expr::BuiltinCall { ref name, .. } if name == "zeroed") {
+            expect_same_type(&global.ty, &actual, &types, "global initializer")
+                .map_err(|e| e.with_location(global.line, global.column))?;
+        }
+        globals.insert(global.name.clone(), (global.ty.clone(), global.mutable));
+    }
+
+    let global_scope: HashMap<String, LocalBinding> = globals
+        .iter()
+        .map(|(name, (ty, mutable))| {
+            (
+                name.clone(),
+                LocalBinding {
+                    ty: ty.clone(),
+                    mutable: *mutable,
+                },
+            )
+        })
+        .collect();
+
     for function in &program.functions {
-        analyze_function(function, &functions, &types, &mut locals)?;
+        analyze_function_with_globals(function, &functions, &types, &mut locals, &global_scope)?;
     }
     for test in &program.tests {
         analyze_test_block(test, &functions, &types)?;
@@ -109,6 +141,7 @@ pub fn analyze(program: &Program) -> Result<ProgramInfo, CompileError> {
         function_symbols,
         types,
         locals,
+        globals,
     })
 }
 
@@ -180,13 +213,17 @@ fn collect_types(program: &Program) -> Result<HashMap<String, TypeDefInfo>, Comp
                                 field.name, type_def.name
                             )));
                         }
-                        validate_type_with_known_names(&field.ty, &known_type_names).map_err(|e| {
-                            CompileError::new(format!(
-                                "in type `{}`, field `{}`: {}",
-                                type_def.name, field.name, e.message()
-                            ))
-                            .with_location(field.line, field.column)
-                        })?;
+                        validate_type_with_known_names(&field.ty, &known_type_names).map_err(
+                            |e| {
+                                CompileError::new(format!(
+                                    "in type `{}`, field `{}`: {}",
+                                    type_def.name,
+                                    field.name,
+                                    e.message()
+                                ))
+                                .with_location(field.line, field.column)
+                            },
+                        )?;
                         field_map.insert(field.name.clone(), field.ty.clone());
                     }
                 }
@@ -205,13 +242,17 @@ fn collect_types(program: &Program) -> Result<HashMap<String, TypeDefInfo>, Comp
                             )));
                         }
                         for payload_ty in &variant.payload_types {
-                            validate_type_with_known_names(payload_ty, &known_type_names).map_err(|e| {
-                                CompileError::new(format!(
-                                    "in type `{}`, variant `{}`: {}",
-                                    type_def.name, variant.name, e.message()
-                                ))
-                                .with_location(type_def.line, type_def.column)
-                            })?;
+                            validate_type_with_known_names(payload_ty, &known_type_names).map_err(
+                                |e| {
+                                    CompileError::new(format!(
+                                        "in type `{}`, variant `{}`: {}",
+                                        type_def.name,
+                                        variant.name,
+                                        e.message()
+                                    ))
+                                    .with_location(type_def.line, type_def.column)
+                                },
+                            )?;
                         }
                         variant_map.insert(variant.name.clone(), variant.payload_types.clone());
                     }
@@ -266,14 +307,19 @@ fn collect_interfaces(
                 validate_type_with_known_names(&param.ty, &known_names).map_err(|e| {
                     CompileError::new(format!(
                         "in interface `{}`, method `{}`, parameter `{}`: {}",
-                        interface_def.name, method.name, param.name, e.message()
+                        interface_def.name,
+                        method.name,
+                        param.name,
+                        e.message()
                     ))
                 })?;
             }
             validate_type_with_known_names(&method.return_type, &known_names).map_err(|e| {
                 CompileError::new(format!(
                     "in interface `{}`, method `{}` return type: {}",
-                    interface_def.name, method.name, e.message()
+                    interface_def.name,
+                    method.name,
+                    e.message()
                 ))
             })?;
             methods.push(method.clone());
@@ -289,14 +335,26 @@ fn analyze_function(
     types: &HashMap<String, TypeDefInfo>,
     locals: &mut HashMap<String, HashMap<String, Type>>,
 ) -> Result<(), CompileError> {
-    let mut scope = HashMap::new();
+    analyze_function_with_globals(function, functions, types, locals, &HashMap::new())
+}
+
+fn analyze_function_with_globals(
+    function: &Function,
+    functions: &HashMap<String, FunctionSig>,
+    types: &HashMap<String, TypeDefInfo>,
+    locals: &mut HashMap<String, HashMap<String, Type>>,
+    global_scope: &HashMap<String, LocalBinding>,
+) -> Result<(), CompileError> {
+    let mut scope = global_scope.clone();
     let mut function_locals = HashMap::new();
 
     for param in &function.params {
         validate_type(&param.ty, types).map_err(|e| {
             CompileError::new(format!(
                 "in function `{}`, parameter `{}`: {}",
-                function.name, param.name, e.message()
+                function.name,
+                param.name,
+                e.message()
             ))
             .with_location(param.line, param.column)
         })?;
@@ -469,7 +527,8 @@ fn analyze_stmt(
                         .map_err(|error| error.with_location(*line, *column))?;
                     validate_try_usage(init, expected_return, allow_try_panic)
                         .map_err(|error| error.with_location(*line, *column))?;
-                    if matches!(init, Expr::BuiltinCall { name, args } if name == "zeroed" && args.is_empty()) {
+                    if matches!(init, Expr::BuiltinCall { name, args } if name == "zeroed" && args.is_empty())
+                    {
                         expected.clone()
                     } else if let Expr::ListLiteral(values) = init {
                         infer_list_literal_type(values, Some(expected), functions, types, scope)
@@ -1544,7 +1603,8 @@ fn analyze_builtin(
                     "@call expects a function pointer as its first argument",
                 ));
             }
-            let fn_ty = resolve_aliases(&infer_expr_type(&args[0], functions, types, scope)?, types)?;
+            let fn_ty =
+                resolve_aliases(&infer_expr_type(&args[0], functions, types, scope)?, types)?;
             let Type::FnPtr(param_types, ret_type) = fn_ty else {
                 return Err(CompileError::new(format!(
                     "@call expects a function pointer as its first argument, got {}",
@@ -2371,7 +2431,9 @@ fn normalize_value_mutability(ty: &Type) -> Type {
         },
         Type::Ref(inner) => Type::Ref(Box::new(normalize_value_mutability(inner))),
         Type::List(inner) => Type::List(Box::new(normalize_value_mutability(inner))),
-        Type::FixedArray(n, inner) => Type::FixedArray(*n, Box::new(normalize_value_mutability(inner))),
+        Type::FixedArray(n, inner) => {
+            Type::FixedArray(*n, Box::new(normalize_value_mutability(inner)))
+        }
         Type::Result(inner) => Type::Result(Box::new(normalize_value_mutability(inner))),
         other => other.clone(),
     }

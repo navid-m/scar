@@ -199,8 +199,7 @@ impl RunCli {
         }
 
         Ok(Self {
-            input: input
-                .ok_or_else(|| CompileError::new("usage: scar run <input.scar>"))?,
+            input: input.ok_or_else(|| CompileError::new("usage: scar run <input.scar>"))?,
         })
     }
 }
@@ -488,6 +487,7 @@ fn build_test_program(program: &Program) -> Program {
         typesets: program.typesets.clone(),
         functions,
         tests: Vec::new(),
+        globals: program.globals.clone(),
     }
 }
 

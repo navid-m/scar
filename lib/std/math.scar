@@ -1,9 +1,199 @@
+extern def sqrt(x f64) f64 :: "sqrt"
+extern def pow(x f64, y f64) f64 :: "pow"
+extern def sin(x f64) f64 :: "sin"
+extern def cos(x f64) f64 :: "cos"
+extern def tan(x f64) f64 :: "tan"
+extern def asin(x f64) f64 :: "asin"
+extern def acos(x f64) f64 :: "acos"
+extern def atan(x f64) f64 :: "atan"
+extern def atan2(y f64, x f64) f64 :: "atan2"
+extern def floor(x f64) f64 :: "floor"
+extern def ceil(x f64) f64 :: "ceil"
+extern def round(x f64) f64 :: "round"
+extern def trunc(x f64) f64 :: "trunc"
+extern def fabs(x f64) f64 :: "fabs"
+extern def fmod(x f64, y f64) f64 :: "fmod"
+extern def exp(x f64) f64 :: "exp"
+extern def log(x f64) f64 :: "log"
+extern def log10(x f64) f64 :: "log10"
+
 pub typeset Integer
-    i8, i16, i32, i64,
-    u8, u16, u32, u64,
-    usize, isize
+	i8, i16, i32, i64,
+	u8, u16, u32, u64,
+	usize, isize
 end
 
-test "it works"
-    assert true
+pub typeset Float
+	f32, f64
+end
+
+pub val PI f64  = 3.14159265358979323846
+pub val TAU f64 = 6.28318530717958647692
+pub val E f64   = 2.71828182845904523536
+
+pub def abs[T: Integer](x T) T
+	if x < 0
+		return -x
+	end
+
+	return x
+end
+
+pub def min[T](a T, b T) T
+	if a < b
+		return a
+	end
+
+	return b
+end
+
+pub def max[T](a T, b T) T
+	if a > b
+		return a
+	end
+
+	return b
+end
+
+pub def clamp[T](x T, low T, high T) T
+	if x < low
+		return low
+	end
+
+	if x > high
+		return high
+	end
+
+	return x
+end
+
+pub def lerp(a f64, b f64, t f64) f64
+	return a + ((b - a) * t)
+end
+
+pub def deg_to_rad(x f64) f64
+	return x * (PI / 180.0)
+end
+
+pub def rad_to_deg(x f64) f64
+	return x * (180.0 / PI)
+end
+
+pub def sign[T: Integer](x T) i32
+	if x > 0
+		return 1
+	end
+
+	if x < 0
+		return -1
+	end
+
+	return 0
+end
+
+pub def is_even[T: Integer](x T) bool
+	return (x % 2) == 0
+end
+
+pub def is_odd[T: Integer](x T) bool
+	return (x % 2) != 0
+end
+
+pub def gcd[T: Integer](a T, b T) T
+	var x T = abs[T](a)
+	var y T = abs[T](b)
+
+	for y != 0
+		var tmp T = y
+		y = x % y
+		x = tmp
+	end
+
+	return x
+end
+
+pub def lcm[T: Integer](a T, b T) T
+	if a == 0 || b == 0
+		return 0
+	end
+
+	return abs[T]((a / gcd[T](a, b)) * b)
+end
+
+pub def ipow[T: Integer](base T, exponent u32) T
+	var result T = 1 as T
+	var b T = base
+	var e u32 = exponent
+
+	for e > 0 as u32
+		if (e & 1 as u32) != 0 as u32
+			result *= b
+		end
+
+		b *= b
+		e = e >> (1 as u32)
+	end
+
+	return result
+end
+
+test "abs works"
+	assert abs[_](-5) == 5
+	assert abs[_](10) == 10
+end
+
+test "min and max work"
+	assert min[_](2, 5) == 2
+	assert max[_](2, 5) == 5
+end
+
+test "clamp works"
+	assert clamp[_](5, 0, 10) == 5
+	assert clamp[_](-5, 0, 10) == 0
+	assert clamp[_](99, 0, 10) == 10
+end
+
+test "lerp works"
+	assert lerp(0.0, 10.0, 0.5) == 5.0
+end
+
+test "degree conversion works"
+	assert deg_to_rad(180.0) == PI
+	assert rad_to_deg(PI) == 180.0
+end
+
+test "sign works"
+	assert sign[_](-123) == -1
+	assert sign[_](0) == 0
+	assert sign[_](123) == 1
+end
+
+test "parity works"
+	assert is_even[_](4)
+	assert !is_even[_](3)
+
+	assert is_odd[_](3)
+	assert !is_odd[_](4)
+end
+
+test "gcd works"
+	assert gcd[_](48, 18) == 6
+	assert gcd[_](7, 3) == 1
+end
+
+test "lcm works"
+	assert lcm[_](12, 18) == 36
+	assert lcm[_](7, 3) == 21
+end
+
+test "ipow works"
+	assert ipow[_](2, 0 as u32) == 1
+	assert ipow[_](2, 8 as u32) == 256
+	assert ipow[_](5, 3 as u32) == 125
+end
+
+test "float externs work"
+	assert floor(1.9) == 1.0
+	assert ceil(1.1) == 2.0
+	assert sqrt(25.0) == 5.0
 end

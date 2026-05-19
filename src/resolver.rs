@@ -7,7 +7,7 @@ use std::{
 use crate::{
     CompileError,
     ast::{
-        BinaryOp, Expr, FieldDef, FieldInit, Function, GenericParam, InterfaceDef, InterfaceMethod,
+        BinaryOp, Expr, FieldDef, FieldInit, Function, GenericParam, GlobalVar, InterfaceDef, InterfaceMethod,
         MatchArmKind, ModuleUse, Param, Program, Stmt, TestBlock, Type, TypeDef, TypeDefKind,
         TypeSetDef, UnaryOp, UnionVariantDef,
     },
@@ -31,6 +31,7 @@ pub fn resolve_entry_program(entry: &Path) -> Result<Program, CompileError> {
         resolved_types: Vec::new(),
         resolved_typesets: Vec::new(),
         resolved_functions: Vec::new(),
+        resolved_globals: Vec::new(),
         visiting: Vec::new(),
     };
 
@@ -72,6 +73,10 @@ pub fn resolve_entry_program(entry: &Path) -> Result<Program, CompileError> {
             &module_aliases,
         )?);
     }
+    let mut globals = resolver.resolved_globals;
+    for global in program.globals {
+        globals.push(rewrite_global_var(global, &local_functions, &local_symbols, &module_aliases)?);
+    }
     let tests = program
         .tests
         .into_iter()
@@ -86,6 +91,7 @@ pub fn resolve_entry_program(entry: &Path) -> Result<Program, CompileError> {
         typesets,
         functions,
         tests,
+        globals,
     })
 }
 
@@ -95,6 +101,7 @@ struct ModuleExports {
     named_types: HashMap<String, String>,
     interfaces: HashMap<String, String>,
     typesets: HashMap<String, String>,
+    globals: HashMap<String, String>,
 }
 
 type ModuleAliases = HashMap<String, ModuleExports>;
@@ -109,6 +116,7 @@ struct Resolver {
     resolved_types: Vec<TypeDef>,
     resolved_typesets: Vec<TypeSetDef>,
     resolved_functions: Vec<Function>,
+    resolved_globals: Vec<GlobalVar>,
     visiting: Vec<PathBuf>,
 }
 
@@ -203,11 +211,23 @@ impl Resolver {
             )?);
         }
 
+        let mut rewritten_globals = Vec::new();
+        for global in &parsed.globals {
+            rewritten_globals.push(rewrite_global_var(
+                global.clone(),
+                &local_functions,
+                &local_symbols,
+                &module_aliases,
+            )?);
+        }
+        let public_globals = build_public_global_map(&(parsed.globals.clone()), Some(&prefix));
+
         if self.emitted_modules.insert(module_path.clone()) {
             self.resolved_interfaces.extend(rewritten_interfaces);
             self.resolved_types.extend(rewritten_types);
             self.resolved_typesets.extend(rewritten_typesets);
             self.resolved_functions.extend(rewritten_functions);
+            self.resolved_globals.extend(rewritten_globals);
         }
 
         self.visiting.pop();
@@ -216,6 +236,7 @@ impl Resolver {
             named_types: public_types,
             interfaces: public_interfaces,
             typesets: public_typesets,
+            globals: public_globals,
         };
         self.cache.insert(module_path, exports.clone());
         Ok(exports)
@@ -391,6 +412,34 @@ fn build_public_typeset_map(
             (typeset.name.clone(), mapped)
         })
         .collect()
+}
+
+fn build_public_global_map(
+    globals: &[GlobalVar],
+    prefix: Option<&str>,
+) -> HashMap<String, String> {
+    globals
+        .iter()
+        .filter(|g| g.is_pub)
+        .map(|g| {
+            let mapped = match prefix {
+                Some(prefix) => format!("{prefix}__{}", g.name),
+                None => g.name.clone(),
+            };
+            (g.name.clone(), mapped)
+        })
+        .collect()
+}
+
+fn rewrite_global_var(
+    mut global: GlobalVar,
+    local_functions: &HashMap<String, String>,
+    local_types: &HashMap<String, String>,
+    module_aliases: &ModuleAliases,
+) -> Result<GlobalVar, CompileError> {
+    global.ty = rewrite_type(global.ty, local_types, module_aliases);
+    global.init = rewrite_expr(global.init, local_functions, local_types, module_aliases)?;
+    Ok(global)
 }
 
 fn module_prefix(module_path: &Path, root_dir: &Path) -> String {
@@ -892,15 +941,27 @@ fn rewrite_expr(
                 module_aliases,
             )?),
         }),
-        Expr::FieldAccess { base, field } => Ok(Expr::FieldAccess {
-            base: Box::new(rewrite_expr(
-                *base,
-                local_functions,
-                local_types,
-                module_aliases,
-            )?),
-            field,
-        }),
+        Expr::FieldAccess { base, field } => {
+            // Check if this is module.GLOBAL access
+            if let Expr::Path(ref path) = *base {
+                if path.len() == 1 {
+                    if let Some(module) = module_aliases.get(&path[0]) {
+                        if let Some(global_name) = module.globals.get(&field) {
+                            return Ok(Expr::Path(vec![global_name.clone()]));
+                        }
+                    }
+                }
+            }
+            Ok(Expr::FieldAccess {
+                base: Box::new(rewrite_expr(
+                    *base,
+                    local_functions,
+                    local_types,
+                    module_aliases,
+                )?),
+                field,
+            })
+        }
         Expr::StructInit {
             name,
             type_args,
@@ -1058,6 +1119,9 @@ fn rewrite_callee(
             let member = path[1..].join(".");
             if let Some(ty_name) = module.named_types.get(&member) {
                 return Ok(Expr::Path(vec![ty_name.clone()]));
+            }
+            if let Some(global_name) = module.globals.get(&member) {
+                return Ok(Expr::Path(vec![global_name.clone()]));
             }
             let function = module.functions.get(&member).ok_or_else(|| {
                 CompileError::new(format!(
@@ -1284,6 +1348,7 @@ fn instantiate_generic_functions(program: Program) -> Result<Program, CompileErr
         typesets,
         functions: all_functions,
         tests,
+        globals: program.globals,
     })
 }
 

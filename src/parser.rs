@@ -1,7 +1,7 @@
 use crate::{
     CompileError,
     ast::{
-        BinaryOp, Expr, FieldDef, FieldInit, Function, GenericParam, InterfaceDef,
+        BinaryOp, Expr, FieldDef, FieldInit, Function, GenericParam, GlobalVar, InterfaceDef,
         InterfaceMethod, MatchArm, MatchArmKind, ModuleUse, Param, Program, Stmt, TestBlock, Type,
         TypeDef, TypeDefKind, TypeSetDef, UnaryOp, UnionVariantDef,
     },
@@ -27,6 +27,7 @@ struct TopLevelItems {
     typesets: Vec<TypeSetDef>,
     functions: Vec<Function>,
     tests: Vec<TestBlock>,
+    globals: Vec<GlobalVar>,
 }
 
 impl TopLevelItems {
@@ -38,12 +39,17 @@ impl TopLevelItems {
         self.typesets.append(&mut other.typesets);
         self.functions.append(&mut other.functions);
         self.tests.append(&mut other.tests);
+        self.globals.append(&mut other.globals);
     }
 }
 
 impl Parser {
     fn new(tokens: Vec<Token>) -> Self {
-        Self { tokens, pos: 0, line: 1 }
+        Self {
+            tokens,
+            pos: 0,
+            line: 1,
+        }
     }
 
     fn parse_program(&mut self) -> Result<Program, CompileError> {
@@ -56,6 +62,7 @@ impl Parser {
             typesets: items.typesets,
             functions: items.functions,
             tests: items.tests,
+            globals: items.globals,
         })
     }
 
@@ -69,7 +76,19 @@ impl Parser {
             if self.check_simple(&TokenKind::When) {
                 items.append(self.parse_when_top_level_items()?);
             } else if self.check_simple(&TokenKind::Val) {
-                items.module_uses.push(self.parse_module_use()?);
+                if self.is_module_use() {
+                    items.module_uses.push(self.parse_module_use()?);
+                } else {
+                    items.globals.push(self.parse_global_var(false)?);
+                }
+            } else if self.check_simple(&TokenKind::Var) {
+                items.globals.push(self.parse_global_var(false)?);
+            } else if self.check_simple(&TokenKind::Pub) && self.check_next_simple(&TokenKind::Val)
+            {
+                items.globals.push(self.parse_global_var(true)?);
+            } else if self.check_simple(&TokenKind::Pub) && self.check_next_simple(&TokenKind::Var)
+            {
+                items.globals.push(self.parse_global_var(true)?);
             } else if self.check_simple(&TokenKind::Test) {
                 items.tests.push(self.parse_test_block()?);
             } else if self.check_simple(&TokenKind::Pub)
@@ -84,8 +103,7 @@ impl Parser {
                 items.typesets.push(self.parse_typeset_def(true)?);
             } else if self.check_simple(&TokenKind::Typeset) {
                 items.typesets.push(self.parse_typeset_def(false)?);
-            } else if self.check_simple(&TokenKind::Pub)
-                && self.check_next_simple(&TokenKind::Type)
+            } else if self.check_simple(&TokenKind::Pub) && self.check_next_simple(&TokenKind::Type)
             {
                 items.type_defs.push(self.parse_type_def(true, false)?);
             } else if self.check_simple(&TokenKind::Pub)
@@ -105,7 +123,10 @@ impl Parser {
             {
                 items.type_defs.push(self.parse_type_def(false, true)?);
             } else if self.check_simple(&TokenKind::Extern)
-                && matches!(self.next_non_newline_kind(self.pos + 1), Some(TokenKind::Str(_)))
+                && matches!(
+                    self.next_non_newline_kind(self.pos + 1),
+                    Some(TokenKind::Str(_))
+                )
             {
                 items.extern_headers.push(self.parse_extern_header()?);
             } else if self.check_simple(&TokenKind::Extern) {
@@ -130,6 +151,52 @@ impl Parser {
         } else {
             Ok(TopLevelItems::default())
         }
+    }
+
+    fn is_module_use(&self) -> bool {
+        if !matches!(
+            self.tokens.get(self.pos).map(|t| &t.kind),
+            Some(TokenKind::Val)
+        ) {
+            return false;
+        }
+        let mut i = self.pos + 1;
+        if !matches!(
+            self.tokens.get(i).map(|t| &t.kind),
+            Some(TokenKind::Ident(_))
+        ) {
+            return false;
+        }
+        i += 1;
+        if !matches!(self.tokens.get(i).map(|t| &t.kind), Some(TokenKind::Assign)) {
+            return false;
+        }
+        i += 1;
+        matches!(self.tokens.get(i).map(|t| &t.kind), Some(TokenKind::Ident(s)) if s == "use")
+    }
+
+    fn parse_global_var(&mut self, is_pub: bool) -> Result<GlobalVar, CompileError> {
+        if is_pub {
+            self.expect_simple(TokenKind::Pub)?;
+        }
+        let line = self.current().line;
+        let column = self.current().column;
+        let mutable = self.check_simple(&TokenKind::Var);
+        self.advance(); // consume val or var
+        let name = self.expect_ident()?;
+        let ty = self.parse_type()?;
+        self.expect_simple(TokenKind::Assign)?;
+        let init = self.parse_expr()?;
+        self.expect_stmt_terminator()?;
+        Ok(GlobalVar {
+            is_pub,
+            mutable,
+            name,
+            ty,
+            init,
+            line,
+            column,
+        })
     }
 
     fn parse_module_use(&mut self) -> Result<ModuleUse, CompileError> {
@@ -337,7 +404,8 @@ impl Parser {
             } else {
                 false
             };
-            let (method_name, generic_params, params, return_type) = self.parse_function_signature()?;
+            let (method_name, generic_params, params, return_type) =
+                self.parse_function_signature()?;
             if !generic_params.is_empty() {
                 return Err(self.error_at_current("interface methods cannot declare generics"));
             }
@@ -585,9 +653,9 @@ impl Parser {
             return Err(self.error_at_current("expected a platform name after `when`"));
         };
         if !is_supported_platform_name(&platform) {
-            return Err(self.error_at_current(format!(
-                "unsupported platform selector `{platform}`"
-            )));
+            return Err(
+                self.error_at_current(format!("unsupported platform selector `{platform}`"))
+            );
         }
         self.advance();
         Ok(platform)
@@ -1471,7 +1539,10 @@ impl Parser {
             self.expect_simple(TokenKind::Comma)?;
             let ty = self.parse_type()?;
             self.expect_simple(TokenKind::RParen)?;
-            return Ok(Expr::BitCast { expr: Box::new(expr), ty });
+            return Ok(Expr::BitCast {
+                expr: Box::new(expr),
+                ty,
+            });
         }
         let args = self.parse_call_args()?;
         Ok(Expr::BuiltinCall { name, args })
@@ -1486,7 +1557,11 @@ impl Parser {
         }
     }
 
-    fn parse_struct_init(&mut self, name: String, type_args: Vec<Type>) -> Result<Expr, CompileError> {
+    fn parse_struct_init(
+        &mut self,
+        name: String,
+        type_args: Vec<Type>,
+    ) -> Result<Expr, CompileError> {
         self.expect_simple(TokenKind::LParen)?;
         self.consume_newlines();
         let mut fields = Vec::new();
@@ -1670,7 +1745,9 @@ impl Parser {
             TokenKind::LBracket => {
                 self.advance();
                 let TokenKind::Int(n) = self.current().kind.clone() else {
-                    return Err(self.error_at_current("expected an integer length in fixed array type `[N]T`"));
+                    return Err(self.error_at_current(
+                        "expected an integer length in fixed array type `[N]T`",
+                    ));
                 };
                 self.advance();
                 self.expect_simple(TokenKind::RBracket)?;
@@ -2260,11 +2337,15 @@ mod tests {
 
         match &program.functions[0].body[0] {
             Stmt::While {
-                condition,
-                body,
-                ..
+                condition, body, ..
             } => {
-                assert!(matches!(condition, Expr::Binary { op: BinaryOp::LessThan, .. }));
+                assert!(matches!(
+                    condition,
+                    Expr::Binary {
+                        op: BinaryOp::LessThan,
+                        ..
+                    }
+                ));
                 assert!(matches!(body[0], Stmt::Increment { .. }));
             }
             other => panic!("expected conditional for loop, got {other:?}"),
@@ -2278,11 +2359,15 @@ mod tests {
 
         match &program.functions[0].body[0] {
             Stmt::While {
-                condition,
-                body,
-                ..
+                condition, body, ..
             } => {
-                assert!(matches!(condition, Expr::Binary { op: BinaryOp::LessThan, .. }));
+                assert!(matches!(
+                    condition,
+                    Expr::Binary {
+                        op: BinaryOp::LessThan,
+                        ..
+                    }
+                ));
                 assert!(matches!(body[0], Stmt::Increment { .. }));
             }
             other => panic!("expected conditional for loop, got {other:?}"),
@@ -2291,16 +2376,18 @@ mod tests {
 
     #[test]
     fn parses_complex_conditional_for_loop_without_parentheses() {
-        let source = "pub def main() void\n\tfor out > 1 as usize && ready()\n\t\tout--\n\tend\nend\n";
+        let source =
+            "pub def main() void\n\tfor out > 1 as usize && ready()\n\t\tout--\n\tend\nend\n";
         let program = parse_program(lex(source).unwrap()).unwrap();
 
         match &program.functions[0].body[0] {
             Stmt::While {
-                condition: Expr::Binary {
-                    op: BinaryOp::LogicalAnd,
-                    lhs,
-                    rhs,
-                },
+                condition:
+                    Expr::Binary {
+                        op: BinaryOp::LogicalAnd,
+                        lhs,
+                        rhs,
+                    },
                 body,
                 ..
             } => {
@@ -2330,11 +2417,12 @@ mod tests {
 
         match &program.functions[0].body[0] {
             Stmt::While {
-                condition: Expr::Binary {
-                    op: BinaryOp::LogicalAnd,
-                    lhs,
-                    rhs,
-                },
+                condition:
+                    Expr::Binary {
+                        op: BinaryOp::LogicalAnd,
+                        lhs,
+                        rhs,
+                    },
                 ..
             } => {
                 assert!(matches!(
@@ -2362,7 +2450,8 @@ mod tests {
 
     #[test]
     fn parses_top_level_when_blocks_for_current_platform() {
-        let source = "when posix\n\tpub def posix_only() void\n\tend\nend\n\npub def main() void\nend\n";
+        let source =
+            "when posix\n\tpub def posix_only() void\n\tend\nend\n\npub def main() void\nend\n";
         let program = parse_program(lex(source).unwrap()).unwrap();
 
         assert_eq!(program.functions.len(), if cfg!(unix) { 2 } else { 1 });
@@ -2389,7 +2478,11 @@ mod tests {
         let source = "pub def main() void\n\twhen solarpunk\n\t\t@puts(\"nope\")\n\tend\nend\n";
         let error = parse_program(lex(source).unwrap()).unwrap_err();
 
-        assert!(error.message.contains("unsupported platform selector `solarpunk`"));
+        assert!(
+            error
+                .message
+                .contains("unsupported platform selector `solarpunk`")
+        );
     }
 
     #[test]
@@ -2519,7 +2612,10 @@ mod tests {
         let source = "pub def main() void\n\tvar value = 3\n\tvalue *= 2\nend\n";
         let program = parse_program(lex(source).unwrap()).unwrap();
 
-        assert!(matches!(program.functions[0].body[1], Stmt::MulAssign { .. }));
+        assert!(matches!(
+            program.functions[0].body[1],
+            Stmt::MulAssign { .. }
+        ));
     }
 
     #[test]
@@ -2689,7 +2785,10 @@ mod tests {
         assert_eq!(program.type_defs[0].generic_params.len(), 2);
         assert_eq!(program.typesets.len(), 1);
         assert_eq!(program.typesets[0].name, "Integer");
-        assert!(matches!(program.typesets[0].members.as_slice(), [Type::I32, Type::U32]));
+        assert!(matches!(
+            program.typesets[0].members.as_slice(),
+            [Type::I32, Type::U32]
+        ));
 
         let function = &program.functions[0];
         assert_eq!(function.generic_params.len(), 1);
@@ -2715,11 +2814,12 @@ mod tests {
 
         match &function.body[0] {
             Stmt::Return {
-                value: Some(Expr::StructInit {
-                    name,
-                    type_args,
-                    fields,
-                }),
+                value:
+                    Some(Expr::StructInit {
+                        name,
+                        type_args,
+                        fields,
+                    }),
                 ..
             } => {
                 assert_eq!(name, "Pair");
@@ -2736,8 +2836,7 @@ mod tests {
 
     #[test]
     fn parses_guard_as_inverted_if() {
-        let source =
-            "pub def main() void\n\tguard (1 == 2) else\n\t\treturn\n\tend\nend\n";
+        let source = "pub def main() void\n\tguard (1 == 2) else\n\t\treturn\n\tend\nend\n";
         let program = parse_program(lex(source).unwrap()).unwrap();
 
         match &program.functions[0].body[0] {
@@ -2778,7 +2877,10 @@ mod tests {
         }
 
         match &program.functions[0].body[1] {
-            Stmt::Return { value: Some(Expr::Bool(false)), .. } => {}
+            Stmt::Return {
+                value: Some(Expr::Bool(false)),
+                ..
+            } => {}
             other => panic!("expected false return, got {other:?}"),
         }
     }
@@ -2795,8 +2897,14 @@ mod tests {
             } => {}
             other => panic!("expected char literal declaration, got {other:?}"),
         }
-        assert!(matches!(program.functions[0].body[1], Stmt::Increment { .. }));
-        assert!(matches!(program.functions[0].body[2], Stmt::Decrement { .. }));
+        assert!(matches!(
+            program.functions[0].body[1],
+            Stmt::Increment { .. }
+        ));
+        assert!(matches!(
+            program.functions[0].body[2],
+            Stmt::Decrement { .. }
+        ));
     }
 
     #[test]

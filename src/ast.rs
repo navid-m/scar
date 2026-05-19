@@ -1,4 +1,15 @@
 #[derive(Debug, Clone)]
+pub struct GlobalVar {
+    pub is_pub: bool,
+    pub mutable: bool,
+    pub name: String,
+    pub ty: Type,
+    pub init: Expr,
+    pub line: usize,
+    pub column: usize,
+}
+
+#[derive(Debug, Clone)]
 pub struct Program {
     pub module_uses: Vec<ModuleUse>,
     pub extern_headers: Vec<String>,
@@ -7,6 +18,7 @@ pub struct Program {
     pub typesets: Vec<TypeSetDef>,
     pub functions: Vec<Function>,
     pub tests: Vec<TestBlock>,
+    pub globals: Vec<GlobalVar>,
 }
 
 #[derive(Debug, Clone)]
