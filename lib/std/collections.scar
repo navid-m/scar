@@ -64,7 +64,7 @@ def list_grow[T, A: allocators.GeneralAllocator](
     if new_cap == 0 as usize
         new_cap = 8 as usize
     end
-    var new_ptr ref(void) = A.realloc(ac, l.ptr as ref(void), new_cap * @sizeof(T))
+    var new_ptr ref(void)|error = A.realloc(ac, l.ptr as ref(void), new_cap * @sizeof(T))
     match new_ptr
         ok p => (
             l.ptr = p as ref(T)
