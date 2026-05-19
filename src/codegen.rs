@@ -93,9 +93,10 @@ pub fn generate_c(
         if !global.mutable {
             output.push_str("const ");
         }
-        output.push_str(&c_type(&global.ty));
+        output.push_str(&render_global_base_type(&global.ty));
         output.push_str(" scar__glob__");
         output.push_str(&global.name);
+        output.push_str(&render_global_dims(&global.ty));
         output.push_str(" = ");
         let dummy_function = Function {
             is_pub: false,
@@ -108,7 +109,7 @@ pub fn generate_c(
             line: 0,
             column: 0,
         };
-        output.push_str(&render_expr(&global.init, &dummy_function, info)?);
+        output.push_str(&render_global_init(&global.init, &global.ty, &dummy_function, info)?);
         output.push_str(";\n");
     }
     if !program.globals.is_empty() {
@@ -1707,6 +1708,62 @@ fn render_list_pointer(
     }
 }
 
+fn render_global_base_type(ty: &Type) -> String {
+    match ty {
+        Type::FixedArray(_, inner) => render_global_base_type(inner),
+        _ => c_type(ty),
+    }
+}
+
+fn render_global_dims(ty: &Type) -> String {
+    match ty {
+        Type::FixedArray(n, inner) => {
+            format!("[{}]", n) + &render_global_dims(inner)
+        }
+        _ => String::new(),
+    }
+}
+
+fn render_global_type(ty: &Type) -> String {
+    fn collect_dims(ty: &Type) -> (String, Vec<u64>) {
+        match ty {
+            Type::FixedArray(n, inner) => {
+                let (base, mut dims) = collect_dims(inner);
+                dims.push(*n);
+                (base, dims)
+            }
+            _ => (c_type(ty), Vec::new()),
+        }
+    }
+    let (base, mut dims) = collect_dims(ty);
+    dims.reverse();
+    let mut result = base;
+    for d in dims {
+        result.push_str(" [");
+        result.push_str(&d.to_string());
+        result.push(']');
+    }
+    result
+}
+
+fn render_global_init(
+    expr: &Expr,
+    expected_ty: &Type,
+    function: &Function,
+    info: &ProgramInfo,
+) -> Result<String, CompileError> {
+    match (expr, expected_ty) {
+        (Expr::ListLiteral(values), Type::FixedArray(n, element_ty)) => {
+            let rendered_values = values
+                .iter()
+                .map(|value| render_global_init(value, element_ty, function, info))
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(format!("{{ {} }}", rendered_values.join(", ")))
+        }
+        _ => render_expr(expr, function, info),
+    }
+}
+
 fn render_list_literal(
     values: &[Expr],
     ty: &Type,
@@ -1780,6 +1837,9 @@ fn infer_codegen_expr_type(
                     info.functions.get(name).map(|sig| {
                         Type::FnPtr(sig.params.clone(), Box::new(sig.return_type.clone()))
                     })
+                })
+                .or_else(|| {
+                    info.globals.get(name).map(|(ty, _)| ty.clone())
                 })
                 .ok_or_else(|| {
                     CompileError::new(format!("unknown expression `{name}` in code generation"))

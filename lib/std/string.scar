@@ -578,9 +578,6 @@ test "itoa works"
 	var ac = allocators.Arena.new(256)?
 
 	assert eql(itoa[_](ac, 0)?, "0")
-
-	@print("HELLO: {s}\n", {itoa[_](ac, 12345)?})
-
 	assert eql(itoa[_](ac, 12345)?, "12345")
 	assert eql(itoa[_](ac, -42)?, "-42")
 

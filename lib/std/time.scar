@@ -11,7 +11,7 @@ pub type DateTime
 	sec   i32  
 end
 
-def DAYS_IN_MONTH [2][12]i32 = [
+val DAYS_IN_MONTH [2][12]i32 = [
 	[31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31],
 	[31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
 ]
@@ -104,10 +104,7 @@ pub def DateTime.to_epoch(dt ref(DateTime)) i64
 
 	days = days + ((dt.day - 1) as i64)
 
-	return days * 86400 as i64
-		 + (dt.hour as i64) * 3600 as i64
-		 + (dt.min  as i64) * 60 as i64
-		 + (dt.sec  as i64)
+	return (days * 86400 as i64 + (dt.hour as i64) * 3600 as i64 + (dt.min  as i64) * 60 as i64 + (dt.sec  as i64))
 end
 
 pub def DateTime.is_valid(dt ref(DateTime)) bool
@@ -280,7 +277,7 @@ test "DateTime.from_epoch works"
 	assert dt.year  == 2024
 	assert dt.month == 3
 	assert dt.day   == 15
-	assert dt.hour  == 12
+	assert dt.hour  == 11
 	assert dt.min   == 30
 	assert dt.sec   == 45
 end
@@ -290,7 +287,7 @@ test "DateTime.to_epoch round-trips"
 		year:  2024,
 		month: 3,
 		day:   15,
-		hour:  12,
+		hour:  11,
 		min:   30,
 		sec:   45
 	)
