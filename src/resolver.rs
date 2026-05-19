@@ -3377,7 +3377,7 @@ mod tests {
         assert!(
             error
                 .to_string()
-                .contains("module `some_module` has no public function `hidden`")
+                .contains("module `some_module` has no public function or type `hidden`")
         );
 
         fs::remove_dir_all(temp_dir).unwrap();

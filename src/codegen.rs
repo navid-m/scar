@@ -1537,7 +1537,7 @@ fn render_builtin_call(
                 Ok(format!("(&{})", rendered))
             } else {
                 let ty = infer_codegen_expr_type(&args[0], function, info)?;
-                Ok(format!("(&({}){{{}}}", c_type(&ty), rendered))
+                Ok(format!("(&({}){{{}}})", c_type(&ty), rendered))
             }
         }
         "call" => {
