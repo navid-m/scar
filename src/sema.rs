@@ -1481,6 +1481,34 @@ fn analyze_builtin(
             }
             Ok(Type::Void)
         }
+        "memset" => {
+            if args.len() != 3 {
+                return Err(CompileError::new("@memset expects exactly three arguments"));
+            }
+            let dest_ty =
+                resolve_aliases(&infer_expr_type(&args[0], functions, types, scope)?, types)?;
+            if !is_memory_pointer_type(&dest_ty) {
+                return Err(CompileError::new(format!(
+                    "@memset expects a pointer-like destination, got {}",
+                    describe_type(&dest_ty)
+                )));
+            }
+            let val_ty = infer_expr_type(&args[1], functions, types, scope)?;
+            if !is_integer_type(&val_ty, types)? {
+                return Err(CompileError::new(format!(
+                    "@memset expects an integer fill value, got {}",
+                    describe_type(&val_ty)
+                )));
+            }
+            let len_ty = infer_expr_type(&args[2], functions, types, scope)?;
+            if !is_integer_type(&len_ty, types)? {
+                return Err(CompileError::new(format!(
+                    "@memset expects an integer byte count, got {}",
+                    describe_type(&len_ty)
+                )));
+            }
+            Ok(Type::Void)
+        }
         "addr" => {
             if args.len() != 1 {
                 return Err(CompileError::new("@addr expects exactly one argument"));

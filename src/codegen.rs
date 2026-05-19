@@ -1522,6 +1522,12 @@ fn render_builtin_call(
             render_expr(&args[1], function, info)?,
             render_expr(&args[2], function, info)?
         )),
+        "memset" => Ok(format!(
+            "memset((void *)({}), (int)({}), (size_t)({}))",
+            render_expr(&args[0], function, info)?,
+            render_expr(&args[1], function, info)?,
+            render_expr(&args[2], function, info)?
+        )),
         "addr" => Ok(format!("(&{})", render_expr(&args[0], function, info)?)),
         "as_mut" => {
             if args.len() != 1 {
@@ -1988,7 +1994,7 @@ fn infer_builtin_type(
                 _ => Ok(Type::Void),
             }
         }
-        "puts" | "print" | "free" | "memcpy" => Ok(Type::Void),
+        "puts" | "print" | "free" | "memcpy" | "memset" => Ok(Type::Void),
         "add" => Ok(pointer_arithmetic_type(&infer_codegen_expr_type(
             &args[0], function, info,
         )?)),
