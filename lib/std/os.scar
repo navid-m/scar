@@ -1,0 +1,1118 @@
+val allocators = use("std/allocators")
+val fs = use("std/fs")
+val str = use("std/string")
+
+extern def remove(path ref(u8)) i32 :: "remove"
+
+pub type ExecResult
+	exit_code i32
+	stdout ref(u8)
+	stderr ref(u8)
+end
+
+def os_error[T](message ref(u8)) T|error
+	return error(message)
+end
+
+def unsupported_os[T]() T|error
+	return error("std/os is not supported on this platform yet")
+end
+
+def heap_alloc(size usize) ref(u8)|error
+	var mem ref(u8) = @alloc(size) as mut(ref(u8))
+	if mem == none
+		return error("heap allocation failed")
+	end
+	return mem
+end
+
+def heap_copy(src ref(u8)) ref(u8)|error
+	guard src != none else
+		return none
+	end
+
+	var len_src usize = str.len(src)
+	var out ref(u8) = heap_alloc(len_src + 1 as usize)?
+
+	if len_src > 0 as usize
+		@memcpy(out, src, len_src)
+	end
+
+	@deref(@add(out, len_src)) = 0 as u8
+	return out
+end
+
+def copy_bytes[A: allocators.BumpAllocator](
+	ac ref(A),
+	src ref(u8),
+	count usize
+) ref(u8)|error
+	var out ref(void) = A.alloc(ac, count + 1 as usize)?
+
+	if count > 0 as usize
+		@memcpy(out, src, count)
+	end
+
+	@deref(@as_mut(@add(out, count))) = 0 as u8
+	return out as ref(u8)
+end
+
+def copy_string[A: allocators.BumpAllocator](
+	ac ref(A),
+	src ref(u8)
+) ref(u8)|error
+	guard src != none else
+		return none
+	end
+
+	return copy_bytes[A](ac, src, str.len(src))
+end
+
+def concat_strings[A: allocators.BumpAllocator](
+	ac ref(A),
+	left ref(u8),
+	right ref(u8)
+) ref(u8)|error
+	guard left != none else
+		return copy_string[A](ac, right)
+	end
+
+	guard right != none else
+		return copy_string[A](ac, left)
+	end
+
+	var len_left usize = str.len(left)
+	var len_right usize = str.len(right)
+	var out ref(void) = A.alloc(ac, len_left + len_right + 1 as usize)?
+
+	if len_left > 0 as usize
+		@memcpy(out, left, len_left)
+	end
+
+	if len_right > 0 as usize
+		@memcpy(@add(out, len_left), right, len_right)
+	end
+
+	@deref(@as_mut(@add(out, len_left + len_right))) = 0 as u8
+	return out as ref(u8)
+end
+
+def delete_temp_file(path ref(u8)) void|error
+	if path == none
+		return
+	end
+
+	if remove(path) != 0
+		return os_error[void]("failed to remove temp file")
+	end
+end
+
+when posix
+	extern def getenv(name ref(u8)) ref(u8) :: "getenv"
+	extern def setenv(name ref(u8), value ref(u8), overwrite i32) i32 :: "setenv"
+	extern def system(command ref(u8)) i32 :: "system"
+	extern def getcwd(buffer mut(ref(u8)), size usize) ref(u8) :: "getcwd"
+	extern def mkstemp(template mut(ref(u8))) i32 :: "mkstemp"
+	extern def close(fd i32) i32 :: "close"
+	extern def strerror(code i32) ref(u8) :: "strerror"
+
+	when linux
+		extern def __errno_location() mut(ref(i32)) :: "__errno_location"
+
+		def errno_ptr() mut(ref(i32))
+			return __errno_location()
+		end
+	end
+
+	when android
+		extern def __errno_location() mut(ref(i32)) :: "__errno_location"
+
+		def errno_ptr() mut(ref(i32))
+			return __errno_location()
+		end
+	end
+
+	when darwin
+		extern def __error() mut(ref(i32)) :: "__error"
+
+		def errno_ptr() mut(ref(i32))
+			return __error()
+		end
+	end
+
+	when ios
+		extern def __error() mut(ref(i32)) :: "__error"
+
+		def errno_ptr() mut(ref(i32))
+			return __error()
+		end
+	end
+
+	when freebsd
+		extern def __error() mut(ref(i32)) :: "__error"
+
+		def errno_ptr() mut(ref(i32))
+			return __error()
+		end
+	end
+
+	when openbsd
+		extern def __error() mut(ref(i32)) :: "__error"
+
+		def errno_ptr() mut(ref(i32))
+			return __error()
+		end
+	end
+
+	when netbsd
+		extern def __error() mut(ref(i32)) :: "__error"
+
+		def errno_ptr() mut(ref(i32))
+			return __error()
+		end
+	end
+
+	when dragonflybsd
+		extern def __error() mut(ref(i32)) :: "__error"
+
+		def errno_ptr() mut(ref(i32))
+			return __error()
+		end
+	end
+
+	def last_errno_message(fallback ref(u8)) ref(u8)
+		var ptr = errno_ptr()
+		guard ptr != none else
+			return fallback
+		end
+
+		return strerror(@deref(ptr))
+	end
+
+	def quote_shell_path(path ref(u8)) ref(u8)|error
+		guard path != none else
+			return heap_copy("''")
+		end
+
+		var len_path usize = str.len(path)
+		var out ref(u8) = heap_alloc(len_path * 4 as usize + 3 as usize)?
+		var write usize = 0 as usize
+
+		@deref(@add(out, write)) = '\'' as u8
+		write++
+
+		for var i = 0 .. len_path as i32
+			var ch u8 = @deref(@add(path, i))
+			if ch == '\'' as u8
+				@deref(@add(out, write)) = '\'' as u8
+				write++
+				@deref(@add(out, write)) = '\\' as u8
+				write++
+				@deref(@add(out, write)) = '\'' as u8
+				write++
+				@deref(@add(out, write)) = '\'' as u8
+				write++
+			else
+				@deref(@add(out, write)) = ch
+				write++
+			end
+		end
+
+		@deref(@add(out, write)) = '\'' as u8
+		write++
+		@deref(@add(out, write)) = 0 as u8
+
+		return out
+	end
+
+	def build_capture_command(
+		command ref(u8),
+		stdout_path ref(u8),
+		stderr_path ref(u8)
+	) ref(u8)|error
+		match quote_shell_path(stdout_path)
+			ok quoted_out => (
+				match quote_shell_path(stderr_path)
+					ok quoted_err => (
+						var part1 ref(u8) = "( "
+						var part2 ref(u8) = " ) 1> "
+						var part3 ref(u8) = " 2> "
+						var len_part1 usize = str.len(part1)
+						var len_command usize = str.len(command)
+						var len_part2 usize = str.len(part2)
+						var len_quoted_out usize = str.len(quoted_out)
+						var len_part3 usize = str.len(part3)
+						var len_quoted_err usize = str.len(quoted_err)
+						var out ref(u8) = heap_alloc(
+							len_part1 +
+							len_command +
+							len_part2 +
+							len_quoted_out +
+							len_part3 +
+							len_quoted_err +
+							1 as usize
+						)?
+						var cursor usize = 0 as usize
+
+						@memcpy(@add(out, cursor), part1, len_part1)
+						cursor += len_part1
+
+						@memcpy(@add(out, cursor), command, len_command)
+						cursor += len_command
+
+						@memcpy(@add(out, cursor), part2, len_part2)
+						cursor += len_part2
+
+						@memcpy(@add(out, cursor), quoted_out, len_quoted_out)
+						cursor += len_quoted_out
+
+						@memcpy(@add(out, cursor), part3, len_part3)
+						cursor += len_part3
+
+						@memcpy(@add(out, cursor), quoted_err, len_quoted_err)
+						cursor += len_quoted_err
+
+						@deref(@add(out, cursor)) = 0 as u8
+
+						@free(quoted_out)
+						@free(quoted_err)
+						return out
+					)
+					error reason => (
+						@free(quoted_out)
+						return error(reason)
+					)
+				end
+			)
+			error reason => (
+				return error(reason)
+			)
+		end
+	end
+
+	def make_temp_file(label ref(u8)) ref(u8)|error
+		var temp_dir ref(u8) = getenv("TMPDIR")
+		if temp_dir == none || str.len(temp_dir) == 0 as usize
+			temp_dir = "/tmp"
+		end
+
+		var prefix ref(u8) = "scar-os-"
+		var suffix ref(u8) = "-XXXXXX"
+		var len_temp_dir usize = str.len(temp_dir)
+		var needs_sep bool = true
+
+		if (
+			len_temp_dir > 0 as usize &&
+			@deref(@add(temp_dir, len_temp_dir - 1 as usize)) == '/' as u8
+		)
+			needs_sep = false
+		end
+
+		var len_label usize = str.len(label)
+		var len_prefix usize = str.len(prefix)
+		var len_suffix usize = str.len(suffix)
+		var total usize = len_temp_dir +
+			len_prefix +
+			len_label +
+			len_suffix +
+			1 as usize
+
+		if needs_sep
+			total++
+		end
+
+		var out ref(u8) = heap_alloc(total)?
+		var cursor usize = 0 as usize
+
+		@memcpy(@add(out, cursor), temp_dir, len_temp_dir)
+		cursor += len_temp_dir
+
+		if needs_sep
+			@deref(@add(out, cursor)) = '/' as u8
+			cursor++
+		end
+
+		@memcpy(@add(out, cursor), prefix, len_prefix)
+		cursor += len_prefix
+
+		@memcpy(@add(out, cursor), label, len_label)
+		cursor += len_label
+
+		@memcpy(@add(out, cursor), suffix, len_suffix)
+		cursor += len_suffix
+
+		@deref(@add(out, cursor)) = 0 as u8
+
+		var fd i32 = mkstemp(out as mut(ref(u8)))
+		if fd < 0
+			@free(out)
+			return os_error[ref(u8)](
+				last_errno_message("failed to create temp file")
+			)
+		end
+
+		if close(fd) != 0
+			remove(out)
+			@free(out)
+			return os_error[ref(u8)](
+				last_errno_message("failed to close temp file")
+			)
+		end
+
+		return out
+	end
+
+	def decode_exit_code(status i32) i32
+		return (status >> 8) & 255
+	end
+
+	pub def exec(command ref(u8)) i32|error
+		guard command != none else
+			return os_error[i32]("command is null")
+		end
+
+		var status i32 = system(command)
+		if status < 0
+			return os_error[i32](
+				last_errno_message("failed to execute command")
+			)
+		end
+
+		return decode_exit_code(status)
+	end
+
+	pub def exec_capture[A: allocators.BumpAllocator](
+		ac ref(A),
+		command ref(u8)
+	) ExecResult|error
+		guard command != none else
+			return os_error[ExecResult]("command is null")
+		end
+
+		match make_temp_file("stdout")
+			ok stdout_path => (
+				match make_temp_file("stderr")
+					ok stderr_path => (
+						match build_capture_command(command, stdout_path, stderr_path)
+							ok wrapped => (
+								var status i32 = system(wrapped)
+								@free(wrapped)
+
+								if status < 0
+									delete_temp_file(stdout_path)
+									delete_temp_file(stderr_path)
+									@free(stdout_path)
+									@free(stderr_path)
+									return os_error[ExecResult](
+										last_errno_message("failed to execute command")
+									)
+								end
+
+								match fs.read_text[A](ac, stdout_path)
+									ok captured_stdout => (
+										match fs.read_text[A](ac, stderr_path)
+											ok captured_stderr => (
+												delete_temp_file(stdout_path)?
+												delete_temp_file(stderr_path)?
+												@free(stdout_path)
+												@free(stderr_path)
+												return ExecResult(
+													exit_code: decode_exit_code(status),
+													stdout: captured_stdout,
+													stderr: captured_stderr
+												)
+											)
+											error reason => (
+												delete_temp_file(stdout_path)
+												delete_temp_file(stderr_path)
+												@free(stdout_path)
+												@free(stderr_path)
+												return error(reason)
+											)
+										end
+									)
+									error reason => (
+										delete_temp_file(stdout_path)
+										delete_temp_file(stderr_path)
+										@free(stdout_path)
+										@free(stderr_path)
+										return error(reason)
+									)
+								end
+							)
+							error reason => (
+								delete_temp_file(stdout_path)
+								delete_temp_file(stderr_path)
+								@free(stdout_path)
+								@free(stderr_path)
+								return error(reason)
+							)
+						end
+					)
+					error reason => (
+						delete_temp_file(stdout_path)
+						@free(stdout_path)
+						return error(reason)
+					)
+				end
+			)
+			error reason => (
+				return error(reason)
+			)
+		end
+	end
+
+	pub def cwd[A: allocators.BumpAllocator](ac ref(A)) ref(u8)|error
+		var size usize = 256 as usize
+
+		for size <= 32768 as usize
+			var buffer ref(u8) = heap_alloc(size)?
+
+			if getcwd(buffer as mut(ref(u8)), size) != none
+				var out = copy_string[A](ac, buffer)?
+				@free(buffer)
+				return out
+			end
+
+			@free(buffer)
+			size *= 2 as usize
+		end
+
+		return os_error[ref(u8)](
+			last_errno_message("failed to read current working directory")
+		)
+	end
+
+	pub def get_env[A: allocators.BumpAllocator](
+		ac ref(A),
+		name ref(u8)
+	) ref(u8)|error
+		guard name != none else
+			return os_error[ref(u8)]("environment variable name is null")
+		end
+
+		var value ref(u8) = getenv(name)
+		if value == none
+			return none
+		end
+
+		return copy_string[A](ac, value)
+	end
+
+	pub def set_env(name ref(u8), value ref(u8)) void|error
+		guard name != none else
+			return os_error[void]("environment variable name is null")
+		end
+
+		guard value != none else
+			return os_error[void]("environment variable value is null")
+		end
+
+		if setenv(name, value, 1) != 0
+			return os_error[void](
+				last_errno_message("failed to set environment variable")
+			)
+		end
+	end
+
+	pub def get_temp_dir[A: allocators.BumpAllocator](ac ref(A)) ref(u8)|error
+		var value = get_env[A](ac, "TMPDIR")?
+		if value != none && str.len(value) > 0 as usize
+			return value
+		end
+
+		return copy_string[A](ac, "/tmp")
+	end
+
+	pub def get_home_dir[A: allocators.BumpAllocator](ac ref(A)) ref(u8)|error
+		var value = get_env[A](ac, "HOME")?
+		if value != none && str.len(value) > 0 as usize
+			return value
+		end
+
+		return os_error[ref(u8)]("failed to resolve home directory")
+	end
+
+	pub def get_data_dir[A: allocators.BumpAllocator](ac ref(A)) ref(u8)|error
+		var value = get_env[A](ac, "XDG_DATA_HOME")?
+		if value != none && str.len(value) > 0 as usize
+			return value
+		end
+
+		var home = get_home_dir[A](ac)?
+		return fs.join[A](ac, home, ".local/share")
+	end
+end
+
+when windows
+	extern "windows.h"
+
+	extern def GetLastError() u32 :: "GetLastError"
+	extern def SetLastError(code u32) void :: "SetLastError"
+	extern def GetEnvironmentVariableA(
+		name ref(u8),
+		buffer mut(ref(u8)),
+		size u32
+	) u32 :: "GetEnvironmentVariableA"
+	extern def SetEnvironmentVariableA(
+		name ref(u8),
+		value ref(u8)
+	) i32 :: "SetEnvironmentVariableA"
+	extern def GetCurrentDirectoryA(
+		size u32,
+		buffer mut(ref(u8))
+	) u32 :: "GetCurrentDirectoryA"
+	extern def GetTempPathA(size u32, buffer mut(ref(u8))) u32 :: "GetTempPathA"
+	extern def GetTempFileNameA(
+		path ref(u8),
+		prefix ref(u8),
+		unique u32,
+		buffer mut(ref(u8))
+	) u32 :: "GetTempFileNameA"
+	extern def system(command ref(u8)) i32 :: "system"
+
+	def clear_last_error() void
+		SetLastError(0 as u32)
+	end
+
+	def quote_shell_path(path ref(u8)) ref(u8)|error
+		guard path != none else
+			return heap_copy("\"\"")
+		end
+
+		var len_path usize = str.len(path)
+		var out ref(u8) = heap_alloc(len_path * 2 as usize + 3 as usize)?
+		var write usize = 0 as usize
+
+		@deref(@add(out, write)) = '"' as u8
+		write++
+
+		for var i = 0 .. len_path as i32
+			var ch u8 = @deref(@add(path, i))
+			if ch == '"' as u8
+				@deref(@add(out, write)) = '\\' as u8
+				write++
+			end
+
+			@deref(@add(out, write)) = ch
+			write++
+		end
+
+		@deref(@add(out, write)) = '"' as u8
+		write++
+		@deref(@add(out, write)) = 0 as u8
+
+		return out
+	end
+
+	def build_capture_command(
+		command ref(u8),
+		stdout_path ref(u8),
+		stderr_path ref(u8)
+	) ref(u8)|error
+		match quote_shell_path(stdout_path)
+			ok quoted_out => (
+				match quote_shell_path(stderr_path)
+					ok quoted_err => (
+						var part1 ref(u8) = "( "
+						var part2 ref(u8) = " ) 1> "
+						var part3 ref(u8) = " 2> "
+						var len_part1 usize = str.len(part1)
+						var len_command usize = str.len(command)
+						var len_part2 usize = str.len(part2)
+						var len_quoted_out usize = str.len(quoted_out)
+						var len_part3 usize = str.len(part3)
+						var len_quoted_err usize = str.len(quoted_err)
+						var out ref(u8) = heap_alloc(
+							len_part1 +
+							len_command +
+							len_part2 +
+							len_quoted_out +
+							len_part3 +
+							len_quoted_err +
+							1 as usize
+						)?
+						var cursor usize = 0 as usize
+
+						@memcpy(@add(out, cursor), part1, len_part1)
+						cursor += len_part1
+
+						@memcpy(@add(out, cursor), command, len_command)
+						cursor += len_command
+
+						@memcpy(@add(out, cursor), part2, len_part2)
+						cursor += len_part2
+
+						@memcpy(@add(out, cursor), quoted_out, len_quoted_out)
+						cursor += len_quoted_out
+
+						@memcpy(@add(out, cursor), part3, len_part3)
+						cursor += len_part3
+
+						@memcpy(@add(out, cursor), quoted_err, len_quoted_err)
+						cursor += len_quoted_err
+
+						@deref(@add(out, cursor)) = 0 as u8
+
+						@free(quoted_out)
+						@free(quoted_err)
+						return out
+					)
+					error reason => (
+						@free(quoted_out)
+						return error(reason)
+					)
+				end
+			)
+			error reason => (
+				return error(reason)
+			)
+		end
+	end
+
+	def read_env_heap(name ref(u8)) ref(u8)|error
+		var size u32 = 256 as u32
+		var buffer ref(u8) = heap_alloc(size as usize)?
+
+		clear_last_error()
+		var copied u32 = GetEnvironmentVariableA(
+			name,
+			buffer as mut(ref(u8)),
+			size
+		)
+		var err u32 = GetLastError()
+
+		if copied == 0 as u32
+			if err == 203 as u32
+				@free(buffer)
+				return none
+			end
+
+			if err == 0 as u32
+				@deref(buffer) = 0 as u8
+				return buffer
+			end
+
+			@free(buffer)
+			return os_error[ref(u8)]("failed to read environment variable")
+		end
+
+		if copied >= size
+			@free(buffer)
+			size = copied + 1 as u32
+			buffer = heap_alloc(size as usize)?
+
+			clear_last_error()
+			copied = GetEnvironmentVariableA(
+				name,
+				buffer as mut(ref(u8)),
+				size
+			)
+			err = GetLastError()
+
+			if copied == 0 as u32 && err != 0 as u32
+				@free(buffer)
+				return os_error[ref(u8)](
+					"failed to read environment variable"
+				)
+			end
+		end
+
+		return buffer
+	end
+
+	def read_current_directory_heap() ref(u8)|error
+		var size u32 = 260 as u32
+		var buffer ref(u8) = heap_alloc(size as usize)?
+
+		clear_last_error()
+		var copied u32 = GetCurrentDirectoryA(size, buffer as mut(ref(u8)))
+		if copied == 0 as u32
+			@free(buffer)
+			return os_error[ref(u8)](
+				"failed to read current working directory"
+			)
+		end
+
+		if copied >= size
+			@free(buffer)
+			size = copied + 1 as u32
+			buffer = heap_alloc(size as usize)?
+			copied = GetCurrentDirectoryA(size, buffer as mut(ref(u8)))
+			if copied == 0 as u32 || copied >= size
+				@free(buffer)
+				return os_error[ref(u8)](
+					"failed to read current working directory"
+				)
+			end
+		end
+
+		return buffer
+	end
+
+	def read_temp_dir_heap() ref(u8)|error
+		var size u32 = 260 as u32
+		var buffer ref(u8) = heap_alloc(size as usize)?
+
+		clear_last_error()
+		var copied u32 = GetTempPathA(size, buffer as mut(ref(u8)))
+		if copied == 0 as u32
+			@free(buffer)
+			return os_error[ref(u8)]("failed to read temp directory")
+		end
+
+		if copied >= size
+			@free(buffer)
+			size = copied + 1 as u32
+			buffer = heap_alloc(size as usize)?
+			copied = GetTempPathA(size, buffer as mut(ref(u8)))
+			if copied == 0 as u32 || copied >= size
+				@free(buffer)
+				return os_error[ref(u8)]("failed to read temp directory")
+			end
+		end
+
+		return buffer
+	end
+
+	def make_temp_file(label ref(u8)) ref(u8)|error
+		var temp_dir ref(u8) = read_temp_dir_heap()?
+		var out ref(u8) = heap_alloc(260 as usize)?
+		var prefix ref(u8) = "sos"
+
+		if str.starts_with(label, "stderr")
+			prefix = "ser"
+		end
+
+		clear_last_error()
+		if GetTempFileNameA(temp_dir, prefix, 0 as u32, out as mut(ref(u8))) == 0 as u32
+			@free(temp_dir)
+			@free(out)
+			return os_error[ref(u8)]("failed to create temp file")
+		end
+
+		@free(temp_dir)
+		return out
+	end
+
+	pub def exec(command ref(u8)) i32|error
+		guard command != none else
+			return os_error[i32]("command is null")
+		end
+
+		var status i32 = system(command)
+		if status < 0
+			return os_error[i32]("failed to execute command")
+		end
+
+		return status
+	end
+
+	pub def exec_capture[A: allocators.BumpAllocator](
+		ac ref(A),
+		command ref(u8)
+	) ExecResult|error
+		guard command != none else
+			return os_error[ExecResult]("command is null")
+		end
+
+		match make_temp_file("stdout")
+			ok stdout_path => (
+				match make_temp_file("stderr")
+					ok stderr_path => (
+						match build_capture_command(command, stdout_path, stderr_path)
+							ok wrapped => (
+								var status i32 = system(wrapped)
+								@free(wrapped)
+
+								if status < 0
+									delete_temp_file(stdout_path)
+									delete_temp_file(stderr_path)
+									@free(stdout_path)
+									@free(stderr_path)
+									return os_error[ExecResult]("failed to execute command")
+								end
+
+								match fs.read_text[A](ac, stdout_path)
+									ok captured_stdout => (
+										match fs.read_text[A](ac, stderr_path)
+											ok captured_stderr => (
+												delete_temp_file(stdout_path)?
+												delete_temp_file(stderr_path)?
+												@free(stdout_path)
+												@free(stderr_path)
+												return ExecResult(
+													exit_code: status,
+													stdout: captured_stdout,
+													stderr: captured_stderr
+												)
+											)
+											error reason => (
+												delete_temp_file(stdout_path)
+												delete_temp_file(stderr_path)
+												@free(stdout_path)
+												@free(stderr_path)
+												return error(reason)
+											)
+										end
+									)
+									error reason => (
+										delete_temp_file(stdout_path)
+										delete_temp_file(stderr_path)
+										@free(stdout_path)
+										@free(stderr_path)
+										return error(reason)
+									)
+								end
+							)
+							error reason => (
+								delete_temp_file(stdout_path)
+								delete_temp_file(stderr_path)
+								@free(stdout_path)
+								@free(stderr_path)
+								return error(reason)
+							)
+						end
+					)
+					error reason => (
+						delete_temp_file(stdout_path)
+						@free(stdout_path)
+						return error(reason)
+					)
+				end
+			)
+			error reason => (
+				return error(reason)
+			)
+		end
+	end
+
+	pub def cwd[A: allocators.BumpAllocator](ac ref(A)) ref(u8)|error
+		var buffer = read_current_directory_heap()?
+		var out = copy_string[A](ac, buffer)?
+		@free(buffer)
+		return out
+	end
+
+	pub def get_env[A: allocators.BumpAllocator](
+		ac ref(A),
+		name ref(u8)
+	) ref(u8)|error
+		guard name != none else
+			return os_error[ref(u8)]("environment variable name is null")
+		end
+
+		var value = read_env_heap(name)?
+		if value == none
+			return none
+		end
+
+		var out = copy_string[A](ac, value)?
+		@free(value)
+		return out
+	end
+
+	pub def set_env(name ref(u8), value ref(u8)) void|error
+		guard name != none else
+			return os_error[void]("environment variable name is null")
+		end
+
+		guard value != none else
+			return os_error[void]("environment variable value is null")
+		end
+
+		if SetEnvironmentVariableA(name, value) == 0
+			return os_error[void]("failed to set environment variable")
+		end
+	end
+
+	pub def get_temp_dir[A: allocators.BumpAllocator](ac ref(A)) ref(u8)|error
+		var buffer = read_temp_dir_heap()?
+		var out = copy_string[A](ac, buffer)?
+		@free(buffer)
+		return out
+	end
+
+	pub def get_home_dir[A: allocators.BumpAllocator](ac ref(A)) ref(u8)|error
+		var value = get_env[A](ac, "USERPROFILE")?
+		if value != none && str.len(value) > 0 as usize
+			return value
+		end
+
+		var drive = get_env[A](ac, "HOMEDRIVE")?
+		var path = get_env[A](ac, "HOMEPATH")?
+
+		if drive != none && path != none
+			return concat_strings[A](ac, drive, path)
+		end
+
+		return os_error[ref(u8)]("failed to resolve home directory")
+	end
+
+	pub def get_data_dir[A: allocators.BumpAllocator](ac ref(A)) ref(u8)|error
+		var value = get_env[A](ac, "APPDATA")?
+		if value != none && str.len(value) > 0 as usize
+			return value
+		end
+
+		value = get_env[A](ac, "LOCALAPPDATA")?
+		if value != none && str.len(value) > 0 as usize
+			return value
+		end
+
+		return os_error[ref(u8)]("failed to resolve data directory")
+	end
+end
+
+when redox
+	pub def exec(command ref(u8)) i32|error
+		return unsupported_os[i32]()
+	end
+
+	pub def exec_capture[A: allocators.BumpAllocator](
+		ac ref(A),
+		command ref(u8)
+	) ExecResult|error
+		return unsupported_os[ExecResult]()
+	end
+
+	pub def cwd[A: allocators.BumpAllocator](ac ref(A)) ref(u8)|error
+		return unsupported_os[ref(u8)]()
+	end
+
+	pub def get_env[A: allocators.BumpAllocator](
+		ac ref(A),
+		name ref(u8)
+	) ref(u8)|error
+		return unsupported_os[ref(u8)]()
+	end
+
+	pub def set_env(name ref(u8), value ref(u8)) void|error
+		return unsupported_os[void]()
+	end
+
+	pub def get_temp_dir[A: allocators.BumpAllocator](ac ref(A)) ref(u8)|error
+		return unsupported_os[ref(u8)]()
+	end
+
+	pub def get_home_dir[A: allocators.BumpAllocator](ac ref(A)) ref(u8)|error
+		return unsupported_os[ref(u8)]()
+	end
+
+	pub def get_data_dir[A: allocators.BumpAllocator](ac ref(A)) ref(u8)|error
+		return unsupported_os[ref(u8)]()
+	end
+end
+
+when plan9
+	pub def exec(command ref(u8)) i32|error
+		return unsupported_os[i32]()
+	end
+
+	pub def exec_capture[A: allocators.BumpAllocator](
+		ac ref(A),
+		command ref(u8)
+	) ExecResult|error
+		return unsupported_os[ExecResult]()
+	end
+
+	pub def cwd[A: allocators.BumpAllocator](ac ref(A)) ref(u8)|error
+		return unsupported_os[ref(u8)]()
+	end
+
+	pub def get_env[A: allocators.BumpAllocator](
+		ac ref(A),
+		name ref(u8)
+	) ref(u8)|error
+		return unsupported_os[ref(u8)]()
+	end
+
+	pub def set_env(name ref(u8), value ref(u8)) void|error
+		return unsupported_os[void]()
+	end
+
+	pub def get_temp_dir[A: allocators.BumpAllocator](ac ref(A)) ref(u8)|error
+		return unsupported_os[ref(u8)]()
+	end
+
+	pub def get_home_dir[A: allocators.BumpAllocator](ac ref(A)) ref(u8)|error
+		return unsupported_os[ref(u8)]()
+	end
+
+	pub def get_data_dir[A: allocators.BumpAllocator](ac ref(A)) ref(u8)|error
+		return unsupported_os[ref(u8)]()
+	end
+end
+
+test "exec returns child exit code"
+	when windows
+		assert exec("cmd /C exit 7")? == 7
+	end
+
+	when posix
+		assert exec("exit 7")? == 7
+	end
+end
+
+test "exec_capture captures stdout and stderr"
+	var ac = allocators.Arena.new(16384 as usize)?
+
+	when windows
+		var result = exec_capture[_](
+			@addr(ac),
+			"echo hello& echo oops 1>&2& exit /B 3"
+		)?
+		assert result.exit_code == 3
+		assert str.eql(str.trim[_](ac, result.stdout)?, "hello")
+		assert str.eql(str.trim[_](ac, result.stderr)?, "oops")
+	end
+
+	when posix
+		var result = exec_capture[_](
+			@addr(ac),
+			"printf 'hello\\n'; printf 'oops\\n' 1>&2; exit 3"
+		)?
+		assert result.exit_code == 3
+		assert str.eql(str.trim[_](ac, result.stdout)?, "hello")
+		assert str.eql(str.trim[_](ac, result.stderr)?, "oops")
+	end
+
+	allocators.Arena.destroy(@addr(ac))
+end
+
+test "environment helpers work"
+	var ac = allocators.Arena.new(8192 as usize)?
+
+	assert get_env[_](@addr(ac), "SCAR_OS_TEST_MISSING_7C6D84")? == none
+
+	set_env("SCAR_OS_TEST_VALUE", "scar-os")?
+
+	assert str.eql(
+		get_env[_](@addr(ac), "SCAR_OS_TEST_VALUE")?,
+		"scar-os"
+	)
+
+	allocators.Arena.destroy(@addr(ac))
+end
+
+test "directory helpers work"
+	var ac = allocators.Arena.new(16384 as usize)?
+	var working_dir = cwd[_](@addr(ac))?
+	var temp_dir = get_temp_dir[_](@addr(ac))?
+	var home_dir = get_home_dir[_](@addr(ac))?
+	var data_dir = get_data_dir[_](@addr(ac))?
+
+	assert working_dir != none
+	assert temp_dir != none
+	assert home_dir != none
+	assert data_dir != none
+
+	assert str.len(working_dir) > 0 as usize
+	assert str.len(temp_dir) > 0 as usize
+	assert str.len(home_dir) > 0 as usize
+	assert str.len(data_dir) > 0 as usize
+
+	assert fs.is_dir(working_dir)
+
+	allocators.Arena.destroy(@addr(ac))
+end
