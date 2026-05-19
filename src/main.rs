@@ -481,6 +481,7 @@ fn build_test_program(program: &Program) -> Program {
         extern_headers: program.extern_headers.clone(),
         interface_defs: program.interface_defs.clone(),
         type_defs: program.type_defs.clone(),
+        typesets: program.typesets.clone(),
         functions,
         tests: Vec::new(),
     }

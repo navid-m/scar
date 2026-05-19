@@ -1112,7 +1112,7 @@ fn render_expr_with_hint(
         }
         Expr::Index { base, index } => render_index_expr(base, index, function, info),
         Expr::FieldAccess { base, field } => render_field_access(base, field, function, info),
-        Expr::StructInit { name, fields } => {
+        Expr::StructInit { name, fields, .. } => {
             let type_info = info.types.get(name).ok_or_else(|| {
                 CompileError::new(format!("unknown type `{name}` in code generation"))
             })?;
@@ -2353,6 +2353,15 @@ fn type_suffix(ty: &Type) -> String {
         Type::F64 => "f64".to_string(),
         Type::Infer => "infer".to_string(),
         Type::Named(name) => sanitize_identifier(name),
+        Type::Applied(name, type_args) => format!(
+            "{}__{}",
+            sanitize_identifier(name),
+            type_args
+                .iter()
+                .map(type_suffix)
+                .collect::<Vec<_>>()
+                .join("__")
+        ),
         Type::Mut(inner) => format!("mut__{}", type_suffix(inner)),
         Type::Ref(inner) => format!("ref__{}", type_suffix(inner)),
         Type::List(inner) => format!("list__{}", type_suffix(inner)),
@@ -2386,6 +2395,7 @@ fn c_type(ty: &Type) -> String {
         Type::F64 => "double".to_string(),
         Type::Infer => "void".to_string(),
         Type::Named(name) => name.clone(),
+        Type::Applied(name, _) => name.clone(),
         Type::Mut(inner) => c_type_mut(inner),
         Type::Ref(inner) => {
             if inner.as_ref() == &Type::U8 {
@@ -2714,6 +2724,15 @@ fn describe_type(ty: &Type) -> String {
         Type::Result(inner) => format!("{}|error", describe_type(inner)),
         Type::Error => "error".to_string(),
         Type::None => "none".to_string(),
+        Type::Applied(name, type_args) => format!(
+            "{}[{}]",
+            name,
+            type_args
+                .iter()
+                .map(describe_type)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
     }
 }
 

@@ -1028,7 +1028,7 @@ fn infer_expr_type(
             expect_same_type(&Type::I32, &index_ty, types, "list index")?;
             infer_index_type(&base_ty, types)
         }
-        Expr::StructInit { name, fields } => {
+        Expr::StructInit { name, fields, .. } => {
             let type_info = types
                 .get(name)
                 .ok_or_else(|| CompileError::new(format!("unknown type `{name}`")))?;
@@ -1941,6 +1941,15 @@ fn validate_type(ty: &Type, types: &HashMap<String, TypeDefInfo>) -> Result<(), 
                 Err(CompileError::new(format!("unknown type `{name}`")))
             }
         }
+        Type::Applied(name, type_args) => {
+            if !types.contains_key(name) {
+                return Err(CompileError::new(format!("unknown type `{name}`")));
+            }
+            for type_arg in type_args {
+                validate_type(type_arg, types)?;
+            }
+            Ok(())
+        }
         Type::Result(inner) => validate_type(inner, types),
         Type::Mut(inner) => validate_type(inner, types),
         Type::Ref(inner) => validate_type(inner, types),
@@ -1975,6 +1984,15 @@ fn validate_type_with_known_names(ty: &Type, known: &HashSet<String>) -> Result<
             } else {
                 Err(CompileError::new(format!("unknown type `{name}`")))
             }
+        }
+        Type::Applied(name, type_args) => {
+            if !known.contains(name) {
+                return Err(CompileError::new(format!("unknown type `{name}`")));
+            }
+            for type_arg in type_args {
+                validate_type_with_known_names(type_arg, known)?;
+            }
+            Ok(())
         }
         Type::Result(inner) => validate_type_with_known_names(inner, known),
         Type::Mut(inner) => validate_type_with_known_names(inner, known),
@@ -2375,6 +2393,13 @@ fn resolve_aliases(ty: &Type, types: &HashMap<String, TypeDefInfo>) -> Result<Ty
                 Ok(Type::Named(name.clone()))
             }
         }
+        Type::Applied(name, type_args) => Ok(Type::Applied(
+            name.clone(),
+            type_args
+                .iter()
+                .map(|type_arg| resolve_aliases(type_arg, types))
+                .collect::<Result<Vec<_>, _>>()?,
+        )),
         Type::Result(inner) => Ok(Type::Result(Box::new(resolve_aliases(inner, types)?))),
         Type::Mut(inner) => Ok(Type::Mut(Box::new(resolve_aliases(inner, types)?))),
         Type::Ref(inner) => Ok(Type::Ref(Box::new(resolve_aliases(inner, types)?))),
@@ -2401,6 +2426,15 @@ fn describe_type(ty: &Type) -> String {
         Type::F64 => "f64".to_string(),
         Type::Infer => "_".to_string(),
         Type::Named(name) => name.clone(),
+        Type::Applied(name, type_args) => format!(
+            "{}[{}]",
+            name,
+            type_args
+                .iter()
+                .map(describe_type)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
         Type::Mut(inner) => format!("mut({})", describe_type(inner)),
         Type::Ref(inner) => format!("ref({})", describe_type(inner)),
         Type::List(inner) => format!("list[{}]", describe_type(inner)),

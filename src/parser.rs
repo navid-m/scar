@@ -3,7 +3,7 @@ use crate::{
     ast::{
         BinaryOp, Expr, FieldDef, FieldInit, Function, GenericParam, InterfaceDef,
         InterfaceMethod, MatchArm, MatchArmKind, ModuleUse, Param, Program, Stmt, TestBlock, Type,
-        TypeDef, TypeDefKind, UnaryOp, UnionVariantDef,
+        TypeDef, TypeDefKind, TypeSetDef, UnaryOp, UnionVariantDef,
     },
     lexer::{Token, TokenKind},
 };
@@ -23,6 +23,7 @@ struct TopLevelItems {
     extern_headers: Vec<String>,
     interface_defs: Vec<InterfaceDef>,
     type_defs: Vec<TypeDef>,
+    typesets: Vec<TypeSetDef>,
     functions: Vec<Function>,
     tests: Vec<TestBlock>,
 }
@@ -33,6 +34,7 @@ impl TopLevelItems {
         self.extern_headers.append(&mut other.extern_headers);
         self.interface_defs.append(&mut other.interface_defs);
         self.type_defs.append(&mut other.type_defs);
+        self.typesets.append(&mut other.typesets);
         self.functions.append(&mut other.functions);
         self.tests.append(&mut other.tests);
     }
@@ -50,6 +52,7 @@ impl Parser {
             extern_headers: items.extern_headers,
             interface_defs: items.interface_defs,
             type_defs: items.type_defs,
+            typesets: items.typesets,
             functions: items.functions,
             tests: items.tests,
         })
@@ -74,6 +77,12 @@ impl Parser {
                 items.interface_defs.push(self.parse_interface_def(true)?);
             } else if self.check_simple(&TokenKind::Interface) {
                 items.interface_defs.push(self.parse_interface_def(false)?);
+            } else if self.check_simple(&TokenKind::Pub)
+                && self.check_next_simple(&TokenKind::Typeset)
+            {
+                items.typesets.push(self.parse_typeset_def(true)?);
+            } else if self.check_simple(&TokenKind::Typeset) {
+                items.typesets.push(self.parse_typeset_def(false)?);
             } else if self.check_simple(&TokenKind::Pub)
                 && self.check_next_simple(&TokenKind::Type)
             {
@@ -153,6 +162,11 @@ impl Parser {
         }
         self.expect_simple(TokenKind::Type)?;
         let name = self.expect_ident()?;
+        let generic_params = if self.check_simple(&TokenKind::LBracket) {
+            self.parse_generic_params()?
+        } else {
+            Vec::new()
+        };
         let derives = if self.check_simple(&TokenKind::Colon) {
             self.advance();
             self.parse_derive_list()?
@@ -171,6 +185,7 @@ impl Parser {
             return Ok(TypeDef {
                 is_pub,
                 name,
+                generic_params,
                 kind: TypeDefKind::Struct,
                 is_extern,
                 alias,
@@ -198,6 +213,7 @@ impl Parser {
         Ok(TypeDef {
             is_pub,
             name,
+            generic_params,
             kind: TypeDefKind::Struct,
             is_extern,
             alias: None,
@@ -252,12 +268,40 @@ impl Parser {
         Ok(TypeDef {
             is_pub,
             name,
+            generic_params: Vec::new(),
             kind: TypeDefKind::Union,
             is_extern: false,
             alias: None,
             derives: Vec::new(),
             fields: Vec::new(),
             variants,
+        })
+    }
+
+    fn parse_typeset_def(&mut self, is_pub: bool) -> Result<TypeSetDef, CompileError> {
+        if is_pub {
+            self.expect_simple(TokenKind::Pub)?;
+        }
+        self.expect_simple(TokenKind::Typeset)?;
+        let name = self.expect_ident()?;
+        self.expect_newline("expected a newline after typeset name")?;
+
+        let mut members = Vec::new();
+        self.consume_newlines();
+        while !self.check_simple(&TokenKind::End) && !self.is_eof() {
+            members.push(self.parse_non_result_type()?);
+            if self.check_simple(&TokenKind::Comma) {
+                self.advance();
+            }
+            self.consume_newlines();
+        }
+
+        self.expect_simple(TokenKind::End)?;
+        self.consume_newlines();
+        Ok(TypeSetDef {
+            is_pub,
+            name,
+            members,
         })
     }
 
@@ -407,7 +451,10 @@ impl Parser {
         self.consume_newlines();
         self.expect_simple(TokenKind::RParen)?;
 
-        let return_type = if self.starts_type() {
+        let return_type = if self.check_simple(&TokenKind::Colon) {
+            self.advance();
+            self.parse_type()?
+        } else if self.starts_type() {
             self.parse_type()?
         } else {
             Type::Void
@@ -1280,8 +1327,16 @@ impl Parser {
             if self.check_simple(&TokenKind::LParen) {
                 if let Expr::Path(path) = &expr {
                     if path.len() == 1 && self.looks_like_struct_init() {
-                        expr = self.parse_struct_init(path[0].clone())?;
+                        expr = self.parse_struct_init(path[0].clone(), Vec::new())?;
                         continue;
+                    }
+                }
+                if let Expr::Specialize { callee, type_args } = &expr {
+                    if let Expr::Path(path) = callee.as_ref() {
+                        if path.len() == 1 && self.looks_like_struct_init() {
+                            expr = self.parse_struct_init(path[0].clone(), type_args.clone())?;
+                            continue;
+                        }
                     }
                 }
 
@@ -1384,7 +1439,7 @@ impl Parser {
         }
     }
 
-    fn parse_struct_init(&mut self, name: String) -> Result<Expr, CompileError> {
+    fn parse_struct_init(&mut self, name: String, type_args: Vec<Type>) -> Result<Expr, CompileError> {
         self.expect_simple(TokenKind::LParen)?;
         self.consume_newlines();
         let mut fields = Vec::new();
@@ -1405,7 +1460,11 @@ impl Parser {
             }
         }
         self.expect_simple(TokenKind::RParen)?;
-        Ok(Expr::StructInit { name, fields })
+        Ok(Expr::StructInit {
+            name,
+            type_args,
+            fields,
+        })
     }
 
     fn parse_pack(&mut self) -> Result<Expr, CompileError> {
@@ -1540,7 +1599,12 @@ impl Parser {
                     self.advance();
                     segments.push(self.expect_ident()?);
                 }
-                Ok(Type::Named(segments.join(".")))
+                let name = segments.join(".");
+                if self.check_simple(&TokenKind::LBracket) {
+                    Ok(Type::Applied(name, self.parse_type_arg_list()?))
+                } else {
+                    Ok(Type::Named(name))
+                }
             }
             TokenKind::Ref => {
                 self.advance();
@@ -1808,6 +1872,7 @@ impl Parser {
             TokenKind::Match => "`match`",
             TokenKind::Interface => "`interface`",
             TokenKind::Type => "`type`",
+            TokenKind::Typeset => "`typeset`",
             TokenKind::Union => "`union`",
             TokenKind::End => "`end`",
             TokenKind::Var => "`var`",
@@ -2069,7 +2134,7 @@ mod tests {
 
         match &program.functions[0].body[0] {
             Stmt::VarDecl {
-                init: Expr::StructInit { name, fields },
+                init: Expr::StructInit { name, fields, .. },
                 ..
             } => {
                 assert_eq!(name, "SomeType");
@@ -2523,6 +2588,61 @@ mod tests {
                 }
             }
             other => panic!("expected call expression, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_generic_type_defs_typesets_and_specialized_struct_inits() {
+        let source = "type Pair[T, U]\n\tfirst T\n\tsecond U\nend\n\npub typeset Integer\n\ti32, u32\nend\n\ndef print_pair[T: Integer](p Pair[T, ref(u8)]): Pair[T, ref(u8)]\n\treturn Pair[T, ref(u8)](first: p.first, second: p.second)\nend\n";
+        let program = parse_program(lex(source).unwrap()).unwrap();
+
+        assert_eq!(program.type_defs.len(), 1);
+        assert_eq!(program.type_defs[0].name, "Pair");
+        assert_eq!(program.type_defs[0].generic_params.len(), 2);
+        assert_eq!(program.typesets.len(), 1);
+        assert_eq!(program.typesets[0].name, "Integer");
+        assert!(matches!(program.typesets[0].members.as_slice(), [Type::I32, Type::U32]));
+
+        let function = &program.functions[0];
+        assert_eq!(function.generic_params.len(), 1);
+        assert_eq!(function.generic_params[0].name, "T");
+        assert!(matches!(
+            function.generic_params[0].constraints.as_slice(),
+            [Type::Named(name)] if name == "Integer"
+        ));
+        assert!(matches!(
+            &function.params[0].ty,
+            Type::Applied(name, type_args)
+                if name == "Pair"
+                    && matches!(type_args.as_slice(), [Type::Named(first), Type::Ref(inner)]
+                        if first == "T" && matches!(inner.as_ref(), Type::U8))
+        ));
+        assert!(matches!(
+            &function.return_type,
+            Type::Applied(name, type_args)
+                if name == "Pair"
+                    && matches!(type_args.as_slice(), [Type::Named(first), Type::Ref(inner)]
+                        if first == "T" && matches!(inner.as_ref(), Type::U8))
+        ));
+
+        match &function.body[0] {
+            Stmt::Return {
+                value: Some(Expr::StructInit {
+                    name,
+                    type_args,
+                    fields,
+                }),
+                ..
+            } => {
+                assert_eq!(name, "Pair");
+                assert!(matches!(
+                    type_args.as_slice(),
+                    [Type::Named(first), Type::Ref(inner)]
+                        if first == "T" && matches!(inner.as_ref(), Type::U8)
+                ));
+                assert_eq!(fields.len(), 2);
+            }
+            other => panic!("expected specialized struct init, got {other:?}"),
         }
     }
 

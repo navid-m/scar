@@ -21,7 +21,7 @@ pub typeset Integer
     usize
 end
 
-def print_pair[T: Integer, U: ref(u8)](p: Pair[T, U])
+def print_pair[T: Integer](p: Pair[T, ref(u8)])
     @print("Pair: (")
     @print("{d}", {p.first})
     @print(", ")
@@ -31,10 +31,10 @@ end
 
 def test_generics()
     val p1 = Pair[i32, ref(u8)](first: 42, second: "Scarlang")
-    val p4 = make_pair(999, "works")
+    val p4 = make_pair[i32, ref(u8)](999, "works")
 
-    print_pair(p1)
-    print_pair(p4)
+    print_pair[i32](p1)
+    print_pair[i32](p4)
 
     var mutable_box = Box[i32](value: 10)
     mutable_box.value = 999

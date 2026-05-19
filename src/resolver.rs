@@ -9,7 +9,7 @@ use crate::{
     ast::{
         BinaryOp, Expr, FieldDef, FieldInit, Function, GenericParam, InterfaceDef, InterfaceMethod,
         MatchArmKind, ModuleUse, Param, Program, Stmt, TestBlock, Type, TypeDef, TypeDefKind,
-        UnaryOp, UnionVariantDef,
+        TypeSetDef, UnaryOp, UnionVariantDef,
     },
     lexer::lex,
     parser::parse_program,
@@ -29,39 +29,53 @@ pub fn resolve_entry_program(entry: &Path) -> Result<Program, CompileError> {
         emitted_modules: HashSet::new(),
         resolved_interfaces: Vec::new(),
         resolved_types: Vec::new(),
+        resolved_typesets: Vec::new(),
         resolved_functions: Vec::new(),
         visiting: Vec::new(),
     };
 
     let program = parse_program_file(&entry)?;
     let module_aliases = resolver.resolve_module_uses(&program.module_uses, &entry)?;
-    let local_types = build_named_type_map(&program.type_defs, &program.interface_defs, None);
+    let local_symbols = build_named_symbol_map(
+        &program.type_defs,
+        &program.interface_defs,
+        &program.typesets,
+        None,
+    );
     let local_functions = build_function_map(&program.functions, None);
     let mut interface_defs = resolver.resolved_interfaces;
     for interface_def in program.interface_defs {
         interface_defs.push(rewrite_interface_def(
             interface_def,
-            &local_types,
+            &local_symbols,
             &module_aliases,
         )?);
     }
     let mut type_defs = resolver.resolved_types;
     for type_def in program.type_defs {
-        type_defs.push(rewrite_type_def(type_def, &local_types, &module_aliases)?);
+        type_defs.push(rewrite_type_def(type_def, &local_symbols, &module_aliases)?);
+    }
+    let mut typesets = resolver.resolved_typesets;
+    for typeset in program.typesets {
+        typesets.push(rewrite_typeset_def(
+            typeset,
+            &local_symbols,
+            &module_aliases,
+        ));
     }
     let mut functions = resolver.resolved_functions;
     for function in program.functions {
         functions.push(rewrite_function(
             function,
             &local_functions,
-            &local_types,
+            &local_symbols,
             &module_aliases,
         )?);
     }
     let tests = program
         .tests
         .into_iter()
-        .map(|test| rewrite_test_block(test, &local_functions, &local_types, &module_aliases))
+        .map(|test| rewrite_test_block(test, &local_functions, &local_symbols, &module_aliases))
         .collect::<Result<Vec<_>, _>>()?;
 
     instantiate_generic_functions(Program {
@@ -69,6 +83,7 @@ pub fn resolve_entry_program(entry: &Path) -> Result<Program, CompileError> {
         extern_headers: program.extern_headers,
         interface_defs,
         type_defs,
+        typesets,
         functions,
         tests,
     })
@@ -91,6 +106,7 @@ struct Resolver {
     emitted_modules: HashSet<PathBuf>,
     resolved_interfaces: Vec<InterfaceDef>,
     resolved_types: Vec<TypeDef>,
+    resolved_typesets: Vec<TypeSetDef>,
     resolved_functions: Vec<Function>,
     visiting: Vec<PathBuf>,
 }
@@ -143,8 +159,12 @@ impl Resolver {
         let parsed = parse_program_file(&module_path)?;
         let module_aliases = self.resolve_module_uses(&parsed.module_uses, &module_path)?;
         let prefix = module_prefix(&module_path, &self.root_dir);
-        let local_types =
-            build_named_type_map(&parsed.type_defs, &parsed.interface_defs, Some(&prefix));
+        let local_symbols = build_named_symbol_map(
+            &parsed.type_defs,
+            &parsed.interface_defs,
+            &parsed.typesets,
+            Some(&prefix),
+        );
         let local_functions = build_function_map(&parsed.functions, Some(&prefix));
         let public_functions = build_public_function_map(&parsed.functions, Some(&prefix));
         let public_types = build_public_named_type_map(&parsed.type_defs, Some(&prefix));
@@ -154,13 +174,21 @@ impl Resolver {
         for interface_def in parsed.interface_defs {
             rewritten_interfaces.push(rewrite_interface_def(
                 interface_def,
-                &local_types,
+                &local_symbols,
                 &module_aliases,
             )?);
         }
         let mut rewritten_types = Vec::new();
         for type_def in parsed.type_defs {
-            rewritten_types.push(rewrite_type_def(type_def, &local_types, &module_aliases)?);
+            rewritten_types.push(rewrite_type_def(type_def, &local_symbols, &module_aliases)?);
+        }
+        let mut rewritten_typesets = Vec::new();
+        for typeset in parsed.typesets {
+            rewritten_typesets.push(rewrite_typeset_def(
+                typeset,
+                &local_symbols,
+                &module_aliases,
+            ));
         }
 
         let mut rewritten_functions = Vec::new();
@@ -168,7 +196,7 @@ impl Resolver {
             rewritten_functions.push(rewrite_function(
                 function,
                 &local_functions,
-                &local_types,
+                &local_symbols,
                 &module_aliases,
             )?);
         }
@@ -176,6 +204,7 @@ impl Resolver {
         if self.emitted_modules.insert(module_path.clone()) {
             self.resolved_interfaces.extend(rewritten_interfaces);
             self.resolved_types.extend(rewritten_types);
+            self.resolved_typesets.extend(rewritten_typesets);
             self.resolved_functions.extend(rewritten_functions);
         }
 
@@ -277,9 +306,10 @@ fn build_public_function_map(
         .collect()
 }
 
-fn build_named_type_map(
+fn build_named_symbol_map(
     type_defs: &[TypeDef],
     interface_defs: &[InterfaceDef],
+    typesets: &[TypeSetDef],
     prefix: Option<&str>,
 ) -> HashMap<String, String> {
     let mut named = type_defs
@@ -298,6 +328,13 @@ fn build_named_type_map(
             None => interface_def.name.clone(),
         };
         (interface_def.name.clone(), mapped)
+    }));
+    named.extend(typesets.iter().map(|typeset| {
+        let mapped = match prefix {
+            Some(prefix) => format!("{prefix}__{}", typeset.name),
+            None => typeset.name.clone(),
+        };
+        (typeset.name.clone(), mapped)
     }));
     named
 }
@@ -368,7 +405,7 @@ fn module_prefix(module_path: &Path, root_dir: &Path) -> String {
 fn rewrite_function(
     mut function: Function,
     local_functions: &HashMap<String, String>,
-    local_types: &HashMap<String, String>,
+    local_symbols: &HashMap<String, String>,
     module_aliases: &ModuleAliases,
 ) -> Result<Function, CompileError> {
     if let Some(mapped) = local_functions.get(&function.name) {
@@ -381,7 +418,7 @@ fn rewrite_function(
             name,
             constraints: constraints
                 .into_iter()
-                .map(|constraint| rewrite_type(constraint, local_types, module_aliases))
+                .map(|constraint| rewrite_type(constraint, local_symbols, module_aliases))
                 .collect(),
         })
         .collect();
@@ -389,25 +426,25 @@ fn rewrite_function(
         .params
         .into_iter()
         .map(|mut param| {
-            param.ty = rewrite_type(param.ty, local_types, module_aliases);
+            param.ty = rewrite_type(param.ty, local_symbols, module_aliases);
             param
         })
         .collect();
-    function.return_type = rewrite_type(function.return_type, local_types, module_aliases);
+    function.return_type = rewrite_type(function.return_type, local_symbols, module_aliases);
     function.body = function
         .body
         .into_iter()
-        .map(|stmt| rewrite_stmt(stmt, local_functions, local_types, module_aliases))
+        .map(|stmt| rewrite_stmt(stmt, local_functions, local_symbols, module_aliases))
         .collect::<Result<Vec<_>, _>>()?;
     Ok(function)
 }
 
 fn rewrite_interface_def(
     interface_def: InterfaceDef,
-    local_types: &HashMap<String, String>,
+    local_symbols: &HashMap<String, String>,
     module_aliases: &ModuleAliases,
 ) -> Result<InterfaceDef, CompileError> {
-    let name = local_types
+    let name = local_symbols
         .get(&interface_def.name)
         .cloned()
         .unwrap_or(interface_def.name);
@@ -423,10 +460,10 @@ fn rewrite_interface_def(
                     .into_iter()
                     .map(|param| Param {
                         name: param.name,
-                        ty: rewrite_type(param.ty, local_types, module_aliases),
+                        ty: rewrite_type(param.ty, local_symbols, module_aliases),
                     })
                     .collect(),
-                return_type: rewrite_type(method.return_type, local_types, module_aliases),
+                return_type: rewrite_type(method.return_type, local_symbols, module_aliases),
             })
         })
         .collect::<Result<Vec<_>, CompileError>>()?;
@@ -439,34 +476,46 @@ fn rewrite_interface_def(
 
 fn rewrite_type_def(
     type_def: TypeDef,
-    local_types: &HashMap<String, String>,
+    local_symbols: &HashMap<String, String>,
     module_aliases: &ModuleAliases,
 ) -> Result<TypeDef, CompileError> {
-    let name = local_types
+    let name = local_symbols
         .get(&type_def.name)
         .cloned()
         .unwrap_or(type_def.name);
     let is_extern = type_def.is_extern;
     let is_pub = type_def.is_pub;
+    let generic_params = type_def
+        .generic_params
+        .into_iter()
+        .map(|GenericParam { name, constraints }| GenericParam {
+            name,
+            constraints: constraints
+                .into_iter()
+                .map(|constraint| rewrite_type(constraint, local_symbols, module_aliases))
+                .collect(),
+        })
+        .collect();
     let alias = type_def
         .alias
-        .map(|ty| rewrite_type(ty, local_types, module_aliases));
+        .map(|ty| rewrite_type(ty, local_symbols, module_aliases));
     let derives = type_def
         .derives
         .into_iter()
-        .map(|ty| rewrite_type(ty, local_types, module_aliases))
+        .map(|ty| rewrite_type(ty, local_symbols, module_aliases))
         .collect();
     let fields = type_def
         .fields
         .into_iter()
         .map(|field| FieldDef {
             name: field.name,
-            ty: rewrite_type(field.ty, local_types, module_aliases),
+            ty: rewrite_type(field.ty, local_symbols, module_aliases),
         })
         .collect();
     Ok(TypeDef {
         is_pub,
         name,
+        generic_params,
         kind: type_def.kind,
         is_extern,
         alias,
@@ -480,17 +529,36 @@ fn rewrite_type_def(
                 payload_types: variant
                     .payload_types
                     .into_iter()
-                    .map(|ty| rewrite_type(ty, local_types, module_aliases))
+                    .map(|ty| rewrite_type(ty, local_symbols, module_aliases))
                     .collect(),
             })
             .collect(),
     })
 }
 
+fn rewrite_typeset_def(
+    typeset: TypeSetDef,
+    local_symbols: &HashMap<String, String>,
+    module_aliases: &ModuleAliases,
+) -> TypeSetDef {
+    TypeSetDef {
+        is_pub: typeset.is_pub,
+        name: local_symbols
+            .get(&typeset.name)
+            .cloned()
+            .unwrap_or(typeset.name),
+        members: typeset
+            .members
+            .into_iter()
+            .map(|member| rewrite_type(member, local_symbols, module_aliases))
+            .collect(),
+    }
+}
+
 fn rewrite_test_block(
     test: TestBlock,
     local_functions: &HashMap<String, String>,
-    local_types: &HashMap<String, String>,
+    local_symbols: &HashMap<String, String>,
     module_aliases: &ModuleAliases,
 ) -> Result<TestBlock, CompileError> {
     Ok(TestBlock {
@@ -498,7 +566,7 @@ fn rewrite_test_block(
         body: test
             .body
             .into_iter()
-            .map(|stmt| rewrite_stmt(stmt, local_functions, local_types, module_aliases))
+            .map(|stmt| rewrite_stmt(stmt, local_functions, local_symbols, module_aliases))
             .collect::<Result<Vec<_>, _>>()?,
     })
 }
@@ -807,8 +875,16 @@ fn rewrite_expr(
             )?),
             field,
         }),
-        Expr::StructInit { name, fields } => Ok(Expr::StructInit {
+        Expr::StructInit {
+            name,
+            type_args,
+            fields,
+        } => Ok(Expr::StructInit {
             name: local_types.get(&name).cloned().unwrap_or(name),
+            type_args: type_args
+                .into_iter()
+                .map(|ty| rewrite_type(ty, local_types, module_aliases))
+                .collect(),
             fields: fields
                 .into_iter()
                 .map(|field| {
@@ -942,7 +1018,7 @@ fn rewrite_callee(
                     .get(name)
                     .cloned()
                     .unwrap_or_else(|| name.clone()),
-                ]));
+            ]));
         }
         if let Some(rewritten) = rewrite_constructor_path(&path, local_types, module_aliases) {
             return Ok(Expr::Path(rewritten));
@@ -1011,6 +1087,13 @@ fn rewrite_type(
 ) -> Type {
     match ty {
         Type::Named(name) => Type::Named(rewrite_named_type(name, local_types, module_aliases)),
+        Type::Applied(name, type_args) => Type::Applied(
+            rewrite_named_type(name, local_types, module_aliases),
+            type_args
+                .into_iter()
+                .map(|arg| rewrite_type(arg, local_types, module_aliases))
+                .collect(),
+        ),
         Type::Result(inner) => {
             Type::Result(Box::new(rewrite_type(*inner, local_types, module_aliases)))
         }
@@ -1069,8 +1152,10 @@ fn instantiate_generic_functions(program: Program) -> Result<Program, CompileErr
         })
         .collect::<HashMap<_, _>>();
     let mut templates = HashMap::new();
+    let mut type_templates = HashMap::new();
     let mut function_returns = HashMap::new();
     let mut concrete_functions = Vec::new();
+    let mut concrete_type_defs = Vec::new();
     for function in program.functions {
         if function.generic_params.is_empty() {
             function_returns.insert(function.name.clone(), function.return_type.clone());
@@ -1085,21 +1170,49 @@ fn instantiate_generic_functions(program: Program) -> Result<Program, CompileErr
             templates.insert(function.name.clone(), function);
         }
     }
+    for type_def in program.type_defs {
+        if type_def.generic_params.is_empty() {
+            concrete_type_defs.push(type_def);
+        } else {
+            if type_def.is_extern {
+                return Err(CompileError::new(format!(
+                    "generic extern types are not supported: `{}`",
+                    type_def.name
+                )));
+            }
+            type_templates.insert(type_def.name.clone(), type_def);
+        }
+    }
 
     let mut instantiator = GenericInstantiator {
         templates,
+        type_templates,
         function_returns,
-        types: program
-            .type_defs
-            .iter()
-            .cloned()
-            .map(|type_def| (type_def.name.clone(), type_def))
-            .collect(),
-        instantiated_names: HashMap::new(),
+        types: HashMap::new(),
+        function_instantiated_names: HashMap::new(),
+        type_instantiated_names: HashMap::new(),
+        specialized_types: HashMap::new(),
         generated_functions: Vec::new(),
+        generated_types: Vec::new(),
         interface_names,
         type_interfaces,
+        type_sets: HashMap::new(),
     };
+
+    let typesets = program
+        .typesets
+        .into_iter()
+        .map(|typeset| instantiator.rewrite_typeset_def(typeset))
+        .collect::<Result<Vec<_>, _>>()?;
+    let interface_defs = program
+        .interface_defs
+        .into_iter()
+        .map(|interface_def| instantiator.rewrite_interface_def(interface_def))
+        .collect::<Result<Vec<_>, _>>()?;
+    let type_defs = concrete_type_defs
+        .into_iter()
+        .map(|type_def| instantiator.rewrite_concrete_type_def(type_def))
+        .collect::<Result<Vec<_>, _>>()?;
 
     let functions = concrete_functions
         .into_iter()
@@ -1113,12 +1226,15 @@ fn instantiate_generic_functions(program: Program) -> Result<Program, CompileErr
 
     let mut all_functions = functions;
     all_functions.extend(instantiator.generated_functions);
+    let mut all_type_defs = type_defs;
+    all_type_defs.extend(instantiator.generated_types);
 
     Ok(Program {
         module_uses: program.module_uses,
         extern_headers: program.extern_headers,
-        interface_defs: program.interface_defs,
-        type_defs: program.type_defs,
+        interface_defs,
+        type_defs: all_type_defs,
+        typesets,
         functions: all_functions,
         tests,
     })
@@ -1126,16 +1242,248 @@ fn instantiate_generic_functions(program: Program) -> Result<Program, CompileErr
 
 struct GenericInstantiator {
     templates: HashMap<String, Function>,
+    type_templates: HashMap<String, TypeDef>,
     function_returns: HashMap<String, Type>,
     types: HashMap<String, TypeDef>,
-    instantiated_names: HashMap<String, String>,
+    function_instantiated_names: HashMap<String, String>,
+    type_instantiated_names: HashMap<String, String>,
+    specialized_types: HashMap<String, (String, Vec<Type>)>,
     generated_functions: Vec<Function>,
+    generated_types: Vec<TypeDef>,
     interface_names: HashSet<String>,
     type_interfaces: HashMap<String, HashSet<String>>,
+    type_sets: HashMap<String, Vec<Type>>,
 }
 
 impl GenericInstantiator {
+    fn rewrite_typeset_def(&mut self, mut typeset: TypeSetDef) -> Result<TypeSetDef, CompileError> {
+        typeset.members = typeset
+            .members
+            .into_iter()
+            .map(|member| self.rewrite_concrete_type(member))
+            .collect::<Result<Vec<_>, _>>()?;
+        self.type_sets
+            .insert(typeset.name.clone(), typeset.members.clone());
+        Ok(typeset)
+    }
+
+    fn rewrite_interface_def(
+        &mut self,
+        mut interface_def: InterfaceDef,
+    ) -> Result<InterfaceDef, CompileError> {
+        interface_def.methods = interface_def
+            .methods
+            .into_iter()
+            .map(|mut method| {
+                method.params = method
+                    .params
+                    .into_iter()
+                    .map(|mut param| {
+                        param.ty = self.rewrite_concrete_type(param.ty)?;
+                        Ok(param)
+                    })
+                    .collect::<Result<Vec<_>, CompileError>>()?;
+                method.return_type = self.rewrite_concrete_type(method.return_type)?;
+                Ok(method)
+            })
+            .collect::<Result<Vec<_>, CompileError>>()?;
+        Ok(interface_def)
+    }
+
+    fn rewrite_concrete_type_def(
+        &mut self,
+        mut type_def: TypeDef,
+    ) -> Result<TypeDef, CompileError> {
+        type_def.alias = type_def
+            .alias
+            .map(|alias| self.rewrite_concrete_type(alias))
+            .transpose()?;
+        type_def.derives = type_def
+            .derives
+            .into_iter()
+            .map(|derive| self.rewrite_concrete_type(derive))
+            .collect::<Result<Vec<_>, _>>()?;
+        type_def.fields = type_def
+            .fields
+            .into_iter()
+            .map(|mut field| {
+                field.ty = self.rewrite_concrete_type(field.ty)?;
+                Ok(field)
+            })
+            .collect::<Result<Vec<_>, CompileError>>()?;
+        type_def.variants = type_def
+            .variants
+            .into_iter()
+            .map(|mut variant| {
+                variant.payload_types = variant
+                    .payload_types
+                    .into_iter()
+                    .map(|payload| self.rewrite_concrete_type(payload))
+                    .collect::<Result<Vec<_>, _>>()?;
+                Ok(variant)
+            })
+            .collect::<Result<Vec<_>, CompileError>>()?;
+        self.register_concrete_type(&type_def);
+        Ok(type_def)
+    }
+
+    fn register_concrete_type(&mut self, type_def: &TypeDef) {
+        self.types.insert(type_def.name.clone(), type_def.clone());
+        self.type_interfaces.insert(
+            type_def.name.clone(),
+            type_def
+                .derives
+                .iter()
+                .filter_map(|derive| match derive {
+                    Type::Named(name) => Some(name.clone()),
+                    _ => None,
+                })
+                .collect(),
+        );
+    }
+
+    fn rewrite_concrete_type(&mut self, ty: Type) -> Result<Type, CompileError> {
+        match ty {
+            Type::Applied(name, type_args) => {
+                let resolved_type_args = type_args
+                    .into_iter()
+                    .map(|type_arg| self.rewrite_concrete_type(type_arg))
+                    .collect::<Result<Vec<_>, _>>()?;
+                Ok(Type::Named(self.instantiate_type_specialization(
+                    &name,
+                    &resolved_type_args,
+                )?))
+            }
+            Type::Named(name) => {
+                if self.type_templates.contains_key(&name) {
+                    Err(CompileError::new(format!(
+                        "generic type `{name}` requires explicit type arguments"
+                    )))
+                } else {
+                    Ok(Type::Named(name))
+                }
+            }
+            Type::Result(inner) => Ok(Type::Result(Box::new(self.rewrite_concrete_type(*inner)?))),
+            Type::Mut(inner) => Ok(Type::Mut(Box::new(self.rewrite_concrete_type(*inner)?))),
+            Type::Ref(inner) => Ok(Type::Ref(Box::new(self.rewrite_concrete_type(*inner)?))),
+            Type::List(inner) => Ok(Type::List(Box::new(self.rewrite_concrete_type(*inner)?))),
+            other => Ok(other),
+        }
+    }
+
+    fn instantiate_type_specialization(
+        &mut self,
+        name: &str,
+        type_args: &[Type],
+    ) -> Result<String, CompileError> {
+        let template = self
+            .type_templates
+            .get(name)
+            .cloned()
+            .ok_or_else(|| CompileError::new(format!("unknown generic type `{name}`")))?;
+        if template.generic_params.len() != type_args.len() {
+            return Err(CompileError::new(format!(
+                "generic type `{}` expects {} type arguments but received {}",
+                template.name,
+                template.generic_params.len(),
+                type_args.len()
+            )));
+        }
+
+        for (param, type_arg) in template.generic_params.iter().zip(type_args.iter()) {
+            if !param.constraints.is_empty()
+                && !param
+                    .constraints
+                    .iter()
+                    .any(|allowed| self.constraint_matches(allowed, type_arg))
+            {
+                return Err(CompileError::new(format!(
+                    "generic parameter `{}` on `{}` does not allow type {}",
+                    param.name,
+                    template.name,
+                    describe_type(type_arg)
+                )));
+            }
+        }
+
+        let key = specialization_key(name, type_args);
+        if let Some(existing) = self.type_instantiated_names.get(&key) {
+            return Ok(existing.clone());
+        }
+
+        let specialized_name = format!(
+            "{}__generic__{}",
+            template.name,
+            specialization_suffix(type_args)
+        );
+        self.type_instantiated_names
+            .insert(key, specialized_name.clone());
+        self.specialized_types.insert(
+            specialized_name.clone(),
+            (template.name.clone(), type_args.to_vec()),
+        );
+
+        let substitutions = template
+            .generic_params
+            .iter()
+            .zip(type_args.iter())
+            .map(|(param, type_arg)| (param.name.clone(), type_arg.clone()))
+            .collect::<HashMap<_, _>>();
+
+        let mut specialized = template.clone();
+        specialized.name = specialized_name.clone();
+        specialized.generic_params.clear();
+        specialized.alias = specialized
+            .alias
+            .map(|alias| self.rewrite_concrete_type(substitute_type(alias, &substitutions)))
+            .transpose()?;
+        specialized.derives = specialized
+            .derives
+            .into_iter()
+            .map(|derive| self.rewrite_concrete_type(substitute_type(derive, &substitutions)))
+            .collect::<Result<Vec<_>, _>>()?;
+        specialized.fields = specialized
+            .fields
+            .into_iter()
+            .map(|field| {
+                Ok(FieldDef {
+                    name: field.name,
+                    ty: self.rewrite_concrete_type(substitute_type(field.ty, &substitutions))?,
+                })
+            })
+            .collect::<Result<Vec<_>, CompileError>>()?;
+        specialized.variants = specialized
+            .variants
+            .into_iter()
+            .map(|variant| {
+                Ok(UnionVariantDef {
+                    name: variant.name,
+                    payload_types: variant
+                        .payload_types
+                        .into_iter()
+                        .map(|payload| {
+                            self.rewrite_concrete_type(substitute_type(payload, &substitutions))
+                        })
+                        .collect::<Result<Vec<_>, _>>()?,
+                })
+            })
+            .collect::<Result<Vec<_>, CompileError>>()?;
+        self.register_concrete_type(&specialized);
+        self.generated_types.push(specialized);
+
+        Ok(specialized_name)
+    }
+
     fn rewrite_function_body(&mut self, mut function: Function) -> Result<Function, CompileError> {
+        function.params = function
+            .params
+            .into_iter()
+            .map(|mut param| {
+                param.ty = self.rewrite_concrete_type(param.ty)?;
+                Ok(param)
+            })
+            .collect::<Result<Vec<_>, CompileError>>()?;
+        function.return_type = self.rewrite_concrete_type(function.return_type)?;
         let mut scope = function
             .params
             .iter()
@@ -1174,6 +1522,9 @@ impl GenericInstantiator {
                 init,
             } => {
                 let init = self.rewrite_expr_generics(init, scope)?;
+                let declared_type = declared_type
+                    .map(|ty| self.rewrite_concrete_type(ty))
+                    .transpose()?;
                 let binding_ty = match &declared_type {
                     Some(ty) => ty.clone(),
                     None => self.infer_expr_type(&init, scope).ok_or_else(|| {
@@ -1484,18 +1835,38 @@ impl GenericInstantiator {
                 base: Box::new(self.rewrite_expr_generics(*base, scope)?),
                 field,
             },
-            Expr::StructInit { name, fields } => Expr::StructInit {
+            Expr::StructInit {
                 name,
-                fields: fields
+                type_args,
+                fields,
+            } => {
+                let resolved_type_args = type_args
                     .into_iter()
-                    .map(|field| {
-                        Ok(FieldInit {
-                            name: field.name,
-                            value: self.rewrite_expr_generics(field.value, scope)?,
+                    .map(|ty| self.rewrite_concrete_type(ty))
+                    .collect::<Result<Vec<_>, _>>()?;
+                Expr::StructInit {
+                    name: if resolved_type_args.is_empty() {
+                        if self.type_templates.contains_key(&name) {
+                            return Err(CompileError::new(format!(
+                                "generic type `{name}` requires explicit type arguments"
+                            )));
+                        }
+                        name
+                    } else {
+                        self.instantiate_type_specialization(&name, &resolved_type_args)?
+                    },
+                    type_args: Vec::new(),
+                    fields: fields
+                        .into_iter()
+                        .map(|field| {
+                            Ok(FieldInit {
+                                name: field.name,
+                                value: self.rewrite_expr_generics(field.value, scope)?,
+                            })
                         })
-                    })
-                    .collect::<Result<Vec<_>, CompileError>>()?,
-            },
+                        .collect::<Result<Vec<_>, CompileError>>()?,
+                }
+            }
             Expr::BuiltinCall { name, args } => Expr::BuiltinCall {
                 name,
                 args: args
@@ -1542,11 +1913,14 @@ impl GenericInstantiator {
             }
             Expr::Specialize { callee, type_args } => Expr::Specialize {
                 callee: Box::new(self.rewrite_expr_generics(*callee, scope)?),
-                type_args,
+                type_args: type_args
+                    .into_iter()
+                    .map(|ty| self.rewrite_concrete_type(ty))
+                    .collect::<Result<Vec<_>, _>>()?,
             },
             Expr::Cast { expr, ty } => Expr::Cast {
                 expr: Box::new(self.rewrite_expr_generics(*expr, scope)?),
-                ty,
+                ty: self.rewrite_concrete_type(ty)?,
             },
             Expr::Error { message } => Expr::Error {
                 message: Box::new(self.rewrite_expr_generics(*message, scope)?),
@@ -1647,7 +2021,7 @@ impl GenericInstantiator {
             .collect::<Vec<_>>();
 
         let key = specialization_key(name, &resolved_type_args);
-        if let Some(existing) = self.instantiated_names.get(&key) {
+        if let Some(existing) = self.function_instantiated_names.get(&key) {
             return Ok(existing.clone());
         }
 
@@ -1656,7 +2030,7 @@ impl GenericInstantiator {
             template.name,
             specialization_suffix(&resolved_type_args)
         );
-        self.instantiated_names
+        self.function_instantiated_names
             .insert(key, specialized_name.clone());
 
         let mut specialized = template.clone();
@@ -1665,15 +2039,18 @@ impl GenericInstantiator {
         specialized.params = specialized
             .params
             .into_iter()
-            .map(|param| crate::ast::Param {
-                name: param.name,
-                ty: substitute_type(param.ty, &substitutions),
+            .map(|param| {
+                Ok(crate::ast::Param {
+                    name: param.name,
+                    ty: self.rewrite_concrete_type(substitute_type(param.ty, &substitutions))?,
+                })
             })
-            .collect();
-        specialized.return_type = substitute_type(specialized.return_type, &substitutions);
+            .collect::<Result<Vec<_>, CompileError>>()?;
+        specialized.return_type =
+            self.rewrite_concrete_type(substitute_type(specialized.return_type, &substitutions))?;
         if specialized.return_type == Type::Void {
             if let Some(inferred) = infer_implicit_return_type(&specialized, &substitutions) {
-                specialized.return_type = inferred;
+                specialized.return_type = self.rewrite_concrete_type(inferred)?;
             }
         }
         specialized.body = specialized
@@ -1704,6 +2081,40 @@ impl GenericInstantiator {
                         .or_insert_with(|| actual_ty.clone());
                 }
             }
+            Type::Applied(name, type_args) => match actual_ty {
+                Type::Named(actual_name) => {
+                    if let Some((actual_template, actual_type_args)) =
+                        self.specialized_types.get(actual_name)
+                    {
+                        if actual_template == name && actual_type_args.len() == type_args.len() {
+                            for (template_arg, actual_arg) in
+                                type_args.iter().zip(actual_type_args.iter())
+                            {
+                                self.infer_substitutions_from_types(
+                                    template_arg,
+                                    actual_arg,
+                                    generic_params,
+                                    substitutions,
+                                );
+                            }
+                        }
+                    }
+                }
+                Type::Applied(actual_name, actual_type_args)
+                    if actual_name == name && actual_type_args.len() == type_args.len() =>
+                {
+                    for (template_arg, actual_arg) in type_args.iter().zip(actual_type_args.iter())
+                    {
+                        self.infer_substitutions_from_types(
+                            template_arg,
+                            actual_arg,
+                            generic_params,
+                            substitutions,
+                        );
+                    }
+                }
+                _ => {}
+            },
             Type::Mut(inner) => {
                 if let Type::Mut(actual_inner) = actual_ty {
                     self.infer_substitutions_from_types(
@@ -1793,11 +2204,16 @@ impl GenericInstantiator {
                 } else {
                     match path.as_slice() {
                         [name] => self.types.get(name).map(|_| Type::Named(name.clone())),
-                        [union_name, variant_name] => self.types.get(union_name).and_then(|type_def| {
-                            (type_def.kind == TypeDefKind::Union
-                                && type_def.variants.iter().any(|variant| variant.name == *variant_name))
+                        [union_name, variant_name] => {
+                            self.types.get(union_name).and_then(|type_def| {
+                                (type_def.kind == TypeDefKind::Union
+                                    && type_def
+                                        .variants
+                                        .iter()
+                                        .any(|variant| variant.name == *variant_name))
                                 .then(|| Type::Named(union_name.clone()))
-                        }),
+                            })
+                        }
                         _ => None,
                     }
                 }
@@ -1868,7 +2284,12 @@ impl GenericInstantiator {
                 .types
                 .get(union_name)
                 .filter(|type_def| type_def.kind == TypeDefKind::Union)
-                .and_then(|type_def| type_def.variants.iter().find(|variant| variant.name == *variant_name))
+                .and_then(|type_def| {
+                    type_def
+                        .variants
+                        .iter()
+                        .find(|variant| variant.name == *variant_name)
+                })
                 .map(|variant| {
                     bindings
                         .iter()
@@ -1948,6 +2369,13 @@ impl GenericInstantiator {
                 .and_then(|type_def| type_def.alias.as_ref())
                 .map(|alias| self.resolve_aliases(alias))
                 .unwrap_or_else(|| Type::Named(name.clone())),
+            Type::Applied(name, type_args) => Type::Applied(
+                name.clone(),
+                type_args
+                    .iter()
+                    .map(|type_arg| self.resolve_aliases(type_arg))
+                    .collect(),
+            ),
             Type::Result(inner) => Type::Result(Box::new(self.resolve_aliases(inner))),
             Type::Mut(inner) => Type::Mut(Box::new(self.resolve_aliases(inner))),
             Type::Ref(inner) => Type::Ref(Box::new(self.resolve_aliases(inner))),
@@ -1971,6 +2399,11 @@ impl GenericInstantiator {
     fn constraint_matches(&self, constraint: &Type, type_arg: &Type) -> bool {
         if constraint == type_arg {
             return true;
+        }
+        if let Type::Named(typeset_name) = constraint {
+            if let Some(members) = self.type_sets.get(typeset_name) {
+                return members.iter().any(|member| member == type_arg);
+            }
         }
         match (constraint, type_arg) {
             (Type::Named(interface_name), Type::Named(type_name))
@@ -2270,8 +2703,16 @@ fn substitute_expr(expr: Expr, substitutions: &HashMap<String, Type>) -> Expr {
                 field,
             }
         }
-        Expr::StructInit { name, fields } => Expr::StructInit {
+        Expr::StructInit {
             name,
+            type_args,
+            fields,
+        } => Expr::StructInit {
+            name,
+            type_args: type_args
+                .into_iter()
+                .map(|ty| substitute_type(ty, substitutions))
+                .collect(),
             fields: fields
                 .into_iter()
                 .map(|field| FieldInit {
@@ -2347,6 +2788,13 @@ fn substitute_type(ty: Type, substitutions: &HashMap<String, Type>) -> Type {
             .get(&name)
             .cloned()
             .unwrap_or(Type::Named(name)),
+        Type::Applied(name, type_args) => Type::Applied(
+            name,
+            type_args
+                .into_iter()
+                .map(|type_arg| substitute_type(type_arg, substitutions))
+                .collect(),
+        ),
         Type::Result(inner) => Type::Result(Box::new(substitute_type(*inner, substitutions))),
         Type::Mut(inner) => Type::Mut(Box::new(substitute_type(*inner, substitutions))),
         Type::Ref(inner) => Type::Ref(Box::new(substitute_type(*inner, substitutions))),
@@ -2448,6 +2896,15 @@ fn infer_expr_type_from_template(expr: &Expr, param_types: &HashMap<String, Type
         Expr::Float(_) => Some(Type::F32),
         Expr::String(_) => Some(Type::Ref(Box::new(Type::U8))),
         Expr::Path(path) if path.len() == 1 => param_types.get(&path[0]).cloned(),
+        Expr::StructInit {
+            name, type_args, ..
+        } => {
+            if type_args.is_empty() {
+                Some(Type::Named(name.clone()))
+            } else {
+                Some(Type::Applied(name.clone(), type_args.clone()))
+            }
+        }
         Expr::Cast { ty, .. } => Some(ty.clone()),
         Expr::Unary { op, expr } => {
             let inner = infer_expr_type_from_template(expr, param_types)?;
@@ -2519,6 +2976,15 @@ fn type_suffix_for_specialization(ty: &Type) -> String {
         Type::F32 => "f32".to_string(),
         Type::F64 => "f64".to_string(),
         Type::Named(name) => sanitize_generic_name(name),
+        Type::Applied(name, type_args) => format!(
+            "{}__{}",
+            sanitize_generic_name(name),
+            type_args
+                .iter()
+                .map(type_suffix_for_specialization)
+                .collect::<Vec<_>>()
+                .join("__")
+        ),
         Type::Mut(inner) => format!("mut__{}", type_suffix_for_specialization(inner)),
         Type::Ref(inner) => format!("ref__{}", type_suffix_for_specialization(inner)),
         Type::List(inner) => format!("list__{}", type_suffix_for_specialization(inner)),
@@ -2558,6 +3024,15 @@ fn describe_type(ty: &Type) -> String {
         Type::F64 => "f64".to_string(),
         Type::Infer => "_".to_string(),
         Type::Named(name) => name.clone(),
+        Type::Applied(name, type_args) => format!(
+            "{}[{}]",
+            name,
+            type_args
+                .iter()
+                .map(describe_type)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
         Type::Mut(inner) => format!("mut({})", describe_type(inner)),
         Type::Ref(inner) => format!("ref({})", describe_type(inner)),
         Type::List(inner) => format!("list[{}]", describe_type(inner)),
@@ -2682,6 +3157,58 @@ mod tests {
             program.functions[1]
                 .name
                 .starts_with("StringBuilder.new__generic__Arena")
+        );
+
+        fs::remove_dir_all(temp_dir).unwrap();
+    }
+
+    #[test]
+    fn specializes_generic_types_in_resolved_programs() {
+        let temp_dir = create_temp_dir();
+        let entry = temp_dir.join("main.scar");
+
+        fs::write(
+            &entry,
+            "type Pair[T, U]\n\tfirst T\n\tsecond U\nend\n\ndef make_pair[T, U](first T, second U): Pair[T, U]\n\treturn Pair[T, U](first: first, second: second)\nend\n\npub def main() void\n\tval pair = make_pair[i32, ref(u8)](1, \"ok\")\n\t@print(\"{d}\", {pair.first})\nend\n",
+        )
+        .unwrap();
+
+        let program = resolve_entry_program(&entry).unwrap();
+
+        assert!(
+            program
+                .type_defs
+                .iter()
+                .any(|type_def| type_def.name == "Pair__generic__i32__ref__u8")
+        );
+        assert!(program.functions.iter().any(|function| {
+            function.name == "make_pair__generic__i32__ref__u8"
+                && matches!(
+                    function.return_type,
+                    crate::Type::Named(ref name) if name == "Pair__generic__i32__ref__u8"
+                )
+        }));
+
+        fs::remove_dir_all(temp_dir).unwrap();
+    }
+
+    #[test]
+    fn enforces_typeset_constraints_for_generic_functions() {
+        let temp_dir = create_temp_dir();
+        let entry = temp_dir.join("main.scar");
+
+        fs::write(
+            &entry,
+            "pub typeset Integer\n\ti32, u32\nend\n\ndef id[T: Integer](value T): T\n\treturn value\nend\n\npub def main() void\n\tid[ref(u8)](\"nope\")\nend\n",
+        )
+        .unwrap();
+
+        let error = resolve_entry_program(&entry).unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("generic parameter `T` on `id` does not allow type ref(u8)")
         );
 
         fs::remove_dir_all(temp_dir).unwrap();

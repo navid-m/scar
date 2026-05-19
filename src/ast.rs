@@ -4,6 +4,7 @@ pub struct Program {
     pub extern_headers: Vec<String>,
     pub interface_defs: Vec<InterfaceDef>,
     pub type_defs: Vec<TypeDef>,
+    pub typesets: Vec<TypeSetDef>,
     pub functions: Vec<Function>,
     pub tests: Vec<TestBlock>,
 }
@@ -18,12 +19,20 @@ pub struct ModuleUse {
 pub struct TypeDef {
     pub is_pub: bool,
     pub name: String,
+    pub generic_params: Vec<GenericParam>,
     pub kind: TypeDefKind,
     pub is_extern: bool,
     pub alias: Option<Type>,
     pub derives: Vec<Type>,
     pub fields: Vec<FieldDef>,
     pub variants: Vec<UnionVariantDef>,
+}
+
+#[derive(Debug, Clone)]
+pub struct TypeSetDef {
+    pub is_pub: bool,
+    pub name: String,
+    pub members: Vec<Type>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -120,6 +129,7 @@ pub enum Type {
     F64,
     Infer,
     Named(String),
+    Applied(String, Vec<Type>),
     Mut(Box<Type>),
     Ref(Box<Type>),
     List(Box<Type>),
@@ -280,6 +290,7 @@ pub enum Expr {
     },
     StructInit {
         name: String,
+        type_args: Vec<Type>,
         fields: Vec<FieldInit>,
     },
     BuiltinCall {
