@@ -389,57 +389,61 @@ when posix
 			return os_error[ExecResult]("command is null")
 		end
 
+		val stdout_path = make_temp_file("stdout")?
+		val stderr_path = make_temp_file("stderr")?
+		val wrapped = build_capture_command(command, stdout_path, stderr_path)?
+		var status i32 = system(wrapped)
+
+		@free(wrapped)
+
+		if status < 0
+			delete_temp_file(stdout_path)
+			delete_temp_file(stderr_path)
+			@free(stdout_path)
+			@free(stderr_path)
+			return os_error[ExecResult](
+				last_errno_message("failed to execute command")
+			)
+		end
+
+		match fs.read_text[A](ac, stdout_path)
+			ok captured_stdout => (
+				match fs.read_text[A](ac, stderr_path)
+					ok captured_stderr => (
+						delete_temp_file(stdout_path)?
+						delete_temp_file(stderr_path)?
+						@free(stdout_path)
+						@free(stderr_path)
+						return ExecResult(
+							exit_code: decode_exit_code(status),
+							stdout: captured_stdout,
+							stderr: captured_stderr
+						)
+					)
+					error reason => (
+						delete_temp_file(stdout_path)
+						delete_temp_file(stderr_path)
+						@free(stdout_path)
+						@free(stderr_path)
+						return error(reason)
+					)
+				end
+			)
+			error reason => (
+				delete_temp_file(stdout_path)
+				delete_temp_file(stderr_path)
+				@free(stdout_path)
+				@free(stderr_path)
+				return error(reason)
+			)
+		end
 		match make_temp_file("stdout")
 			ok stdout_path => (
 				match make_temp_file("stderr")
 					ok stderr_path => (
 						match build_capture_command(command, stdout_path, stderr_path)
 							ok wrapped => (
-								var status i32 = system(wrapped)
-								@free(wrapped)
-
-								if status < 0
-									delete_temp_file(stdout_path)
-									delete_temp_file(stderr_path)
-									@free(stdout_path)
-									@free(stderr_path)
-									return os_error[ExecResult](
-										last_errno_message("failed to execute command")
-									)
-								end
-
-								match fs.read_text[A](ac, stdout_path)
-									ok captured_stdout => (
-										match fs.read_text[A](ac, stderr_path)
-											ok captured_stderr => (
-												delete_temp_file(stdout_path)?
-												delete_temp_file(stderr_path)?
-												@free(stdout_path)
-												@free(stderr_path)
-												return ExecResult(
-													exit_code: decode_exit_code(status),
-													stdout: captured_stdout,
-													stderr: captured_stderr
-												)
-											)
-											error reason => (
-												delete_temp_file(stdout_path)
-												delete_temp_file(stderr_path)
-												@free(stdout_path)
-												@free(stderr_path)
-												return error(reason)
-											)
-										end
-									)
-									error reason => (
-										delete_temp_file(stdout_path)
-										delete_temp_file(stderr_path)
-										@free(stdout_path)
-										@free(stderr_path)
-										return error(reason)
-									)
-								end
-							)
+						)
 							error reason => (
 								delete_temp_file(stdout_path)
 								delete_temp_file(stderr_path)
