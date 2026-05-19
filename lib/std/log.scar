@@ -1,0 +1,251 @@
+val allocators = use("std/allocators")
+val time = use("std/time")
+val str = use("std/string")
+
+pub enum Level
+	Debug
+	Info
+	Warn
+	Error
+end
+
+pub val LEVEL Level = Level.Info
+
+def level_to_str(level Level) ref(u8)
+	match level
+		Level.Debug => ( return "DEBUG" )
+		Level.Info => ( return "INFO" )
+		Level.Warn => ( return "WARN" )
+		Level.Error => ( return "ERROR" )
+	end
+end
+
+def level_to_int(level Level) i32
+	match level
+		Level.Debug => ( return 0 )
+		Level.Info =>  ( return 1 )
+		Level.Warn =>  ( return 2 )
+		Level.Error => ( return 3 )
+	end
+end
+
+def log(level Level, msg ref(u8))
+	if level_to_int(level) < level_to_int(LEVEL)
+		return
+	end
+
+	var ts i64 = time.now()
+	var secs i64 = ts / 1000000000 as i64
+	var hours i32 = ((secs % 86400 as i64) / 3600 as i64) as i32
+	var mins i32 = ((secs % 3600 as i64) / 60 as i64) as i32
+	var secs_in_day i32 = (secs % 3600 as i64) as i32
+	var secs_sec i32 = secs_in_day % 60 as i32
+	var ms i32 = ((ts % 1000000000 as i64) / 1000000 as i64) as i32
+
+	var level_str ref(u8) = level_to_str(level)
+
+	@puts(level_str)
+	@puts(" ")
+	@print("[{d02}:{d02}:{d02}.{d03}] ", {hours, mins, secs_sec, ms})
+	@puts(msg)
+	@puts("\n")
+end
+
+pub def debug(msg ref(u8))
+	log(Level.Debug, msg)
+end
+
+pub def info(msg ref(u8))
+	log(Level.Info, msg)
+end
+
+pub def warn(msg ref(u8))
+	log(Level.Warn, msg)
+end
+
+pub def error(msg ref(u8))
+	log(Level.Error, msg)
+end
+
+pub def debugf(format ref(u8), args ref(u8))
+	debug(format)
+end
+
+pub def infof(format ref(u8), args ref(u8))
+	info(format)
+end
+
+pub def warnf(format ref(u8), args ref(u8))
+	warn(format)
+end
+
+pub def errorf(format ref(u8), args ref(u8))
+	error(format)
+end
+
+pub def format_timestamp[A: allocators.BumpAllocator](
+	ac ref(A),
+	ts i64
+) ref(u8)|error
+	var secs i64 = ts / 1000000000 as i64
+	var year i64 = 1970 as i64
+	var days i64 = secs / 86400 as i64
+
+	for days >= days_in_year(year)
+		days = days - days_in_year(year)
+		year++
+	end
+
+	var is_leap bool = (year % 4 as i64) == 0 as i64 && ((year % 100 as i64) != 0 as i64 || (year % 400 as i64) == 0 as i64)
+	var month i32 = 1 as i32
+	for month <= 12 as i32
+		var dim i32 = days_in_month(is_leap, month)
+		if days < dim as i64
+			exit
+		end
+		days = days - dim as i64
+		month++
+	end
+
+	var secs_of_day i64 = secs % 86400 as i64
+	var hour i32 = (secs_of_day / 3600 as i64) as i32
+	var min i32 = ((secs_of_day % 3600 as i64) / 60 as i64) as i32
+	var sec i32 = (secs_of_day % 60 as i64) as i32
+	var ms i32 = ((ts % 1000000000 as i64) / 1000000 as i64) as i32
+
+	var buf [32]u8 = @zeroed()
+	var offset usize = 0 as usize
+
+	offset = write_i32(buf, offset, year, 0 as usize)
+	@deref(@add(@addr(buf), offset)) = '-' as u8
+	offset++
+
+	offset = write_u8(buf, offset, (month / 10 as i32) as u8)
+	offset = write_u8(buf, offset, (month % 10 as i32) as u8)
+	@deref(@add(@addr(buf), offset)) = '-' as u8
+	offset++
+
+	offset = write_u8(buf, offset, ((days + 1 as i64) / 10 as i32) as u8)
+	offset = write_u8(buf, offset, ((days + 1 as i64) % 10 as i32) as u8)
+	@deref(@add(@addr(buf), offset)) = 'T' as u8
+	offset++
+
+	offset = write_u8(buf, offset, (hour / 10 as i32) as u8)
+	offset = write_u8(buf, offset, (hour % 10 as i32) as u8)
+	@deref(@add(@addr(buf), offset)) = ':' as u8
+	offset++
+
+	offset = write_u8(buf, offset, (min / 10 as i32) as u8)
+	offset = write_u8(buf, offset, (min % 10 as i32) as u8)
+	@deref(@add(@addr(buf), offset)) = ':' as u8
+	offset++
+
+	offset = write_u8(buf, offset, (sec / 10 as i32) as u8)
+	offset = write_u8(buf, offset, (sec % 10 as i32) as u8)
+	@deref(@add(@addr(buf), offset)) = '.' as u8
+	offset++
+
+	offset = write_u8(buf, offset, ((ms / 100 as i32) % 10 as i32) as u8)
+	offset = write_u8(buf, offset, ((ms / 10 as i32) % 10 as i32) as u8)
+	offset = write_u8(buf, offset, (ms % 10 as i32) as u8)
+
+	@deref(@add(@addr(buf), offset)) = 0 as u8
+	offset++
+
+	var out ref(u8) = A.alloc(ac, offset)?
+	@memcpy(out, @addr(buf), offset)
+
+	return out
+end
+
+def days_in_year(year i64) i64
+	if (year % 4 as i64) == 0 as i64 && ((year % 100 as i64) != 0 as i64 || (year % 400 as i64) == 0 as i64)
+		return 366 as i64
+	end
+	return 365 as i64
+end
+
+def days_in_month(leap bool, month i32) i32
+	match month
+		1 =>  ( return 31 )
+		2 => (
+			if leap
+				return 29
+			else
+				return 28
+			end 
+		)
+		3 =>  ( return 31 )
+		4 =>  ( return 30 )
+		5 =>  ( return 31 )
+		6 =>  ( return 30 )
+		7 =>  ( return 31 )
+		8 =>  ( return 31 )
+		9 =>  ( return 30 )
+		10 => ( return 31 )
+		11 => ( return 30 )
+		12 => ( return 31 )
+		_ => ( return 30 )
+	end
+end
+
+def write_u8(buf [32]u8, offset usize, value u8) usize
+	@deref(@add(@addr(buf), offset)) = value + '0' as u8
+	return offset + 1 as usize
+end
+
+def write_i32(buf [32]u8, offset usize, value i32, count usize) usize
+	if value == 0 as i32 && count == 0 as usize
+		return write_u8(buf, offset, 0 as u8)
+	end
+
+	var digits [16]u8 = @zeroed()
+	var num_digits usize = 0 as usize
+	var v i32 = value
+
+	if v < 0 as i32
+		@deref(@add(@addr(buf), offset)) = '-' as u8
+		offset++
+		v = -v
+	end
+
+	for v > 0 as i32
+		var digit u8 = (v % 10 as i32) as u8
+		@deref(@add(@addr(digits), num_digits)) = digit + '0' as u8
+		num_digits++
+		v = v / 10 as i32
+	end
+
+	if num_digits == 0 as usize
+		num_digits = 1 as usize
+		@deref(@add(@addr(digits), 0 as usize)) = '0' as u8
+	end
+
+	var i usize = num_digits
+	for i > 0 as usize
+		i--
+		offset = write_u8(buf, offset, @deref(@add(@addr(digits), i)))
+	end
+
+	return offset
+end
+
+test "logging functions exist"
+	debug("debug message")
+	info("info message")
+	warn("warn message")
+	error("error message")
+end
+
+test "format_timestamp works"
+	var ac = allocators.Arena.new(1024 as usize)?
+
+	var ts1 = 0 as i64
+	var formatted1 = format_timestamp[_](@addr(ac), ts1)?
+	assert str.len(formatted1) > 0 as usize
+
+	var ts2 = 1704067200000000000 as i64
+	var formatted2 = format_timestamp[_](@addr(ac), ts2)?
+
+	allocators.Arena.destroy(@addr(ac))
+end
