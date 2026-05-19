@@ -506,11 +506,12 @@ impl Parser {
         while !self.check_simple(&TokenKind::RBracket) {
             let name = self.expect_ident()?;
             let constraints = if self.check_simple(&TokenKind::Colon) {
-                return Err(self.error_at_current(
-                    "unexpected `:` in type parameter — use `T Interface` not `T: Interface`",
-                ));
-            } else if self.starts_type() {
+                self.advance();
                 self.parse_type_constraint_list()?
+            } else if self.starts_type() {
+                return Err(self.error_at_current(
+                    "expected `:` before type constraint — use `T: Interface` not `T Interface`",
+                ));
             } else {
                 Vec::new()
             };
