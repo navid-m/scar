@@ -1534,6 +1534,14 @@ fn render_builtin_call(
             render_expr(&args[2], function, info)?
         )),
         "addr" => Ok(format!("(&{})", render_expr(&args[0], function, info)?)),
+        "call" => {
+            let fn_ptr = render_expr(&args[0], function, info)?;
+            let rendered_args = args[1..]
+                .iter()
+                .map(|arg| render_expr(arg, function, info))
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(format!("({})({})", fn_ptr, rendered_args.join(", ")))
+        }
         "as_mut" => {
             if args.len() != 1 {
                 return Err(CompileError::new("@as_mut expects exactly one argument"));
@@ -2008,6 +2016,19 @@ fn infer_builtin_type(
         "addr" => Ok(Type::Ref(Box::new(infer_codegen_expr_type(
             &args[0], function, info,
         )?))),
+        "call" => {
+            let fn_ty = resolve_codegen_aliases(
+                &infer_codegen_expr_type(&args[0], function, info)?,
+                info,
+            )?;
+            match fn_ty {
+                Type::FnPtr(_, ret) => Ok(*ret),
+                other => Err(CompileError::new(format!(
+                    "@call expects a function pointer, got {}",
+                    describe_type(&other)
+                ))),
+            }
+        }
         "as_mut" => {
             if args.len() != 1 {
                 return Err(CompileError::new("@as_mut expects exactly one argument"));

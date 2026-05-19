@@ -170,7 +170,7 @@ pub type Map[K, V]
 end
 
 def map_probe[K, V](m ref(Map[K, V]), key ref(K)) usize
-    var h u32 = m.hash_fn(key)
+    var h u32 = @call(m.hash_fn, key)
     var idx usize = (h as usize) % m.cap
     var i usize = 0 as usize
     for i < m.cap

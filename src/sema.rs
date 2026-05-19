@@ -1524,6 +1524,33 @@ fn analyze_builtin(
             let inner = infer_expr_type(&args[0], functions, types, scope)?;
             Ok(as_mut_type(inner))
         }
+        "call" => {
+            if args.is_empty() {
+                return Err(CompileError::new(
+                    "@call expects a function pointer as its first argument",
+                ));
+            }
+            let fn_ty = resolve_aliases(&infer_expr_type(&args[0], functions, types, scope)?, types)?;
+            let Type::FnPtr(param_types, ret_type) = fn_ty else {
+                return Err(CompileError::new(format!(
+                    "@call expects a function pointer as its first argument, got {}",
+                    describe_type(&fn_ty)
+                )));
+            };
+            let call_args = &args[1..];
+            if param_types.len() != call_args.len() {
+                return Err(CompileError::new(format!(
+                    "@call: function pointer expects {} arguments but received {}",
+                    param_types.len(),
+                    call_args.len()
+                )));
+            }
+            for (arg, expected) in call_args.iter().zip(param_types.iter()) {
+                let actual = infer_expr_type(arg, functions, types, scope)?;
+                expect_same_type(expected, &actual, types, "@call argument")?;
+            }
+            Ok(*ret_type)
+        }
         "add" => {
             if args.len() != 2 {
                 return Err(CompileError::new("@add expects exactly two arguments"));
