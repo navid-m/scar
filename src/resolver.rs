@@ -94,6 +94,7 @@ struct ModuleExports {
     functions: HashMap<String, String>,
     named_types: HashMap<String, String>,
     interfaces: HashMap<String, String>,
+    typesets: HashMap<String, String>,
 }
 
 type ModuleAliases = HashMap<String, ModuleExports>;
@@ -169,6 +170,7 @@ impl Resolver {
         let public_functions = build_public_function_map(&parsed.functions, Some(&prefix));
         let public_types = build_public_named_type_map(&parsed.type_defs, Some(&prefix));
         let public_interfaces = build_public_interface_map(&parsed.interface_defs, Some(&prefix));
+        let public_typesets = build_public_typeset_map(&parsed.typesets, Some(&prefix));
 
         let mut rewritten_interfaces = Vec::new();
         for interface_def in parsed.interface_defs {
@@ -213,6 +215,7 @@ impl Resolver {
             functions: public_functions,
             named_types: public_types,
             interfaces: public_interfaces,
+            typesets: public_typesets,
         };
         self.cache.insert(module_path, exports.clone());
         Ok(exports)
@@ -369,6 +372,23 @@ fn build_public_interface_map(
                 None => interface_def.name.clone(),
             };
             (interface_def.name.clone(), mapped)
+        })
+        .collect()
+}
+
+fn build_public_typeset_map(
+    typesets: &[TypeSetDef],
+    prefix: Option<&str>,
+) -> HashMap<String, String> {
+    typesets
+        .iter()
+        .filter(|typeset| typeset.is_pub)
+        .map(|typeset| {
+            let mapped = match prefix {
+                Some(prefix) => format!("{prefix}__{}", typeset.name),
+                None => typeset.name.clone(),
+            };
+            (typeset.name.clone(), mapped)
         })
         .collect()
 }
@@ -1121,6 +1141,9 @@ fn rewrite_named_type(
                 return mapped.clone();
             }
             if let Some(mapped) = module.interfaces.get(member) {
+                return mapped.clone();
+            }
+            if let Some(mapped) = module.typesets.get(member) {
                 return mapped.clone();
             }
         }
@@ -3210,6 +3233,29 @@ mod tests {
                 .to_string()
                 .contains("generic parameter `T` on `id` does not allow type ref(u8)")
         );
+
+        fs::remove_dir_all(temp_dir).unwrap();
+    }
+
+    #[test]
+    fn resolves_cross_module_typeset_constraints() {
+        let temp_dir = create_temp_dir();
+        let entry = temp_dir.join("main.scar");
+        let module = temp_dir.join("other_file.scar");
+
+        fs::write(
+            &entry,
+            "val other_file = use(\"other_file\")\n\ntype Pair[T, U]\n\tfirst T\n\tsecond U\nend\n\ndef print_pair[T: other_file.Integer](p: Pair[T, ref(u8)]): T\n\treturn p.first\nend\n\npub def main() void\n\tval p = Pair[i32, ref(u8)](first: 1, second: \"ok\")\n\tprint_pair[i32](p)\nend\n",
+        )
+        .unwrap();
+        fs::write(&module, "pub typeset Integer\n\ti32, u32\nend\n").unwrap();
+
+        let program = resolve_entry_program(&entry).unwrap();
+
+        assert!(program.functions.iter().any(|function| {
+            function.name == "print_pair__generic__i32"
+                && matches!(function.return_type, crate::Type::I32)
+        }));
 
         fs::remove_dir_all(temp_dir).unwrap();
     }
