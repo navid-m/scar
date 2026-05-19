@@ -356,7 +356,7 @@ fn render_signature(function: &Function, info: &ProgramInfo) -> String {
         function
             .params
             .iter()
-            .map(|param| format!("{} {}", c_type(&param.ty), mangle_local_symbol(&param.name)))
+            .map(|param| c_type_named(&param.ty, &mangle_local_symbol(&param.name)))
             .collect::<Vec<_>>()
             .join(", ")
     };
@@ -456,9 +456,7 @@ fn render_stmt_inner(
                 if !mutable {
                     output.push_str("const ");
                 }
-                output.push_str(&c_type(ty));
-                output.push(' ');
-                output.push_str(&mangle_local_symbol(name));
+                output.push_str(&c_type_named(ty, &mangle_local_symbol(name)));
                 output.push_str(" = ");
                 output.push_str(&format!("{temp_name}.ok"));
                 output.push_str(";\n");
@@ -468,9 +466,7 @@ fn render_stmt_inner(
             if !mutable {
                 output.push_str("const ");
             }
-            output.push_str(&c_type(ty));
-            output.push(' ');
-            output.push_str(&mangle_local_symbol(name));
+            output.push_str(&c_type_named(ty, &mangle_local_symbol(name)));
             output.push_str(" = ");
             output.push_str(&render_expr_with_hint(init, function, info, Some(ty))?);
             output.push_str(";\n");
@@ -767,9 +763,10 @@ fn render_stmt_inner(
                             indent(output, level + 2);
                             match &arm.kind {
                                 MatchArmKind::Ok => {
-                                    output.push_str(&c_type(ok_ty.as_ref()));
-                                    output.push(' ');
-                                    output.push_str(&mangle_local_symbol(binding));
+                                    output.push_str(&c_type_named(
+                                        ok_ty.as_ref(),
+                                        &mangle_local_symbol(binding),
+                                    ));
                                     output.push_str(" = ");
                                     output.push_str(&temp_name);
                                     output.push_str(".ok;\n");
@@ -830,9 +827,10 @@ fn render_stmt_inner(
                         {
                             if let Some(binding) = binding {
                                 indent(output, level + 2);
-                                output.push_str(&c_type(payload_ty));
-                                output.push(' ');
-                                output.push_str(&mangle_local_symbol(binding));
+                                output.push_str(&c_type_named(
+                                    payload_ty,
+                                    &mangle_local_symbol(binding),
+                                ));
                                 output.push_str(" = ");
                                 output.push_str(&temp_name);
                                 output.push_str(".data.");
@@ -979,9 +977,7 @@ fn render_stmt_inner(
             output.push_str(&index_name);
             output.push_str(") {\n");
             indent(output, level + 2);
-            output.push_str(&c_type(element_ty));
-            output.push(' ');
-            output.push_str(&mangle_local_symbol(var_name));
+            output.push_str(&c_type_named(element_ty, &mangle_local_symbol(var_name)));
             output.push_str(" = ");
             output.push_str(&iter_name);
             output.push_str(".data[");
@@ -1359,6 +1355,35 @@ fn render_call(
     function: &Function,
     info: &ProgramInfo,
 ) -> Result<String, CompileError> {
+    if let Expr::Path(path) = callee {
+        if path.len() == 1 {
+            let name = &path[0];
+            let local_ty = info
+                .locals
+                .get(&function.name)
+                .and_then(|locals| locals.get(name))
+                .cloned()
+                .or_else(|| {
+                    function
+                        .params
+                        .iter()
+                        .find(|p| p.name == *name)
+                        .map(|p| p.ty.clone())
+                });
+            if let Some(Type::FnPtr(param_types, _)) = local_ty {
+                let rendered_args = args
+                    .iter()
+                    .zip(param_types.iter())
+                    .map(|(arg, param_ty)| {
+                        render_expr_with_hint(arg, function, info, Some(param_ty))
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                let mangled = mangle_local_symbol(name);
+                return Ok(format!("{mangled}({})", rendered_args.join(", ")));
+            }
+        }
+    }
+
     if let Some(path) = callee.callee_path() {
         let function_name = path.join(".");
         if let Some(signature) = info.functions.get(&function_name) {
@@ -1667,7 +1692,11 @@ fn infer_codegen_expr_type(
                         .find(|param| param.name == *name)
                         .map(|param| param.ty.clone())
                 })
-                .or_else(|| info.functions.get(name).map(|sig| sig.return_type.clone()))
+                .or_else(|| {
+                    info.functions.get(name).map(|sig| {
+                        Type::FnPtr(sig.params.clone(), Box::new(sig.return_type.clone()))
+                    })
+                })
                 .ok_or_else(|| {
                     CompileError::new(format!("unknown expression `{name}` in code generation"))
                 }),
@@ -1713,6 +1742,27 @@ fn infer_codegen_expr_type(
             }
         }
         Expr::Call { callee, .. } => {
+            if let Expr::Path(path) = callee.as_ref() {
+                if path.len() == 1 {
+                    let name = &path[0];
+                    let local_ty = info
+                        .locals
+                        .get(&function.name)
+                        .and_then(|locals| locals.get(name))
+                        .cloned()
+                        .or_else(|| {
+                            function
+                                .params
+                                .iter()
+                                .find(|p| p.name == *name)
+                                .map(|p| p.ty.clone())
+                        });
+                    if let Some(Type::FnPtr(_, ret_type)) = local_ty {
+                        return Ok(*ret_type);
+                    }
+                }
+            }
+
             let Some(path) = callee.callee_path() else {
                 return Err(CompileError::new(
                     "only direct calls are supported during code generation",
@@ -2114,6 +2164,12 @@ fn collect_result_types_from_type(ty: &Type, set: &mut HashSet<Type>) {
         Type::List(inner) => collect_result_types_from_type(inner, set),
         Type::Mut(inner) => collect_result_types_from_type(inner, set),
         Type::Ref(inner) => collect_result_types_from_type(inner, set),
+        Type::FnPtr(params, ret) => {
+            for p in params {
+                collect_result_types_from_type(p, set);
+            }
+            collect_result_types_from_type(ret, set);
+        }
         _ => {}
     }
 }
@@ -2127,6 +2183,12 @@ fn collect_list_types_from_type(ty: &Type, set: &mut HashSet<Type>) {
         Type::Result(inner) => collect_list_types_from_type(inner, set),
         Type::Mut(inner) => collect_list_types_from_type(inner, set),
         Type::Ref(inner) => collect_list_types_from_type(inner, set),
+        Type::FnPtr(params, ret) => {
+            for p in params {
+                collect_list_types_from_type(p, set);
+            }
+            collect_list_types_from_type(ret, set);
+        }
         _ => {}
     }
 }
@@ -2368,6 +2430,15 @@ fn type_suffix(ty: &Type) -> String {
         Type::Result(inner) => format!("result__{}", type_suffix(inner)),
         Type::Error => "error".to_string(),
         Type::None => "none".to_string(),
+        Type::FnPtr(params, ret) => format!(
+            "fn__{}__{}",
+            params
+                .iter()
+                .map(type_suffix)
+                .collect::<Vec<_>>()
+                .join("__"),
+            type_suffix(ret)
+        ),
     }
 }
 
@@ -2412,6 +2483,15 @@ fn c_type(ty: &Type) -> String {
         Type::Result(inner) => result_c_type(inner),
         Type::Error => "const char *".to_string(),
         Type::None => "void *".to_string(),
+        Type::FnPtr(params, ret) => {
+            let ret_c = c_type(ret);
+            let params_c = if params.is_empty() {
+                "void".to_string()
+            } else {
+                params.iter().map(c_type).collect::<Vec<_>>().join(", ")
+            };
+            format!("{ret_c} (*)({params_c})")
+        }
     }
 }
 
@@ -2672,6 +2752,13 @@ fn resolve_codegen_aliases(ty: &Type, info: &ProgramInfo) -> Result<Type, Compil
         Type::Mut(inner) => Ok(Type::Mut(Box::new(resolve_codegen_aliases(inner, info)?))),
         Type::Ref(inner) => Ok(Type::Ref(Box::new(resolve_codegen_aliases(inner, info)?))),
         Type::List(inner) => Ok(Type::List(Box::new(resolve_codegen_aliases(inner, info)?))),
+        Type::FnPtr(params, ret) => Ok(Type::FnPtr(
+            params
+                .into_iter()
+                .map(|p| resolve_codegen_aliases(p, info))
+                .collect::<Result<Vec<_>, _>>()?,
+            Box::new(resolve_codegen_aliases(ret, info)?),
+        )),
         other => Ok(other.clone()),
     }
 }
@@ -2724,6 +2811,15 @@ fn describe_type(ty: &Type) -> String {
         Type::Result(inner) => format!("{}|error", describe_type(inner)),
         Type::Error => "error".to_string(),
         Type::None => "none".to_string(),
+        Type::FnPtr(params, ret) => format!(
+            "(fn({}) {})",
+            params
+                .iter()
+                .map(describe_type)
+                .collect::<Vec<_>>()
+                .join(", "),
+            describe_type(ret)
+        ),
         Type::Applied(name, type_args) => format!(
             "{}[{}]",
             name,
@@ -2733,6 +2829,22 @@ fn describe_type(ty: &Type) -> String {
                 .collect::<Vec<_>>()
                 .join(", ")
         ),
+    }
+}
+
+/// Render a C declaration of the form `type name` or, for function pointers, `ret (*name)(params)`.
+fn c_type_named(ty: &Type, name: &str) -> String {
+    match ty {
+        Type::FnPtr(params, ret) => {
+            let ret_c = c_type(ret);
+            let params_c = if params.is_empty() {
+                "void".to_string()
+            } else {
+                params.iter().map(c_type).collect::<Vec<_>>().join(", ")
+            };
+            format!("{ret_c} (*{name})({params_c})")
+        }
+        other => format!("{} {}", c_type(other), name),
     }
 }
 

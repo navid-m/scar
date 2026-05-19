@@ -136,6 +136,7 @@ pub enum Type {
     Result(Box<Type>),
     Error,
     None,
+    FnPtr(Vec<Type>, Box<Type>),
 }
 
 #[derive(Debug, Clone)]

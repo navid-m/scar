@@ -1620,6 +1620,31 @@ impl Parser {
                 self.expect_simple(TokenKind::RBracket)?;
                 Ok(Type::List(Box::new(inner)))
             }
+            TokenKind::LParen => {
+                // (fn(T, U) R) — function pointer type
+                self.advance();
+                self.expect_simple(TokenKind::Fn)?;
+                self.expect_simple(TokenKind::LParen)?;
+                let mut params = Vec::new();
+                if !self.check_simple(&TokenKind::RParen) {
+                    loop {
+                        params.push(self.parse_type()?);
+                        if self.check_simple(&TokenKind::Comma) {
+                            self.advance();
+                        } else {
+                            break;
+                        }
+                    }
+                }
+                self.expect_simple(TokenKind::RParen)?;
+                let ret = if self.starts_type() {
+                    self.parse_type()?
+                } else {
+                    Type::Void
+                };
+                self.expect_simple(TokenKind::RParen)?;
+                Ok(Type::FnPtr(params, Box::new(ret)))
+            }
             _ => Err(self.error_at_current("expected a type")),
         }
     }
@@ -1644,6 +1669,7 @@ impl Parser {
                 | TokenKind::Mut
                 | TokenKind::Ref
                 | TokenKind::List
+                | TokenKind::LParen
                 | TokenKind::Ident(_)
         )
     }
@@ -1956,6 +1982,7 @@ impl Parser {
             TokenKind::Int(_) => "an integer",
             TokenKind::Char(_) => "a character",
             TokenKind::Str(_) => "a string",
+            TokenKind::Fn => "`fn`",
         }
     }
 }

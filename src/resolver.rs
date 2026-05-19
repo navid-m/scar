@@ -1122,6 +1122,13 @@ fn rewrite_type(
         Type::List(inner) => {
             Type::List(Box::new(rewrite_type(*inner, local_types, module_aliases)))
         }
+        Type::FnPtr(params, ret) => Type::FnPtr(
+            params
+                .into_iter()
+                .map(|p| rewrite_type(p, local_types, module_aliases))
+                .collect(),
+            Box::new(rewrite_type(*ret, local_types, module_aliases)),
+        ),
         Type::U32 => Type::U32,
         other => other,
     }
@@ -1390,6 +1397,13 @@ impl GenericInstantiator {
             Type::Mut(inner) => Ok(Type::Mut(Box::new(self.rewrite_concrete_type(*inner)?))),
             Type::Ref(inner) => Ok(Type::Ref(Box::new(self.rewrite_concrete_type(*inner)?))),
             Type::List(inner) => Ok(Type::List(Box::new(self.rewrite_concrete_type(*inner)?))),
+            Type::FnPtr(params, ret) => Ok(Type::FnPtr(
+                params
+                    .into_iter()
+                    .map(|p| self.rewrite_concrete_type(p))
+                    .collect::<Result<Vec<_>, _>>()?,
+                Box::new(self.rewrite_concrete_type(*ret)?),
+            )),
             other => Ok(other),
         }
     }
@@ -3012,6 +3026,7 @@ fn type_suffix_for_specialization(ty: &Type) -> String {
         Type::Ref(inner) => format!("ref__{}", type_suffix_for_specialization(inner)),
         Type::List(inner) => format!("list__{}", type_suffix_for_specialization(inner)),
         Type::Result(inner) => format!("result__{}", type_suffix_for_specialization(inner)),
+        Type::FnPtr(_, bt) => format!("fnptr__{}", type_suffix_for_specialization(bt)),
         Type::Error => "error".to_string(),
         Type::None => "none".to_string(),
     }
@@ -3060,6 +3075,7 @@ fn describe_type(ty: &Type) -> String {
         Type::Ref(inner) => format!("ref({})", describe_type(inner)),
         Type::List(inner) => format!("list[{}]", describe_type(inner)),
         Type::Result(inner) => format!("{}|error", describe_type(inner)),
+        Type::FnPtr(_, inner) => format!("fn({})", describe_type(inner)),
         Type::Error => "error".to_string(),
         Type::None => "none".to_string(),
     }

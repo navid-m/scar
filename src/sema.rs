@@ -1072,6 +1072,11 @@ fn infer_expr_type(
             [name] => scope
                 .get(name)
                 .map(|binding| binding.ty.clone())
+                .or_else(|| {
+                    functions.get(name).map(|sig| {
+                        Type::FnPtr(sig.params.clone(), Box::new(sig.return_type.clone()))
+                    })
+                })
                 .ok_or_else(|| CompileError::new(format!("unknown name `{name}`"))),
             _ => Err(CompileError::new(format!(
                 "qualified path `{}` is not a valid expression",
@@ -1239,6 +1244,28 @@ fn analyze_call(
     types: &HashMap<String, TypeDefInfo>,
     scope: &HashMap<String, LocalBinding>,
 ) -> Result<Type, CompileError> {
+    if let Expr::Path(path) = callee {
+        if path.len() == 1 {
+            let name = &path[0];
+            if let Some(binding) = scope.get(name) {
+                if let Type::FnPtr(param_types, ret_type) = &binding.ty {
+                    if param_types.len() != args.len() {
+                        return Err(CompileError::new(format!(
+                            "function pointer `{name}` expects {} arguments but received {}",
+                            param_types.len(),
+                            args.len()
+                        )));
+                    }
+                    for (arg, expected) in args.iter().zip(param_types.iter()) {
+                        let actual = infer_expr_type(arg, functions, types, scope)?;
+                        expect_same_type(expected, &actual, types, "function pointer argument")?;
+                    }
+                    return Ok(*ret_type.clone());
+                }
+            }
+        }
+    }
+
     if let Some(path) = callee.callee_path() {
         let function_name = path.join(".");
         if let Some(signature) = functions.get(&function_name) {
@@ -1950,6 +1977,12 @@ fn validate_type(ty: &Type, types: &HashMap<String, TypeDefInfo>) -> Result<(), 
         Type::Mut(inner) => validate_type(inner, types),
         Type::Ref(inner) => validate_type(inner, types),
         Type::List(inner) => validate_type(inner, types),
+        Type::FnPtr(params, ret) => {
+            for param in params {
+                validate_type(param, types)?;
+            }
+            validate_type(ret, types)
+        }
     }
 }
 
@@ -1994,6 +2027,12 @@ fn validate_type_with_known_names(ty: &Type, known: &HashSet<String>) -> Result<
         Type::Mut(inner) => validate_type_with_known_names(inner, known),
         Type::Ref(inner) => validate_type_with_known_names(inner, known),
         Type::List(inner) => validate_type_with_known_names(inner, known),
+        Type::FnPtr(params, ret) => {
+            for param in params {
+                validate_type_with_known_names(param, known)?;
+            }
+            validate_type_with_known_names(ret, known)
+        }
     }
 }
 
@@ -2127,6 +2166,14 @@ fn types_compatible_resolved(expected: &Type, actual: &Type) -> bool {
             matches!(actual_inner.as_ref(), Type::Ref(inner) if inner == expected_inner)
         }
         (Type::Ref(inner), other) if inner.as_ref() == &Type::U8 => is_string_compatible(other),
+        (Type::FnPtr(ep, er), Type::FnPtr(ap, ar)) => {
+            ep.len() == ap.len()
+                && ep
+                    .iter()
+                    .zip(ap.iter())
+                    .all(|(e, a)| types_compatible_resolved(e, a))
+                && types_compatible_resolved(er, ar)
+        }
         _ => false,
     }
 }
@@ -2458,6 +2505,15 @@ fn describe_type(ty: &Type) -> String {
         Type::Result(inner) => format!("{}|error", describe_type(inner)),
         Type::Error => "error".to_string(),
         Type::None => "none".to_string(),
+        Type::FnPtr(params, ret) => format!(
+            "(fn({}) {})",
+            params
+                .iter()
+                .map(describe_type)
+                .collect::<Vec<_>>()
+                .join(", "),
+            describe_type(ret)
+        ),
     }
 }
 
