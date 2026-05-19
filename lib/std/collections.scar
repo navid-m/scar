@@ -178,7 +178,7 @@ def map_probe[K, V](m ref(Map[K, V]), key ref(K)) usize
         if !slot.used && !slot.dead
             return idx
         end
-        if slot.used && m.eq_fn(@addr(slot.key), key)
+        if slot.used && @call(m.eq_fn, @addr(slot.key), key)
             return idx
         end
         idx = (idx + 1 as usize) % m.cap
@@ -193,7 +193,7 @@ def map_rehash[K, V, A: allocators.GeneralAllocator](
 ) bool
     var new_cap usize = m.cap * 2 as usize
     var entry_size usize = @sizeof(MapEntry[K, V])
-    var new_mem ref(void) = A.alloc(ac, new_cap * entry_size)
+    var new_mem ref(void)|error = A.alloc(ac, new_cap * entry_size)
     match new_mem
         ok p => (
             @memset(p, 0, new_cap * entry_size)
@@ -210,7 +210,7 @@ def map_rehash[K, V, A: allocators.GeneralAllocator](
                     m.len++
                 end
             end
-            A.free(ac, old_buckets as ref(void))
+            A.free(ac, @bitcast(old_buckets, ref(void)))
             return true
         )
         error _ => (
@@ -242,7 +242,7 @@ pub def Map.destroy[K, V, A: allocators.GeneralAllocator](
     ac: A
 )
     if m.buckets != none
-        A.free(@addr(ac), m.buckets as ref(void))
+        A.free(@addr(ac), @bitcast(m.buckets, ref(void)))
     end
     m.buckets = none
     m.cap = 0
@@ -350,7 +350,7 @@ def strmap_rehash[V, A: allocators.GeneralAllocator](
 ) bool
     var new_cap usize = m.cap * 2 as usize
     var entry_size usize = @sizeof(StringMapEntry[V])
-    var new_mem ref(void) = A.alloc(ac, new_cap * entry_size)
+    var new_mem ref(void)|error = A.alloc(ac, new_cap * entry_size)
     match new_mem
         ok p => (
             @memset(p, 0, new_cap * entry_size)
@@ -367,7 +367,7 @@ def strmap_rehash[V, A: allocators.GeneralAllocator](
                     m.len++
                 end
             end
-            A.free(ac, old_buckets as ref(void))
+            A.free(ac, @bitcast(old_buckets, ref(void)))
             return true
         )
         error _ => (
@@ -389,7 +389,7 @@ pub def StringMap.destroy[V, A: allocators.GeneralAllocator](
     ac: A
 )
     if m.buckets != none
-        A.free(@addr(ac), m.buckets as ref(void))
+        A.free(@addr(ac), @bitcast(m.buckets, ref(void)))
     end
     m.buckets = none
     m.cap = 0
@@ -475,7 +475,7 @@ pub type Set[T]
 end
 
 def set_probe[T](s ref(Set[T]), key ref(T)) usize
-    var h u32 = s.hash_fn(key)
+    var h u32 = @call(s.hash_fn, key)
     var idx usize = (h as usize) % s.cap
     var i usize = 0 as usize
     for i < s.cap
@@ -483,7 +483,7 @@ def set_probe[T](s ref(Set[T]), key ref(T)) usize
         if !slot.used && !slot.dead
             return idx
         end
-        if slot.used && s.eq_fn(@addr(slot.key), key)
+        if slot.used && @call(s.eq_fn, @addr(slot.key), key)
             return idx
         end
         idx = (idx + 1 as usize) % s.cap
@@ -498,7 +498,7 @@ def set_rehash[T, A: allocators.GeneralAllocator](
 ) bool
     var new_cap usize = s.cap * 2 as usize
     var entry_size usize = @sizeof(SetEntry[T])
-    var new_mem ref(void) = A.alloc(ac, new_cap * entry_size)
+    var new_mem ref(void)|error = A.alloc(ac, new_cap * entry_size)
     match new_mem
         ok p => (
             @memset(p, 0, new_cap * entry_size)
@@ -515,7 +515,7 @@ def set_rehash[T, A: allocators.GeneralAllocator](
                     s.len++
                 end
             end
-            A.free(ac, old_buckets as ref(void))
+            A.free(ac, @bitcast(old_buckets, ref(void)))
             return true
         )
         error _ => (
@@ -547,7 +547,7 @@ pub def Set.destroy[T, A: allocators.GeneralAllocator](
     ac: A
 )
     if s.buckets != none
-        A.free(@addr(ac), s.buckets as ref(void))
+        A.free(@addr(ac), @bitcast(s.buckets, ref(void)))
     end
     s.buckets = none
     s.cap = 0
