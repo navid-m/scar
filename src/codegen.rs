@@ -89,6 +89,32 @@ pub fn generate_c(
         }
     }
 
+    for global in &program.globals {
+        if !global.mutable {
+            output.push_str("const ");
+        }
+        output.push_str(&c_type(&global.ty));
+        output.push_str(" scar__glob__");
+        output.push_str(&global.name);
+        output.push_str(" = ");
+        let dummy_function = Function {
+            is_pub: false,
+            name: String::new(),
+            extern_name: None,
+            generic_params: Vec::new(),
+            params: Vec::new(),
+            return_type: Type::Void,
+            body: Vec::new(),
+            line: 0,
+            column: 0,
+        };
+        output.push_str(&render_expr(&global.init, &dummy_function, info)?);
+        output.push_str(";\n");
+    }
+    if !program.globals.is_empty() {
+        output.push('\n');
+    }
+
     for function in &program.functions {
         if function.extern_name.is_some() {
             continue;
@@ -1265,6 +1291,9 @@ fn render_symbol_name(name: &str, function: &Function, info: &ProgramInfo) -> St
     }
     if let Some(symbol) = info.function_symbols.get(name) {
         return symbol.clone();
+    }
+    if info.globals.contains_key(name) {
+        return format!("scar__glob__{}", name);
     }
     name.to_string()
 }

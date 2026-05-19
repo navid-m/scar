@@ -1,3 +1,5 @@
+extern "math.h"
+
 extern def sqrt(x f64) f64 :: "sqrt"
 extern def pow(x f64, y f64) f64 :: "pow"
 extern def sin(x f64) f64 :: "sin"

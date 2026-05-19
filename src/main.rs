@@ -479,7 +479,7 @@ fn build_test_program(program: &Program) -> Program {
         column: 0,
     });
 
-    Program {
+Program {
         module_uses: Vec::new(),
         extern_headers: program.extern_headers.clone(),
         interface_defs: program.interface_defs.clone(),
