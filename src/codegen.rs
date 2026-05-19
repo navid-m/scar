@@ -939,6 +939,16 @@ fn render_stmt_inner(
             body,
             ..
         } => {
+            let var_ty = info
+                .locals
+                .get(&function.name)
+                .and_then(|locals| locals.get(var_name))
+                .ok_or_else(|| {
+                    CompileError::new(format!(
+                        "missing type for for-loop variable `{var_name}` in `{}`",
+                        function.name
+                    ))
+                })?;
             indent(output, level);
             if let Some(pragma) = pragma {
                 output.push_str("#pragma ");
@@ -946,7 +956,7 @@ fn render_stmt_inner(
                 output.push('\n');
                 indent(output, level);
             }
-            output.push_str("for (int32_t ");
+            output.push_str(&format!("for ({} ", c_type(var_ty)));
             output.push_str(&mangle_local_symbol(var_name));
             output.push_str(" = ");
             output.push_str(&render_expr(start, function, info)?);

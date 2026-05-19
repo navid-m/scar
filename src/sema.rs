@@ -957,19 +957,27 @@ fn analyze_stmt(
                     .map_err(|error| error.with_location(*line, *column))?,
                 types,
             )?;
-            if !(start_ty == Type::I32 && end_ty == Type::I32) {
-                return Err(CompileError::new("`for` bounds must have type i32")
+            let is_signed_int = |ty: &Type| {
+                matches!(ty, Type::I8 | Type::I16 | Type::I32 | Type::I64 | Type::Isize)
+            };
+            let is_unsigned_int = |ty: &Type| {
+                matches!(ty, Type::U8 | Type::U16 | Type::U32 | Type::U64 | Type::Usize)
+            };
+            let is_int = |ty: &Type| is_signed_int(ty) || is_unsigned_int(ty);
+            if !is_int(&start_ty) || !is_int(&end_ty) {
+                return Err(CompileError::new("`for` bounds must be an integer type")
                     .with_location(*line, *column));
             }
+            let var_ty = start_ty.clone();
             let mut nested = scope.clone();
             nested.insert(
                 var_name.clone(),
                 LocalBinding {
-                    ty: Type::I32,
+                    ty: var_ty.clone(),
                     mutable: true,
                 },
             );
-            function_locals.insert(var_name.clone(), Type::I32);
+            function_locals.insert(var_name.clone(), var_ty);
             for stmt in body {
                 analyze_stmt(
                     stmt,
