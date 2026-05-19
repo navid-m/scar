@@ -300,6 +300,36 @@ pub def random_u64() u64|error
 	return value
 end
 
+pub def fnv1a_32(data ref(u8), len usize) u32
+	## FNV-1a hash (32-bit) - fast, non-cryptographic, suitable for hash tables
+	var hash u32 = 2166136261 as u32
+	for var i = 0 .. len as i32
+		var byte u32 = @deref(@add(data, i)) as u32
+		hash = hash ^ byte
+		hash = hash * 16777619 as u32
+	end
+	return hash
+end
+
+pub def fnv1a_64(data ref(u8), len usize) u64
+	## FNV-1a hash (64-bit)
+	var hash u64 = 14695981039346656037 as u64
+	for var i = 0 .. len as i32
+		var byte u64 = @deref(@add(data, i)) as u64
+		hash = hash ^ byte
+		hash = hash * 1099511628211 as u64
+	end
+	return hash
+end
+
+pub def fnv1a_str(s ref(u8)) u32
+	## Hash a null-terminated string with FNV-1a (32-bit)
+	guard s != none else
+		return 0 as u32
+	end
+	return fnv1a_32(s, str.len(s))
+end
+
 test "constant time byte compare works"
 	assert constant_time_eql("scar", "scar", 4 as usize)
 	assert !constant_time_eql("scar", "scan", 4 as usize)

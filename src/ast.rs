@@ -274,7 +274,7 @@ pub enum Stmt {
 
 #[derive(Debug, Clone)]
 pub enum Expr {
-    Int(i64),
+    Int(u64),
     Char(u8),
     Bool(bool),
     Float(f64),

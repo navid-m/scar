@@ -51,7 +51,7 @@ pub enum TokenKind {
     F32,
     F64,
     Ident(String),
-    Int(i64),
+    Int(u64),
     Char(u8),
     Float(f64),
     Str(String),
@@ -582,7 +582,7 @@ impl Lexer {
                 column,
             });
         }
-        let value = lexeme.parse::<i64>().map_err(|error| {
+        let value = lexeme.parse::<u64>().map_err(|error| {
             CompileError::new(format!(
                 "invalid integer literal `{lexeme}` at {line}:{column}: {error}"
             ))
