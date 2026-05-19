@@ -237,9 +237,7 @@ fn render_type_def(type_def: &TypeDef) -> String {
             output.push_str(" {\n");
             for field in &type_def.fields {
                 output.push_str("    ");
-                output.push_str(&c_type(&field.ty));
-                output.push(' ');
-                output.push_str(&field.name);
+                output.push_str(&c_type_named(&field.ty, &field.name));
                 output.push_str(";\n");
             }
             output.push_str("} ");
