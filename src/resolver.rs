@@ -1028,6 +1028,10 @@ fn rewrite_expr(
             )?),
         }),
         Expr::SizeOf(ty) => Ok(Expr::SizeOf(rewrite_type(ty, local_types, module_aliases))),
+        Expr::BitCast { expr, ty } => Ok(Expr::BitCast {
+            expr: Box::new(rewrite_expr(*expr, local_functions, local_types, module_aliases)?),
+            ty: rewrite_type(ty, local_types, module_aliases),
+        }),
     }
 }
 
@@ -1991,6 +1995,10 @@ impl GenericInstantiator {
                 rhs: Box::new(self.rewrite_expr_generics(*rhs, scope)?),
             },
             Expr::SizeOf(ty) => Expr::SizeOf(self.rewrite_concrete_type(ty)?),
+            Expr::BitCast { expr, ty } => Expr::BitCast {
+                expr: Box::new(self.rewrite_expr_generics(*expr, scope)?),
+                ty: self.rewrite_concrete_type(ty)?,
+            },
             other => other,
         })
     }
@@ -2273,6 +2281,7 @@ impl GenericInstantiator {
             Expr::Specialize { .. } => None,
             Expr::Cast { ty, .. } => Some(ty.clone()),
             Expr::SizeOf(_) => Some(Type::Usize),
+            Expr::BitCast { ty, .. } => Some(ty.clone()),
             Expr::Error { .. } => Some(Type::Error),
             Expr::Try(inner) => match self.infer_expr_type(inner, scope)? {
                 Type::Result(inner) => Some(*inner),
@@ -2831,6 +2840,10 @@ fn substitute_expr(expr: Expr, substitutions: &HashMap<String, Type>) -> Expr {
             rhs: Box::new(substitute_expr(*rhs, substitutions)),
         },
         Expr::SizeOf(ty) => Expr::SizeOf(substitute_type(ty, substitutions)),
+        Expr::BitCast { expr, ty } => Expr::BitCast {
+            expr: Box::new(substitute_expr(*expr, substitutions)),
+            ty: substitute_type(ty, substitutions),
+        },
         other => other,
     }
 }
@@ -2968,6 +2981,7 @@ fn infer_expr_type_from_template(expr: &Expr, param_types: &HashMap<String, Type
         }
         Expr::Cast { ty, .. } => Some(ty.clone()),
         Expr::SizeOf(_) => Some(Type::Usize),
+        Expr::BitCast { ty, .. } => Some(ty.clone()),
         Expr::Unary { op, expr } => {
             let inner = infer_expr_type_from_template(expr, param_types)?;
             match op {

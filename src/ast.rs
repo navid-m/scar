@@ -324,6 +324,10 @@ pub enum Expr {
         ty: Type,
     },
     SizeOf(Type),
+    BitCast {
+        expr: Box<Expr>,
+        ty: Type,
+    },
     None,
     Error {
         message: Box<Expr>,

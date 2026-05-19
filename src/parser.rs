@@ -1458,6 +1458,14 @@ impl Parser {
             self.expect_simple(TokenKind::RParen)?;
             return Ok(Expr::SizeOf(ty));
         }
+        if name == "bitcast" {
+            self.expect_simple(TokenKind::LParen)?;
+            let expr = self.parse_expr()?;
+            self.expect_simple(TokenKind::Comma)?;
+            let ty = self.parse_type()?;
+            self.expect_simple(TokenKind::RParen)?;
+            return Ok(Expr::BitCast { expr: Box::new(expr), ty });
+        }
         let args = self.parse_call_args()?;
         Ok(Expr::BuiltinCall { name, args })
     }

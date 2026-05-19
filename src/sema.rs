@@ -1154,6 +1154,7 @@ fn infer_expr_type(
             }
         }
         Expr::SizeOf(_) => Ok(Type::Usize),
+        Expr::BitCast { ty, .. } => Ok(ty.clone()),
         Expr::Error { message } => {
             let message_ty =
                 resolve_aliases(&infer_expr_type(message, functions, types, scope)?, types)?;
@@ -2199,7 +2200,8 @@ fn validate_try_usage(
         | Expr::Path(_)
         | Expr::ListLiteral(_)
         | Expr::None
-        | Expr::SizeOf(_) => {
+        | Expr::SizeOf(_)
+        | Expr::BitCast { .. } => {
             if let Expr::ListLiteral(values) = expr {
                 for value in values {
                     validate_try_usage(value, expected_return, allow_try_panic)?;

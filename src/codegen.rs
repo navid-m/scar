@@ -1160,6 +1160,11 @@ fn render_expr_with_hint(
             ))
         }
         Expr::SizeOf(ty) => Ok(format!("((size_t)sizeof({}))", c_type(ty))),
+        Expr::BitCast { expr, ty } => Ok(format!(
+            "(({})({}))",
+            c_type(ty),
+            render_expr(expr, function, info)?
+        )),
         Expr::Error { .. } => Err(CompileError::new(
             "`error(...)` requires a `T|error` context during code generation",
         )),
@@ -1811,6 +1816,7 @@ fn infer_codegen_expr_type(
         )),
         Expr::Cast { ty, .. } => Ok(ty.clone()),
         Expr::SizeOf(_) => Ok(Type::Usize),
+        Expr::BitCast { ty, .. } => Ok(ty.clone()),
         Expr::Error { .. } => Ok(Type::Error),
         Expr::Try(inner) => {
             let inner_ty =
