@@ -481,6 +481,8 @@ fn rewrite_interface_def(
                     .map(|param| Param {
                         name: param.name,
                         ty: rewrite_type(param.ty, local_symbols, module_aliases),
+                        line: param.line,
+                        column: param.column,
                     })
                     .collect(),
                 return_type: rewrite_type(method.return_type, local_symbols, module_aliases),
@@ -530,6 +532,8 @@ fn rewrite_type_def(
         .map(|field| FieldDef {
             name: field.name,
             ty: rewrite_type(field.ty, local_symbols, module_aliases),
+            line: field.line,
+            column: field.column,
         })
         .collect();
     Ok(TypeDef {
@@ -553,6 +557,8 @@ fn rewrite_type_def(
                     .collect(),
             })
             .collect(),
+        line: type_def.line,
+        column: type_def.column,
     })
 }
 
@@ -1021,6 +1027,7 @@ fn rewrite_expr(
                 module_aliases,
             )?),
         }),
+        Expr::SizeOf(ty) => Ok(Expr::SizeOf(rewrite_type(ty, local_types, module_aliases))),
     }
 }
 
@@ -1486,6 +1493,8 @@ impl GenericInstantiator {
                 Ok(FieldDef {
                     name: field.name,
                     ty: self.rewrite_concrete_type(substitute_type(field.ty, &substitutions))?,
+                    line: field.line,
+                    column: field.column,
                 })
             })
             .collect::<Result<Vec<_>, CompileError>>()?;
@@ -1978,6 +1987,7 @@ impl GenericInstantiator {
                 op,
                 rhs: Box::new(self.rewrite_expr_generics(*rhs, scope)?),
             },
+            Expr::SizeOf(ty) => Expr::SizeOf(self.rewrite_concrete_type(ty)?),
             other => other,
         })
     }
@@ -2080,6 +2090,8 @@ impl GenericInstantiator {
                 Ok(crate::ast::Param {
                     name: param.name,
                     ty: self.rewrite_concrete_type(substitute_type(param.ty, &substitutions))?,
+                    line: param.line,
+                    column: param.column,
                 })
             })
             .collect::<Result<Vec<_>, CompileError>>()?;
@@ -2257,6 +2269,7 @@ impl GenericInstantiator {
             }
             Expr::Specialize { .. } => None,
             Expr::Cast { ty, .. } => Some(ty.clone()),
+            Expr::SizeOf(_) => Some(Type::Usize),
             Expr::Error { .. } => Some(Type::Error),
             Expr::Try(inner) => match self.infer_expr_type(inner, scope)? {
                 Type::Result(inner) => Some(*inner),
@@ -2814,6 +2827,7 @@ fn substitute_expr(expr: Expr, substitutions: &HashMap<String, Type>) -> Expr {
             op,
             rhs: Box::new(substitute_expr(*rhs, substitutions)),
         },
+        Expr::SizeOf(ty) => Expr::SizeOf(substitute_type(ty, substitutions)),
         other => other,
     }
 }
@@ -2943,6 +2957,7 @@ fn infer_expr_type_from_template(expr: &Expr, param_types: &HashMap<String, Type
             }
         }
         Expr::Cast { ty, .. } => Some(ty.clone()),
+        Expr::SizeOf(_) => Some(Type::Usize),
         Expr::Unary { op, expr } => {
             let inner = infer_expr_type_from_template(expr, param_types)?;
             match op {

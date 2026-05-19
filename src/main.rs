@@ -447,6 +447,8 @@ fn build_test_program(program: &Program) -> Program {
             params: Vec::new(),
             return_type: Type::Void,
             body: test.body.clone(),
+            line: 0,
+            column: 0,
         });
         main_body.push(Stmt::Expr {
             line: 0,
@@ -474,6 +476,8 @@ fn build_test_program(program: &Program) -> Program {
         params: Vec::new(),
         return_type: Type::Void,
         body: main_body,
+        line: 0,
+        column: 0,
     });
 
     Program {

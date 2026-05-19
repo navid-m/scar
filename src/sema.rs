@@ -62,7 +62,10 @@ pub fn analyze(program: &Program) -> Result<ProgramInfo, CompileError> {
                 "function `main` must be declared as `pub def main`",
             ));
         }
-        validate_type(&function.return_type, &types)?;
+        validate_type(&function.return_type, &types).map_err(|e| {
+            CompileError::new(format!("in function `{}`: {}", function.name, e.message()))
+                .with_location(function.line, function.column)
+        })?;
         functions.insert(
             function.name.clone(),
             FunctionSig {
@@ -70,7 +73,13 @@ pub fn analyze(program: &Program) -> Result<ProgramInfo, CompileError> {
                     .params
                     .iter()
                     .map(|param| {
-                        validate_type(&param.ty, &types)?;
+                        validate_type(&param.ty, &types).map_err(|e| {
+                            CompileError::new(format!(
+                                "in function `{}`, parameter `{}`: {}",
+                                function.name, param.name, e.message()
+                            ))
+                            .with_location(param.line, param.column)
+                        })?;
                         Ok(param.ty.clone())
                     })
                     .collect::<Result<Vec<_>, CompileError>>()?,
@@ -151,10 +160,16 @@ fn collect_types(program: &Program) -> Result<HashMap<String, TypeDefInfo>, Comp
                     type_def.name
                 )));
             }
-            validate_type_with_known_names(alias, &known_type_names)?;
+            validate_type_with_known_names(alias, &known_type_names).map_err(|e| {
+                CompileError::new(format!("in type `{}`: {}", type_def.name, e.message()))
+                    .with_location(type_def.line, type_def.column)
+            })?;
         } else {
             for derive in &type_def.derives {
-                validate_type_with_known_names(derive, &known_type_names)?;
+                validate_type_with_known_names(derive, &known_type_names).map_err(|e| {
+                    CompileError::new(format!("in type `{}`: {}", type_def.name, e.message()))
+                        .with_location(type_def.line, type_def.column)
+                })?;
             }
             match type_def.kind {
                 TypeDefKind::Struct => {
@@ -165,7 +180,13 @@ fn collect_types(program: &Program) -> Result<HashMap<String, TypeDefInfo>, Comp
                                 field.name, type_def.name
                             )));
                         }
-                        validate_type_with_known_names(&field.ty, &known_type_names)?;
+                        validate_type_with_known_names(&field.ty, &known_type_names).map_err(|e| {
+                            CompileError::new(format!(
+                                "in type `{}`, field `{}`: {}",
+                                type_def.name, field.name, e.message()
+                            ))
+                            .with_location(field.line, field.column)
+                        })?;
                         field_map.insert(field.name.clone(), field.ty.clone());
                     }
                 }
@@ -184,7 +205,13 @@ fn collect_types(program: &Program) -> Result<HashMap<String, TypeDefInfo>, Comp
                             )));
                         }
                         for payload_ty in &variant.payload_types {
-                            validate_type_with_known_names(payload_ty, &known_type_names)?;
+                            validate_type_with_known_names(payload_ty, &known_type_names).map_err(|e| {
+                                CompileError::new(format!(
+                                    "in type `{}`, variant `{}`: {}",
+                                    type_def.name, variant.name, e.message()
+                                ))
+                                .with_location(type_def.line, type_def.column)
+                            })?;
                         }
                         variant_map.insert(variant.name.clone(), variant.payload_types.clone());
                     }
@@ -236,9 +263,19 @@ fn collect_interfaces(
                 )));
             }
             for param in &method.params {
-                validate_type_with_known_names(&param.ty, &known_names)?;
+                validate_type_with_known_names(&param.ty, &known_names).map_err(|e| {
+                    CompileError::new(format!(
+                        "in interface `{}`, method `{}`, parameter `{}`: {}",
+                        interface_def.name, method.name, param.name, e.message()
+                    ))
+                })?;
             }
-            validate_type_with_known_names(&method.return_type, &known_names)?;
+            validate_type_with_known_names(&method.return_type, &known_names).map_err(|e| {
+                CompileError::new(format!(
+                    "in interface `{}`, method `{}` return type: {}",
+                    interface_def.name, method.name, e.message()
+                ))
+            })?;
             methods.push(method.clone());
         }
         interfaces.insert(interface_def.name.clone(), InterfaceDefInfo { methods });
@@ -256,7 +293,13 @@ fn analyze_function(
     let mut function_locals = HashMap::new();
 
     for param in &function.params {
-        validate_type(&param.ty, types)?;
+        validate_type(&param.ty, types).map_err(|e| {
+            CompileError::new(format!(
+                "in function `{}`, parameter `{}`: {}",
+                function.name, param.name, e.message()
+            ))
+            .with_location(param.line, param.column)
+        })?;
         if scope.contains_key(&param.name) {
             return Err(CompileError::new(format!(
                 "duplicate parameter `{}` in function `{}`",
@@ -422,7 +465,8 @@ fn analyze_stmt(
             }
             let ty = match declared_type {
                 Some(expected) => {
-                    validate_type(expected, types)?;
+                    validate_type(expected, types)
+                        .map_err(|error| error.with_location(*line, *column))?;
                     validate_try_usage(init, expected_return, allow_try_panic)
                         .map_err(|error| error.with_location(*line, *column))?;
                     if let Expr::ListLiteral(values) = init {
@@ -1109,6 +1153,7 @@ fn infer_expr_type(
                 )))
             }
         }
+        Expr::SizeOf(_) => Ok(Type::Usize),
         Expr::Error { message } => {
             let message_ty =
                 resolve_aliases(&infer_expr_type(message, functions, types, scope)?, types)?;
@@ -2125,7 +2170,8 @@ fn validate_try_usage(
         | Expr::String(_)
         | Expr::Path(_)
         | Expr::ListLiteral(_)
-        | Expr::None => {
+        | Expr::None
+        | Expr::SizeOf(_) => {
             if let Expr::ListLiteral(values) = expr {
                 for value in values {
                     validate_try_usage(value, expected_return, allow_try_panic)?;

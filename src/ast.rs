@@ -26,6 +26,8 @@ pub struct TypeDef {
     pub derives: Vec<Type>,
     pub fields: Vec<FieldDef>,
     pub variants: Vec<UnionVariantDef>,
+    pub line: usize,
+    pub column: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -60,6 +62,8 @@ pub struct InterfaceMethod {
 pub struct FieldDef {
     pub name: String,
     pub ty: Type,
+    pub line: usize,
+    pub column: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -77,6 +81,8 @@ pub struct Function {
     pub params: Vec<Param>,
     pub return_type: Type,
     pub body: Vec<Stmt>,
+    pub line: usize,
+    pub column: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -89,6 +95,8 @@ pub struct GenericParam {
 pub struct Param {
     pub name: String,
     pub ty: Type,
+    pub line: usize,
+    pub column: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -315,6 +323,7 @@ pub enum Expr {
         expr: Box<Expr>,
         ty: Type,
     },
+    SizeOf(Type),
     None,
     Error {
         message: Box<Expr>,

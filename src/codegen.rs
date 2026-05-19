@@ -1159,6 +1159,7 @@ fn render_expr_with_hint(
                 render_expr(expr, function, info)?
             ))
         }
+        Expr::SizeOf(ty) => Ok(format!("((size_t)sizeof({}))", c_type(ty))),
         Expr::Error { .. } => Err(CompileError::new(
             "`error(...)` requires a `T|error` context during code generation",
         )),
@@ -1803,6 +1804,7 @@ fn infer_codegen_expr_type(
             "generic specialization must be resolved before code generation",
         )),
         Expr::Cast { ty, .. } => Ok(ty.clone()),
+        Expr::SizeOf(_) => Ok(Type::Usize),
         Expr::Error { .. } => Ok(Type::Error),
         Expr::Try(inner) => {
             let inner_ty =

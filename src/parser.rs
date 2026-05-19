@@ -15,6 +15,7 @@ pub fn parse_program(tokens: Vec<Token>) -> Result<Program, CompileError> {
 struct Parser {
     tokens: Vec<Token>,
     pos: usize,
+    line: usize,
 }
 
 #[derive(Default)]
@@ -42,7 +43,7 @@ impl TopLevelItems {
 
 impl Parser {
     fn new(tokens: Vec<Token>) -> Self {
-        Self { tokens, pos: 0 }
+        Self { tokens, pos: 0, line: 1 }
     }
 
     fn parse_program(&mut self) -> Result<Program, CompileError> {
@@ -160,6 +161,8 @@ impl Parser {
         if is_extern {
             self.expect_simple(TokenKind::Extern)?;
         }
+        let def_line = self.current().line;
+        let def_column = self.current().column;
         self.expect_simple(TokenKind::Type)?;
         let name = self.expect_ident()?;
         let generic_params = if self.check_simple(&TokenKind::LBracket) {
@@ -192,6 +195,8 @@ impl Parser {
                 derives,
                 fields: Vec::new(),
                 variants: Vec::new(),
+                line: def_line,
+                column: def_column,
             });
         }
         self.expect_newline("expected a newline after type name")?;
@@ -199,12 +204,16 @@ impl Parser {
         let mut fields = Vec::new();
         self.consume_newlines();
         while !self.check_simple(&TokenKind::End) && !self.is_eof() {
+            let field_line = self.current().line;
+            let field_column = self.current().column;
             let field_name = self.expect_ident()?;
             let ty = self.parse_type()?;
             self.expect_stmt_terminator()?;
             fields.push(FieldDef {
                 name: field_name,
                 ty,
+                line: field_line,
+                column: field_column,
             });
         }
 
@@ -220,6 +229,8 @@ impl Parser {
             derives,
             fields,
             variants: Vec::new(),
+            line: def_line,
+            column: def_column,
         })
     }
 
@@ -227,6 +238,8 @@ impl Parser {
         if is_pub {
             self.expect_simple(TokenKind::Pub)?;
         }
+        let def_line = self.current().line;
+        let def_column = self.current().column;
         self.expect_simple(TokenKind::Union)?;
         let name = self.expect_ident()?;
         self.expect_newline("expected a newline after union name")?;
@@ -275,6 +288,8 @@ impl Parser {
             derives: Vec::new(),
             fields: Vec::new(),
             variants,
+            line: def_line,
+            column: def_column,
         })
     }
 
@@ -351,8 +366,9 @@ impl Parser {
         } else {
             false
         };
+        let fn_line = self.current().line;
+        let fn_column = self.current().column;
         let (name, generic_params, params, return_type) = self.parse_function_signature()?;
-        self.expect_newline("expected a newline after function signature")?;
         let body = self.parse_block()?;
         self.expect_simple(TokenKind::End)?;
         self.consume_newlines();
@@ -365,6 +381,8 @@ impl Parser {
             params,
             return_type,
             body,
+            line: fn_line,
+            column: fn_column,
         })
     }
 
@@ -373,6 +391,8 @@ impl Parser {
             self.expect_simple(TokenKind::Pub)?;
         }
         self.expect_simple(TokenKind::Extern)?;
+        let fn_line = self.current().line;
+        let fn_column = self.current().column;
         let (name, generic_params, params, return_type) = self.parse_function_signature()?;
         self.expect_simple(TokenKind::ColonColon)?;
         let TokenKind::Str(extern_name) = self.current().kind.clone() else {
@@ -389,6 +409,8 @@ impl Parser {
             params,
             return_type,
             body: Vec::new(),
+            line: fn_line,
+            column: fn_column,
         })
     }
 
@@ -431,6 +453,8 @@ impl Parser {
         let mut params = Vec::new();
         if !self.check_simple(&TokenKind::RParen) {
             loop {
+                let param_line = self.current().line;
+                let param_column = self.current().column;
                 let param_name = self.expect_ident()?;
                 if self.check_simple(&TokenKind::Colon) {
                     self.advance();
@@ -439,6 +463,8 @@ impl Parser {
                 params.push(Param {
                     name: param_name,
                     ty,
+                    line: param_line,
+                    column: param_column,
                 });
                 if self.check_simple(&TokenKind::Comma) {
                     self.advance();
@@ -1426,6 +1452,12 @@ impl Parser {
     fn parse_builtin_call(&mut self) -> Result<Expr, CompileError> {
         self.expect_simple(TokenKind::At)?;
         let name = self.expect_ident()?;
+        if name == "sizeof" {
+            self.expect_simple(TokenKind::LParen)?;
+            let ty = self.parse_type()?;
+            self.expect_simple(TokenKind::RParen)?;
+            return Ok(Expr::SizeOf(ty));
+        }
         let args = self.parse_call_args()?;
         Ok(Expr::BuiltinCall { name, args })
     }
@@ -1676,6 +1708,10 @@ impl Parser {
 
     fn parse_call_args(&mut self) -> Result<Vec<Expr>, CompileError> {
         self.expect_simple(TokenKind::LParen)?;
+        self.parse_call_args_after_lparen()
+    }
+
+    fn parse_call_args_after_lparen(&mut self) -> Result<Vec<Expr>, CompileError> {
         self.consume_newlines();
         let mut args = Vec::new();
         if !self.check_simple(&TokenKind::RParen) {
