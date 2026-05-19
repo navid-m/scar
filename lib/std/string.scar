@@ -1,8 +1,10 @@
 val allocators = use("allocators")
 
-extern def strcmp(x ref(u8), y ref(u8)) i32               :: "strcmp"
-extern def strcat(dest mut(ref(u8)), src ref(u8)) ref(u8) :: "strcat"
-extern def strlen(x ref(u8)) usize                        :: "strlen"
+extern def strcmp(x ref(u8), y ref(u8)) i32                         :: "strcmp"
+extern def strcat(dest mut(ref(u8)), src ref(u8)) ref(u8)           :: "strcat"
+extern def strlen(x ref(u8)) usize                                  :: "strlen"
+extern def strcpy(dest mut(ref(u8)), src ref(u8)) ref(u8)           :: "strcpy"
+extern def strncpy(dest mut(ref(u8)), src ref(u8), n usize) ref(u8) :: "strncpy"
 
 pub type StringBuilder
 	ptr mut(ref(u8))
@@ -270,6 +272,36 @@ pub def trim_suffix[A: allocators.BumpAllocator](
 	return out as ref(u8)
 end
 
+
+pub def copy(dest mut(ref(u8)), src ref(u8)) void
+    guard dest != none && src != none else
+        return
+    end
+    strcpy(dest, src)
+end
+
+pub def copy_n(dest mut(ref(u8)), src ref(u8), n usize) void
+    guard dest != none && src != none else
+        return
+    end
+    if n == 0
+        @deref(dest) = 0 as u8
+        return
+    end
+    strncpy(dest, src, n)
+    @deref(@as_mut(@add(dest, n))) = 0 as u8
+end
+
+pub def duplicate[A: allocators.BumpAllocator](ac: A, src ref(u8)) ref(u8)|error
+    guard src != none else
+        return none
+    end
+    var l usize = len(src)
+    var out ref(void) = A.alloc(@addr(ac), l + 1)?
+    copy_n(out as mut(ref(u8)), src, l)
+    return out as ref(u8)
+end
+
 pub def trim[A: allocators.BumpAllocator](
 	ac: A,
 	x ref(u8)
@@ -458,4 +490,21 @@ test "downcase works"
 	var alloc = allocators.Arena.new(1024 as usize)?
 	assert eql("hello", downcase[_](alloc, "HELLo")?)
 	allocators.Arena.destroy(@addr(alloc))
+end
+
+test "copy functions work"
+    var buf mut(ref(u8)) = @alloc(64)
+    
+    copy(buf, "hello")
+    assert eql(buf, "hello")
+    
+    copy_n(buf, "scarlang is awesome", 8)
+    assert eql(buf, "scarlang")
+    
+    var ac = allocators.Arena.new(256)?
+    var dup = duplicate[_](ac, "copied string")?
+    assert eql(dup, "copied string")
+    
+    allocators.Arena.destroy(@addr(ac))
+    @free(buf)
 end
