@@ -1533,7 +1533,15 @@ fn render_builtin_call(
             render_expr(&args[1], function, info)?,
             render_expr(&args[2], function, info)?
         )),
-        "addr" => Ok(format!("(&{})", render_expr(&args[0], function, info)?)),
+        "addr" => {
+            let rendered = render_expr(&args[0], function, info)?;
+            if is_addressable_expr(&args[0]) {
+                Ok(format!("(&{})", rendered))
+            } else {
+                let ty = infer_codegen_expr_type(&args[0], function, info)?;
+                Ok(format!("(&({}){{{}}}", c_type(&ty), rendered))
+            }
+        }
         "call" => {
             let fn_ptr = render_expr(&args[0], function, info)?;
             let rendered_args = args[1..]
@@ -1977,6 +1985,16 @@ fn infer_codegen_integer_unary_type(
         UnaryOp::BitNot => Err(CompileError::new(
             "unary `~` currently requires an integer operand",
         )),
+    }
+}
+
+fn is_addressable_expr(expr: &Expr) -> bool {
+    match expr {
+        Expr::Path(_) => true,
+        Expr::FieldAccess { base, .. } => is_addressable_expr(base),
+        Expr::Index { base, .. } => is_addressable_expr(base),
+        Expr::BuiltinCall { name, .. } if name == "deref" => true,
+        _ => false,
     }
 }
 

@@ -1514,7 +1514,8 @@ fn analyze_builtin(
             if args.len() != 1 {
                 return Err(CompileError::new("@addr expects exactly one argument"));
             }
-            let inner = infer_lvalue_type(&args[0], functions, types, scope)?;
+            let inner = infer_lvalue_type(&args[0], functions, types, scope)
+                .or_else(|_| infer_expr_type(&args[0], functions, types, scope))?;
             Ok(Type::Ref(Box::new(inner)))
         }
         "as_mut" => {
