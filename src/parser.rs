@@ -457,7 +457,9 @@ impl Parser {
                 let param_column = self.current().column;
                 let param_name = self.expect_ident()?;
                 if self.check_simple(&TokenKind::Colon) {
-                    self.advance();
+                    return Err(self.error_at_current(
+                        "unexpected `:` in parameter — use `name Type` not `name: Type`",
+                    ));
                 }
                 let ty = self.parse_type()?;
                 params.push(Param {
@@ -504,7 +506,10 @@ impl Parser {
         while !self.check_simple(&TokenKind::RBracket) {
             let name = self.expect_ident()?;
             let constraints = if self.check_simple(&TokenKind::Colon) {
-                self.advance();
+                return Err(self.error_at_current(
+                    "unexpected `:` in type parameter — use `T Interface` not `T: Interface`",
+                ));
+            } else if self.starts_type() {
                 self.parse_type_constraint_list()?
             } else {
                 Vec::new()

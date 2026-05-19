@@ -77,14 +77,14 @@ def list_grow[T, A: allocators.GeneralAllocator](
     end
 end
 
-pub def List.new[T, A: allocators.GeneralAllocator](ac: A) List[T]|error
+pub def List.new[T, A: allocators.GeneralAllocator](ac A) List[T]|error
     var mem ref(void) = A.alloc(@addr(ac), 8 as usize * @sizeof(T))?
     return List[T](ptr: @bitcast(mem, ref(T)), len: 0, cap: 8)
 end
 
 pub def List.destroy[T, A: allocators.GeneralAllocator](
     l  mut(ref(List[T])),
-    ac: A
+    ac A
 )
     if l.ptr != none
         A.free(@addr(ac), l.ptr as ref(void))
@@ -96,7 +96,7 @@ end
 
 pub def List.push[T, A: allocators.GeneralAllocator](
     l  mut(ref(List[T])),
-    ac: A,
+    ac A,
     value T
 ) bool
     if l.len >= l.cap
