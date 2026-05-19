@@ -1136,6 +1136,9 @@ fn rewrite_type(
         Type::List(inner) => {
             Type::List(Box::new(rewrite_type(*inner, local_types, module_aliases)))
         }
+        Type::FixedArray(n, inner) => {
+            Type::FixedArray(n, Box::new(rewrite_type(*inner, local_types, module_aliases)))
+        }
         Type::FnPtr(params, ret) => Type::FnPtr(
             params
                 .into_iter()
@@ -1411,6 +1414,7 @@ impl GenericInstantiator {
             Type::Mut(inner) => Ok(Type::Mut(Box::new(self.rewrite_concrete_type(*inner)?))),
             Type::Ref(inner) => Ok(Type::Ref(Box::new(self.rewrite_concrete_type(*inner)?))),
             Type::List(inner) => Ok(Type::List(Box::new(self.rewrite_concrete_type(*inner)?))),
+            Type::FixedArray(n, inner) => Ok(Type::FixedArray(n, Box::new(self.rewrite_concrete_type(*inner)?))),
             Type::FnPtr(params, ret) => Ok(Type::FnPtr(
                 params
                     .into_iter()
@@ -2866,6 +2870,7 @@ fn substitute_type(ty: Type, substitutions: &HashMap<String, Type>) -> Type {
         Type::Mut(inner) => Type::Mut(Box::new(substitute_type(*inner, substitutions))),
         Type::Ref(inner) => Type::Ref(Box::new(substitute_type(*inner, substitutions))),
         Type::List(inner) => Type::List(Box::new(substitute_type(*inner, substitutions))),
+        Type::FixedArray(n, inner) => Type::FixedArray(n, Box::new(substitute_type(*inner, substitutions))),
         Type::FnPtr(params, ret) => Type::FnPtr(
             params
                 .into_iter()
@@ -3064,6 +3069,7 @@ fn type_suffix_for_specialization(ty: &Type) -> String {
         Type::Mut(inner) => format!("mut__{}", type_suffix_for_specialization(inner)),
         Type::Ref(inner) => format!("ref__{}", type_suffix_for_specialization(inner)),
         Type::List(inner) => format!("list__{}", type_suffix_for_specialization(inner)),
+        Type::FixedArray(n, inner) => format!("arr{n}__{}", type_suffix_for_specialization(inner)),
         Type::Result(inner) => format!("result__{}", type_suffix_for_specialization(inner)),
         Type::FnPtr(_, bt) => format!("fnptr__{}", type_suffix_for_specialization(bt)),
         Type::Error => "error".to_string(),
@@ -3115,6 +3121,7 @@ fn describe_type(ty: &Type) -> String {
         Type::List(inner) => format!("list[{}]", describe_type(inner)),
         Type::Result(inner) => format!("{}|error", describe_type(inner)),
         Type::FnPtr(_, inner) => format!("fn({})", describe_type(inner)),
+        Type::FixedArray(size, inner) => format!("[{}]{}", size, describe_type(inner)),
         Type::Error => "error".to_string(),
         Type::None => "none".to_string(),
     }

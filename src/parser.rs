@@ -1667,8 +1667,17 @@ impl Parser {
                 self.expect_simple(TokenKind::RBracket)?;
                 Ok(Type::List(Box::new(inner)))
             }
+            TokenKind::LBracket => {
+                self.advance();
+                let TokenKind::Int(n) = self.current().kind.clone() else {
+                    return Err(self.error_at_current("expected an integer length in fixed array type `[N]T`"));
+                };
+                self.advance();
+                self.expect_simple(TokenKind::RBracket)?;
+                let inner = self.parse_non_result_type()?;
+                Ok(Type::FixedArray(n, Box::new(inner)))
+            }
             TokenKind::LParen => {
-                // (fn(T, U) R) — function pointer type
                 self.advance();
                 self.expect_simple(TokenKind::Fn)?;
                 self.expect_simple(TokenKind::LParen)?;
@@ -1716,6 +1725,7 @@ impl Parser {
                 | TokenKind::Mut
                 | TokenKind::Ref
                 | TokenKind::List
+                | TokenKind::LBracket
                 | TokenKind::LParen
                 | TokenKind::Ident(_)
         )

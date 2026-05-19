@@ -141,6 +141,7 @@ pub enum Type {
     Mut(Box<Type>),
     Ref(Box<Type>),
     List(Box<Type>),
+    FixedArray(u64, Box<Type>),
     Result(Box<Type>),
     Error,
     None,

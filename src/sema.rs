@@ -469,7 +469,9 @@ fn analyze_stmt(
                         .map_err(|error| error.with_location(*line, *column))?;
                     validate_try_usage(init, expected_return, allow_try_panic)
                         .map_err(|error| error.with_location(*line, *column))?;
-                    if let Expr::ListLiteral(values) = init {
+                    if matches!(init, Expr::BuiltinCall { name, args } if name == "zeroed" && args.is_empty()) {
+                        expected.clone()
+                    } else if let Expr::ListLiteral(values) = init {
                         infer_list_literal_type(values, Some(expected), functions, types, scope)
                             .map_err(|error| error.with_location(*line, *column))?
                     } else {
@@ -1050,7 +1052,12 @@ fn infer_expr_type(
         Expr::Index { base, index } => {
             let base_ty = infer_expr_type(base, functions, types, scope)?;
             let index_ty = infer_expr_type(index, functions, types, scope)?;
-            expect_same_type(&Type::I32, &index_ty, types, "list index")?;
+            if !is_integer_type(&index_ty, types)? {
+                return Err(CompileError::new(format!(
+                    "index must be an integer type, got {}",
+                    describe_type(&index_ty)
+                )));
+            }
             infer_index_type(&base_ty, types)
         }
         Expr::StructInit { name, fields, .. } => {
@@ -1482,6 +1489,12 @@ fn analyze_builtin(
             }
             Ok(Type::Void)
         }
+        "zeroed" => {
+            if !args.is_empty() {
+                return Err(CompileError::new("@zeroed takes no arguments"));
+            }
+            Ok(Type::Void)
+        }
         "memset" => {
             if args.len() != 3 {
                 return Err(CompileError::new("@memset expects exactly three arguments"));
@@ -1725,7 +1738,12 @@ fn infer_lvalue_type(
         Expr::Index { base, index } => {
             let base_ty = infer_lvalue_type(base, functions, types, scope)?;
             let index_ty = infer_expr_type(index, functions, types, scope)?;
-            expect_same_type(&Type::I32, &index_ty, types, "list index")?;
+            if !is_integer_type(&index_ty, types)? {
+                return Err(CompileError::new(format!(
+                    "index must be an integer type, got {}",
+                    describe_type(&index_ty)
+                )));
+            }
             infer_index_type(&base_ty, types)
         }
         Expr::BuiltinCall { name, args } if name == "deref" => {
@@ -1763,7 +1781,12 @@ fn infer_mutable_target(
         Expr::Index { base, index } => {
             let base_ty = infer_mutable_target(base, functions, types, scope)?;
             let index_ty = infer_expr_type(index, functions, types, scope)?;
-            expect_same_type(&Type::I32, &index_ty, types, "list index")?;
+            if !is_integer_type(&index_ty, types)? {
+                return Err(CompileError::new(format!(
+                    "index must be an integer type, got {}",
+                    describe_type(&index_ty)
+                )));
+            }
             infer_index_type(&base_ty, types)
         }
         Expr::BuiltinCall { name, args } if name == "deref" => {
@@ -1801,8 +1824,9 @@ fn infer_index_type(
     let resolved = resolve_aliases(base_ty, types)?;
     match deref_refs(&resolved) {
         Type::List(inner) => Ok((**inner).clone()),
+        Type::FixedArray(_, inner) => Ok((**inner).clone()),
         other => Err(CompileError::new(format!(
-            "indexing requires a list type, got {}",
+            "indexing requires a list or fixed array type, got {}",
             describe_type(other)
         ))),
     }
@@ -1919,6 +1943,7 @@ fn infer_list_literal_type(
     if values.is_empty() {
         return match expected {
             Some(Type::List(element_ty)) => Ok(Type::List(element_ty.clone())),
+            Some(Type::FixedArray(n, element_ty)) => Ok(Type::FixedArray(*n, element_ty.clone())),
             Some(other) => Err(CompileError::new(format!(
                 "empty list literals require a list type, got {}",
                 describe_type(other)
@@ -1935,7 +1960,21 @@ fn infer_list_literal_type(
                 let actual = infer_expr_type(value, functions, types, scope)?;
                 expect_same_type(element_ty, &actual, types, "list element")?;
             }
-            element_ty.clone()
+            return Ok(Type::List(element_ty.clone()));
+        }
+        Some(Type::FixedArray(n, element_ty)) => {
+            if values.len() != *n as usize {
+                return Err(CompileError::new(format!(
+                    "fixed array `[{n}]{}` requires exactly {n} elements but got {}",
+                    describe_type(element_ty),
+                    values.len()
+                )));
+            }
+            for value in values {
+                let actual = infer_expr_type(value, functions, types, scope)?;
+                expect_same_type(element_ty, &actual, types, "array element")?;
+            }
+            return Ok(Type::FixedArray(*n, element_ty.clone()));
         }
         Some(other) => {
             return Err(CompileError::new(format!(
@@ -2077,6 +2116,7 @@ fn validate_type(ty: &Type, types: &HashMap<String, TypeDefInfo>) -> Result<(), 
         Type::Mut(inner) => validate_type(inner, types),
         Type::Ref(inner) => validate_type(inner, types),
         Type::List(inner) => validate_type(inner, types),
+        Type::FixedArray(_, inner) => validate_type(inner, types),
         Type::FnPtr(params, ret) => {
             for param in params {
                 validate_type(param, types)?;
@@ -2127,6 +2167,7 @@ fn validate_type_with_known_names(ty: &Type, known: &HashSet<String>) -> Result<
         Type::Mut(inner) => validate_type_with_known_names(inner, known),
         Type::Ref(inner) => validate_type_with_known_names(inner, known),
         Type::List(inner) => validate_type_with_known_names(inner, known),
+        Type::FixedArray(_, inner) => validate_type_with_known_names(inner, known),
         Type::FnPtr(params, ret) => {
             for param in params {
                 validate_type_with_known_names(param, known)?;
@@ -2330,6 +2371,7 @@ fn normalize_value_mutability(ty: &Type) -> Type {
         },
         Type::Ref(inner) => Type::Ref(Box::new(normalize_value_mutability(inner))),
         Type::List(inner) => Type::List(Box::new(normalize_value_mutability(inner))),
+        Type::FixedArray(n, inner) => Type::FixedArray(*n, Box::new(normalize_value_mutability(inner))),
         Type::Result(inner) => Type::Result(Box::new(normalize_value_mutability(inner))),
         other => other.clone(),
     }
@@ -2604,6 +2646,7 @@ fn describe_type(ty: &Type) -> String {
         Type::Mut(inner) => format!("mut({})", describe_type(inner)),
         Type::Ref(inner) => format!("ref({})", describe_type(inner)),
         Type::List(inner) => format!("list[{}]", describe_type(inner)),
+        Type::FixedArray(n, inner) => format!("[{n}]{}", describe_type(inner)),
         Type::Result(inner) => format!("{}|error", describe_type(inner)),
         Type::Error => "error".to_string(),
         Type::None => "none".to_string(),

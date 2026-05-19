@@ -361,6 +361,71 @@ pub def trim[A: allocators.BumpAllocator](
 	return out as ref(u8)
 end
 
+pub def itoa[A: allocators.BumpAllocator](
+	ac A,
+	value i32
+) ref(u8)|error
+	var negative bool = value < 0
+	var n i32 = value
+
+	var buf ref(void) = A.alloc(
+		@addr(ac),
+		12 as usize
+	)?
+
+	var out mut(ref(u8)) = buf as mut(ref(u8))
+
+	if n == 0
+		@deref(out) = '0'
+		@deref(@add(out, 1 as usize)) = 0 as u8
+		return out as ref(u8)
+	end
+
+	var digits [12]u8 = @zeroed()
+	var idx usize = 0
+
+	for n != 0
+		var digit i32 = n % 10
+
+		if digit < 0
+			digit = -digit
+		end
+
+		digits[idx] = ('0' as u8) + (digit as u8)
+
+		idx++
+		n = n / 10
+	end
+
+	var pos usize = 0
+
+	if negative
+		@deref(@add(out, pos)) = '-' as u8
+		pos++
+	end
+
+	for idx > 0
+		idx--
+
+		@deref(@add(out, pos)) = digits[idx]
+		pos++
+	end
+
+	@deref(@add(out, pos)) = 0 as u8
+
+	return out as ref(u8)
+end
+
+extern def atoi_internal(x ref(u8)) i64 :: "atoi"
+
+pub def atoi(x ref(u8)) i64
+	guard x != none else
+		return 0
+	end
+
+	return atoi_internal(x)
+end
+
 test "trim_prefix works"
 	var ac = allocators.Arena.new(1024)?
 
@@ -507,4 +572,23 @@ test "copy functions work"
     
     allocators.Arena.destroy(@addr(ac))
     @free(buf)
+end
+
+test "itoa works"
+	var ac = allocators.Arena.new(256)?
+
+	assert eql(itoa[_](ac, 0)?, "0")
+
+	@print("HELLO: {s}\n", {itoa[_](ac, 12345)?})
+
+	assert eql(itoa[_](ac, 12345)?, "12345")
+	assert eql(itoa[_](ac, -42)?, "-42")
+
+	allocators.Arena.destroy(@addr(ac))
+end
+
+test "atoi works"
+	assert atoi("0") == 0
+	assert atoi("123") == 123
+	assert atoi("-99") == -99
 end

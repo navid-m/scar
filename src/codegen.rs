@@ -1096,6 +1096,13 @@ fn render_expr_with_hint(
         Expr::String(value) => Ok(format!("\"{}\"", escape_c_string(value))),
         Expr::None => Ok("NULL".to_string()),
         Expr::ListLiteral(values) => {
+            if let Some(Type::FixedArray(_, element_ty)) = hint {
+                let rendered = values
+                    .iter()
+                    .map(|v| render_expr_with_hint(v, function, info, Some(element_ty)))
+                    .collect::<Result<Vec<_>, _>>()?;
+                return Ok(format!("{{{}}}", rendered.join(", ")));
+            }
             let list_ty = match hint {
                 Some(Type::List(_)) => hint.cloned().ok_or_else(|| {
                     CompileError::new("missing list type hint during code generation")
@@ -1344,13 +1351,24 @@ fn render_index_expr(
     info: &ProgramInfo,
 ) -> Result<String, CompileError> {
     let base_ty = infer_codegen_expr_type(base, function, info)?;
-    let element_ty = list_element_type(&base_ty)?;
-    let helper_prefix = list_helper_prefix(element_ty);
-    Ok(format!(
-        "(*{helper_prefix}_at({}, {}))",
-        render_list_pointer(base, &base_ty, function, info)?,
-        render_expr(index, function, info)?
-    ))
+    match deref_refs(&base_ty) {
+        Type::FixedArray(_, _) => {
+            Ok(format!(
+                "({}[{}])",
+                render_expr(base, function, info)?,
+                render_expr(index, function, info)?
+            ))
+        }
+        _ => {
+            let element_ty = list_element_type(&base_ty)?;
+            let helper_prefix = list_helper_prefix(element_ty);
+            Ok(format!(
+                "(*{helper_prefix}_at({}, {}))",
+                render_list_pointer(base, &base_ty, function, info)?,
+                render_expr(index, function, info)?
+            ))
+        }
+    }
 }
 
 fn render_call(
@@ -1525,6 +1543,7 @@ fn render_builtin_call(
             render_expr(&args[1], function, info)?,
             render_expr(&args[2], function, info)?
         )),
+        "zeroed" => Ok("{0}".to_string()),
         "memset" => Ok(format!(
             "memset((void *)({}), (int)({}), (size_t)({}))",
             render_expr(&args[0], function, info)?,
@@ -2024,7 +2043,7 @@ fn infer_builtin_type(
                 _ => Ok(Type::Void),
             }
         }
-        "puts" | "print" | "free" | "memcpy" | "memset" => Ok(Type::Void),
+        "puts" | "print" | "free" | "memcpy" | "memset" | "zeroed" => Ok(Type::Void),
         "add" => Ok(pointer_arithmetic_type(&infer_codegen_expr_type(
             &args[0], function, info,
         )?)),
@@ -2478,6 +2497,7 @@ fn type_suffix(ty: &Type) -> String {
         Type::Mut(inner) => format!("mut__{}", type_suffix(inner)),
         Type::Ref(inner) => format!("ref__{}", type_suffix(inner)),
         Type::List(inner) => format!("list__{}", type_suffix(inner)),
+        Type::FixedArray(n, inner) => format!("arr{n}__{}", type_suffix(inner)),
         Type::Result(inner) => format!("result__{}", type_suffix(inner)),
         Type::Error => "error".to_string(),
         Type::None => "none".to_string(),
@@ -2531,6 +2551,15 @@ fn c_type(ty: &Type) -> String {
             }
         }
         Type::List(inner) => format!("scar_list__{}", type_suffix(inner)),
+        Type::FixedArray(_, inner) => {
+            // In expression context (casts, etc.) treat as pointer to element
+            let inner_c = c_type(inner);
+            if inner_c.ends_with('*') {
+                format!("{inner_c}*")
+            } else {
+                format!("{inner_c} *")
+            }
+        }
         Type::Result(inner) => result_c_type(inner),
         Type::Error => "const char *".to_string(),
         Type::None => "void *".to_string(),
@@ -2557,7 +2586,14 @@ fn list_element_type(ty: &Type) -> Result<&Type, CompileError> {
 }
 
 fn infer_index_type(ty: &Type) -> Result<Type, CompileError> {
-    Ok(list_element_type(ty)?.clone())
+    match deref_refs(ty) {
+        Type::List(inner) => Ok((**inner).clone()),
+        Type::FixedArray(_, inner) => Ok((**inner).clone()),
+        other => Err(CompileError::new(format!(
+            "expected list or fixed array type, got {}",
+            describe_type(other)
+        ))),
+    }
 }
 
 fn is_codegen_integer_type(ty: &Type) -> bool {
@@ -2859,6 +2895,7 @@ fn describe_type(ty: &Type) -> String {
         Type::Mut(inner) => format!("mut({})", describe_type(inner)),
         Type::Ref(inner) => format!("ref({})", describe_type(inner)),
         Type::List(inner) => format!("list[{}]", describe_type(inner)),
+        Type::FixedArray(n, inner) => format!("[{n}]{}", describe_type(inner)),
         Type::Result(inner) => format!("{}|error", describe_type(inner)),
         Type::Error => "error".to_string(),
         Type::None => "none".to_string(),
@@ -2894,6 +2931,10 @@ fn c_type_named(ty: &Type, name: &str) -> String {
                 params.iter().map(c_type).collect::<Vec<_>>().join(", ")
             };
             format!("{ret_c} (*{name})({params_c})")
+        }
+        Type::FixedArray(n, inner) => {
+            // C declaration: `element_type name[N]`
+            format!("{} {name}[{n}]", c_type(inner))
         }
         other => format!("{} {}", c_type(other), name),
     }
