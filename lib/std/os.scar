@@ -296,7 +296,7 @@ when posix
 			temp_dir = "/tmp"
 		end
 
-		var prefix ref(u8) = "scar-os-"
+		var prefix ref(u8) = "s-"
 		var suffix ref(u8) = "-XXXXXX"
 		var len_temp_dir usize = str.len(temp_dir)
 		var needs_sep bool = true
