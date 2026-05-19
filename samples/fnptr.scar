@@ -1,0 +1,12 @@
+def process_callback(cb: (fn(i32) void), value: i32)
+    cb(value)
+end
+
+def my_callback(x: i32) void
+    @print("Callback received: {d}\n", {x})
+end
+
+pub def main()
+    var cb1 (fn(i32) void) = my_callback
+    process_callback(cb1, 100)
+end
