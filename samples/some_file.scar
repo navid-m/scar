@@ -4,11 +4,14 @@ type SomeType
 	z i32	
 end
 
-def some_function()
+pub def some_function()
 	@puts("hello")
 end
 
 def some_other_function()
 	val st = SomeType(x: 10, y: 12, z: 14)
 	@print("{d}\n", {st.x})
+end
+
+pub def main()
 end

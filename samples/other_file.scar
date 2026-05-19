@@ -4,3 +4,5 @@ pub typeset Integer
     usize
 end
 
+pub def main()
+end

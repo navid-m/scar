@@ -32,5 +32,9 @@ pub def main() void
 		hello_world(i)
 	end
 	some_module.some_function()
+
+	var some_str = "hi there"
+	modify_in_place(some_str)
+	@print("{s}", {some_str})
 end
 
