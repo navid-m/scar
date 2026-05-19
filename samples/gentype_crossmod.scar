@@ -9,7 +9,7 @@ type Box[T]
     value T
 end
 
-def make_pair[T, U](first T, second U): Pair[T, U]
+def make_pair[T, U](first T, second U) Pair[T, U]
     return Pair[T, U](first: first, second: second)
 end
 
@@ -17,7 +17,7 @@ def make_box[T](value T) Box[T]
     return Box[T](value: value)
 end
 
-def print_pair[T other_file.Integer](p Pair[T, ref(u8)])
+def print_pair[T: other_file.Integer](p Pair[T, ref(u8)])
     @print("Pair: (")
     @print("{d}", {p.first})
     @print(", ")

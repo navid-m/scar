@@ -1,4 +1,4 @@
-def add_constrained[T i32|i64|f32|f64](x T, y T) T
+def add_constrained[T: i32|i64|f32|f64](x T, y T) T
 	return x + y
 end
 
@@ -6,7 +6,7 @@ def add[T](x T, y T) T
 	return x + y
 end
 
-def mix_add[A i32|i64, B f32|f64, C f64](x A, y B) C
+def mix_add[A: i32|i64, B: f32|f64, C: f64](x A, y B) C
     return (x as C) + (y as C)
 end
 

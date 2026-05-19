@@ -77,7 +77,7 @@ def path_sep() u8
 	return '/' as u8
 end
 
-def copy_bytes[A allocators.BumpAllocator](
+def copy_bytes[A: allocators.BumpAllocator](
 	ac ref(A),
 	src ref(u8),
 	count usize
@@ -92,7 +92,7 @@ def copy_bytes[A allocators.BumpAllocator](
 	return out as ref(u8)
 end
 
-def copy_string[A allocators.BumpAllocator](
+def copy_string[A: allocators.BumpAllocator](
 	ac ref(A),
 	src ref(u8)
 ) ref(u8)|error
@@ -145,7 +145,7 @@ def find_extension_dot(path ref(u8), start usize, nd usize) isize
 	return -1 as isize
 end
 
-pub def join[A allocators.BumpAllocator](
+pub def join[A: allocators.BumpAllocator](
 	ac ref(A),
 	a ref(u8),
 	b ref(u8)
@@ -209,7 +209,7 @@ pub def join[A allocators.BumpAllocator](
 	return out as ref(u8)
 end
 
-pub def dirname[A allocators.BumpAllocator](
+pub def dirname[A: allocators.BumpAllocator](
 	ac ref(A),
 	path ref(u8)
 ) ref(u8)|error
@@ -249,7 +249,7 @@ pub def dirname[A allocators.BumpAllocator](
 	return copy_string[A](ac, ".")
 end
 
-pub def basename[A allocators.BumpAllocator](
+pub def basename[A: allocators.BumpAllocator](
 	ac ref(A),
 	path ref(u8)
 ) ref(u8)|error
@@ -272,7 +272,7 @@ pub def basename[A allocators.BumpAllocator](
 	return copy_bytes[A](ac, @add(path, start), nd - start)
 end
 
-pub def extension[A allocators.BumpAllocator](
+pub def extension[A: allocators.BumpAllocator](
 	ac ref(A),
 	path ref(u8)
 ) ref(u8)|error
@@ -292,7 +292,7 @@ pub def extension[A allocators.BumpAllocator](
 	return copy_bytes[A](ac, @add(path, offset), nd - offset)
 end
 
-pub def strip_extension[A allocators.BumpAllocator](
+pub def strip_extension[A: allocators.BumpAllocator](
 	ac ref(A),
 	path ref(u8)
 ) ref(u8)|error
@@ -563,14 +563,14 @@ when posix
 		end
 	end
 
-	def allocate_line[A allocators.BumpAllocator](
+	def allocate_line[A: allocators.BumpAllocator](
 		ac ref(A),
 		line ref(u8)
 	) ref(u8)|error
 		return copy_bytes[A](ac, line, str.len(line))
 	end
 
-	pub def read_text[A allocators.BumpAllocator](
+	pub def read_text[A: allocators.BumpAllocator](
 		ac ref(A),
 		path ref(u8)
 	) ref(u8)|error
@@ -642,7 +642,7 @@ when posix
 		end
 	end
 
-	pub def read_dir[A allocators.BumpAllocator](
+	pub def read_dir[A: allocators.BumpAllocator](
 		ac ref(A),
 		path ref(u8)
 	) list[DirEntry]|error
@@ -822,7 +822,7 @@ when windows
 		return mem
 	end
 
-	def allocate_line[A allocators.BumpAllocator](
+	def allocate_line[A: allocators.BumpAllocator](
 		ac ref(A),
 		line ref(u8)
 	) ref(u8)|error
@@ -858,7 +858,7 @@ when windows
 		end
 	end
 
-	pub def read_text[A allocators.BumpAllocator](
+	pub def read_text[A: allocators.BumpAllocator](
 		ac ref(A),
 		path ref(u8)
 	) ref(u8)|error
@@ -986,7 +986,7 @@ when windows
 		end
 	end
 
-	pub def read_dir[A allocators.BumpAllocator](
+	pub def read_dir[A: allocators.BumpAllocator](
 		ac ref(A),
 		path ref(u8)
 	) list[DirEntry]|error
@@ -1166,7 +1166,7 @@ when windows
 end
 
 when redox
-	pub def read_text[A allocators.BumpAllocator](
+	pub def read_text[A: allocators.BumpAllocator](
 		ac ref(A),
 		path ref(u8)
 	) ref(u8)|error
@@ -1177,7 +1177,7 @@ when redox
 		return unsupported_fs[void]()
 	end
 
-	pub def read_dir[A allocators.BumpAllocator](
+	pub def read_dir[A: allocators.BumpAllocator](
 		ac ref(A),
 		path ref(u8)
 	) list[DirEntry]|error
@@ -1214,7 +1214,7 @@ when redox
 end
 
 when plan9
-	pub def read_text[A allocators.BumpAllocator](
+	pub def read_text[A: allocators.BumpAllocator](
 		ac ref(A),
 		path ref(u8)
 	) ref(u8)|error
@@ -1225,7 +1225,7 @@ when plan9
 		return unsupported_fs[void]()
 	end
 
-	pub def read_dir[A allocators.BumpAllocator](
+	pub def read_dir[A: allocators.BumpAllocator](
 		ac ref(A),
 		path ref(u8)
 	) list[DirEntry]|error

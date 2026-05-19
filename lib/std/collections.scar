@@ -8,7 +8,7 @@ pub type Array[T]
     cap usize
 end
 
-pub def Array.new[T, A allocators.BumpAllocator](
+pub def Array.new[T, A: allocators.BumpAllocator](
     ac A,
     cap usize
 ) Array[T]|error
@@ -56,7 +56,7 @@ pub type List[T]
     cap usize
 end
 
-def list_grow[T, A allocators.GeneralAllocator](
+def list_grow[T, A: allocators.GeneralAllocator](
     l  mut(ref(List[T])),
     ac ref(A)
 ) bool
@@ -77,12 +77,12 @@ def list_grow[T, A allocators.GeneralAllocator](
     end
 end
 
-pub def List.new[T, A allocators.GeneralAllocator](ac A) List[T]|error
+pub def List.new[T, A: allocators.GeneralAllocator](ac A) List[T]|error
     var mem ref(void) = A.alloc(@addr(ac), 8 as usize * @sizeof(T))?
     return List[T](ptr: @bitcast(mem, ref(T)), len: 0, cap: 8)
 end
 
-pub def List.destroy[T, A allocators.GeneralAllocator](
+pub def List.destroy[T, A: allocators.GeneralAllocator](
     l  mut(ref(List[T])),
     ac A
 )
@@ -94,7 +94,7 @@ pub def List.destroy[T, A allocators.GeneralAllocator](
     l.cap = 0
 end
 
-pub def List.push[T, A allocators.GeneralAllocator](
+pub def List.push[T, A: allocators.GeneralAllocator](
     l  mut(ref(List[T])),
     ac A,
     value T
@@ -187,7 +187,7 @@ def map_probe[K, V](m ref(Map[K, V]), key ref(K)) usize
     return m.cap
 end
 
-def map_rehash[K, V, A allocators.GeneralAllocator](
+def map_rehash[K, V, A: allocators.GeneralAllocator](
     m  mut(ref(Map[K, V])),
     ac ref(A)
 ) bool
@@ -219,7 +219,7 @@ def map_rehash[K, V, A allocators.GeneralAllocator](
     end
 end
 
-pub def Map.new[K, V, A allocators.GeneralAllocator](
+pub def Map.new[K, V, A: allocators.GeneralAllocator](
     ac      A,
     hash_fn (fn(ref(K)) u32),
     eq_fn   (fn(ref(K), ref(K)) bool)
@@ -237,7 +237,7 @@ pub def Map.new[K, V, A allocators.GeneralAllocator](
     )
 end
 
-pub def Map.destroy[K, V, A allocators.GeneralAllocator](
+pub def Map.destroy[K, V, A: allocators.GeneralAllocator](
     m  mut(ref(Map[K, V])),
     ac A
 )
@@ -249,7 +249,7 @@ pub def Map.destroy[K, V, A allocators.GeneralAllocator](
     m.len = 0
 end
 
-pub def Map.insert[K, V, A allocators.GeneralAllocator](
+pub def Map.insert[K, V, A: allocators.GeneralAllocator](
     m     mut(ref(Map[K, V])),
     ac    A,
     key   K,
@@ -344,7 +344,7 @@ def strmap_probe[V](m ref(StringMap[V]), key ref(u8)) usize
     return m.cap
 end
 
-def strmap_rehash[V, A allocators.GeneralAllocator](
+def strmap_rehash[V, A: allocators.GeneralAllocator](
     m  mut(ref(StringMap[V])),
     ac ref(A)
 ) bool
@@ -376,7 +376,7 @@ def strmap_rehash[V, A allocators.GeneralAllocator](
     end
 end
 
-pub def StringMap.new[V, A allocators.GeneralAllocator](ac A) StringMap[V]|error
+pub def StringMap.new[V, A: allocators.GeneralAllocator](ac A) StringMap[V]|error
     var cap usize = 16 as usize
     var entry_size usize = @sizeof(StringMapEntry[V])
     var mem ref(void) = A.alloc(@addr(ac), cap * entry_size)?
@@ -384,7 +384,7 @@ pub def StringMap.new[V, A allocators.GeneralAllocator](ac A) StringMap[V]|error
     return StringMap[V](buckets: @bitcast(mem, ref(StringMapEntry[V])), cap: cap, len: 0)
 end
 
-pub def StringMap.destroy[V, A allocators.GeneralAllocator](
+pub def StringMap.destroy[V, A: allocators.GeneralAllocator](
     m  mut(ref(StringMap[V])),
     ac A
 )
@@ -396,7 +396,7 @@ pub def StringMap.destroy[V, A allocators.GeneralAllocator](
     m.len = 0
 end
 
-pub def StringMap.insert[V, A allocators.GeneralAllocator](
+pub def StringMap.insert[V, A: allocators.GeneralAllocator](
     m     mut(ref(StringMap[V])),
     ac   A,
     key   ref(u8),
@@ -492,7 +492,7 @@ def set_probe[T](s ref(Set[T]), key ref(T)) usize
     return s.cap
 end
 
-def set_rehash[T, A allocators.GeneralAllocator](
+def set_rehash[T, A: allocators.GeneralAllocator](
     s  mut(ref(Set[T])),
     ac ref(A)
 ) bool
@@ -524,7 +524,7 @@ def set_rehash[T, A allocators.GeneralAllocator](
     end
 end
 
-pub def Set.new[T, A allocators.GeneralAllocator](
+pub def Set.new[T, A: allocators.GeneralAllocator](
     ac       A,
     hash_fn (fn(ref(T)) u32),
     eq_fn   (fn(ref(T), ref(T)) bool)
@@ -542,7 +542,7 @@ pub def Set.new[T, A allocators.GeneralAllocator](
     )
 end
 
-pub def Set.destroy[T, A allocators.GeneralAllocator](
+pub def Set.destroy[T, A: allocators.GeneralAllocator](
     s  mut(ref(Set[T])),
     ac A
 )
@@ -554,7 +554,7 @@ pub def Set.destroy[T, A allocators.GeneralAllocator](
     s.len = 0
 end
 
-pub def Set.insert[T, A allocators.GeneralAllocator](
+pub def Set.insert[T, A: allocators.GeneralAllocator](
     s     mut(ref(Set[T])),
     ac    A,
     key   T

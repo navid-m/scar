@@ -480,8 +480,9 @@ impl Parser {
         self.expect_simple(TokenKind::RParen)?;
 
         let return_type = if self.check_simple(&TokenKind::Colon) {
-            self.advance();
-            self.parse_type()?
+            return Err(self.error_at_current(
+                "unexpected `:` before return type — write the type directly after `)`",
+            ));
         } else if self.starts_type() {
             self.parse_type()?
         } else {
@@ -2670,7 +2671,7 @@ mod tests {
 
     #[test]
     fn parses_generic_type_defs_typesets_and_specialized_struct_inits() {
-        let source = "type Pair[T, U]\n\tfirst T\n\tsecond U\nend\n\npub typeset Integer\n\ti32, u32\nend\n\ndef print_pair[T: Integer](p Pair[T, ref(u8)]): Pair[T, ref(u8)]\n\treturn Pair[T, ref(u8)](first: p.first, second: p.second)\nend\n";
+        let source = "type Pair[T, U]\n\tfirst T\n\tsecond U\nend\n\npub typeset Integer\n\ti32, u32\nend\n\ndef print_pair[T: Integer](p Pair[T, ref(u8)]) Pair[T, ref(u8)]\n\treturn Pair[T, ref(u8)](first: p.first, second: p.second)\nend\n";
         let program = parse_program(lex(source).unwrap()).unwrap();
 
         assert_eq!(program.type_defs.len(), 1);

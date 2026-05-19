@@ -3247,7 +3247,7 @@ mod tests {
 
         fs::write(
             &entry,
-            "type Pair[T, U]\n\tfirst T\n\tsecond U\nend\n\ndef make_pair[T, U](first T, second U): Pair[T, U]\n\treturn Pair[T, U](first: first, second: second)\nend\n\npub def main() void\n\tval pair = make_pair[i32, ref(u8)](1, \"ok\")\n\t@print(\"{d}\", {pair.first})\nend\n",
+            "type Pair[T, U]\n\tfirst T\n\tsecond U\nend\n\ndef make_pair[T, U](first T, second U) Pair[T, U]\n\treturn Pair[T, U](first: first, second: second)\nend\n\npub def main() void\n\tval pair = make_pair[i32, ref(u8)](1, \"ok\")\n\t@print(\"{d}\", {pair.first})\nend\n",
         )
         .unwrap();
 
@@ -3277,7 +3277,7 @@ mod tests {
 
         fs::write(
             &entry,
-            "pub typeset Integer\n\ti32, u32\nend\n\ndef id[T: Integer](value T): T\n\treturn value\nend\n\npub def main() void\n\tid[ref(u8)](\"nope\")\nend\n",
+            "pub typeset Integer\n\ti32, u32\nend\n\ndef id[T: Integer](value T) T\n\treturn value\nend\n\npub def main() void\n\tid[ref(u8)](\"nope\")\nend\n",
         )
         .unwrap();
 
@@ -3300,7 +3300,7 @@ mod tests {
 
         fs::write(
             &entry,
-            "val other_file = use(\"other_file\")\n\ntype Pair[T, U]\n\tfirst T\n\tsecond U\nend\n\ndef print_pair[T: other_file.Integer](p: Pair[T, ref(u8)]): T\n\treturn p.first\nend\n\npub def main() void\n\tval p = Pair[i32, ref(u8)](first: 1, second: \"ok\")\n\tprint_pair[i32](p)\nend\n",
+            "val other_file = use(\"other_file\")\n\ntype Pair[T, U]\n\tfirst T\n\tsecond U\nend\n\ndef print_pair[T: other_file.Integer](p Pair[T, ref(u8)]) T\n\treturn p.first\nend\n\npub def main() void\n\tval p = Pair[i32, ref(u8)](first: 1, second: \"ok\")\n\tprint_pair[i32](p)\nend\n",
         )
         .unwrap();
         fs::write(&module, "pub typeset Integer\n\ti32, u32\nend\n").unwrap();

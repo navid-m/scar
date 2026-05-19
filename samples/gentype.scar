@@ -21,7 +21,7 @@ pub typeset Integer
     usize
 end
 
-def print_pair[T Integer](p Pair[T, ref(u8)])
+def print_pair[T: Integer](p Pair[T, ref(u8)])
     @print("Pair: (")
     @print("{d}", {p.first})
     @print(", ")
