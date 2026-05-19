@@ -661,7 +661,7 @@ when posix
 		end
 
 		var entries list[DirEntry] = []
-		var buffer mut(ref(u8)) = heap_alloc(4096 as usize)?
+		var buffer mut(ref(u8)) = @as_mut(heap_alloc(4096 as usize)?)
 
 		for fgets(buffer, 4096, pipe) != none
 			trim_line_end(buffer)

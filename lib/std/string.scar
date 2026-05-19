@@ -80,7 +80,7 @@ pub def rconcat[A: allocators.BumpAllocator](
 	ac: A,
 	a ref(u8),
 	b ref(u8)
-) ref(u8)|error
+) mut(ref(u8))|error
 	var len_a usize = len(a)
 	var len_b usize = len(b)
 
@@ -93,7 +93,7 @@ pub def rconcat[A: allocators.BumpAllocator](
 	@memcpy(@add(out, len_a), b, len_b)
 	@deref(@as_mut(@add(out, len_a + len_b))) = 0 as u8
 
-	return out as ref(u8)
+	return out as mut(ref(u8))
 end
 
 pub def StringBuilder.new[A: allocators.BumpAllocator](

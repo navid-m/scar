@@ -450,7 +450,11 @@ fn analyze_stmt(
                         ))
                         .with_location(*line, *column));
                     }
-                    inferred
+                    if *mutable {
+                        propagate_mut(inferred)
+                    } else {
+                        inferred
+                    }
                 }
             };
             scope.insert(
@@ -2157,6 +2161,13 @@ fn as_mut_type(ty: Type) -> Type {
     match ty {
         Type::Mut(_) => ty,
         other => Type::Mut(Box::new(other)),
+    }
+}
+
+fn propagate_mut(ty: Type) -> Type {
+    match ty {
+        Type::Ref(_) => Type::Mut(Box::new(ty)),
+        other => other,
     }
 }
 
