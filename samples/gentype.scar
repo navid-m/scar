@@ -1,0 +1,49 @@
+type Pair[T, U]
+    first  T
+    second U
+end
+
+type Box[T]
+    value T
+end
+
+def make_pair[T, U](first: T, second: U): Pair[T, U]
+    return Pair[T, U](first: first, second: second)
+end
+
+def make_box[T](value: T): Box[T]
+    return Box[T](value: value)
+end
+
+pub typeset Integer
+    i8, i16, i32, i64,
+    u8, u16, u32, u64,
+    usize
+end
+
+def print_pair[T: Integer, U: ref(u8)](p: Pair[T, U])
+    @print("Pair: (")
+    @print("{d}", {p.first})
+    @print(", ")
+    @print("{s}", {p.second})
+    @print(")\n")
+end
+
+def test_generics()
+    val p1 = Pair[i32, ref(u8)](first: 42, second: "Scarlang")
+    val p4 = make_pair(999, "works")
+
+    print_pair(p1)
+    print_pair(p4)
+
+    var mutable_box = Box[i32](value: 10)
+    mutable_box.value = 999
+
+    @puts("Mutated box: ")
+    @print("{d}", {mutable_box.value})
+    @puts("\n")
+end
+
+pub def main()
+    test_generics()
+end
