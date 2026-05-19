@@ -13,7 +13,7 @@ pub def Array.new[T, A: allocators.BumpAllocator](
     cap: usize
 ) Array[T]|error
     var mem ref(void) = A.alloc(@addr(ac), cap * @sizeof(T))?
-    return Array[T](ptr: mem as ref(T), len: 0, cap: cap)
+    return Array[T](ptr: @bitcast(mem, ref(T)), len: 0, cap: cap)
 end
 
 pub def Array.push[T](a mut(ref(Array[T])), value T) bool
@@ -67,7 +67,7 @@ def list_grow[T, A: allocators.GeneralAllocator](
     var new_ptr ref(void)|error = A.realloc(ac, l.ptr as ref(void), new_cap * @sizeof(T))
     match new_ptr
         ok p => (
-            l.ptr = p as ref(T)
+            l.ptr = @bitcast(p, ref(T))
             l.cap = new_cap
             return true
         )
@@ -79,7 +79,7 @@ end
 
 pub def List.new[T, A: allocators.GeneralAllocator](ac: A) List[T]|error
     var mem ref(void) = A.alloc(@addr(ac), 8 as usize * @sizeof(T))?
-    return List[T](ptr: mem as ref(T), len: 0, cap: 8)
+    return List[T](ptr: @bitcast(mem, ref(T)), len: 0, cap: 8)
 end
 
 pub def List.destroy[T, A: allocators.GeneralAllocator](
@@ -199,7 +199,7 @@ def map_rehash[K, V, A: allocators.GeneralAllocator](
             @memset(p, 0, new_cap * entry_size)
             var old_buckets ref(MapEntry[K, V]) = m.buckets
             var old_cap usize = m.cap
-            m.buckets = p as ref(MapEntry[K, V])
+            m.buckets = @bitcast(p, ref(MapEntry[K, V]))
             m.cap     = new_cap
             m.len     = 0 as usize
             for var i = 0 .. old_cap as i32
@@ -229,7 +229,7 @@ pub def Map.new[K, V, A: allocators.GeneralAllocator](
     var mem ref(void) = A.alloc(@addr(ac), cap * entry_size)?
     @memset(mem, 0, cap * entry_size)
     return Map[K, V](
-        buckets: mem as ref(MapEntry[K, V]),
+        buckets: @bitcast(mem, ref(MapEntry[K, V])),
         cap:     cap,
         len:     0,
         hash_fn: hash_fn,
@@ -356,7 +356,7 @@ def strmap_rehash[V, A: allocators.GeneralAllocator](
             @memset(p, 0, new_cap * entry_size)
             var old_buckets ref(StringMapEntry[V]) = m.buckets
             var old_cap usize = m.cap
-            m.buckets = p as ref(StringMapEntry[V])
+            m.buckets = @bitcast(p, ref(StringMapEntry[V]))
             m.cap     = new_cap
             m.len     = 0 as usize
             for var i = 0 .. old_cap as i32
@@ -381,7 +381,7 @@ pub def StringMap.new[V, A: allocators.GeneralAllocator](ac: A) StringMap[V]|err
     var entry_size usize = @sizeof(StringMapEntry[V])
     var mem ref(void) = A.alloc(@addr(ac), cap * entry_size)?
     @memset(mem, 0, cap * entry_size)
-    return StringMap[V](buckets: mem as ref(StringMapEntry[V]), cap: cap, len: 0)
+    return StringMap[V](buckets: @bitcast(mem, ref(StringMapEntry[V])), cap: cap, len: 0)
 end
 
 pub def StringMap.destroy[V, A: allocators.GeneralAllocator](
@@ -504,7 +504,7 @@ def set_rehash[T, A: allocators.GeneralAllocator](
             @memset(p, 0, new_cap * entry_size)
             var old_buckets ref(SetEntry[T]) = s.buckets
             var old_cap usize = s.cap
-            s.buckets = p as ref(SetEntry[T])
+            s.buckets = @bitcast(p, ref(SetEntry[T]))
             s.cap     = new_cap
             s.len     = 0 as usize
             for var i = 0 .. old_cap as i32
@@ -534,7 +534,7 @@ pub def Set.new[T, A: allocators.GeneralAllocator](
     var mem ref(void) = A.alloc(@addr(ac), cap * entry_size)?
     @memset(mem, 0, cap * entry_size)
     return Set[T](
-        buckets: mem as ref(SetEntry[T]),
+        buckets: @bitcast(mem, ref(SetEntry[T])),
         cap:     cap,
         len:     0,
         hash_fn: hash_fn,
