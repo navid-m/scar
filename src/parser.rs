@@ -1884,6 +1884,7 @@ impl Parser {
             || self.check_simple(&TokenKind::End)
             || self.check_simple(&TokenKind::Else)
             || self.check_simple(&TokenKind::Eof)
+            || self.check_simple(&TokenKind::RParen)
     }
 
     fn consume_newlines(&mut self) {

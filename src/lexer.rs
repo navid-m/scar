@@ -569,6 +569,15 @@ impl Lexer {
                 self.bump();
             }
         }
+        if matches!(self.peek(), Some('e' | 'E')) && matches!(self.peek_next(), Some('0'..='9' | '+' | '-')) {
+            self.bump();
+            if matches!(self.peek(), Some('+' | '-')) {
+                self.bump();
+            }
+            while matches!(self.peek(), Some('0'..='9')) {
+                self.bump();
+            }
+        }
         let lexeme: String = self.chars[start..self.pos].iter().collect();
         if is_float {
             let value = lexeme.parse::<f64>().map_err(|error| {

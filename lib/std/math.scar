@@ -8,9 +8,12 @@ pub typeset Float
 	f32, f64
 end
 
-pub val PI f64  = 3.14159265358979323846
-pub val TAU f64 = 6.28318530717958647692
-pub val E f64   = 2.71828182845904523536
+pub val PI      f64 = 3.14159265358979323846
+pub val TAU     f64 = 6.28318530717958647692
+pub val E       f64 = 2.71828182845904523536
+pub val EPSILON f64 = 2.220446049250313e-16
+pub val F64_MAX f64 = 1.7976931348623157e+308
+pub val F64_MIN f64 = 5.0e-324
 
 pub def floor(x f64) f64
 	var as_int i64 = x as i64
@@ -49,6 +52,10 @@ pub def fabs(x f64) f64
 		return -x
 	end
 	return x
+end
+
+pub def approx_eq(a f64, b f64, epsilon f64) bool
+	return fabs(a - b) < epsilon
 end
 
 pub def sqrt(x f64) f64
@@ -331,6 +338,205 @@ pub def ipow[T: Integer](base T, exponent u32) T
 	end
 
 	return result
+end
+
+pub def log2(x f64) f64
+    return log(x) / log(2.0)
+end
+
+pub def cbrt(x f64) f64
+    if x == 0.0
+        return 0.0
+    end
+    var neg bool = x < 0.0
+    var a f64 = fabs(x)
+    var guess f64 = a
+    var i = 0
+    for i < 20
+        guess = ((2.0 * guess) + (a / (guess * guess))) / 3.0
+        i++
+    end
+    if neg
+        return -guess
+    end
+    return guess
+end
+
+pub def hypot(x f64, y f64) f64
+    var ax f64 = fabs(x)
+    var ay f64 = fabs(y)
+    if ax == 0.0
+        return ay
+    end
+    if ay == 0.0
+        return ax
+    end
+    if ax > ay
+        var r f64 = ay / ax
+        return ax * sqrt(1.0 + r * r)
+    end
+    var r f64 = ax / ay
+    return ay * sqrt(1.0 + r * r)
+end
+
+pub def copysign(x f64, y f64) f64
+    var ax f64 = fabs(x)
+    if y < 0.0
+        return -ax
+    end
+    return ax
+end
+
+pub def sinh(x f64) f64
+    return (exp(x) - exp(-x)) / 2.0
+end
+
+pub def cosh(x f64) f64
+    return (exp(x) + exp(-x)) / 2.0
+end
+
+pub def tanh(x f64) f64
+    var ep f64 = exp(x)
+    var en f64 = exp(-x)
+    return (ep - en) / (ep + en)
+end
+
+pub def asinh(x f64) f64
+    return log(x + sqrt(x * x + 1.0))
+end
+
+pub def acosh(x f64) f64|error
+    if x < 1.0
+        return error("acosh: domain error (x < 1)")
+    end
+    return log(x + sqrt(x * x - 1.0))
+end
+
+pub def atanh(x f64) f64|error
+    if x <= -1.0 || x >= 1.0
+        return error("atanh: domain error (x must be in (-1, 1))")
+    end
+    return 0.5 * log((1.0 + x) / (1.0 - x))
+end
+
+pub def is_power_of_two[T: Integer](x T) bool
+    if x <= 0
+        return false
+    end
+    return (x & (x - 1 as T)) == 0 as T
+end
+
+pub def next_power_of_two[T: Integer](x T) T
+    if x <= 1 as T
+        return 1 as T
+    end
+    var n T = x - 1 as T
+    n = n | (n >> (1 as T))
+    n = n | (n >> (2 as T))
+    n = n | (n >> (4 as T))
+    n = n | (n >> (8 as T))
+    n = n | (n >> (16 as T))
+    n = n | (n >> (32 as T))
+    return n + 1 as T
+end
+
+pub def div_ceil[T: Integer](a T, b T) T
+    if b == 0 as T
+        return 0 as T
+    end
+    if (a < 0 as T) != (b < 0 as T)
+        return a / b
+    end
+    return (a + (b - 1 as T)) / b
+end
+
+test "log2 works"
+    assert log2(1.0) == 0.0
+    assert log2(2.0) == 1.0
+    assert approx_eq(log2(8.0), 3.0, 0.0001)
+end
+
+test "cbrt works"
+    assert cbrt(27.0) == 3.0
+    assert cbrt(-8.0) == -2.0
+    assert cbrt(0.0) == 0.0
+end
+
+test "hypot works"
+    assert hypot(3.0, 4.0) == 5.0
+    assert hypot(0.0, 5.0) == 5.0
+end
+
+test "copysign works"
+    assert copysign(3.0, -1.0) == -3.0
+    assert copysign(-3.0, 1.0) == 3.0
+end
+
+test "sinh cosh tanh work"
+    assert fabs(sinh(0.0)) < EPSILON
+    assert fabs(cosh(0.0) - 1.0) < EPSILON
+    assert fabs(tanh(0.0)) < EPSILON
+end
+
+test "asinh works"
+    assert fabs(asinh(0.0)) < EPSILON
+    assert fabs(asinh(sinh(1.0)) - 1.0) < 1.0e-10
+end
+
+test "acosh works"
+    match acosh(1.0)
+        ok v => ( assert fabs(v) < EPSILON )
+        error _ => ( assert false )
+    end
+    match acosh(0.5)
+        ok _ => ( assert false )
+        error _ => ()
+    end
+end
+
+test "atanh works"
+    match atanh(0.0)
+        ok v => ( assert fabs(v) < EPSILON )
+        error _ => ( assert false )
+    end
+    match atanh(1.0)
+        ok _ => ( assert false )
+        error _ => ()
+    end
+end
+
+test "is_power_of_two works"
+    assert is_power_of_two[_](1)
+    assert is_power_of_two[_](2)
+    assert is_power_of_two[_](64)
+    assert !is_power_of_two[_](0)
+    assert !is_power_of_two[_](3)
+    assert !is_power_of_two[_](100)
+end
+
+test "next_power_of_two works"
+    assert next_power_of_two[_](1) == 1
+    assert next_power_of_two[_](3) == 4
+    assert next_power_of_two[_](5) == 8
+    assert next_power_of_two[_](8) == 8
+    assert next_power_of_two[_](9) == 16
+end
+
+test "div_ceil works"
+    assert div_ceil[_](10, 3) == 4
+    assert div_ceil[_](9, 3) == 3
+    assert div_ceil[_](1, 2) == 1
+    assert div_ceil[_](0, 5) == 0
+end
+
+test "gcd with negatives works"
+    assert gcd[_](-12, 8) == 4
+    assert gcd[_](0, 7) == 7
+end
+
+test "ipow edge cases work"
+    assert ipow[_](0, 0 as u32) == 1
+    assert ipow[_](0, 3 as u32) == 0
 end
 
 test "abs works"
