@@ -34,7 +34,6 @@ pub struct InterfaceDefInfo {
 pub struct ProgramInfo {
     pub functions: HashMap<String, FunctionSig>,
     pub function_symbols: HashMap<String, String>,
-    pub interfaces: HashMap<String, InterfaceDefInfo>,
     pub types: HashMap<String, TypeDefInfo>,
     pub locals: HashMap<String, HashMap<String, Type>>,
 }
@@ -99,7 +98,6 @@ pub fn analyze(program: &Program) -> Result<ProgramInfo, CompileError> {
     Ok(ProgramInfo {
         functions,
         function_symbols,
-        interfaces,
         types,
         locals,
     })
