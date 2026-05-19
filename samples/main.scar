@@ -5,7 +5,7 @@ def print_address_of(x ref(void))
 	@print("{p}", {@addr(x)})
 end
 
-def modify_in_place(x ref(u8))
+def modify_in_place(x mut(ref(u8)))
 	str.copy(x, "modified")
 end
 

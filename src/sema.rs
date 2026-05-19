@@ -122,13 +122,12 @@ fn sanitize_symbol_name(name: &str) -> String {
 }
 
 fn collect_types(program: &Program) -> Result<HashMap<String, TypeDefInfo>, CompileError> {
-    let known_type_names: HashSet<String> =
-        program
-            .type_defs
-            .iter()
-            .map(|def| def.name.clone())
-            .chain(program.interface_defs.iter().map(|def| def.name.clone()))
-            .collect();
+    let known_type_names: HashSet<String> = program
+        .type_defs
+        .iter()
+        .map(|def| def.name.clone())
+        .chain(program.interface_defs.iter().map(|def| def.name.clone()))
+        .collect();
     let mut types = HashMap::new();
 
     for type_def in &program.type_defs {
@@ -212,7 +211,9 @@ fn collect_types(program: &Program) -> Result<HashMap<String, TypeDefInfo>, Comp
     Ok(types)
 }
 
-fn collect_interfaces(program: &Program) -> Result<HashMap<String, InterfaceDefInfo>, CompileError> {
+fn collect_interfaces(
+    program: &Program,
+) -> Result<HashMap<String, InterfaceDefInfo>, CompileError> {
     let known_names: HashSet<String> = program
         .type_defs
         .iter()
@@ -443,13 +444,11 @@ fn analyze_stmt(
                     let inferred = infer_expr_type(init, functions, types, scope)
                         .map_err(|error| error.with_location(*line, *column))?;
                     if matches!(inferred, Type::Error | Type::None) {
-                        return Err(
-                            CompileError::new(format!(
-                                "cannot infer a variable type from {} alone",
-                                describe_type(&inferred)
-                            ))
-                            .with_location(*line, *column),
-                        );
+                        return Err(CompileError::new(format!(
+                            "cannot infer a variable type from {} alone",
+                            describe_type(&inferred)
+                        ))
+                        .with_location(*line, *column));
                     }
                     inferred
                 }
@@ -484,7 +483,9 @@ fn analyze_stmt(
             target,
             value,
         } => {
-            analyze_arithmetic_assignment(target, value, "+=", *line, *column, functions, types, scope)?;
+            analyze_arithmetic_assignment(
+                target, value, "+=", *line, *column, functions, types, scope,
+            )?;
         }
         Stmt::MulAssign {
             line,
@@ -492,7 +493,9 @@ fn analyze_stmt(
             target,
             value,
         } => {
-            analyze_arithmetic_assignment(target, value, "*=", *line, *column, functions, types, scope)?;
+            analyze_arithmetic_assignment(
+                target, value, "*=", *line, *column, functions, types, scope,
+            )?;
         }
         Stmt::SubAssign {
             line,
@@ -500,7 +503,9 @@ fn analyze_stmt(
             target,
             value,
         } => {
-            analyze_arithmetic_assignment(target, value, "-=", *line, *column, functions, types, scope)?;
+            analyze_arithmetic_assignment(
+                target, value, "-=", *line, *column, functions, types, scope,
+            )?;
         }
         Stmt::DivAssign {
             line,
@@ -508,7 +513,9 @@ fn analyze_stmt(
             target,
             value,
         } => {
-            analyze_arithmetic_assignment(target, value, "/=", *line, *column, functions, types, scope)?;
+            analyze_arithmetic_assignment(
+                target, value, "/=", *line, *column, functions, types, scope,
+            )?;
         }
         Stmt::BitAndAssign {
             line,
@@ -516,7 +523,9 @@ fn analyze_stmt(
             target,
             value,
         } => {
-            analyze_bitwise_assignment(target, value, "&=", *line, *column, functions, types, scope)?;
+            analyze_bitwise_assignment(
+                target, value, "&=", *line, *column, functions, types, scope,
+            )?;
         }
         Stmt::BitOrAssign {
             line,
@@ -524,7 +533,9 @@ fn analyze_stmt(
             target,
             value,
         } => {
-            analyze_bitwise_assignment(target, value, "|=", *line, *column, functions, types, scope)?;
+            analyze_bitwise_assignment(
+                target, value, "|=", *line, *column, functions, types, scope,
+            )?;
         }
         Stmt::BitXorAssign {
             line,
@@ -532,7 +543,9 @@ fn analyze_stmt(
             target,
             value,
         } => {
-            analyze_bitwise_assignment(target, value, "^=", *line, *column, functions, types, scope)?;
+            analyze_bitwise_assignment(
+                target, value, "^=", *line, *column, functions, types, scope,
+            )?;
         }
         Stmt::Increment {
             line,
@@ -550,13 +563,11 @@ fn analyze_stmt(
                 types,
             )?;
             if !is_numeric_primitive_type(&target_ty) {
-                return Err(
-                    CompileError::new(format!(
-                        "postfix update requires a numeric target, got {}",
-                        describe_type(&target_ty)
-                    ))
-                    .with_location(*line, *column),
-                );
+                return Err(CompileError::new(format!(
+                    "postfix update requires a numeric target, got {}",
+                    describe_type(&target_ty)
+                ))
+                .with_location(*line, *column));
             }
         }
         Stmt::Assert {
@@ -569,13 +580,11 @@ fn analyze_stmt(
             let condition_ty = infer_expr_type(condition, functions, types, scope)
                 .map_err(|error| error.with_location(*line, *column))?;
             if !is_condition_type(&condition_ty, types)? {
-                return Err(
-                    CompileError::new(format!(
-                        "`assert` conditions must be bool or integer-compatible, got {}",
-                        describe_type(&condition_ty)
-                    ))
-                    .with_location(*line, *column),
-                );
+                return Err(CompileError::new(format!(
+                    "`assert` conditions must be bool or integer-compatible, got {}",
+                    describe_type(&condition_ty)
+                ))
+                .with_location(*line, *column));
             }
         }
         Stmt::Return {
@@ -586,10 +595,8 @@ fn analyze_stmt(
             (Type::Void, None) => {}
             (Type::Result(inner), None) if inner.as_ref() == &Type::Void => {}
             (Type::Void, Some(_)) => {
-                return Err(
-                    CompileError::new("void functions cannot return a value")
-                        .with_location(*line, *column),
-                );
+                return Err(CompileError::new("void functions cannot return a value")
+                    .with_location(*line, *column));
             }
             (expected, Some(expr)) => {
                 validate_try_usage(expr, expected_return, allow_try_panic)
@@ -600,10 +607,8 @@ fn analyze_stmt(
                     .map_err(|error| error.with_location(*line, *column))?;
             }
             (_, None) => {
-                return Err(
-                    CompileError::new("non-void functions must return a value")
-                        .with_location(*line, *column),
-                );
+                return Err(CompileError::new("non-void functions must return a value")
+                    .with_location(*line, *column));
             }
         },
         Stmt::If {
@@ -616,13 +621,11 @@ fn analyze_stmt(
             let condition_ty = infer_expr_type(condition, functions, types, scope)
                 .map_err(|error| error.with_location(*line, *column))?;
             if !is_condition_type(&condition_ty, types)? {
-                return Err(
-                    CompileError::new(format!(
-                        "`if` conditions must be bool or integer-compatible, got {}",
-                        describe_type(&condition_ty)
-                    ))
-                    .with_location(*line, *column),
-                );
+                return Err(CompileError::new(format!(
+                    "`if` conditions must be bool or integer-compatible, got {}",
+                    describe_type(&condition_ty)
+                ))
+                .with_location(*line, *column));
             }
             let mut then_scope = scope.clone();
             for stmt in then_body {
@@ -675,21 +678,17 @@ fn analyze_stmt(
                             MatchArmKind::Ok => saw_ok = true,
                             MatchArmKind::Error => saw_error = true,
                             MatchArmKind::Variant(name) => {
-                                return Err(
-                                    CompileError::new(format!(
-                                        "result matches do not support variant arm `{name}`"
-                                    ))
-                                    .with_location(*line, *column),
-                                );
+                                return Err(CompileError::new(format!(
+                                    "result matches do not support variant arm `{name}`"
+                                ))
+                                .with_location(*line, *column));
                             }
                         }
                         if arm.bindings.len() != 1 {
-                            return Err(
-                                CompileError::new(
-                                    "result match arms require exactly one binding or `_`",
-                                )
-                                .with_location(*line, *column),
-                            );
+                            return Err(CompileError::new(
+                                "result match arms require exactly one binding or `_`",
+                            )
+                            .with_location(*line, *column));
                         }
                         let mut nested = scope.clone();
                         if let Some(binding) = &arm.bindings[0] {
@@ -723,12 +722,10 @@ fn analyze_stmt(
                     }
 
                     if !saw_ok || !saw_error {
-                        return Err(
-                            CompileError::new(
-                                "`match` on a result value requires both `ok` and `error` arms",
-                            )
-                            .with_location(*line, *column),
-                        );
+                        return Err(CompileError::new(
+                            "`match` on a result value requires both `ok` and `error` arms",
+                        )
+                        .with_location(*line, *column));
                     }
                 }
                 Type::Named(name) => {
@@ -737,13 +734,11 @@ fn analyze_stmt(
                             .with_location(*line, *column)
                     })?;
                     if type_info.kind != TypeDefKind::Union {
-                        return Err(
-                            CompileError::new(format!(
-                                "`match` currently requires a union or `T|error` expression, got {}",
-                                describe_type(&Type::Named(name))
-                            ))
-                            .with_location(*line, *column),
-                        );
+                        return Err(CompileError::new(format!(
+                            "`match` currently requires a union or `T|error` expression, got {}",
+                            describe_type(&Type::Named(name))
+                        ))
+                        .with_location(*line, *column));
                     }
                     let mut seen_variants = HashSet::new();
                     for arm in arms {
@@ -763,22 +758,18 @@ fn analyze_stmt(
                                 .with_location(*line, *column)
                             })?;
                         if !seen_variants.insert(variant_name.clone()) {
-                            return Err(
-                                CompileError::new(format!(
-                                    "duplicate match arm for variant `{variant_name}`"
-                                ))
-                                .with_location(*line, *column),
-                            );
+                            return Err(CompileError::new(format!(
+                                "duplicate match arm for variant `{variant_name}`"
+                            ))
+                            .with_location(*line, *column));
                         }
                         if arm.bindings.len() != payload_types.len() {
-                            return Err(
-                                CompileError::new(format!(
-                                    "variant `{variant_name}` expects {} bindings but found {}",
-                                    payload_types.len(),
-                                    arm.bindings.len()
-                                ))
-                                .with_location(*line, *column),
-                            );
+                            return Err(CompileError::new(format!(
+                                "variant `{variant_name}` expects {} bindings but found {}",
+                                payload_types.len(),
+                                arm.bindings.len()
+                            ))
+                            .with_location(*line, *column));
                         }
                         let mut nested = scope.clone();
                         for (binding, binding_ty) in arm.bindings.iter().zip(payload_types.iter()) {
@@ -815,22 +806,18 @@ fn analyze_stmt(
                             .find(|variant| !seen_variants.contains(&variant.name))
                             .map(|variant| variant.name.clone())
                             .unwrap_or_else(|| "<unknown>".to_string());
-                        return Err(
-                            CompileError::new(format!(
-                                "`match` on union `{name}` is missing variant `{missing}`"
-                            ))
-                            .with_location(*line, *column),
-                        );
+                        return Err(CompileError::new(format!(
+                            "`match` on union `{name}` is missing variant `{missing}`"
+                        ))
+                        .with_location(*line, *column));
                     }
                 }
                 other => {
-                    return Err(
-                        CompileError::new(format!(
-                            "`match` currently requires a union or `T|error` expression, got {}",
-                            describe_type(&other)
-                        ))
-                        .with_location(*line, *column),
-                    );
+                    return Err(CompileError::new(format!(
+                        "`match` currently requires a union or `T|error` expression, got {}",
+                        describe_type(&other)
+                    ))
+                    .with_location(*line, *column));
                 }
             }
         }
@@ -864,10 +851,8 @@ fn analyze_stmt(
                 types,
             )?;
             if !(start_ty == Type::I32 && end_ty == Type::I32) {
-                return Err(
-                    CompileError::new("`for` bounds must have type i32")
-                        .with_location(*line, *column),
-                );
+                return Err(CompileError::new("`for` bounds must have type i32")
+                    .with_location(*line, *column));
             }
             let mut nested = scope.clone();
             nested.insert(
@@ -907,13 +892,11 @@ fn analyze_stmt(
                 types,
             )?;
             let Type::List(element_ty) = deref_refs(&iterable_ty) else {
-                return Err(
-                    CompileError::new(format!(
-                        "`for ... in ...` requires a list iterable, got {}",
-                        describe_type(&iterable_ty)
-                    ))
-                    .with_location(*line, *column),
-                );
+                return Err(CompileError::new(format!(
+                    "`for ... in ...` requires a list iterable, got {}",
+                    describe_type(&iterable_ty)
+                ))
+                .with_location(*line, *column));
             };
             let mut nested = scope.clone();
             nested.insert(
@@ -949,13 +932,11 @@ fn analyze_stmt(
             let condition_ty = infer_expr_type(condition, functions, types, scope)
                 .map_err(|error| error.with_location(*line, *column))?;
             if !is_condition_type(&condition_ty, types)? {
-                return Err(
-                    CompileError::new(format!(
-                        "`for (condition)` requires a bool or integer-compatible condition, got {}",
-                        describe_type(&condition_ty)
-                    ))
-                    .with_location(*line, *column),
-                );
+                return Err(CompileError::new(format!(
+                    "`for (condition)` requires a bool or integer-compatible condition, got {}",
+                    describe_type(&condition_ty)
+                ))
+                .with_location(*line, *column));
             }
             let mut nested = scope.clone();
             for stmt in body {
@@ -998,10 +979,8 @@ fn analyze_stmt(
         }
         Stmt::Break { line, column } => {
             if !in_loop {
-                return Err(
-                    CompileError::new("`break` may only appear inside a loop")
-                        .with_location(*line, *column),
-                );
+                return Err(CompileError::new("`break` may only appear inside a loop")
+                    .with_location(*line, *column));
             }
         }
     }
@@ -1124,7 +1103,8 @@ fn infer_expr_type(
             }
         }
         Expr::Error { message } => {
-            let message_ty = resolve_aliases(&infer_expr_type(message, functions, types, scope)?, types)?;
+            let message_ty =
+                resolve_aliases(&infer_expr_type(message, functions, types, scope)?, types)?;
             if !is_string_compatible(&message_ty) {
                 return Err(CompileError::new(format!(
                     "`error(...)` expects a string-compatible message, got {}",
@@ -1134,7 +1114,8 @@ fn infer_expr_type(
             Ok(Type::Error)
         }
         Expr::Try(inner) => {
-            let inner_ty = resolve_aliases(&infer_expr_type(inner, functions, types, scope)?, types)?;
+            let inner_ty =
+                resolve_aliases(&infer_expr_type(inner, functions, types, scope)?, types)?;
             let Type::Result(ok_ty) = inner_ty else {
                 return Err(CompileError::new(format!(
                     "`?` requires a `T|error` expression, got {}",
@@ -1144,7 +1125,8 @@ fn infer_expr_type(
             Ok((*ok_ty).clone())
         }
         Expr::Unary { op, expr } => {
-            let inner_ty = resolve_aliases(&infer_expr_type(expr, functions, types, scope)?, types)?;
+            let inner_ty =
+                resolve_aliases(&infer_expr_type(expr, functions, types, scope)?, types)?;
             match op {
                 UnaryOp::Neg if is_signed_numeric_type(&inner_ty) => Ok(inner_ty),
                 UnaryOp::Neg => Err(CompileError::new(
@@ -1230,9 +1212,7 @@ fn infer_expr_type(
                 {
                     Ok(Type::Bool)
                 }
-                BinaryOp::Equal | BinaryOp::NotEqual
-                    if can_compare_with_none(&lhs_ty, &rhs_ty) =>
-                {
+                BinaryOp::Equal | BinaryOp::NotEqual if can_compare_with_none(&lhs_ty, &rhs_ty) => {
                     Ok(Type::Bool)
                 }
                 BinaryOp::LessThan
@@ -1240,11 +1220,9 @@ fn infer_expr_type(
                 | BinaryOp::GreaterThan
                 | BinaryOp::GreaterEqual
                 | BinaryOp::Equal
-                | BinaryOp::NotEqual => Err(
-                    CompileError::new(
-                        "comparison operators currently require compatible numeric, bool, or pointer/null operands",
-                    ),
-                ),
+                | BinaryOp::NotEqual => Err(CompileError::new(
+                    "comparison operators currently require compatible numeric, bool, or pointer/null operands",
+                )),
             }
         }
     }
@@ -1295,7 +1273,12 @@ fn analyze_call(
                 }
                 for (arg, field) in args.iter().zip(&type_info.fields) {
                     let actual = infer_expr_type(arg, functions, types, scope)?;
-                    expect_same_type(&field.ty, &actual, types, &format!("field `{}`", field.name))?;
+                    expect_same_type(
+                        &field.ty,
+                        &actual,
+                        types,
+                        &format!("field `{}`", field.name),
+                    )?;
                 }
                 return Ok(Type::Named(function_name));
             }
@@ -1306,11 +1289,12 @@ fn analyze_call(
             let variant_name = &path[1];
             if let Some(type_info) = types.get(union_name) {
                 if type_info.kind == TypeDefKind::Union {
-                    let payload_types = type_info.variant_map.get(variant_name).ok_or_else(|| {
-                        CompileError::new(format!(
-                            "union `{union_name}` has no variant `{variant_name}`"
-                        ))
-                    })?;
+                    let payload_types =
+                        type_info.variant_map.get(variant_name).ok_or_else(|| {
+                            CompileError::new(format!(
+                                "union `{union_name}` has no variant `{variant_name}`"
+                            ))
+                        })?;
                     if payload_types.len() != args.len() {
                         return Err(CompileError::new(format!(
                             "variant `{variant_name}` expects {} arguments but received {}",
@@ -1327,7 +1311,9 @@ fn analyze_call(
             }
         }
 
-        return Err(CompileError::new(format!("unknown function `{function_name}`")));
+        return Err(CompileError::new(format!(
+            "unknown function `{function_name}`"
+        )));
     }
 
     Err(CompileError::new(
@@ -1350,7 +1336,8 @@ fn analyze_builtin(
             if args.len() != 1 {
                 return Err(CompileError::new("@puts expects exactly one argument"));
             }
-            let arg_ty = resolve_aliases(&infer_expr_type(&args[0], functions, types, scope)?, types)?;
+            let arg_ty =
+                resolve_aliases(&infer_expr_type(&args[0], functions, types, scope)?, types)?;
             if !is_string_compatible(&arg_ty) {
                 return Err(CompileError::new(format!(
                     "@puts expects a string-compatible value, got {}",
@@ -1395,14 +1382,16 @@ fn analyze_builtin(
             if args.len() != 3 {
                 return Err(CompileError::new("@memcpy expects exactly three arguments"));
             }
-            let dest_ty = resolve_aliases(&infer_expr_type(&args[0], functions, types, scope)?, types)?;
+            let dest_ty =
+                resolve_aliases(&infer_expr_type(&args[0], functions, types, scope)?, types)?;
             if !is_memory_pointer_type(&dest_ty) {
                 return Err(CompileError::new(format!(
                     "@memcpy expects a pointer-like destination, got {}",
                     describe_type(&dest_ty)
                 )));
             }
-            let src_ty = resolve_aliases(&infer_expr_type(&args[1], functions, types, scope)?, types)?;
+            let src_ty =
+                resolve_aliases(&infer_expr_type(&args[1], functions, types, scope)?, types)?;
             if !is_memory_pointer_type(&src_ty) {
                 return Err(CompileError::new(format!(
                     "@memcpy expects a pointer-like source, got {}",
@@ -1436,7 +1425,8 @@ fn analyze_builtin(
             if args.len() != 2 {
                 return Err(CompileError::new("@add expects exactly two arguments"));
             }
-            let base_ty = resolve_aliases(&infer_expr_type(&args[0], functions, types, scope)?, types)?;
+            let base_ty =
+                resolve_aliases(&infer_expr_type(&args[0], functions, types, scope)?, types)?;
             if !is_memory_pointer_type(&base_ty) {
                 return Err(CompileError::new(format!(
                     "@add expects a pointer-like first argument, got {}",
@@ -1469,7 +1459,8 @@ fn analyze_builtin(
             if args.len() != 2 {
                 return Err(CompileError::new("@realloc expects exactly two arguments"));
             }
-            let ptr_ty = resolve_aliases(&infer_expr_type(&args[0], functions, types, scope)?, types)?;
+            let ptr_ty =
+                resolve_aliases(&infer_expr_type(&args[0], functions, types, scope)?, types)?;
             if !is_memory_pointer_type(&ptr_ty) {
                 return Err(CompileError::new(format!(
                     "@realloc expects a pointer-like first argument, got {}",
@@ -1489,7 +1480,8 @@ fn analyze_builtin(
             if args.len() != 1 {
                 return Err(CompileError::new("@free expects exactly one argument"));
             }
-            let ptr_ty = resolve_aliases(&infer_expr_type(&args[0], functions, types, scope)?, types)?;
+            let ptr_ty =
+                resolve_aliases(&infer_expr_type(&args[0], functions, types, scope)?, types)?;
             if !is_memory_pointer_type(&ptr_ty) {
                 return Err(CompileError::new(format!(
                     "@free expects a pointer-like argument, got {}",
@@ -1547,12 +1539,10 @@ fn analyze_bitwise_assignment(
     if common_integer_type(&target_ty, &value_ty) == Some(target_ty.clone()) {
         Ok(())
     } else {
-        Err(
-            CompileError::new(format!(
-                "`{operator}` currently requires compatible integer operands"
-            ))
-            .with_location(line, column),
-        )
+        Err(CompileError::new(format!(
+            "`{operator}` currently requires compatible integer operands"
+        ))
+        .with_location(line, column))
     }
 }
 
@@ -1579,12 +1569,10 @@ fn analyze_arithmetic_assignment(
     if common_numeric_type(&target_ty, &value_ty) == Some(target_ty.clone()) {
         Ok(())
     } else {
-        Err(
-            CompileError::new(format!(
-                "`{operator}` currently requires compatible numeric operands"
-            ))
-            .with_location(line, column),
-        )
+        Err(CompileError::new(format!(
+            "`{operator}` currently requires compatible numeric operands"
+        ))
+        .with_location(line, column))
     }
 }
 
@@ -1675,7 +1663,10 @@ fn infer_field_type(
     }
 }
 
-fn infer_index_type(base_ty: &Type, types: &HashMap<String, TypeDefInfo>) -> Result<Type, CompileError> {
+fn infer_index_type(
+    base_ty: &Type,
+    types: &HashMap<String, TypeDefInfo>,
+) -> Result<Type, CompileError> {
     let resolved = resolve_aliases(base_ty, types)?;
     match deref_refs(&resolved) {
         Type::List(inner) => Ok((**inner).clone()),
@@ -1720,7 +1711,7 @@ fn analyze_list_method_with_receiver(
             return Err(CompileError::new(format!(
                 "`@{method}` requires a list receiver, got {}",
                 describe_type(other)
-            )))
+            )));
         }
     };
 
@@ -1895,8 +1886,9 @@ fn format_type_matches(marker: PrintMarker, ty: &Type) -> bool {
         PrintMarker::Int => is_integer_primitive_type(ty),
         PrintMarker::Bool => matches!(ty, Type::Bool),
         PrintMarker::String => is_string_compatible(ty),
-        PrintMarker::Pointer => matches!(ty, Type::Ref(_) | Type::Mut(_) | Type::Named(_))
-            || is_string_compatible(ty),
+        PrintMarker::Pointer => {
+            matches!(ty, Type::Ref(_) | Type::Mut(_) | Type::Named(_)) || is_string_compatible(ty)
+        }
         PrintMarker::Float => matches!(ty, Type::F32),
         PrintMarker::Double => matches!(ty, Type::F64),
     }
@@ -2052,7 +2044,9 @@ fn validate_try_usage(
             validate_try_usage(base, expected_return, allow_try_panic)?;
             validate_try_usage(index, expected_return, allow_try_panic)?;
         }
-        Expr::FieldAccess { base, .. } => validate_try_usage(base, expected_return, allow_try_panic)?,
+        Expr::FieldAccess { base, .. } => {
+            validate_try_usage(base, expected_return, allow_try_panic)?
+        }
         Expr::StructInit { fields, .. } => {
             for field in fields {
                 validate_try_usage(&field.value, expected_return, allow_try_panic)?;
@@ -2109,7 +2103,6 @@ fn types_compatible(
     let expected = normalize_value_mutability(&resolve_aliases(expected, types)?);
     let actual = normalize_value_mutability(&resolve_aliases(actual, types)?);
     Ok(types_compatible_resolved(&expected, &actual)
-        || (is_string_compatible(&expected) && is_string_compatible(&actual))
         || can_implicitly_convert_numeric(&actual, &expected))
 }
 
@@ -2126,6 +2119,10 @@ fn types_compatible_resolved(expected: &Type, actual: &Type) -> bool {
         (expected, Type::None) | (Type::None, expected) => {
             expected == &Type::None || is_nullable_pointer_type(expected)
         }
+        (Type::Ref(expected_inner), Type::Mut(actual_inner)) => {
+            matches!(actual_inner.as_ref(), Type::Ref(inner) if inner == expected_inner)
+        }
+        (Type::Ref(inner), other) if inner.as_ref() == &Type::U8 => is_string_compatible(other),
         _ => false,
     }
 }
@@ -2166,9 +2163,9 @@ fn as_mut_type(ty: Type) -> Type {
 fn normalize_value_mutability(ty: &Type) -> Type {
     match ty {
         Type::Mut(inner) => match inner.as_ref() {
-            Type::Ref(inner) => Type::Mut(Box::new(Type::Ref(Box::new(normalize_value_mutability(
-                inner,
-            ))))),
+            Type::Ref(inner) => Type::Mut(Box::new(Type::Ref(Box::new(
+                normalize_value_mutability(inner),
+            )))),
             other => normalize_value_mutability(other),
         },
         Type::Ref(inner) => Type::Ref(Box::new(normalize_value_mutability(inner))),
@@ -2216,7 +2213,10 @@ fn primitive_ref_base_type(ty: &Type) -> Option<&Type> {
     }
 }
 
-fn is_condition_type(ty: &Type, types: &HashMap<String, TypeDefInfo>) -> Result<bool, CompileError> {
+fn is_condition_type(
+    ty: &Type,
+    types: &HashMap<String, TypeDefInfo>,
+) -> Result<bool, CompileError> {
     Ok(is_condition_primitive_type(&resolve_aliases(ty, types)?))
 }
 
@@ -2246,11 +2246,17 @@ fn is_signed_numeric_type(ty: &Type) -> bool {
 }
 
 fn is_signed_integer_primitive_type(ty: &Type) -> bool {
-    matches!(ty, Type::I8 | Type::I16 | Type::I32 | Type::I64 | Type::Isize)
+    matches!(
+        ty,
+        Type::I8 | Type::I16 | Type::I32 | Type::I64 | Type::Isize
+    )
 }
 
 fn is_unsigned_integer_primitive_type(ty: &Type) -> bool {
-    matches!(ty, Type::U8 | Type::U16 | Type::U32 | Type::U64 | Type::Usize)
+    matches!(
+        ty,
+        Type::U8 | Type::U16 | Type::U32 | Type::U64 | Type::Usize
+    )
 }
 
 fn integer_rank(ty: &Type) -> Option<u8> {
@@ -2584,7 +2590,8 @@ mod tests {
 
     #[test]
     fn accepts_in_range_integer_literal_cast_to_u8() {
-        let source = "pub def main() void\n\tval byte u8 = 0 as u8\n\t@print(\"{d}\", {byte})\nend\n";
+        let source =
+            "pub def main() void\n\tval byte u8 = 0 as u8\n\t@print(\"{d}\", {byte})\nend\n";
         let program = parse_program(lex(source).unwrap()).unwrap();
 
         analyze(&program).unwrap();
@@ -2596,7 +2603,10 @@ mod tests {
         let program = parse_program(lex(source).unwrap()).unwrap();
 
         let error = analyze(&program).unwrap_err();
-        assert_eq!(error.to_string(), "integer literal 23490234 does not fit in u8");
+        assert_eq!(
+            error.to_string(),
+            "integer literal 23490234 does not fit in u8"
+        );
     }
 
     #[test]
@@ -2614,6 +2624,9 @@ mod tests {
         let program = parse_program(lex(source).unwrap()).unwrap();
 
         let error = analyze(&program).unwrap_err();
-        assert_eq!(error.to_string(), "`+` currently requires compatible numeric operands");
+        assert_eq!(
+            error.to_string(),
+            "`+` currently requires compatible numeric operands"
+        );
     }
 }
