@@ -76,8 +76,8 @@ pub def rconcat_buf(dest mut(ref(u8)), src ref(u8)) ref(u8)
 	return strcat(dest, src)
 end
 
-pub def rconcat[A: allocators.BumpAllocator](
-	ac: A,
+pub def rconcat[A allocators.BumpAllocator](
+	ac A,
 	a ref(u8),
 	b ref(u8)
 ) mut(ref(u8))|error
@@ -96,7 +96,7 @@ pub def rconcat[A: allocators.BumpAllocator](
 	return out as mut(ref(u8))
 end
 
-pub def StringBuilder.new[A: allocators.BumpAllocator](
+pub def StringBuilder.new[A allocators.BumpAllocator](
 	ac A,
 	cap usize
 ) mut(StringBuilder)|error
@@ -147,8 +147,8 @@ pub def StringBuilder.str(sb ref(StringBuilder)) ref(u8)
 	return sb.ptr
 end
 
-pub def trim_prefix[A: allocators.BumpAllocator](
-	ac: A,
+pub def trim_prefix[A allocators.BumpAllocator](
+	ac A,
 	x ref(u8),
 	prefix ref(u8)
 ) ref(u8)|error
@@ -180,8 +180,8 @@ pub def trim_prefix[A: allocators.BumpAllocator](
 end
 
 
-pub def upcase[A: allocators.BumpAllocator](
-	ac: A,
+pub def upcase[A allocators.BumpAllocator](
+	ac A,
 	x ref(u8)
 ) ref(u8)|error
 	guard x != none else
@@ -209,8 +209,8 @@ pub def upcase[A: allocators.BumpAllocator](
 	return out as ref(u8)
 end
 
-pub def downcase[A: allocators.BumpAllocator](
-	ac: A,
+pub def downcase[A allocators.BumpAllocator](
+	ac A,
 	x ref(u8)
 ) ref(u8)|error
 	## Convert some string to its lower case form.
@@ -241,8 +241,8 @@ pub def downcase[A: allocators.BumpAllocator](
 	return out as ref(u8)
 end
 
-pub def trim_suffix[A: allocators.BumpAllocator](
-	ac: A,
+pub def trim_suffix[A allocators.BumpAllocator](
+	ac A,
 	x ref(u8),
 	suffix ref(u8)
 ) ref(u8)|error
@@ -292,7 +292,7 @@ pub def copy_n(dest mut(ref(u8)), src ref(u8), n usize) void
     @deref(@as_mut(@add(dest, n))) = 0 as u8
 end
 
-pub def duplicate[A: allocators.BumpAllocator](ac: A, src ref(u8)) ref(u8)|error
+pub def duplicate[A allocators.BumpAllocator](ac A, src ref(u8)) ref(u8)|error
     guard src != none else
         return none
     end
@@ -302,8 +302,8 @@ pub def duplicate[A: allocators.BumpAllocator](ac: A, src ref(u8)) ref(u8)|error
     return out as ref(u8)
 end
 
-pub def trim[A: allocators.BumpAllocator](
-	ac: A,
+pub def trim[A allocators.BumpAllocator](
+	ac A,
 	x ref(u8)
 ) ref(u8)|error
 	guard x != none else

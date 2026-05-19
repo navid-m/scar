@@ -111,12 +111,12 @@ pub def Arena.destroy(a ref(Arena))
 	a.off = 0
 end
 
-def test_bump_alloc[A: BumpAllocator](a ref(A))
+def test_bump_alloc[A BumpAllocator](a ref(A))
 	A.alloc(a, 1024)
 	A.destroy(a)
 end
 
-def test_general_alloc[A: GeneralAllocator](a ref(A)) void|error
+def test_general_alloc[A GeneralAllocator](a ref(A)) void|error
 	var mem = A.alloc(a, 256)?
 	var resized = A.realloc(a, mem, 512)?
 	A.free(a, resized)

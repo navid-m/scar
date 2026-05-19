@@ -42,7 +42,7 @@ def heap_copy(src ref(u8)) ref(u8)|error
 	return out
 end
 
-def copy_bytes[A: allocators.BumpAllocator](
+def copy_bytes[A allocators.BumpAllocator](
 	ac ref(A),
 	src ref(u8),
 	count usize
@@ -57,7 +57,7 @@ def copy_bytes[A: allocators.BumpAllocator](
 	return out as ref(u8)
 end
 
-def copy_string[A: allocators.BumpAllocator](
+def copy_string[A allocators.BumpAllocator](
 	ac ref(A),
 	src ref(u8)
 ) ref(u8)|error
@@ -68,7 +68,7 @@ def copy_string[A: allocators.BumpAllocator](
 	return copy_bytes[A](ac, src, str.len(src))
 end
 
-def concat_strings[A: allocators.BumpAllocator](
+def concat_strings[A allocators.BumpAllocator](
 	ac ref(A),
 	left ref(u8),
 	right ref(u8)
@@ -381,7 +381,7 @@ when posix
 		return decode_exit_code(status)
 	end
 
-	pub def exec_capture[A: allocators.BumpAllocator](
+	pub def exec_capture[A allocators.BumpAllocator](
 		ac ref(A),
 		command ref(u8)
 	) ExecResult|error
@@ -466,7 +466,7 @@ when posix
 		end
 	end
 
-	pub def cwd[A: allocators.BumpAllocator](ac ref(A)) ref(u8)|error
+	pub def cwd[A allocators.BumpAllocator](ac ref(A)) ref(u8)|error
 		var size usize = 256 as usize
 
 		for size <= 32768 as usize
@@ -487,7 +487,7 @@ when posix
 		)
 	end
 
-	pub def get_env[A: allocators.BumpAllocator](
+	pub def get_env[A allocators.BumpAllocator](
 		ac ref(A),
 		name ref(u8)
 	) ref(u8)|error
@@ -519,7 +519,7 @@ when posix
 		end
 	end
 
-	pub def get_temp_dir[A: allocators.BumpAllocator](ac ref(A)) ref(u8)|error
+	pub def get_temp_dir[A allocators.BumpAllocator](ac ref(A)) ref(u8)|error
 		var value = get_env[A](ac, "TMPDIR")?
 		if value != none && str.len(value) > 0 as usize
 			return value
@@ -528,7 +528,7 @@ when posix
 		return copy_string[A](ac, "/tmp")
 	end
 
-	pub def get_home_dir[A: allocators.BumpAllocator](ac ref(A)) ref(u8)|error
+	pub def get_home_dir[A allocators.BumpAllocator](ac ref(A)) ref(u8)|error
 		var value = get_env[A](ac, "HOME")?
 		if value != none && str.len(value) > 0 as usize
 			return value
@@ -537,7 +537,7 @@ when posix
 		return os_error[ref(u8)]("failed to resolve home directory")
 	end
 
-	pub def get_data_dir[A: allocators.BumpAllocator](ac ref(A)) ref(u8)|error
+	pub def get_data_dir[A allocators.BumpAllocator](ac ref(A)) ref(u8)|error
 		var value = get_env[A](ac, "XDG_DATA_HOME")?
 		if value != none && str.len(value) > 0 as usize
 			return value
@@ -812,7 +812,7 @@ when windows
 		return status
 	end
 
-	pub def exec_capture[A: allocators.BumpAllocator](
+	pub def exec_capture[A allocators.BumpAllocator](
 		ac ref(A),
 		command ref(u8)
 	) ExecResult|error
@@ -857,14 +857,14 @@ when windows
 		)
 	end
 
-	pub def cwd[A: allocators.BumpAllocator](ac ref(A)) ref(u8)|error
+	pub def cwd[A allocators.BumpAllocator](ac ref(A)) ref(u8)|error
 		var buffer = read_current_directory_heap()?
 		var out = copy_string[A](ac, buffer)?
 		@free(buffer)
 		return out
 	end
 
-	pub def get_env[A: allocators.BumpAllocator](
+	pub def get_env[A allocators.BumpAllocator](
 		ac ref(A),
 		name ref(u8)
 	) ref(u8)|error
@@ -896,14 +896,14 @@ when windows
 		end
 	end
 
-	pub def get_temp_dir[A: allocators.BumpAllocator](ac ref(A)) ref(u8)|error
+	pub def get_temp_dir[A allocators.BumpAllocator](ac ref(A)) ref(u8)|error
 		var buffer = read_temp_dir_heap()?
 		var out = copy_string[A](ac, buffer)?
 		@free(buffer)
 		return out
 	end
 
-	pub def get_home_dir[A: allocators.BumpAllocator](ac ref(A)) ref(u8)|error
+	pub def get_home_dir[A allocators.BumpAllocator](ac ref(A)) ref(u8)|error
 		var value = get_env[A](ac, "USERPROFILE")?
 		if value != none && str.len(value) > 0 as usize
 			return value
@@ -919,7 +919,7 @@ when windows
 		return os_error[ref(u8)]("failed to resolve home directory")
 	end
 
-	pub def get_data_dir[A: allocators.BumpAllocator](ac ref(A)) ref(u8)|error
+	pub def get_data_dir[A allocators.BumpAllocator](ac ref(A)) ref(u8)|error
 		var value = get_env[A](ac, "APPDATA")?
 		if value != none && str.len(value) > 0 as usize
 			return value
@@ -939,18 +939,18 @@ when redox
 		return unsupported_os[i32]()
 	end
 
-	pub def exec_capture[A: allocators.BumpAllocator](
+	pub def exec_capture[A allocators.BumpAllocator](
 		ac ref(A),
 		command ref(u8)
 	) ExecResult|error
 		return unsupported_os[ExecResult]()
 	end
 
-	pub def cwd[A: allocators.BumpAllocator](ac ref(A)) ref(u8)|error
+	pub def cwd[A allocators.BumpAllocator](ac ref(A)) ref(u8)|error
 		return unsupported_os[ref(u8)]()
 	end
 
-	pub def get_env[A: allocators.BumpAllocator](
+	pub def get_env[A allocators.BumpAllocator](
 		ac ref(A),
 		name ref(u8)
 	) ref(u8)|error
@@ -961,15 +961,15 @@ when redox
 		return unsupported_os[void]()
 	end
 
-	pub def get_temp_dir[A: allocators.BumpAllocator](ac ref(A)) ref(u8)|error
+	pub def get_temp_dir[A allocators.BumpAllocator](ac ref(A)) ref(u8)|error
 		return unsupported_os[ref(u8)]()
 	end
 
-	pub def get_home_dir[A: allocators.BumpAllocator](ac ref(A)) ref(u8)|error
+	pub def get_home_dir[A allocators.BumpAllocator](ac ref(A)) ref(u8)|error
 		return unsupported_os[ref(u8)]()
 	end
 
-	pub def get_data_dir[A: allocators.BumpAllocator](ac ref(A)) ref(u8)|error
+	pub def get_data_dir[A allocators.BumpAllocator](ac ref(A)) ref(u8)|error
 		return unsupported_os[ref(u8)]()
 	end
 end
@@ -979,18 +979,18 @@ when plan9
 		return unsupported_os[i32]()
 	end
 
-	pub def exec_capture[A: allocators.BumpAllocator](
+	pub def exec_capture[A allocators.BumpAllocator](
 		ac ref(A),
 		command ref(u8)
 	) ExecResult|error
 		return unsupported_os[ExecResult]()
 	end
 
-	pub def cwd[A: allocators.BumpAllocator](ac ref(A)) ref(u8)|error
+	pub def cwd[A allocators.BumpAllocator](ac ref(A)) ref(u8)|error
 		return unsupported_os[ref(u8)]()
 	end
 
-	pub def get_env[A: allocators.BumpAllocator](
+	pub def get_env[A allocators.BumpAllocator](
 		ac ref(A),
 		name ref(u8)
 	) ref(u8)|error
@@ -1001,15 +1001,15 @@ when plan9
 		return unsupported_os[void]()
 	end
 
-	pub def get_temp_dir[A: allocators.BumpAllocator](ac ref(A)) ref(u8)|error
+	pub def get_temp_dir[A allocators.BumpAllocator](ac ref(A)) ref(u8)|error
 		return unsupported_os[ref(u8)]()
 	end
 
-	pub def get_home_dir[A: allocators.BumpAllocator](ac ref(A)) ref(u8)|error
+	pub def get_home_dir[A allocators.BumpAllocator](ac ref(A)) ref(u8)|error
 		return unsupported_os[ref(u8)]()
 	end
 
-	pub def get_data_dir[A: allocators.BumpAllocator](ac ref(A)) ref(u8)|error
+	pub def get_data_dir[A allocators.BumpAllocator](ac ref(A)) ref(u8)|error
 		return unsupported_os[ref(u8)]()
 	end
 end
