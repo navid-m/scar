@@ -485,6 +485,7 @@ Program {
         interface_defs: program.interface_defs.clone(),
         type_defs: program.type_defs.clone(),
         typesets: program.typesets.clone(),
+        enum_defs: program.enum_defs.clone(),
         functions,
         tests: Vec::new(),
         globals: program.globals.clone(),

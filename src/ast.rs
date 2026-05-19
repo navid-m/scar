@@ -16,6 +16,7 @@ pub struct Program {
     pub interface_defs: Vec<InterfaceDef>,
     pub type_defs: Vec<TypeDef>,
     pub typesets: Vec<TypeSetDef>,
+    pub enum_defs: Vec<EnumDef>,
     pub functions: Vec<Function>,
     pub tests: Vec<TestBlock>,
     pub globals: Vec<GlobalVar>,
@@ -68,6 +69,20 @@ pub struct InterfaceMethod {
     pub name: String,
     pub params: Vec<Param>,
     pub return_type: Type,
+}
+
+#[derive(Debug, Clone)]
+pub struct EnumDef {
+    pub is_pub: bool,
+    pub name: String,
+    pub variants: Vec<EnumVariant>,
+    pub line: usize,
+    pub column: usize,
+}
+
+#[derive(Debug, Clone)]
+pub struct EnumVariant {
+    pub name: String,
 }
 
 #[derive(Debug, Clone)]

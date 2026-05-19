@@ -916,9 +916,32 @@ fn analyze_stmt(
                         .with_location(*line, *column));
                     }
                 }
+                _ if is_integer_type(&matched_ty, types)? => {
+                    for arm in arms {
+                        let MatchArmKind::Variant(_) = &arm.kind else {
+                            return Err(CompileError::new(
+                                "integer matches require variant arms of the form `value => (...)`",
+                            )
+                            .with_location(*line, *column));
+                        };
+                        for stmt in &arm.body {
+                            analyze_stmt(
+                                stmt,
+                                function_name,
+                                expected_return,
+                                functions,
+                                types,
+                                &mut scope.clone(),
+                                function_locals,
+                                in_loop,
+                                allow_try_panic,
+                            )?;
+                        }
+                    }
+                }
                 other => {
                     return Err(CompileError::new(format!(
-                        "`match` currently requires a union or `T|error` expression, got {}",
+                        "`match` currently requires a union, integer, or `T|error` expression, got {}",
                         describe_type(&other)
                     ))
                     .with_location(*line, *column));

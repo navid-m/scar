@@ -7,9 +7,9 @@ use std::{
 use crate::{
     CompileError,
     ast::{
-        BinaryOp, Expr, FieldDef, FieldInit, Function, GenericParam, GlobalVar, InterfaceDef, InterfaceMethod,
-        MatchArmKind, ModuleUse, Param, Program, Stmt, TestBlock, Type, TypeDef, TypeDefKind,
-        TypeSetDef, UnaryOp, UnionVariantDef,
+        BinaryOp, EnumDef, Expr, FieldDef, FieldInit, Function, GenericParam, GlobalVar,
+        InterfaceDef, InterfaceMethod, MatchArmKind, ModuleUse, Param, Program, Stmt, TestBlock,
+        Type, TypeDef, TypeDefKind, TypeSetDef, UnaryOp, UnionVariantDef,
     },
     lexer::lex,
     parser::parse_program,
@@ -30,6 +30,7 @@ pub fn resolve_entry_program(entry: &Path) -> Result<Program, CompileError> {
         resolved_interfaces: Vec::new(),
         resolved_types: Vec::new(),
         resolved_typesets: Vec::new(),
+        resolved_enums: Vec::new(),
         resolved_functions: Vec::new(),
         resolved_globals: Vec::new(),
         visiting: Vec::new(),
@@ -41,6 +42,7 @@ pub fn resolve_entry_program(entry: &Path) -> Result<Program, CompileError> {
         &program.type_defs,
         &program.interface_defs,
         &program.typesets,
+        &program.enum_defs,
         None,
     );
     let local_functions = build_function_map(&program.functions, None);
@@ -75,7 +77,12 @@ pub fn resolve_entry_program(entry: &Path) -> Result<Program, CompileError> {
     }
     let mut globals = resolver.resolved_globals;
     for global in program.globals {
-        globals.push(rewrite_global_var(global, &local_functions, &local_symbols, &module_aliases)?);
+        globals.push(rewrite_global_var(
+            global,
+            &local_functions,
+            &local_symbols,
+            &module_aliases,
+        )?);
     }
     let tests = program
         .tests
@@ -89,6 +96,7 @@ pub fn resolve_entry_program(entry: &Path) -> Result<Program, CompileError> {
         interface_defs,
         type_defs,
         typesets,
+        enum_defs: Vec::new(),
         functions,
         tests,
         globals,
@@ -115,6 +123,7 @@ struct Resolver {
     resolved_interfaces: Vec<InterfaceDef>,
     resolved_types: Vec<TypeDef>,
     resolved_typesets: Vec<TypeSetDef>,
+    resolved_enums: Vec<EnumDef>,
     resolved_functions: Vec<Function>,
     resolved_globals: Vec<GlobalVar>,
     visiting: Vec<PathBuf>,
@@ -172,6 +181,7 @@ impl Resolver {
             &parsed.type_defs,
             &parsed.interface_defs,
             &parsed.typesets,
+            &parsed.enum_defs,
             Some(&prefix),
         );
         let local_functions = build_function_map(&parsed.functions, Some(&prefix));
@@ -334,6 +344,7 @@ fn build_named_symbol_map(
     type_defs: &[TypeDef],
     interface_defs: &[InterfaceDef],
     typesets: &[TypeSetDef],
+    enum_defs: &[EnumDef],
     prefix: Option<&str>,
 ) -> HashMap<String, String> {
     let mut named = type_defs
@@ -360,6 +371,19 @@ fn build_named_symbol_map(
         };
         (typeset.name.clone(), mapped)
     }));
+    for enum_def in enum_defs {
+        let mapped = match prefix {
+            Some(prefix) => format!("{prefix}__{}", enum_def.name),
+            None => enum_def.name.clone(),
+        };
+        named.insert(enum_def.name.clone(), mapped.clone());
+        for variant in &enum_def.variants {
+            named.insert(
+                format!("{}.{}", enum_def.name, variant.name),
+                format!("{}__{}", mapped, variant.name),
+            );
+        }
+    }
     named
 }
 
@@ -414,10 +438,7 @@ fn build_public_typeset_map(
         .collect()
 }
 
-fn build_public_global_map(
-    globals: &[GlobalVar],
-    prefix: Option<&str>,
-) -> HashMap<String, String> {
+fn build_public_global_map(globals: &[GlobalVar], prefix: Option<&str>) -> HashMap<String, String> {
     globals
         .iter()
         .filter(|g| g.is_pub)
@@ -919,8 +940,19 @@ fn rewrite_expr(
         | Expr::Bool(_)
         | Expr::Float(_)
         | Expr::String(_)
-        | Expr::Path(_)
         | Expr::None => Ok(expr),
+        Expr::Path(ref path) => {
+            if path.len() == 1 {
+                if let Some(mapped) = local_types.get(&path[0]) {
+                    return Ok(Expr::Path(vec![mapped.clone()]));
+                }
+            }
+            let full_path = path.join(".");
+            if let Some(mapped) = local_types.get(&full_path) {
+                return Ok(Expr::Path(vec![mapped.clone()]));
+            }
+            Ok(expr)
+        }
         Expr::ListLiteral(values) => Ok(Expr::ListLiteral(
             values
                 .into_iter()
@@ -1090,7 +1122,12 @@ fn rewrite_expr(
         }),
         Expr::SizeOf(ty) => Ok(Expr::SizeOf(rewrite_type(ty, local_types, module_aliases))),
         Expr::BitCast { expr, ty } => Ok(Expr::BitCast {
-            expr: Box::new(rewrite_expr(*expr, local_functions, local_types, module_aliases)?),
+            expr: Box::new(rewrite_expr(
+                *expr,
+                local_functions,
+                local_types,
+                module_aliases,
+            )?),
             ty: rewrite_type(ty, local_types, module_aliases),
         }),
     }
@@ -1200,9 +1237,10 @@ fn rewrite_type(
         Type::List(inner) => {
             Type::List(Box::new(rewrite_type(*inner, local_types, module_aliases)))
         }
-        Type::FixedArray(n, inner) => {
-            Type::FixedArray(n, Box::new(rewrite_type(*inner, local_types, module_aliases)))
-        }
+        Type::FixedArray(n, inner) => Type::FixedArray(
+            n,
+            Box::new(rewrite_type(*inner, local_types, module_aliases)),
+        ),
         Type::FnPtr(params, ret) => Type::FnPtr(
             params
                 .into_iter()
@@ -1346,6 +1384,7 @@ fn instantiate_generic_functions(program: Program) -> Result<Program, CompileErr
         interface_defs,
         type_defs: all_type_defs,
         typesets,
+        enum_defs: program.enum_defs,
         functions: all_functions,
         tests,
         globals: program.globals,
@@ -1479,7 +1518,10 @@ impl GenericInstantiator {
             Type::Mut(inner) => Ok(Type::Mut(Box::new(self.rewrite_concrete_type(*inner)?))),
             Type::Ref(inner) => Ok(Type::Ref(Box::new(self.rewrite_concrete_type(*inner)?))),
             Type::List(inner) => Ok(Type::List(Box::new(self.rewrite_concrete_type(*inner)?))),
-            Type::FixedArray(n, inner) => Ok(Type::FixedArray(n, Box::new(self.rewrite_concrete_type(*inner)?))),
+            Type::FixedArray(n, inner) => Ok(Type::FixedArray(
+                n,
+                Box::new(self.rewrite_concrete_type(*inner)?),
+            )),
             Type::FnPtr(params, ret) => Ok(Type::FnPtr(
                 params
                     .into_iter()
@@ -2935,7 +2977,9 @@ fn substitute_type(ty: Type, substitutions: &HashMap<String, Type>) -> Type {
         Type::Mut(inner) => Type::Mut(Box::new(substitute_type(*inner, substitutions))),
         Type::Ref(inner) => Type::Ref(Box::new(substitute_type(*inner, substitutions))),
         Type::List(inner) => Type::List(Box::new(substitute_type(*inner, substitutions))),
-        Type::FixedArray(n, inner) => Type::FixedArray(n, Box::new(substitute_type(*inner, substitutions))),
+        Type::FixedArray(n, inner) => {
+            Type::FixedArray(n, Box::new(substitute_type(*inner, substitutions)))
+        }
         Type::FnPtr(params, ret) => Type::FnPtr(
             params
                 .into_iter()

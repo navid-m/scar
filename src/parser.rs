@@ -1,9 +1,9 @@
 use crate::{
     CompileError,
     ast::{
-        BinaryOp, Expr, FieldDef, FieldInit, Function, GenericParam, GlobalVar, InterfaceDef,
-        InterfaceMethod, MatchArm, MatchArmKind, ModuleUse, Param, Program, Stmt, TestBlock, Type,
-        TypeDef, TypeDefKind, TypeSetDef, UnaryOp, UnionVariantDef,
+        BinaryOp, EnumDef, EnumVariant, Expr, FieldDef, FieldInit, Function, GenericParam,
+        GlobalVar, InterfaceDef, InterfaceMethod, MatchArm, MatchArmKind, ModuleUse, Param,
+        Program, Stmt, TestBlock, Type, TypeDef, TypeDefKind, TypeSetDef, UnaryOp, UnionVariantDef,
     },
     lexer::{Token, TokenKind},
 };
@@ -25,6 +25,7 @@ struct TopLevelItems {
     interface_defs: Vec<InterfaceDef>,
     type_defs: Vec<TypeDef>,
     typesets: Vec<TypeSetDef>,
+    enum_defs: Vec<EnumDef>,
     functions: Vec<Function>,
     tests: Vec<TestBlock>,
     globals: Vec<GlobalVar>,
@@ -37,6 +38,7 @@ impl TopLevelItems {
         self.interface_defs.append(&mut other.interface_defs);
         self.type_defs.append(&mut other.type_defs);
         self.typesets.append(&mut other.typesets);
+        self.enum_defs.append(&mut other.enum_defs);
         self.functions.append(&mut other.functions);
         self.tests.append(&mut other.tests);
         self.globals.append(&mut other.globals);
@@ -60,6 +62,7 @@ impl Parser {
             interface_defs: items.interface_defs,
             type_defs: items.type_defs,
             typesets: items.typesets,
+            enum_defs: items.enum_defs,
             functions: items.functions,
             tests: items.tests,
             globals: items.globals,
@@ -103,6 +106,11 @@ impl Parser {
                 items.typesets.push(self.parse_typeset_def(true)?);
             } else if self.check_simple(&TokenKind::Typeset) {
                 items.typesets.push(self.parse_typeset_def(false)?);
+            } else if self.check_simple(&TokenKind::Pub) && self.check_next_simple(&TokenKind::Enum)
+            {
+                items.enum_defs.push(self.parse_enum_def(true)?);
+            } else if self.check_simple(&TokenKind::Enum) {
+                items.enum_defs.push(self.parse_enum_def(false)?);
             } else if self.check_simple(&TokenKind::Pub) && self.check_next_simple(&TokenKind::Type)
             {
                 items.type_defs.push(self.parse_type_def(true, false)?);
@@ -384,6 +392,38 @@ impl Parser {
             is_pub,
             name,
             members,
+        })
+    }
+
+    fn parse_enum_def(&mut self, is_pub: bool) -> Result<EnumDef, CompileError> {
+        let line = self.line;
+        let column = self.current().column;
+        if is_pub {
+            self.expect_simple(TokenKind::Pub)?;
+        }
+        self.expect_simple(TokenKind::Enum)?;
+        let name = self.expect_ident()?;
+        self.expect_newline("expected a newline after enum name")?;
+
+        let mut variants = Vec::new();
+        self.consume_newlines();
+        while !self.check_simple(&TokenKind::End) && !self.is_eof() {
+            let variant_name = self.expect_ident()?;
+            variants.push(EnumVariant { name: variant_name });
+            if self.check_simple(&TokenKind::Comma) {
+                self.advance();
+            }
+            self.consume_newlines();
+        }
+
+        self.expect_simple(TokenKind::End)?;
+        self.consume_newlines();
+        Ok(EnumDef {
+            is_pub,
+            name,
+            variants,
+            line,
+            column,
         })
     }
 
@@ -880,14 +920,39 @@ impl Parser {
         self.expect_simple(TokenKind::If)?;
         let condition = self.parse_expr()?;
         self.expect_newline("expected a newline after if condition")?;
-        let then_body = self.parse_block_until(&[TokenKind::Else, TokenKind::End])?;
-        let else_body = if self.check_simple(&TokenKind::Else) {
+        let then_body =
+            self.parse_block_until(&[TokenKind::Else, TokenKind::Elif, TokenKind::End])?;
+
+        let mut all_else_body = Vec::new();
+
+        while self.check_simple(&TokenKind::Elif) {
+            self.advance();
+            let elif_condition = self.parse_expr()?;
+            self.expect_newline("expected a newline after elif condition")?;
+            let elif_then =
+                self.parse_block_until(&[TokenKind::Else, TokenKind::Elif, TokenKind::End])?;
+
+            all_else_body.push(Stmt::If {
+                line: self.current().line,
+                column: self.current().column,
+                condition: elif_condition,
+                then_body: elif_then,
+                else_body: Vec::new(),
+            });
+        }
+
+        let final_else_body = if self.check_simple(&TokenKind::Else) {
             self.advance();
             self.expect_newline("expected a newline after else")?;
             self.parse_block()?
         } else {
             Vec::new()
         };
+
+        for stmt in final_else_body {
+            all_else_body.push(stmt);
+        }
+
         self.expect_simple(TokenKind::End)?;
         self.consume_newlines();
         Ok(Stmt::If {
@@ -895,7 +960,7 @@ impl Parser {
             column,
             condition,
             then_body,
-            else_body,
+            else_body: all_else_body,
         })
     }
 
@@ -931,18 +996,44 @@ impl Parser {
         let mut arms = Vec::new();
         self.consume_newlines();
         while !self.check_simple(&TokenKind::End) && !self.is_eof() {
-            let arm_name = self.expect_ident()?;
-            let (kind, bindings) = if arm_name == "ok" && !self.check_simple(&TokenKind::LParen) {
-                (MatchArmKind::Ok, vec![self.parse_match_binding()?])
-            } else if arm_name == "error" && !self.check_simple(&TokenKind::LParen) {
-                (MatchArmKind::Error, vec![self.parse_match_binding()?])
-            } else {
+            let (kind, bindings) = if self.check_simple(&TokenKind::Int(0)) {
+                let value = match &self.current().kind {
+                    TokenKind::Int(v) => v.to_string(),
+                    _ => unreachable!(),
+                };
+                self.advance();
                 let bindings = if self.check_simple(&TokenKind::LParen) {
                     self.parse_match_bindings()?
                 } else {
                     Vec::new()
                 };
-                (MatchArmKind::Variant(arm_name), bindings)
+                (MatchArmKind::Variant(value), bindings)
+            } else {
+                let mut arm_parts = Vec::new();
+                arm_parts.push(self.expect_ident()?);
+                if self.check_simple(&TokenKind::Dot) {
+                    self.advance();
+                    arm_parts.push(self.expect_ident()?);
+                }
+                if arm_parts.len() == 1
+                    && arm_parts[0] == "ok"
+                    && !self.check_simple(&TokenKind::LParen)
+                {
+                    (MatchArmKind::Ok, vec![self.parse_match_binding()?])
+                } else if arm_parts.len() == 1
+                    && arm_parts[0] == "error"
+                    && !self.check_simple(&TokenKind::LParen)
+                {
+                    (MatchArmKind::Error, vec![self.parse_match_binding()?])
+                } else {
+                    let bindings = if self.check_simple(&TokenKind::LParen) {
+                        self.parse_match_bindings()?
+                    } else {
+                        Vec::new()
+                    };
+                    let variant_name = arm_parts.join(".");
+                    (MatchArmKind::Variant(variant_name), bindings)
+                }
             };
             self.expect_simple(TokenKind::FatArrow)?;
             let body = self.parse_match_arm_body()?;
@@ -2039,6 +2130,7 @@ impl Parser {
             TokenKind::Type => "`type`",
             TokenKind::Typeset => "`typeset`",
             TokenKind::Union => "`union`",
+            TokenKind::Enum => "`enum`",
             TokenKind::End => "`end`",
             TokenKind::Var => "`var`",
             TokenKind::Val => "`val`",
@@ -2046,6 +2138,7 @@ impl Parser {
             TokenKind::If => "`if`",
             TokenKind::Guard => "`guard`",
             TokenKind::Else => "`else`",
+            TokenKind::Elif => "`elif`",
             TokenKind::Break => "`break`",
             TokenKind::Continue => "`continue`",
             TokenKind::Parallel => "`parallel`",
