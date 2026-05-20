@@ -634,12 +634,12 @@ pub def re_print(handle ref(RegexHandle)) void
                     break
                 end
                 @print("{s}", {ccl})
-                j = j + 1
+                j++
             end
             @print("]", {})
         end
         @print("\n", {})
-        i = i + 1
+        i++
     end
 end
 
