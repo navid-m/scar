@@ -1828,7 +1828,12 @@ fn analyze_builtin(
             }
             let inner = infer_lvalue_type(&args[0], functions, types, scope)
                 .or_else(|_| infer_expr_type(&args[0], functions, types, scope, None))?;
-            Ok(Type::Ref(Box::new(inner)))
+            let is_mut = matches!(&args[0], Expr::Path(path) if path.len() == 1 && scope.get(&path[0]).is_some_and(|b| b.mutable));
+            if is_mut {
+                Ok(Type::Mut(Box::new(Type::Ref(Box::new(inner)))))
+            } else {
+                Ok(Type::Ref(Box::new(inner)))
+            }
         }
         "as_mut" => {
             if args.len() != 1 {
