@@ -101,7 +101,7 @@ pub def format_timestamp[A: allocators.BumpAllocator](
 	for month <= 12 as i32
 		var dim i32 = days_in_month(is_leap, month)
 		if days < dim as i64
-			exit
+			break
 		end
 		days = days - dim as i64
 		month++
@@ -114,48 +114,60 @@ pub def format_timestamp[A: allocators.BumpAllocator](
 	var ms i32 = ((ts % 1000000000 as i64) / 1000000 as i64) as i32
 
 	var buf [32]u8 = @zeroed()
-	var offset usize = 0 as usize
+	var i usize = 0 as usize
 
-	offset = write_i32(buf, offset, year, 0 as usize)
-	@deref(@add(@addr(buf), offset)) = '-' as u8
-	offset++
+	buf[i] = ((year / 1000 as i32) as u8) + '0' as u8
+	i = i + 1 as usize
+	buf[i] = (((year / 100 as i32) % 10 as i32) as u8) + '0' as u8
+	i = i + 1 as usize
+	buf[i] = (((year / 10 as i32) % 10 as i32) as u8) + '0' as u8
+	i = i + 1 as usize
+	buf[i] = ((year % 10 as i32) as u8) + '0' as u8
+	i = i + 1 as usize
+	buf[i] = '-' as u8
+	i = i + 1 as usize
+	buf[i] = ((month / 10 as i32) as u8) + '0' as u8
+	i = i + 1 as usize
+	buf[i] = ((month % 10 as i32) as u8) + '0' as u8
+	i = i + 1 as usize
+	buf[i] = '-' as u8
+	i = i + 1 as usize
+	buf[i] = ((((days + 1 as i64) / 10 as i32) as i32) as u8) + '0' as u8
+	i = i + 1 as usize
+	buf[i] = (((days + 1 as i64) % 10 as i32) as u8) + '0' as u8
+	i = i + 1 as usize
+	buf[i] = 'T' as u8
+	i = i + 1 as usize
+	buf[i] = ((hour / 10 as i32) as u8) + '0' as u8
+	i = i + 1 as usize
+	buf[i] = ((hour % 10 as i32) as u8) + '0' as u8
+	i = i + 1 as usize
+	buf[i] = ':' as u8
+	i = i + 1 as usize
+	buf[i] = ((min / 10 as i32) as u8) + '0' as u8
+	i = i + 1 as usize
+	buf[i] = ((min % 10 as i32) as u8) + '0' as u8
+	i = i + 1 as usize
+	buf[i] = ':' as u8
+	i = i + 1 as usize
+	buf[i] = ((sec / 10 as i32) as u8) + '0' as u8
+	i = i + 1 as usize
+	buf[i] = ((sec % 10 as i32) as u8) + '0' as u8
+	i = i + 1 as usize
+	buf[i] = '.' as u8
+	i = i + 1 as usize
+	buf[i] = (((ms / 100 as i32) % 10 as i32) as u8) + '0' as u8
+	i = i + 1 as usize
+	buf[i] = (((ms / 10 as i32) % 10 as i32) as u8) + '0' as u8
+	i = i + 1 as usize
+	buf[i] = ((ms % 10 as i32) as u8) + '0' as u8
+	i = i + 1 as usize
 
-	offset = write_u8(buf, offset, (month / 10 as i32) as u8)
-	offset = write_u8(buf, offset, (month % 10 as i32) as u8)
-	@deref(@add(@addr(buf), offset)) = '-' as u8
-	offset++
+	var out ref(void) = A.alloc(ac, i + 1 as usize)?
+	@memcpy(out, @addr(buf), i)
+	@deref(@add(out, i)) = 0 as u8
 
-	offset = write_u8(buf, offset, ((days + 1 as i64) / 10 as i32) as u8)
-	offset = write_u8(buf, offset, ((days + 1 as i64) % 10 as i32) as u8)
-	@deref(@add(@addr(buf), offset)) = 'T' as u8
-	offset++
-
-	offset = write_u8(buf, offset, (hour / 10 as i32) as u8)
-	offset = write_u8(buf, offset, (hour % 10 as i32) as u8)
-	@deref(@add(@addr(buf), offset)) = ':' as u8
-	offset++
-
-	offset = write_u8(buf, offset, (min / 10 as i32) as u8)
-	offset = write_u8(buf, offset, (min % 10 as i32) as u8)
-	@deref(@add(@addr(buf), offset)) = ':' as u8
-	offset++
-
-	offset = write_u8(buf, offset, (sec / 10 as i32) as u8)
-	offset = write_u8(buf, offset, (sec % 10 as i32) as u8)
-	@deref(@add(@addr(buf), offset)) = '.' as u8
-	offset++
-
-	offset = write_u8(buf, offset, ((ms / 100 as i32) % 10 as i32) as u8)
-	offset = write_u8(buf, offset, ((ms / 10 as i32) % 10 as i32) as u8)
-	offset = write_u8(buf, offset, (ms % 10 as i32) as u8)
-
-	@deref(@add(@addr(buf), offset)) = 0 as u8
-	offset++
-
-	var out ref(u8) = A.alloc(ac, offset)?
-	@memcpy(out, @addr(buf), offset)
-
-	return out
+	return out as mut(ref(u8))
 end
 
 def days_in_year(year i64) i64
@@ -187,47 +199,6 @@ def days_in_month(leap bool, month i32) i32
 		12 => ( return 31 )
 		_ => ( return 30 )
 	end
-end
-
-def write_u8(buf [32]u8, offset usize, value u8) usize
-	@deref(@add(@addr(buf), offset)) = value + '0' as u8
-	return offset + 1 as usize
-end
-
-def write_i32(buf [32]u8, offset usize, value i32, count usize) usize
-	if value == 0 as i32 && count == 0 as usize
-		return write_u8(buf, offset, 0 as u8)
-	end
-
-	var digits [16]u8 = @zeroed()
-	var num_digits usize = 0 as usize
-	var v i32 = value
-
-	if v < 0 as i32
-		@deref(@add(@addr(buf), offset)) = '-' as u8
-		offset++
-		v = -v
-	end
-
-	for v > 0 as i32
-		var digit u8 = (v % 10 as i32) as u8
-		@deref(@add(@addr(digits), num_digits)) = digit + '0' as u8
-		num_digits++
-		v = v / 10 as i32
-	end
-
-	if num_digits == 0 as usize
-		num_digits = 1 as usize
-		@deref(@add(@addr(digits), 0 as usize)) = '0' as u8
-	end
-
-	var i usize = num_digits
-	for i > 0 as usize
-		i--
-		offset = write_u8(buf, offset, @deref(@add(@addr(digits), i)))
-	end
-
-	return offset
 end
 
 test "logging functions exist"

@@ -834,6 +834,37 @@ fn render_stmt_inner(
                             "unknown type `{union_name}` in match code generation"
                         ))
                     })?;
+                    if type_info.kind == TypeDefKind::Enum {
+                        for (index, arm) in arms.iter().enumerate() {
+                            let MatchArmKind::Variant(variant_name) = &arm.kind else {
+                                return Err(CompileError::new(
+                                    "result-style match arms are not supported for enum code generation",
+                                ));
+                            };
+                            let bare_variant = variant_name
+                                .strip_prefix(&format!("{union_name}."))
+                                .unwrap_or(variant_name);
+                            indent(output, level + 1);
+                            if index == 0 {
+                                output.push_str("if (");
+                            } else {
+                                output.push_str("else if (");
+                            }
+                            output.push_str(&temp_name);
+                            output.push_str(" == ");
+                            output.push_str(&format!(
+                                "{}_{}",
+                                type_def_struct_tag(&union_name),
+                                bare_variant
+                            ));
+                            output.push_str(") {\n");
+                            for stmt in &arm.body {
+                                render_stmt(output, stmt, function, info, level + 2, next_temp_id)?;
+                            }
+                            indent(output, level + 1);
+                            output.push_str("}\n");
+                        }
+                    } else {
                     for (index, arm) in arms.iter().enumerate() {
                         let MatchArmKind::Variant(variant_name) = &arm.kind else {
                             return Err(CompileError::new(
@@ -885,6 +916,7 @@ fn render_stmt_inner(
                         }
                         indent(output, level + 1);
                         output.push_str("}\n");
+                    }
                     }
                 }
                 other => {
@@ -1197,6 +1229,21 @@ fn render_expr_with_hint(
         } => render_list_method_call(method, receiver, args, function, info),
         Expr::Path(path) => match path.as_slice() {
             [name] => Ok(render_symbol_name(name, function, info)),
+            [type_name, variant_name] => {
+                if let Some(type_info) = info.types.get(type_name) {
+                    if type_info.kind == TypeDefKind::Enum {
+                        return Ok(format!(
+                            "{}_{}",
+                            type_def_struct_tag(type_name),
+                            variant_name
+                        ));
+                    }
+                }
+                Err(CompileError::new(format!(
+                    "unsupported qualified expression `{}` in code generation",
+                    path.join(".")
+                )))
+            }
             _ => Err(CompileError::new(format!(
                 "unsupported qualified expression `{}` in code generation",
                 path.join(".")
@@ -1859,6 +1906,19 @@ fn infer_codegen_expr_type(
                 .ok_or_else(|| {
                     CompileError::new(format!("unknown expression `{name}` in code generation"))
                 }),
+            [type_name, variant_name] => {
+                if let Some(type_info) = info.types.get(type_name) {
+                    if type_info.kind == TypeDefKind::Enum
+                        && type_info.variant_map.contains_key(variant_name)
+                    {
+                        return Ok(Type::Named(type_name.clone()));
+                    }
+                }
+                Err(CompileError::new(format!(
+                    "unsupported qualified expression `{}` in code generation",
+                    path.join(".")
+                )))
+            }
             _ => Err(CompileError::new(format!(
                 "unsupported qualified expression `{}` in code generation",
                 path.join(".")

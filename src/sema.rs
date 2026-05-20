@@ -921,7 +921,11 @@ fn analyze_stmt(
                         let missing = type_info
                             .variants
                             .iter()
-                            .find(|variant| !seen_variants.contains(&variant.name))
+                            .find(|variant| {
+                                !seen_variants.contains(&variant.name)
+                                    && !seen_variants
+                                        .contains(&format!("{}.{}", name, variant.name))
+                            })
                             .map(|variant| variant.name.clone())
                             .unwrap_or_else(|| "<unknown>".to_string());
                         return Err(CompileError::new(format!(
@@ -1242,6 +1246,19 @@ fn infer_expr_type(
                     })
                 })
                 .ok_or_else(|| CompileError::new(format!("unknown name `{name}`"))),
+            [type_name, variant_name] => {
+                if let Some(type_info) = types.get(type_name) {
+                    if type_info.kind == TypeDefKind::Enum
+                        && type_info.variant_map.contains_key(variant_name)
+                    {
+                        return Ok(Type::Named(type_name.clone()));
+                    }
+                }
+                Err(CompileError::new(format!(
+                    "qualified path `{}` is not a valid expression",
+                    path.join(".")
+                )))
+            }
             _ => Err(CompileError::new(format!(
                 "qualified path `{}` is not a valid expression",
                 path.join(".")
