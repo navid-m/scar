@@ -206,27 +206,34 @@ fn is_deref_init(expr: &Expr) -> bool {
     matches!(expr, Expr::BuiltinCall { name, .. } if name == "deref")
 }
 
-fn collect_deref_locals(body: &[Stmt]) -> std::collections::HashSet<String> {
+fn collect_deref_locals(
+    body: &[Stmt],
+    locals: &std::collections::HashMap<String, Type>,
+) -> std::collections::HashSet<String> {
     let mut set = std::collections::HashSet::new();
-    collect_deref_locals_recursive(body, &mut set);
+    collect_deref_locals_recursive(body, locals, &mut set);
     set
 }
 
-fn collect_deref_locals_recursive(body: &[Stmt], set: &mut std::collections::HashSet<String>) {
+fn collect_deref_locals_recursive(
+    body: &[Stmt],
+    locals: &std::collections::HashMap<String, Type>,
+    set: &mut std::collections::HashSet<String>,
+) {
     for stmt in body {
         match stmt {
             Stmt::VarDecl { name, init, .. } => {
-                if is_deref_init(init) {
+                if is_deref_init(init) && matches!(locals.get(name), Some(Type::Named(_))) {
                     set.insert(name.clone());
                 }
             }
             Stmt::If { then_body, else_body, .. } => {
-                collect_deref_locals_recursive(then_body, set);
-                collect_deref_locals_recursive(else_body, set);
+                collect_deref_locals_recursive(then_body, locals, set);
+                collect_deref_locals_recursive(else_body, locals, set);
             }
             Stmt::Match { arms, .. } => {
                 for arm in arms {
-                    collect_deref_locals_recursive(&arm.body, set);
+                    collect_deref_locals_recursive(&arm.body, locals, set);
                 }
             }
             Stmt::ForRange { body, .. }
@@ -234,7 +241,7 @@ fn collect_deref_locals_recursive(body: &[Stmt], set: &mut std::collections::Has
             | Stmt::ForClassic { body, .. }
             | Stmt::While { body, .. }
             | Stmt::Loop { body, .. } => {
-                collect_deref_locals_recursive(body, set);
+                collect_deref_locals_recursive(body, locals, set);
             }
             _ => {}
         }
@@ -247,7 +254,8 @@ fn render_function(
     info: &ProgramInfo,
     _: bool,
 ) -> Result<(), CompileError> {
-    let deref_locals = collect_deref_locals(&function.body);
+    let locals = info.locals.get(&function.name).cloned().unwrap_or_default();
+    let deref_locals = collect_deref_locals(&function.body, &locals);
     let mut next_temp_id = 0usize;
     output.push_str(&render_signature(function, info));
     output.push_str(" {\n");
