@@ -8,6 +8,13 @@ pub typeset Float
 	f32, f64
 end
 
+pub typeset Number
+	i8, i16, i32, i64,
+	u8, u16, u32, u64,
+	usize, isize,
+	f32, f64
+end
+
 pub val PI      f64 = 3.14159265358979323846
 pub val TAU     f64 = 6.28318530717958647692
 pub val E       f64 = 2.71828182845904523536
