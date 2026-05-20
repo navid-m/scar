@@ -108,48 +108,45 @@ pub def fsort[T: math.Float, A: allocators.GeneralAllocator](l ref(list[T]), ac 
         return true
     end
 
-    var count_mem = A.alloc(@addr(ac), 256 as usize * @sizeof(usize))?
-    var temp_mem  = A.alloc(@addr(ac), n * @sizeof(T))?
+    var elem_size usize = @sizeof(T)
+    var bytes_per_elem i32 = 4
 
-    var counts     ref(usize) = @bitcast(count_mem, ref(usize))
-    var temp_bytes ref(u8)    = @bitcast(temp_mem, ref(u8))
-    var elem_size  usize      = @sizeof(T)
-    var bytes_per_elem i32    = 4
-
-    if @sizeof(T) != 4 as usize
+    if elem_size != 4
         bytes_per_elem = 8
     end
     
+    var count_mem = A.alloc(@addr(ac), 256 * @sizeof(usize))?
+    var temp_mem  = A.alloc(@addr(ac), n * elem_size)?
+
+    var counts     ref(usize) = @bitcast(count_mem, ref(usize))
+    var temp_bytes ref(u8)    = @bitcast(temp_mem, ref(u8))
+
     for var pass = 0 as i32, pass < bytes_per_elem, pass++
-        @memset(count_mem, 0, 256 as usize * @sizeof(usize))
+        @memset(count_mem, 0, 256 * @sizeof(usize))
 
         for var i = 0 as usize .. n
             var v T = @deref(@add(l, i))
-            var sortable u64 = float_to_sortable(v)
-
-            var byte_val u8 = ((sortable >> (pass * 8 as i32)) & 255 as u64) as u8
-            var idx usize = byte_val as usize
-
-            @deref(@add(counts, idx)) = @deref(@add(counts, idx)) + 1 as usize
+            var s u64 = float_to_sortable[T](v)
+            var byte_val u8 = ((s >> (pass * 8 as i32)) & 0xFF as u64) as u8
+            @deref(@add(counts, byte_val as usize)) += 1 as usize
         end
 
         for var i = 1 as usize .. 256 as usize
-            @deref(@add(counts, i)) = @deref(@add(counts, i)) + @deref(@add(counts, i - 1 as usize))
+            @deref(@add(counts, i)) += @deref(@add(counts, i - 1 as usize))
         end
 
         for var i = n, i > 0 as usize, i--
-            var i_idx usize = i - 1 as usize
-            var v T = @deref(@add(l, i_idx))
-            var sortable u64 = float_to_sortable(v)
+            var idx usize = i - 1 as usize
+            var v T = @deref(@add(l, idx))
+            var s u64 = float_to_sortable[T](v)
+            var byte_val u8 = ((s >> (pass * 8 as i32)) & 0xFF as u64) as u8
+            var cidx usize = byte_val as usize
 
-            var byte_val u8 = ((sortable >> (pass * 8 as i32)) & 255 as u64) as u8
-            var idx usize = byte_val as usize
+            var target usize = @deref(@add(counts, cidx)) - 1 as usize
+            var dest ref(u8) = @add(temp_bytes, target * elem_size)
 
-            var ci usize = @deref(@add(counts, idx)) - 1 as usize
-            var dest_ptr ref(u8) = @add(temp_bytes, ci * elem_size)
-
-            @memcpy(dest_ptr, @addr(v), elem_size)
-            @deref(@add(counts, idx)) = ci
+            @memcpy(dest, @addr(v), elem_size)
+            @deref(@add(counts, cidx)) = target
         end
 
         for var i = 0 as usize .. n
@@ -165,19 +162,17 @@ end
 def float_to_sortable[T: math.Float](v T) u64
     if @sizeof(T) == 4 as usize
         var bits u32 = @bitcast(v, u32)
-        var sign u32 = (bits >> 31 as u32) & 1 as u32
-        if sign == 0 as u32
+        if (bits >> 31 as u32) == 0 as u32
             return (bits as u64) ^ 0x80000000 as u64
         else
-            return (0xFFFFFFFF as u64) - (bits as u64)
+            return 0xFFFFFFFF as u64 - (bits as u64)
         end
     else
         var bits u64 = @bitcast(v, u64)
-        var sign u64 = (bits >> 63 as u64) & 1 as u64
-        if sign == 0 as u64
+        if (bits >> 63 as u64) == 0 as u64
             return bits ^ 0x8000000000000000 as u64
         else
-            return (0xFFFFFFFFFFFFFFFF as u64) - bits
+            return 0xFFFFFFFFFFFFFFFF as u64 - bits
         end
     end
 end
@@ -353,6 +348,8 @@ test "fsort f64 list"
         error _ => ( assert false )
         ok result => ( assert result )
     end
+
+    @print("l[0] = {lf}\nl[1] = {lf}\nl[2] = {lf}", {l[0], l[1], l[2]})
     assert l[0] == -2.1
     assert l[1] == 0.0
     assert l[2] == 1.2
