@@ -108,126 +108,77 @@ pub def fsort[T: math.Float, A: allocators.GeneralAllocator](l ref(list[T]), ac 
         return true
     end
 
-    var count_mem ref(void)|error = A.alloc(@addr(ac), 256 as usize * @sizeof(usize))
-    match count_mem
-        error _ => ( return false )
-        ok cm => (
-            var counts ref(usize) = @bitcast(cm, ref(usize))
-            @memset(cm, 0, 256 as usize * @sizeof(usize))
+    var count_mem = A.alloc(@addr(ac), 256 as usize * @sizeof(usize))?
+    var temp_mem  = A.alloc(@addr(ac), n * @sizeof(T))?
 
-            var elem_size usize = @sizeof(T)
-            var temp ref(void) = A.alloc(@addr(ac), n * elem_size)?
-            var temp_bytes ref(u8) = @bitcast(temp, ref(u8))
+    var counts     ref(usize) = @bitcast(count_mem, ref(usize))
+    var temp_bytes ref(u8)    = @bitcast(temp_mem, ref(u8))
+    var elem_size  usize      = @sizeof(T)
+    var bytes_per_elem i32    = 4
 
-            var max_as_u64 u64 = 0 as u64
-            for var i = 0 as usize .. n
-                var v T = @deref(@add(l, i))
-                var sortable u64 = 0 as u64
-                if @sizeof(T) == 4 as usize
-                    var bits u32 = @bitcast(v, u32)
-                    var sign u32 = (bits >> 31 as u32) & 1 as u32
-                    if sign == 0 as u32
-                        var result u64 = bits as u64
-                        sortable = result ^ 0x80000000 as u64
-                    else
-                        sortable = (0xFFFFFFFF as u64) - (bits as u64)
-                    end
-                else
-                    var bits u64 = @bitcast(v, u64)
-                    var sign u64 = (bits >> 63 as u64) & 1 as u64
-                    if sign == 0 as u64
-                        sortable = bits ^ 0x8000000000000000 as u64
-                    else
-                        sortable = (0xFFFFFFFFFFFFFFFF as u64) - bits
-                    end
-                end
-                if sortable > max_as_u64
-                    max_as_u64 = sortable
-                end
-            end
+    if @sizeof(T) != 4 as usize
+        bytes_per_elem = 8
+    end
+    
+    for var pass = 0 as i32, pass < bytes_per_elem, pass++
+        @memset(count_mem, 0, 256 as usize * @sizeof(usize))
 
-            var bytes_per_elem i32 = 8 as i32
-            var bytes_passed i32 = 0 as i32
+        for var i = 0 as usize .. n
+            var v T = @deref(@add(l, i))
+            var sortable u64 = float_to_sortable(v)
 
-            for max_as_u64 > 0 as u64 || bytes_passed < bytes_per_elem
-                @memset(cm, 0, 256 as usize * @sizeof(usize))
+            var byte_val u8 = ((sortable >> (pass * 8 as i32)) & 255 as u64) as u8
+            var idx usize = byte_val as usize
 
-                for var i = 0 as usize .. n
-                    var v T = @deref(@add(l, i))
-                    var sortable u64 = 0 as u64
-                    if @sizeof(T) == 4 as usize
-                        var bits u32 = @bitcast(v, u32)
-                        var sign u32 = (bits >> 31 as u32) & 1 as u32
-                        if sign == 0 as u32
-                            var result u64 = bits as u64
-                            sortable = result ^ 0x80000000 as u64
-                        else
-                            sortable = (0xFFFFFFFF as u64) - (bits as u64)
-                        end
-                    else
-                        var bits u64 = @bitcast(v, u64)
-                        var sign u64 = (bits >> 63 as u64) & 1 as u64
-                        if sign == 0 as u64
-                            sortable = bits ^ 0x8000000000000000 as u64
-                        else
-                            sortable = (0xFFFFFFFFFFFFFFFF as u64) - bits
-                        end
-                    end
-                    var idx usize = ((sortable >> (bytes_passed * 8 as i32)) & 255 as u64) as usize
-                    @deref(@add(counts, idx)) = @deref(@add(counts, idx)) + 1 as usize
-                end
+            @deref(@add(counts, idx)) = @deref(@add(counts, idx)) + 1 as usize
+        end
 
-                for var i = 1 as usize .. 256 as usize
-                    @deref(@add(counts, i)) = @deref(@add(counts, i)) + @deref(@add(counts, i - 1 as usize))
-                end
+        for var i = 1 as usize .. 256 as usize
+            @deref(@add(counts, i)) = @deref(@add(counts, i)) + @deref(@add(counts, i - 1 as usize))
+        end
 
-                for var i = n, i > 0 as usize, i--
-                    var i_idx usize = i - 1 as usize
-                    var v T = @deref(@add(l, i_idx))
-                    var sortable u64 = 0 as u64
-                    if @sizeof(T) == 4 as usize
-                        var bits u32 = @bitcast(v, u32)
-                        var sign u32 = (bits >> 31 as u32) & 1 as u32
-                        if sign == 0 as u32
-                            var result u64 = bits as u64
-                            sortable = result ^ 0x80000000 as u64
-                        else
-                            sortable = (0xFFFFFFFF as u64) - (bits as u64)
-                        end
-                    else
-                        var bits u64 = @bitcast(v, u64)
-                        var sign u64 = (bits >> 63 as u64) & 1 as u64
-                        if sign == 0 as u64
-                            sortable = bits ^ 0x8000000000000000 as u64
-                        else
-                            sortable = (0xFFFFFFFFFFFFFFFF as u64) - bits
-                        end
-                    end
-                    var idx usize = ((sortable >> (bytes_passed * 8 as i32)) & 255 as u64) as usize
-                    var ci usize = @deref(@add(counts, idx)) - 1 as usize
-                    var dest_ptr ref(u8) = @add(temp_bytes, ci * elem_size)
-                    @memcpy(dest_ptr, @addr(@deref(@add(l, i_idx))), elem_size)
-                    @deref(@add(counts, idx)) = ci
-                end
+        for var i = n, i > 0 as usize, i--
+            var i_idx usize = i - 1 as usize
+            var v T = @deref(@add(l, i_idx))
+            var sortable u64 = float_to_sortable(v)
 
-                for var i = 0 as usize .. n
-                    @memcpy(@addr(@deref(@add(l, i))), @add(temp_bytes, i * elem_size), elem_size)
-                end
+            var byte_val u8 = ((sortable >> (pass * 8 as i32)) & 255 as u64) as u8
+            var idx usize = byte_val as usize
 
-                if max_as_u64 == 0 as u64 && bytes_passed >= 7 as i32
-                    break
-                end
-                max_as_u64 = max_as_u64 >> 8 as u64
-                if max_as_u64 == 0 as u64 && bytes_passed >= 7 as i32
-                    break
-                end
-                bytes_passed = bytes_passed + 1 as i32
-            end
+            var ci usize = @deref(@add(counts, idx)) - 1 as usize
+            var dest_ptr ref(u8) = @add(temp_bytes, ci * elem_size)
 
-            A.free(@addr(ac), temp)
-            A.free(@addr(ac), cm)
-            return true
-        )
+            @memcpy(dest_ptr, @addr(v), elem_size)
+            @deref(@add(counts, idx)) = ci
+        end
+
+        for var i = 0 as usize .. n
+            @memcpy(@addr(@deref(@add(l, i))), @add(temp_bytes, i * elem_size), elem_size)
+        end
+    end
+
+    A.free(@addr(ac), temp_mem)
+    A.free(@addr(ac), count_mem)
+    return true
+end
+
+def float_to_sortable[T: math.Float](v T) u64
+    if @sizeof(T) == 4 as usize
+        var bits u32 = @bitcast(v, u32)
+        var sign u32 = (bits >> 31 as u32) & 1 as u32
+        if sign == 0 as u32
+            return (bits as u64) ^ 0x80000000 as u64
+        else
+            return (0xFFFFFFFF as u64) - (bits as u64)
+        end
+    else
+        var bits u64 = @bitcast(v, u64)
+        var sign u64 = (bits >> 63 as u64) & 1 as u64
+        if sign == 0 as u64
+            return bits ^ 0x8000000000000000 as u64
+        else
+            return (0xFFFFFFFFFFFFFFFF as u64) - bits
+        end
     end
 end
 
