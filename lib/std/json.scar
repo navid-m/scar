@@ -1,0 +1,901 @@
+val allocators = use("std/allocators")
+val str        = use("std/string")
+
+pub val MAX_JSON_NODES usize = 256
+
+pub enum JsonKind
+    Null
+    Bool
+    Int
+    Real
+    Text
+    Obj
+    Arr
+end
+
+type JsonNode
+    kind     JsonKind
+    name     ref(u8)
+    sibling  usize
+    child    usize
+    value    ref(u8)
+    int_val  i64
+    real_val f64
+    bool_val bool
+end
+
+pub type Json
+    nodes   ref(JsonNode)
+    cap     usize
+    root    usize
+    count   usize
+    source  ref(u8)
+end
+
+def is_space(c u8) bool
+    return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == 12
+end
+
+def skip_space(src ref(u8), pos usize, len usize) usize
+    var p = pos
+    for p < len && is_space(@deref(@add(src, p)))
+        p = p + 1
+    end
+    return p
+end
+
+def find_char(src ref(u8), pos usize, len usize, target u8) usize
+    var p = pos
+    for p < len && @deref(@add(src, p)) != target
+        p = p + 1
+    end
+    return p
+end
+
+def alloc_node(j mut(ref(Json))) usize
+    if j.count >= j.cap
+        return 0
+    end
+    val idx = j.count
+    j.count = j.count + 1
+    var node = @deref(@add(j.nodes, idx))
+    @deref(@addr(node.kind)) = JsonKind.Null
+    @deref(@addr(node.name)) = none
+    @deref(@addr(node.sibling)) = 0
+    @deref(@addr(node.child)) = 0
+    @deref(@addr(node.value)) = none
+    @deref(@addr(node.int_val)) = 0
+    @deref(@addr(node.real_val)) = 0.0
+    @deref(@addr(node.bool_val)) = false
+    return idx
+end
+
+def get_escape(c u8) u8
+    if c == '\"'
+        return '\"'
+    end
+    if c == '\\'
+        return '\\'
+    end
+    if c == '/'
+        return '/'
+    end
+    if c == 'b'
+        return '\b'
+    end
+    if c == 'f'
+        return '\f'
+    end
+    if c == 'n'
+        return '\n'
+    end
+    if c == 'r'
+        return '\r'
+    end
+    if c == 't'
+        return '\t'
+    end
+    return 0
+end
+
+def parse_string(src ref(u8), pos usize, len usize) usize|error
+    var head usize = pos + 1
+    var tail usize = pos + 1
+    for head < len
+        val c = @deref(@add(src, head))
+        if c == '\"'
+            @deref(@add(src, tail)) = 0
+            return head + 1
+        end
+        if c == '\\'
+            head = head + 1
+            if head >= len
+                return error("unterminated escape in string")
+            end
+            val esc_char = @deref(@add(src, head))
+            if esc_char == 'u'
+                var valid = true
+                var k usize = head + 1
+                for k < head + 5
+                    if k >= len
+                        valid = false
+                        break
+                    end
+                    val h = @deref(@add(src, k))
+                    val is_hex = (h >= '0' && h <= '9') || (h >= 'a' && h <= 'f') || (h >= 'A' && h <= 'F')
+                    if !is_hex
+                        valid = false
+                        break
+                    end
+                    k = k + 1
+                end
+                if !valid
+                    return error("invalid unicode escape")
+                end
+                @deref(@add(src, tail)) = '?'
+                head = head + 4
+            else
+                val esc = get_escape(esc_char)
+                if esc == 0
+                    return error("invalid escape character")
+                end
+                @deref(@add(src, tail)) = esc
+            end
+        else
+            @deref(@add(src, tail)) = c
+        end
+        head = head + 1
+        tail = tail + 1
+    end
+    return error("unterminated string")
+end
+
+def parse_number(src ref(u8), pos usize, len usize) usize|error
+    var p = pos
+    if p < len && @deref(@add(src, p)) == '-'
+        p = p + 1
+    end
+    if p >= len || !(@deref(@add(src, p)) >= '0' && @deref(@add(src, p)) <= '9')
+        return error("invalid number")
+    end
+    if @deref(@add(src, p)) != '0'
+        for p < len && @deref(@add(src, p)) >= '0' && @deref(@add(src, p)) <= '9'
+            p = p + 1
+        end
+    else
+        p = p + 1
+        if p < len && @deref(@add(src, p)) >= '0' && @deref(@add(src, p)) <= '9'
+            return error("leading zero in number")
+        end
+    end
+    val is_real = p < len && @deref(@add(src, p)) == '.'
+    if is_real
+        p = p + 1
+        if p >= len || !(@deref(@add(src, p)) >= '0' && @deref(@add(src, p)) <= '9')
+            return error("invalid number: expected digit after decimal point")
+        end
+        for p < len && @deref(@add(src, p)) >= '0' && @deref(@add(src, p)) <= '9'
+            p = p + 1
+        end
+    end
+    if p < len && (@deref(@add(src, p)) == 'e' || @deref(@add(src, p)) == 'E')
+        p = p + 1
+        if p < len && (@deref(@add(src, p)) == '-' || @deref(@add(src, p)) == '+')
+            p = p + 1
+        end
+        if p >= len || !(@deref(@add(src, p)) >= '0' && @deref(@add(src, p)) <= '9')
+            return error("invalid number: expected digit in exponent")
+        end
+        for p < len && @deref(@add(src, p)) >= '0' && @deref(@add(src, p)) <= '9'
+            p = p + 1
+        end
+    end
+    return p
+end
+
+def is_end_of_primitive(c u8) bool
+    return c == ',' || c == '}' || c == ']' || is_space(c) || c == 0
+end
+
+def parse_value(src ref(u8), pos usize, len usize, j mut(ref(Json)), node_idx usize) usize|error
+    var p = skip_space(src, pos, len)
+    if p >= len
+        return error("unexpected end of input")
+    end
+    val c = @deref(@add(src, p))
+    if c == '{'
+        return parse_object(src, p, len, j, node_idx)
+    end
+    if c == '['
+        return parse_array(src, p, len, j, node_idx)
+    end
+    if c == '\"'
+        val str_start usize = p + 1
+        val next = parse_string(src, p, len)?
+        var node = @deref(@add(j.nodes, node_idx))
+        @deref(@addr(node.kind)) = JsonKind.Text
+        @deref(@addr(node.value)) = @add(src, str_start)
+        return next
+    end
+    if c == 't'
+        if p + 4 <= len
+            val t1 = @deref(@add(src, p))
+            val t2 = @deref(@add(src, p + 1))
+            val t3 = @deref(@add(src, p + 2))
+            val t4 = @deref(@add(src, p + 3))
+            if t1 == 't' && t2 == 'r' && t3 == 'u' && t4 == 'e'
+                var node = @deref(@add(j.nodes, node_idx))
+                @deref(@addr(node.kind)) = JsonKind.Bool
+                @deref(@addr(node.bool_val)) = true
+                val end_p usize = p + 4
+                if end_p < len && !is_end_of_primitive(@deref(@add(src, end_p)))
+                    return error("invalid character after true")
+                end
+                return end_p
+            end
+        end
+        return error("invalid value: expected true")
+    end
+    if c == 'f'
+        if p + 5 <= len
+            val f1 = @deref(@add(src, p))
+            val f2 = @deref(@add(src, p + 1))
+            val f3 = @deref(@add(src, p + 2))
+            val f4 = @deref(@add(src, p + 3))
+            val f5 = @deref(@add(src, p + 4))
+            if f1 == 'f' && f2 == 'a' && f3 == 'l' && f4 == 's' && f5 == 'e'
+                var node = @deref(@add(j.nodes, node_idx))
+                @deref(@addr(node.kind)) = JsonKind.Bool
+                @deref(@addr(node.bool_val)) = false
+                val end_p usize = p + 5
+                if end_p < len && !is_end_of_primitive(@deref(@add(src, end_p)))
+                    return error("invalid character after false")
+                end
+                return end_p
+            end
+        end
+        return error("invalid value: expected false")
+    end
+    if c == 'n'
+        if p + 4 <= len
+            val n1 = @deref(@add(src, p))
+            val n2 = @deref(@add(src, p + 1))
+            val n3 = @deref(@add(src, p + 2))
+            val n4 = @deref(@add(src, p + 3))
+            if n1 == 'n' && n2 == 'u' && n3 == 'l' && n4 == 'l'
+                var node = @deref(@add(j.nodes, node_idx))
+                @deref(@addr(node.kind)) = JsonKind.Null
+                val end_p usize = p + 4
+                if end_p < len && !is_end_of_primitive(@deref(@add(src, end_p)))
+                    return error("invalid character after null")
+                end
+                return end_p
+            end
+        end
+        return error("invalid value: expected null")
+    end
+    val num_start = p
+    val num_end = parse_number(src, p, len)?
+    var node = @deref(@add(j.nodes, node_idx))
+    @deref(@addr(node.kind)) = JsonKind.Int
+    @deref(@addr(node.value)) = @add(src, num_start)
+    var end_char u8 = 0
+    if num_end < len
+        end_char = @deref(@add(src, num_end))
+    end
+    if end_char == '.' || end_char == 'e' || end_char == 'E'
+        @deref(@addr(node.kind)) = JsonKind.Real
+    end
+    if num_end < len && !is_end_of_primitive(end_char)
+        return error("invalid character after number")
+    end
+    return num_end
+end
+
+def parse_object(src ref(u8), pos usize, len usize, j mut(ref(Json)), node_idx usize) usize|error
+    var p = pos + 1
+    var last_child = 0
+    p = skip_space(src, p, len)
+    if p < len && @deref(@add(src, p)) == '}'
+        @deref(@add(src, p)) = 0
+        return p + 1
+    end
+    for
+        p = skip_space(src, p, len)
+        if p >= len
+            return error("unterminated object")
+        end
+        if @deref(@add(src, p)) == ','
+            p = p + 1
+            p = skip_space(src, p, len)
+        end
+        if p < len && @deref(@add(src, p)) == '}'
+            @deref(@add(src, p)) = 0
+            return p + 1
+        end
+        if @deref(@add(src, p)) != '\"'
+            return error("expected string key in object")
+        end
+        val child_idx = alloc_node(j)
+        if child_idx == 0
+            return error("json node pool exhausted")
+        end
+        val name_start = p + 1
+        p = parse_string(src, p, len)?
+        var child = @deref(@add(j.nodes, child_idx))
+        @deref(@addr(child.name)) = @add(src, name_start)
+        p = skip_space(src, p, len)
+        if p >= len || @deref(@add(src, p)) != ':'
+            return error("expected ':' after object key")
+        end
+        p = p + 1
+        p = skip_space(src, p, len)
+        p = parse_value(src, p, len, j, child_idx)?
+        if last_child == 0
+            var node = @deref(@add(j.nodes, node_idx))
+            @deref(@addr(node.child)) = child_idx
+        else
+            var last = @deref(@add(j.nodes, last_child))
+            @deref(@addr(last.sibling)) = child_idx
+        end
+        last_child = child_idx as i32
+    end
+    return error("unterminated object")
+end
+
+def parse_array(src ref(u8), pos usize, len usize, j mut(ref(Json)), node_idx usize) usize|error
+    var p = pos + 1
+    var last_child = 0
+    p = skip_space(src, p, len)
+    if p < len && @deref(@add(src, p)) == ']'
+        @deref(@add(src, p)) = 0
+        return p + 1
+    end
+    for
+        p = skip_space(src, p, len)
+        if p >= len
+            return error("unterminated array")
+        end
+        if @deref(@add(src, p)) == ','
+            p = p + 1
+            p = skip_space(src, p, len)
+        end
+        if p < len && @deref(@add(src, p)) == ']'
+            @deref(@add(src, p)) = 0
+            return p + 1
+        end
+        val child_idx = alloc_node(j)
+        if child_idx == 0
+            return error("json node pool exhausted")
+        end
+        p = parse_value(src, p, len, j, child_idx)?
+        if last_child == 0
+            var node = @deref(@add(j.nodes, node_idx))
+            @deref(@addr(node.child)) = child_idx
+        else
+            var last = @deref(@add(j.nodes, last_child))
+            @deref(@addr(last.sibling)) = child_idx
+        end
+        last_child = child_idx as i32
+    end
+    return error("unterminated array")
+end
+
+pub def Json.parse(src ref(u8), nodes mut(ref(JsonNode)), cap usize) Json|error
+    guard src != none else
+        return error("null source")
+    end
+    guard nodes != none else
+        return error("null nodes buffer")
+    end
+    guard cap > 0 else
+        return error("capacity must be greater than zero")
+    end
+    val len = str.len(src)
+    var p = skip_space(src, 0, len)
+    if p >= len
+        return error("empty input")
+    end
+    val first = @deref(@add(src, p))
+    if first != '{' && first != '['
+        return error("expected '{' or '[' at top level")
+    end
+    var j = Json(
+        nodes: nodes,
+        cap: cap,
+        root: 0,
+        count: 0,
+        source: src,
+    )
+    val root_idx = alloc_node(@addr(j))
+    if root_idx == 0
+        return error("json node pool exhausted")
+    end
+    @deref(@addr(j.root)) = root_idx
+    parse_value(src, p, len, @addr(j), root_idx)?
+    return j
+end
+
+pub def Json.kind(j ref(Json), idx usize) JsonKind
+    if idx >= j.count
+        return JsonKind.Null
+    end
+    return @deref(@add(j.nodes, idx)).kind
+end
+
+pub def Json.name(j ref(Json), idx usize) ref(u8)
+    if idx >= j.count
+        return none
+    end
+    return @deref(@add(j.nodes, idx)).name
+end
+
+pub def Json.text(j ref(Json), idx usize) ref(u8)
+    if idx >= j.count
+        return none
+    end
+    val node = @deref(@add(j.nodes, idx))
+    if (@deref(@addr(node.kind)) as JsonKind) != JsonKind.Text
+        return none
+    end
+    return @deref(@addr(node.value))
+end
+
+pub def Json.integer(j ref(Json), idx usize) i64
+    if idx >= j.count
+        return 0
+    end
+    val node = @deref(@add(j.nodes, idx))
+    if @deref(@addr(node.kind)) == JsonKind.Int
+        return @deref(@addr(node.int_val))
+    end
+    return 0
+end
+
+pub def Json.real(j ref(Json), idx usize) f64
+    if idx >= j.count
+        return 0.0
+    end
+    val node = @deref(@add(j.nodes, idx))
+    if @deref(@addr(node.kind)) == JsonKind.Real
+        return @deref(@addr(node.real_val))
+    end
+    return 0.0
+end
+
+pub def Json.boolean(j ref(Json), idx usize) bool
+    if idx >= j.count
+        return false
+    end
+    val node = @deref(@add(j.nodes, idx))
+    if @deref(@addr(node.kind)) == JsonKind.Bool
+        return @deref(@addr(node.bool_val))
+    end
+    return false
+end
+
+pub def Json.child(j ref(Json), idx usize) usize
+    if idx >= j.count
+        return 0
+    end
+    return @deref(@add(j.nodes, idx)).child
+end
+
+pub def Json.sibling(j ref(Json), idx usize) usize
+    if idx >= j.count
+        return 0
+    end
+    return @deref(@add(j.nodes, idx)).sibling
+end
+
+pub def Json.get(j ref(Json), idx usize, property ref(u8)) usize
+    var child = Json.child(j, idx)
+    for child != 0
+        val child_name = Json.name(j, child)
+        if child_name != none && str.eql(child_name, property)
+            return child
+        end
+        child = Json.sibling(j, child)
+    end
+    return 0
+end
+
+pub def Json.get_value(j ref(Json), idx usize, property ref(u8)) ref(u8)
+    val child = Json.get(j, idx, property)
+    if child == 0
+        return none
+    end
+    val kind = Json.kind(j, child)
+    if kind == JsonKind.Obj || kind == JsonKind.Arr
+        return none
+    end
+    return Json.text(j, child)
+end
+
+pub def Json.is_null(j ref(Json), idx usize) bool
+    if idx >= j.count
+        return true
+    end
+    return @deref(@add(j.nodes, idx)).kind == JsonKind.Null
+end
+
+pub def Json.is_obj(j ref(Json), idx usize) bool
+    if idx >= j.count
+        return false
+    end
+    return @deref(@add(j.nodes, idx)).kind == JsonKind.Obj
+end
+
+pub def Json.is_arr(j ref(Json), idx usize) bool
+    if idx >= j.count
+        return false
+    end
+    return @deref(@add(j.nodes, idx)).kind == JsonKind.Arr
+end
+
+pub def Json.is_text(j ref(Json), idx usize) bool
+    if idx >= j.count
+        return false
+    end
+    return @deref(@add(j.nodes, idx)).kind == JsonKind.Text
+end
+
+pub def Json.is_int(j ref(Json), idx usize) bool
+    if idx >= j.count
+        return false
+    end
+    return @deref(@add(j.nodes, idx)).kind == JsonKind.Int
+end
+
+pub def Json.is_real(j ref(Json), idx usize) bool
+    if idx >= j.count
+        return false
+    end
+    return @deref(@add(j.nodes, idx)).kind == JsonKind.Real
+end
+
+pub def Json.is_bool(j ref(Json), idx usize) bool
+    if idx >= j.count
+        return false
+    end
+    return @deref(@add(j.nodes, idx)).kind == JsonKind.Bool
+end
+
+def needs_escape(c u8) bool
+    return c < ' ' || c == '\"' || c == '\\' || c == '/'
+end
+
+def get_esc_char(c u8) u8
+    if c == '\"'
+        return '\"'
+    end
+    if c == '\\'
+        return '\\'
+    end
+    if c == '/'
+        return '/'
+    end
+    if c == '\b'
+        return 'b'
+    end
+    if c == '\f'
+        return 'f'
+    end
+    if c == '\n'
+        return 'n'
+    end
+    if c == '\r'
+        return 'r'
+    end
+    if c == '\t'
+        return 't'
+    end
+    return 0
+end
+
+def hex_digit(n u8) u8
+    if n < 10
+        return '0' + n
+    end
+    return 'A' + (n - 10)
+end
+
+def append_escaped(buf ref(u8), buf_len mut(ref(usize)), src ref(u8)) bool
+    var i usize = 0
+    for
+        val c = @deref(@add(src, i))
+        if c == 0
+            break
+        end
+        val esc = get_esc_char(c)
+        if esc != 0
+            if @deref(buf_len) < 2
+                return false
+            end
+            @deref(@add(buf, @deref(buf_len) - 2)) = '\\'
+            @deref(@add(buf, @deref(buf_len) - 1)) = esc
+            @deref(buf_len) = @deref(buf_len) - 2
+        else
+            if needs_escape(c)
+                if @deref(buf_len) < 6
+                    return false
+                end
+                @deref(@add(buf, @deref(buf_len) - 6)) = '\\'
+                @deref(@add(buf, @deref(buf_len) - 5)) = 'u'
+                @deref(@add(buf, @deref(buf_len) - 4)) = '0'
+                @deref(@add(buf, @deref(buf_len) - 3)) = '0'
+                @deref(@add(buf, @deref(buf_len) - 2)) = hex_digit(c / 16)
+                @deref(@add(buf, @deref(buf_len) - 1)) = hex_digit(c % 16)
+                @deref(buf_len) = @deref(buf_len) - 6
+            else
+                if @deref(buf_len) < 1
+                    return false
+                end
+                @deref(@add(buf, @deref(buf_len) - 1)) = c
+                @deref(buf_len) = @deref(buf_len) - 1
+            end
+        end
+        i = i + 1
+    end
+    return true
+end
+
+pub def Json.stringify(j ref(Json), idx usize, buf ref(u8), buf_cap usize) ref(u8)|error
+    guard buf != none else
+        return error("null buffer")
+    end
+    guard buf_cap > 0 else
+        return error("buffer capacity must be greater than zero")
+    end
+    guard idx < j.count else
+        return error("invalid node index")
+    end
+    var pos = buf_cap
+    val node = @deref(@add(j.nodes, idx))
+    val kind = @deref(@addr(node.kind))
+    if kind == JsonKind.Null
+        if pos < 4
+            return error("buffer too small")
+        end
+        @deref(@add(buf, pos - 4)) = 'n'
+        @deref(@add(buf, pos - 3)) = 'u'
+        @deref(@add(buf, pos - 2)) = 'l'
+        @deref(@add(buf, pos - 1)) = 'l'
+        pos = pos - 4
+    else
+        if kind == JsonKind.Bool
+            if @deref(@addr(node.bool_val))
+                if pos < 4
+                    return error("buffer too small")
+                end
+                @deref(@add(buf, pos - 4)) = 't'
+                @deref(@add(buf, pos - 3)) = 'r'
+                @deref(@add(buf, pos - 2)) = 'u'
+                @deref(@add(buf, pos - 1)) = 'e'
+                pos = pos - 4
+            else
+                if pos < 5
+                    return error("buffer too small")
+                end
+                @deref(@add(buf, pos - 5)) = 'f'
+                @deref(@add(buf, pos - 4)) = 'a'
+                @deref(@add(buf, pos - 3)) = 'l'
+                @deref(@add(buf, pos - 2)) = 's'
+                @deref(@add(buf, pos - 1)) = 'e'
+                pos = pos - 5
+            end
+        else
+            if kind == JsonKind.Text
+                if pos < 2
+                    return error("buffer too small")
+                end
+                @deref(@add(buf, pos - 1)) = '\"'
+                pos = pos - 1
+                val text_val = @deref(@addr(node.value))
+                if text_val != none
+                    var temp_len = pos
+                    if !append_escaped(buf, @addr(temp_len), text_val)
+                        return error("buffer too small")
+                    end
+                    pos = temp_len
+                end
+                if pos < 1
+                    return error("buffer too small")
+                end
+                @deref(@add(buf, pos - 1)) = '\"'
+                pos = pos - 1
+            else
+                if kind == JsonKind.Int || kind == JsonKind.Real
+                    val text_val = @deref(@addr(node.value))
+                    if text_val == none
+                        return error("missing number value")
+                    end
+                    var i usize = 0
+                    for @deref(@add(text_val, i)) != 0
+                        if pos < 1
+                            return error("buffer too small")
+                        end
+                        @deref(@add(buf, pos - 1)) = @deref(@add(text_val, i))
+                        pos = pos - 1
+                        i = i + 1
+                    end
+                else
+                    if kind == JsonKind.Obj
+                        if pos < 1
+                            return error("buffer too small")
+                        end
+                        @deref(@add(buf, pos - 1)) = '}'
+                        pos = pos - 1
+                        var child = @deref(@addr(node.child))
+                        var first = true
+                        for child != 0
+                            if !first
+                                if pos < 1
+                                    return error("buffer too small")
+                                end
+                                @deref(@add(buf, pos - 1)) = ','
+                                pos = pos - 1
+                            end
+                            first = false
+                            val child_node = @deref(@add(j.nodes, child))
+                            val child_name = @deref(@addr(child_node.name))
+                            if child_name != none
+                                if pos < 3
+                                    return error("buffer too small")
+                                end
+                                @deref(@add(buf, pos - 1)) = '\"'
+                                pos = pos - 1
+                                var i usize = 0
+                                for @deref(@add(child_name, i)) != 0
+                                    if pos < 1
+                                        return error("buffer too small")
+                                    end
+                                    @deref(@add(buf, pos - 1)) = @deref(@add(child_name, i))
+                                    pos = pos - 1
+                                    i = i + 1
+                                end
+                                if pos < 2
+                                    return error("buffer too small")
+                                end
+                                @deref(@add(buf, pos - 1)) = '\"'
+                                @deref(@add(buf, pos - 2)) = ':'
+                                pos = pos - 2
+                            end
+                            val child_str = Json.stringify(j, child, buf, pos)?
+                            val child_offset = @bitcast(child_str, isize) - @bitcast(buf, isize)
+                            val child_len = buf_cap as isize - child_offset
+                            pos = pos - child_len as usize
+                            child = @deref(@addr(child_node.sibling))
+                        end
+                        if pos < 1
+                            return error("buffer too small")
+                        end
+                        @deref(@add(buf, pos - 1)) = '{'
+                        pos = pos - 1
+                    else
+                        if kind == JsonKind.Arr
+                            if pos < 1
+                                return error("buffer too small")
+                            end
+                            @deref(@add(buf, pos - 1)) = ']'
+                            pos = pos - 1
+                            var child = @deref(@addr(node.child))
+                            var first = true
+                            for child != 0
+                                if !first
+                                    if pos < 1
+                                        return error("buffer too small")
+                                    end
+                                    @deref(@add(buf, pos - 1)) = ','
+                                    pos = pos - 1
+                                end
+                                first = false
+                                val child_str = Json.stringify(j, child, buf, pos)?
+                                val offset = @bitcast(child_str, isize) - @bitcast(buf, isize)
+                                val child_len = buf_cap - (offset as usize)
+                                pos = pos - child_len
+                                child = Json.sibling(j, child)
+                            end
+                            if pos < 1
+                                return error("buffer too small")
+                            end
+                            @deref(@add(buf, pos - 1)) = '['
+                            pos = pos - 1
+                        end
+                    end
+                end
+            end
+        end
+    end
+    var i = pos
+    for i < buf_cap - 1
+        @deref(@add(buf, i)) = @deref(@add(buf, buf_cap - 1 - (i - pos)))
+        i = i + 1
+    end
+    @deref(@add(buf, buf_cap - 1)) = 0
+    return @add(buf, pos)
+end
+
+test "parse simple object"
+    var nodes [256]JsonNode = @zeroed()
+    val json = Json.parse("{\"name\": \"hello\", \"value\": 42}", @bitcast(@addr(nodes), mut(ref(JsonNode))), MAX_JSON_NODES)?
+    val root = json.root
+    assert Json.is_obj(@addr(json), root)
+    val name_node = Json.get(@addr(json), root, "name")
+    assert name_node != 0
+    assert Json.is_text(@addr(json), name_node)
+    val msg_val = Json.text(@addr(json), 1)
+    assert msg_val != none
+    assert str.eql(msg_val, "hello")
+end
+
+test "parse nested object"
+    var nodes [256]JsonNode = @zeroed()
+    val json = Json.parse(
+        \\ {"outer":
+        \\   {"inner": true}
+        \\ }
+    , @bitcast(@addr(nodes), mut(ref(JsonNode))), MAX_JSON_NODES)?
+    val root = json.root
+    val outer = Json.get(@addr(json), root, "outer")
+    assert outer != 0
+    assert Json.is_obj(@addr(json), outer)
+    val inner = Json.get(@addr(json), outer, "inner")
+    assert inner != 0
+    assert Json.is_bool(@addr(json), inner)
+    assert Json.boolean(@addr(json), inner)
+end
+
+test "parse array"
+    var nodes [256]JsonNode = @zeroed()
+    val json = Json.parse("[1, 2, 3]", @bitcast(@addr(nodes), mut(ref(JsonNode))), MAX_JSON_NODES)?
+    val root = json.root
+    assert Json.is_arr(@addr(json), root)
+    val first = Json.child(@addr(json), root)
+    assert first != 0
+    val second = Json.sibling(@addr(json), first)
+    assert second != 0
+    val third = Json.sibling(@addr(json), second)
+    assert third != 0
+    assert Json.sibling(@addr(json), third) == 0
+end
+
+test "parse escape sequences"
+    var nodes [256]JsonNode = @zeroed()
+    val json = Json.parse("{\"msg\": \"hello\\nworld\"}", @bitcast(@addr(nodes), mut(ref(JsonNode))), MAX_JSON_NODES)?
+    val root = json.root
+    val msg = Json.get(@addr(json), root, "msg")
+    assert msg != 0
+    val text_val = Json.text(@addr(json), msg)
+    assert text_val != none
+    assert @deref(@add(text_val, 5)) == '\n'
+end
+
+test "parse boolean and null"
+    var nodes [256]JsonNode = @zeroed()
+    val json = Json.parse("{\"flag\": false, \"nothing\": null}", @bitcast(@addr(nodes), mut(ref(JsonNode))), MAX_JSON_NODES)?
+    val root = json.root
+    val flag = Json.get(@addr(json), root, "flag")
+    assert flag != 0
+    assert !Json.boolean(@addr(json), flag)
+    val nothing = Json.get(@addr(json), root, "nothing")
+    assert nothing != 0
+    assert Json.is_null(@addr(json), nothing)
+end
+
+test "get_value helper"
+    var nodes [256]JsonNode = @zeroed()
+    val json = Json.parse("{\"key\": \"value\"}", @bitcast(@addr(nodes), mut(ref(JsonNode))), MAX_JSON_NODES)?
+    val root = json.root
+    val text_val = Json.get_value(@addr(json), root, "key")
+    assert text_val != none
+    assert str.eql(text_val, "value")
+end
+
+test "parse error on invalid json"
+    var nodes [256]JsonNode = @zeroed()
+    match Json.parse("{invalid}", @bitcast(@addr(nodes), mut(ref(JsonNode))), MAX_JSON_NODES)
+        error _ => ( assert true )
+        ok _ => ( assert false )
+    end
+end
