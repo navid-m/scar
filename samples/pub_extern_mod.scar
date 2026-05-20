@@ -1,0 +1,5 @@
+pub extern def my_puts(str ref(u8)) void :: "puts"
+
+pub def main()
+end
+

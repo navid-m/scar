@@ -1,0 +1,6 @@
+val mod = use("pub_extern_mod")
+
+pub def main()
+	mod.my_puts("hello world")
+end
+
