@@ -251,15 +251,16 @@ end
 
 when posix
 	extern def time(t mut(ref(i64))) i64 :: "time"
-	extern def gettimeofday(tv ref(mut(i64)), tz ref(mut(i64))) i32 :: "gettimeofday"
+	extern def clock_gettime(clk_id i32, tv_sec mut(ref(i64)), tv_nsec mut(ref(i64))) i32 :: "clock_gettime"
 	extern def clock() i64 :: "clock"
 
 	extern def nanosleep(tv_sec ref(i64), tv_nsec ref(i64)) i32 :: "nanosleep"
 
 	pub def now() i64
-		var tv = 0 as i64
-		gettimeofday(@addr(tv), @addr(0 as i64))
-		return @deref(@addr(tv))
+		var tv_sec  i64 = 0 as i64
+		var tv_nsec i64 = 0 as i64
+		clock_gettime(0, @as_mut(@addr(tv_sec)), @as_mut(@addr(tv_nsec)))
+		return tv_sec * 1000000000 as i64 + tv_nsec
 	end
 
 	pub def epoch() i64
