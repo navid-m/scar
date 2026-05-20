@@ -22,6 +22,7 @@ struct Parser {
 struct TopLevelItems {
     module_uses: Vec<ModuleUse>,
     extern_headers: Vec<String>,
+    link_flags: Vec<String>,
     interface_defs: Vec<InterfaceDef>,
     type_defs: Vec<TypeDef>,
     typesets: Vec<TypeSetDef>,
@@ -35,6 +36,7 @@ impl TopLevelItems {
     fn append(&mut self, mut other: Self) {
         self.module_uses.append(&mut other.module_uses);
         self.extern_headers.append(&mut other.extern_headers);
+        self.link_flags.append(&mut other.link_flags);
         self.interface_defs.append(&mut other.interface_defs);
         self.type_defs.append(&mut other.type_defs);
         self.typesets.append(&mut other.typesets);
@@ -59,6 +61,7 @@ impl Parser {
         Ok(Program {
             module_uses: items.module_uses,
             extern_headers: items.extern_headers,
+            link_flags: items.link_flags,
             interface_defs: items.interface_defs,
             type_defs: items.type_defs,
             typesets: items.typesets,
@@ -78,6 +81,14 @@ impl Parser {
         while !self.check_any_simple(terminators) && !self.is_eof() {
             if self.check_simple(&TokenKind::When) {
                 items.append(self.parse_when_top_level_items()?);
+            } else if self.check_simple(&TokenKind::Link) {
+                self.advance();
+                let TokenKind::Str(flag) = self.current().kind.clone() else {
+                    return Err(self.error_at_current("expected a string literal after `link`"));
+                };
+                items.link_flags.push(flag);
+                self.advance();
+                self.expect_newline("expected a newline after link flag")?;
             } else if self.check_simple(&TokenKind::Val) {
                 if self.is_module_use() {
                     items.module_uses.push(self.parse_module_use()?);
@@ -119,10 +130,14 @@ impl Parser {
                     alias: None,
                     derives: vec![],
                     fields: vec![],
-                    variants: enum_def.variants.iter().map(|v| UnionVariantDef {
-                        name: v.name.clone(),
-                        payload_types: vec![],
-                    }).collect(),
+                    variants: enum_def
+                        .variants
+                        .iter()
+                        .map(|v| UnionVariantDef {
+                            name: v.name.clone(),
+                            payload_types: vec![],
+                        })
+                        .collect(),
                     line: enum_def.line,
                     column: enum_def.column,
                 });
@@ -138,10 +153,14 @@ impl Parser {
                     alias: None,
                     derives: vec![],
                     fields: vec![],
-                    variants: enum_def.variants.iter().map(|v| UnionVariantDef {
-                        name: v.name.clone(),
-                        payload_types: vec![],
-                    }).collect(),
+                    variants: enum_def
+                        .variants
+                        .iter()
+                        .map(|v| UnionVariantDef {
+                            name: v.name.clone(),
+                            payload_types: vec![],
+                        })
+                        .collect(),
                     line: enum_def.line,
                     column: enum_def.column,
                 });
@@ -183,12 +202,12 @@ impl Parser {
 
     fn parse_when_top_level_items(&mut self) -> Result<TopLevelItems, CompileError> {
         self.expect_simple(TokenKind::When)?;
-        let platform = self.parse_platform_name()?;
+        let matches = self.evaluate_when_condition()?;
         self.expect_newline("expected a newline after platform selector")?;
         let items = self.parse_top_level_items_until(&[TokenKind::End])?;
         self.expect_simple(TokenKind::End)?;
         self.consume_newlines();
-        if platform_matches(&platform) {
+        if matches {
             Ok(items)
         } else {
             Ok(TopLevelItems::default())
@@ -710,29 +729,37 @@ impl Parser {
 
     fn parse_when_stmt_block(&mut self) -> Result<Vec<Stmt>, CompileError> {
         self.expect_simple(TokenKind::When)?;
-        let platform = self.parse_platform_name()?;
+        let matches = self.evaluate_when_condition()?;
         self.expect_newline("expected a newline after platform selector")?;
         let body = self.parse_block()?;
         self.expect_simple(TokenKind::End)?;
         self.consume_newlines();
-        if platform_matches(&platform) {
-            Ok(body)
-        } else {
-            Ok(Vec::new())
-        }
+        if matches { Ok(body) } else { Ok(Vec::new()) }
     }
 
-    fn parse_platform_name(&mut self) -> Result<String, CompileError> {
-        let TokenKind::Ident(platform) = self.current().kind.clone() else {
-            return Err(self.error_at_current("expected a platform name after `when`"));
-        };
-        if !is_supported_platform_name(&platform) {
-            return Err(
-                self.error_at_current(format!("unsupported platform selector `{platform}`"))
-            );
+    fn evaluate_when_condition(&mut self) -> Result<bool, CompileError> {
+        let mut matches = false;
+        loop {
+            let TokenKind::Ident(platform) = self.current().kind.clone() else {
+                return Err(self.error_at_current("expected a platform name after `when`"));
+            };
+            if !is_supported_platform_name(&platform) {
+                return Err(
+                    self.error_at_current(format!("unsupported platform selector `{platform}`"))
+                );
+            }
+            if platform_matches(&platform) {
+                matches = true;
+            }
+            self.advance();
+
+            if self.check_simple(&TokenKind::Pipe) {
+                self.advance();
+            } else {
+                break;
+            }
         }
-        self.advance();
-        Ok(platform)
+        Ok(matches)
     }
 
     fn parse_stmt(&mut self) -> Result<Stmt, CompileError> {
@@ -2301,6 +2328,7 @@ impl Parser {
             TokenKind::Char(_) => "a character",
             TokenKind::Str(_) => "a string",
             TokenKind::Fn => "`fn`",
+            TokenKind::Link => "`link`",
         }
     }
 }

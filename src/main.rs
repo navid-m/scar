@@ -317,7 +317,13 @@ fn run_run_command(cli: &RunCli) -> Result<(), CompileError> {
 
     let result = (|| {
         write_output(&c_path, &generated)?;
-        compile_c_to_binary(&c_path, &binary_path, false, CompileMode::FastRun)?;
+        compile_c_to_binary(
+            &c_path,
+            &binary_path,
+            false,
+            CompileMode::FastRun,
+            &program.link_flags,
+        )?;
         run_program_binary(&binary_path)
     })();
 
@@ -341,7 +347,13 @@ fn emit_program(
         let c_path = temporary_c_path(input);
         let result = (|| {
             write_output(&c_path, &generated)?;
-            compile_c_to_binary(&c_path, output, optimize, CompileMode::Standard)
+            compile_c_to_binary(
+                &c_path,
+                output,
+                optimize,
+                CompileMode::Standard,
+                &program.link_flags,
+            )
         })();
         let _ = fs::remove_file(&c_path);
         result?;
@@ -414,7 +426,13 @@ fn run_tests_in_file(path: &Path, cli: &TestCli) -> Result<usize, CompileError> 
 
     let result = (|| {
         write_output(&c_path, &generated)?;
-        compile_c_to_binary(&c_path, &binary_path, cli.optimize, CompileMode::Standard)?;
+        compile_c_to_binary(
+            &c_path,
+            &binary_path,
+            cli.optimize,
+            CompileMode::Standard,
+            &runner.link_flags,
+        )?;
         run_test_binary(&binary_path)?;
         Ok(())
     })();
@@ -480,10 +498,10 @@ fn build_test_program(program: &Program) -> Program {
     });
 
 Program {
-        module_uses: Vec::new(),
-        extern_headers: program.extern_headers.clone(),
-        interface_defs: program.interface_defs.clone(),
-        type_defs: program.type_defs.clone(),
+    module_uses: Vec::new(),
+    extern_headers: program.extern_headers.clone(),
+    link_flags: program.link_flags.clone(),
+    interface_defs: program.interface_defs.clone(),        type_defs: program.type_defs.clone(),
         typesets: program.typesets.clone(),
         enum_defs: program.enum_defs.clone(),
         functions,
@@ -565,6 +583,7 @@ fn compile_c_to_binary(
     output_path: &Path,
     optimize: bool,
     mode: CompileMode,
+    link_flags: &[String],
 ) -> Result<(), CompileError> {
     if let Some(parent) = output_path
         .parent()
@@ -598,6 +617,7 @@ fn compile_c_to_binary(
         .arg(c_path)
         .arg("-o")
         .arg(output_path)
+        .args(link_flags)
         .status()
         .map_err(|error| {
             CompileError::new(format!(

@@ -34,6 +34,7 @@ pub fn resolve_entry_program(entry: &Path) -> Result<Program, CompileError> {
         resolved_functions: Vec::new(),
         resolved_globals: Vec::new(),
         resolved_extern_headers: Vec::new(),
+        resolved_link_flags: Vec::new(),
         visiting: Vec::new(),
     };
 
@@ -98,6 +99,18 @@ pub fn resolve_entry_program(entry: &Path) -> Result<Program, CompileError> {
             headers.extend(program.extern_headers);
             headers
         },
+        link_flags: {
+            let mut flags = resolver.resolved_link_flags;
+            flags.extend(program.link_flags);
+            let mut unique = Vec::new();
+            let mut seen = HashSet::new();
+            for flag in flags {
+                if seen.insert(flag.clone()) {
+                    unique.push(flag);
+                }
+            }
+            unique
+        },
         interface_defs,
         type_defs,
         typesets,
@@ -132,6 +145,7 @@ struct Resolver {
     resolved_functions: Vec<Function>,
     resolved_globals: Vec<GlobalVar>,
     resolved_extern_headers: Vec<String>,
+    resolved_link_flags: Vec<String>,
     visiting: Vec<PathBuf>,
 }
 
@@ -245,6 +259,7 @@ impl Resolver {
             self.resolved_functions.extend(rewritten_functions);
             self.resolved_globals.extend(rewritten_globals);
             self.resolved_extern_headers.extend(parsed.extern_headers);
+            self.resolved_link_flags.extend(parsed.link_flags);
         }
 
         self.visiting.pop();
@@ -1431,6 +1446,7 @@ fn instantiate_generic_functions(program: Program) -> Result<Program, CompileErr
     Ok(Program {
         module_uses: program.module_uses,
         extern_headers: program.extern_headers,
+        link_flags: program.link_flags,
         interface_defs,
         type_defs: all_type_defs,
         typesets,

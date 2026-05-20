@@ -13,6 +13,7 @@ pub struct GlobalVar {
 pub struct Program {
     pub module_uses: Vec<ModuleUse>,
     pub extern_headers: Vec<String>,
+    pub link_flags: Vec<String>,
     pub interface_defs: Vec<InterfaceDef>,
     pub type_defs: Vec<TypeDef>,
     pub typesets: Vec<TypeSetDef>,

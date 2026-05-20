@@ -1,0 +1,21 @@
+link "-lm"
+
+when linux | darwin | posix
+    def plat() ref(u8)
+        return "unix-like"
+    end
+end
+
+when windows
+    def plat() ref(u8)
+        return "windows"
+    end
+end
+
+pub def main() i32
+    @puts(plat())
+    when linux | darwin
+        @puts("definitely linux or darwin")
+    end
+    return 0
+end
