@@ -920,10 +920,47 @@ fn render_stmt_inner(
                     }
                 }
                 other => {
-                    return Err(CompileError::new(format!(
-                        "`match` expects a union or result value during code generation, got {}",
-                        describe_type(&other)
-                    )));
+                    if !is_integer_codegen_type(&other) {
+                        return Err(CompileError::new(format!(
+                            "`match` expects a union or result value during code generation, got {}",
+                            describe_type(&other)
+                        )));
+                    }
+                    let mut has_wildcard = false;
+                    for (index, arm) in arms.iter().enumerate() {
+                        let MatchArmKind::Variant(variant_name) = &arm.kind else {
+                            return Err(CompileError::new(
+                                "integer matches require variant arms during code generation",
+                            ));
+                        };
+                        indent(output, level + 1);
+                        if variant_name == "_" {
+                            has_wildcard = true;
+                            if index > 0 {
+                                output.push_str("else {\n");
+                            } else {
+                                output.push_str("{\n");
+                            }
+                        } else {
+                            if index == 0 {
+                                output.push_str("if (");
+                            } else {
+                                output.push_str("else if (");
+                            }
+                            output.push_str(&temp_name);
+                            output.push_str(" == ");
+                            output.push_str(variant_name);
+                            output.push_str(") {\n");
+                        }
+                        for stmt in &arm.body {
+                            render_stmt(output, stmt, function, info, level + 2, next_temp_id)?;
+                        }
+                        indent(output, level + 1);
+                        output.push_str("}\n");
+                        if has_wildcard {
+                            break;
+                        }
+                    }
                 }
             }
             indent(output, level);
@@ -3046,6 +3083,14 @@ fn escape_c_string(value: &str) -> String {
         }
     }
     escaped
+}
+
+fn is_integer_codegen_type(ty: &Type) -> bool {
+    matches!(
+        ty,
+        Type::I8 | Type::I16 | Type::I32 | Type::I64 | Type::Isize
+        | Type::U8 | Type::U16 | Type::U32 | Type::U64 | Type::Usize
+    )
 }
 
 fn describe_type(ty: &Type) -> String {
