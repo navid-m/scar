@@ -263,6 +263,17 @@ fn collect_types(program: &Program) -> Result<HashMap<String, TypeDefInfo>, Comp
                         variant_map.insert(variant.name.clone(), variant.payload_types.clone());
                     }
                 }
+                TypeDefKind::Enum => {
+                    for variant in &type_def.variants {
+                        if variant_map.contains_key(&variant.name) {
+                            return Err(CompileError::new(format!(
+                                "duplicate variant `{}` in enum `{}`",
+                                variant.name, type_def.name
+                            )));
+                        }
+                        variant_map.insert(variant.name.clone(), vec![]);
+                    }
+                }
             }
         }
 
@@ -837,9 +848,9 @@ fn analyze_stmt(
                         CompileError::new(format!("unknown type `{name}`"))
                             .with_location(*line, *column)
                     })?;
-                    if type_info.kind != TypeDefKind::Union {
+                    if type_info.kind != TypeDefKind::Union && type_info.kind != TypeDefKind::Enum {
                         return Err(CompileError::new(format!(
-                            "`match` currently requires a union or `T|error` expression, got {}",
+                            "`match` currently requires a union, enum, or `T|error` expression, got {}",
                             describe_type(&Type::Named(name))
                         ))
                         .with_location(*line, *column));
@@ -849,18 +860,21 @@ fn analyze_stmt(
                         let MatchArmKind::Variant(variant_name) = &arm.kind else {
                             return Err(
                                 CompileError::new(
-                                    "union matches require variant arms of the form `Variant (...) => (...)`",
+                                    "union/enum matches require variant arms of the form `Variant (...) => (...)`",
                                 )
                                 .with_location(*line, *column),
                             );
                         };
-                        let payload_types =
-                            type_info.variant_map.get(variant_name).ok_or_else(|| {
-                                CompileError::new(format!(
-                                    "union `{name}` has no variant `{variant_name}`"
-                                ))
-                                .with_location(*line, *column)
-                            })?;
+                        
+                        let payload_types = if type_info.kind == TypeDefKind::Enum {
+                            if let Some(full_name) = variant_name.strip_prefix(&format!("{}.", name)) {
+                                type_info.variant_map.get(full_name).cloned().unwrap_or_default()
+                            } else {
+                                type_info.variant_map.get(variant_name).cloned().unwrap_or_default()
+                            }
+                        } else {
+                            type_info.variant_map.get(variant_name).cloned().unwrap_or_default()
+                        };
                         if !seen_variants.insert(variant_name.clone()) {
                             return Err(CompileError::new(format!(
                                 "duplicate match arm for variant `{variant_name}`"
@@ -1220,6 +1234,11 @@ fn infer_expr_type(
                 .or_else(|| {
                     functions.get(name).map(|sig| {
                         Type::FnPtr(sig.params.clone(), Box::new(sig.return_type.clone()))
+                    })
+                })
+                .or_else(|| {
+                    types.get(name).map(|type_info| {
+                        Type::Named(name.clone())
                     })
                 })
                 .ok_or_else(|| CompileError::new(format!("unknown name `{name}`"))),
@@ -1926,11 +1945,24 @@ fn infer_field_type(
 ) -> Result<Type, CompileError> {
     let resolved = resolve_aliases(base_ty, types)?;
     match deref_refs(&resolved) {
-        Type::Named(name) => types
-            .get(name)
-            .and_then(|type_info| type_info.field_map.get(field))
-            .cloned()
-            .ok_or_else(|| CompileError::new(format!("type `{name}` has no field `{field}`"))),
+        Type::Named(name) => {
+            let type_info = types.get(name.as_str()).ok_or_else(|| {
+                CompileError::new(format!("unknown type `{name}`"))
+            })?;
+            
+            if let Some(field_ty) = type_info.field_map.get(field) {
+                return Ok(field_ty.clone());
+            }
+            
+            if let Some(payloads) = type_info.variant_map.get(field) {
+                if payloads.is_empty() {
+                    return Ok(Type::Named(name.clone()));
+                }
+                return Ok(Type::Applied(name.clone(), payloads.clone()));
+            }
+            
+            Err(CompileError::new(format!("type `{name}` has no field `{field}`")))
+        }
         other => Err(CompileError::new(format!(
             "field access requires a named type, got {}",
             describe_type(other)

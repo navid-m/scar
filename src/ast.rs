@@ -54,6 +54,7 @@ pub struct TypeSetDef {
 pub enum TypeDefKind {
     Struct,
     Union,
+    Enum,
 }
 
 #[derive(Debug, Clone)]

@@ -46,7 +46,7 @@ def log(level Level, msg ref(u8))
 
 	@puts(level_str)
 	@puts(" ")
-	@print("[{d02}:{d02}:{d02}.{d03}] ", {hours, mins, secs_sec, ms})
+	@print("[{d}:{d}:{d}.{d}] ", {hours, mins, secs_sec, ms})
 	@puts(msg)
 	@puts("\n")
 end

@@ -108,9 +108,43 @@ impl Parser {
                 items.typesets.push(self.parse_typeset_def(false)?);
             } else if self.check_simple(&TokenKind::Pub) && self.check_next_simple(&TokenKind::Enum)
             {
-                items.enum_defs.push(self.parse_enum_def(true)?);
+                let enum_def = self.parse_enum_def(true)?;
+                items.enum_defs.push(enum_def.clone());
+                items.type_defs.push(TypeDef {
+                    is_pub: enum_def.is_pub,
+                    name: enum_def.name.clone(),
+                    generic_params: vec![],
+                    kind: TypeDefKind::Enum,
+                    is_extern: false,
+                    alias: None,
+                    derives: vec![],
+                    fields: vec![],
+                    variants: enum_def.variants.iter().map(|v| UnionVariantDef {
+                        name: v.name.clone(),
+                        payload_types: vec![],
+                    }).collect(),
+                    line: enum_def.line,
+                    column: enum_def.column,
+                });
             } else if self.check_simple(&TokenKind::Enum) {
-                items.enum_defs.push(self.parse_enum_def(false)?);
+                let enum_def = self.parse_enum_def(false)?;
+                items.enum_defs.push(enum_def.clone());
+                items.type_defs.push(TypeDef {
+                    is_pub: enum_def.is_pub,
+                    name: enum_def.name.clone(),
+                    generic_params: vec![],
+                    kind: TypeDefKind::Enum,
+                    is_extern: false,
+                    alias: None,
+                    derives: vec![],
+                    fields: vec![],
+                    variants: enum_def.variants.iter().map(|v| UnionVariantDef {
+                        name: v.name.clone(),
+                        payload_types: vec![],
+                    }).collect(),
+                    line: enum_def.line,
+                    column: enum_def.column,
+                });
             } else if self.check_simple(&TokenKind::Pub) && self.check_next_simple(&TokenKind::Type)
             {
                 items.type_defs.push(self.parse_type_def(true, false)?);

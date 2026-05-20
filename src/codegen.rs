@@ -304,6 +304,21 @@ fn render_type_def(type_def: &TypeDef) -> String {
             output.push_str(&type_def.name);
             output.push_str(";\n");
         }
+        TypeDefKind::Enum => {
+            output.push_str("typedef enum {\n");
+            for (index, variant) in type_def.variants.iter().enumerate() {
+                output.push_str("    ");
+                output.push_str(&tag);
+                output.push('_');
+                output.push_str(&variant.name);
+                output.push_str(" = ");
+                output.push_str(&index.to_string());
+                output.push_str(",\n");
+            }
+            output.push_str("} ");
+            output.push_str(&type_def.name);
+            output.push_str(";\n");
+        }
     }
     output
 }
