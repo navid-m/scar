@@ -337,24 +337,24 @@ end
 
 test "sort u32 list"
     var ac = allocators.HeapAllocator()
-    var l list[u32] = [100u32, 50u32, 200u32, 25u32, 150u32]
+    var l list[u32] = [100, 50, 200, 25, 150]
     assert sort[u32, _](@as_mut(@addr(l)), ac)
-    assert l[0] == 25u32
-    assert l[1] == 50u32
-    assert l[2] == 100u32
-    assert l[3] == 150u32
-    assert l[4] == 200u32
+    assert l[0] == 25
+    assert l[1] == 50
+    assert l[2] == 100
+    assert l[3] == 150
+    assert l[4] == 200
 end
 
 test "sort i64 list"
     var ac = allocators.HeapAllocator()
-    var l list[i64] = [1000000i64, -500000i64, 0i64, 999999i64, -999999i64]
+    var l list[i64] = [1000000, -500000, 0, 999999, -999999]
     assert sort[i64, _](@as_mut(@addr(l)), ac)
-    assert l[0] == -999999i64
-    assert l[1] == -500000i64
-    assert l[2] == 0i64
-    assert l[3] == 1000000i64
-    assert l[4] == 999999i64
+    assert l[0] == -999999
+    assert l[1] == -500000
+    assert l[2] == 0
+    assert l[3] == 1000000
+    assert l[4] == 999999
 end
 
 test "sort f64 list"
@@ -371,23 +371,23 @@ end
 
 test "sort f32 list"
     var ac = allocators.HeapAllocator()
-    var l list[f32] = [3.5f32, 1.2f32, -0.5f32, 2.0f32]
+    var l list[f32] = [3.5, 1.2, -0.5, 2.0]
     assert sort[f32, _](@as_mut(@addr(l)), ac)
-    assert l[0] == -0.5f32
-    assert l[1] == 1.2f32
-    assert l[2] == 2.0f32
-    assert l[3] == 3.5f32
+    assert l[0] == -0.5
+    assert l[1] == 1.2
+    assert l[2] == 2.0
+    assert l[3] == 3.5
 end
 
 test "sort i8 list"
     var ac = allocators.HeapAllocator()
-    var l list[i8] = [5i8, -3i8, 0i8, 2i8, -1i8]
+    var l list[i8] = [5, -3, 0, 2, -1]
     assert sort[i8, _](@as_mut(@addr(l)), ac)
-    assert l[0] == -3i8
-    assert l[1] == -1i8
-    assert l[2] == 0i8
-    assert l[3] == 2i8
-    assert l[4] == 5i8
+    assert l[0] == -3
+    assert l[1] == -1
+    assert l[2] == 0
+    assert l[3] == 2
+    assert l[4] == 5
 end
 
 test "sort strings list"

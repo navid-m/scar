@@ -1080,6 +1080,57 @@ fn analyze_stmt(
                 )?;
             }
         }
+        Stmt::ForClassic {
+            line,
+            column,
+            var_name,
+            init,
+            condition,
+            increment,
+            body,
+            ..
+        } => {
+            validate_try_usage(init, expected_return, allow_try_panic)
+                .map_err(|error| error.with_location(*line, *column))?;
+            validate_try_usage(condition, expected_return, allow_try_panic)
+                .map_err(|error| error.with_location(*line, *column))?;
+            let init_ty = resolve_aliases(
+                &infer_expr_type(init, functions, types, scope, None)
+                    .map_err(|error| error.with_location(*line, *column))?,
+                types,
+            )?;
+            let condition_ty = resolve_aliases(
+                &infer_expr_type(condition, functions, types, scope, None)
+                    .map_err(|error| error.with_location(*line, *column))?,
+                types,
+            )?;
+            if !is_condition_primitive_type(&condition_ty) {
+                return Err(CompileError::new("`for` condition must be a boolean type")
+                    .with_location(*line, *column));
+            }
+            let mut nested = scope.clone();
+            nested.insert(
+                var_name.clone(),
+                LocalBinding {
+                    ty: init_ty.clone(),
+                    mutable: true,
+                },
+            );
+            function_locals.insert(var_name.clone(), init_ty);
+            for stmt in body {
+                analyze_stmt(
+                    stmt,
+                    function_name,
+                    expected_return,
+                    functions,
+                    types,
+                    &mut nested,
+                    function_locals,
+                    true,
+                    allow_try_panic,
+                )?;
+            }
+        }
         Stmt::While {
             line,
             column,
@@ -1337,6 +1388,14 @@ fn infer_expr_type(
                 UnaryOp::BitNot if is_integer_primitive_type(&inner_ty) => Ok(inner_ty),
                 UnaryOp::BitNot => Err(CompileError::new(
                     "unary `~` currently requires an integer operand",
+                )),
+                UnaryOp::PostfixInc | UnaryOp::PostfixDec
+                    if is_numeric_primitive_type(&inner_ty) =>
+                {
+                    Ok(inner_ty)
+                }
+                UnaryOp::PostfixInc | UnaryOp::PostfixDec => Err(CompileError::new(
+                    "postfix increment/decrement requires a numeric operand",
                 )),
             }
         }

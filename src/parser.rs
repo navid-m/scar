@@ -1208,6 +1208,39 @@ impl Parser {
             if self.check_simple(&TokenKind::Assign) {
                 self.advance();
                 let start = self.parse_expr()?;
+                if self.check_simple(&TokenKind::Comma) {
+                    self.advance();
+                    let condition = self.parse_expr()?;
+                    self.expect_simple(TokenKind::Comma)?;
+                    let mut increment = self.parse_expr()?;
+                    if self.check_simple(&TokenKind::MinusMinus) {
+                        self.advance();
+                        increment = Expr::Unary {
+                            op: UnaryOp::PostfixDec,
+                            expr: Box::new(increment),
+                        };
+                    } else if self.check_simple(&TokenKind::PlusPlus) {
+                        self.advance();
+                        increment = Expr::Unary {
+                            op: UnaryOp::PostfixInc,
+                            expr: Box::new(increment),
+                        };
+                    }
+                    self.expect_newline("expected a newline after for header")?;
+                    let body = self.parse_block()?;
+                    self.expect_simple(TokenKind::End)?;
+                    self.consume_newlines();
+                    return Ok(Stmt::ForClassic {
+                        line,
+                        column,
+                        pragma,
+                        var_name,
+                        init: start,
+                        condition,
+                        increment,
+                        body,
+                    });
+                }
                 self.expect_simple(TokenKind::DotDot)?;
                 let end = self.parse_expr()?;
                 self.expect_newline("expected a newline after for header")?;

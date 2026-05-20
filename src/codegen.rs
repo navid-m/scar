@@ -1123,6 +1123,47 @@ fn render_stmt_inner(
             indent(output, level);
             output.push_str("}\n");
         }
+        Stmt::ForClassic {
+            pragma,
+            var_name,
+            init,
+            condition,
+            increment,
+            body,
+            ..
+        } => {
+            let var_ty = info
+                .locals
+                .get(&function.name)
+                .and_then(|locals| locals.get(var_name))
+                .ok_or_else(|| {
+                    CompileError::new(format!(
+                        "missing type for for-loop variable `{var_name}` in `{}`",
+                        function.name
+                    ))
+                })?;
+            indent(output, level);
+            if let Some(pragma) = pragma {
+                output.push_str("#pragma ");
+                output.push_str(pragma);
+                output.push('\n');
+                indent(output, level);
+            }
+            output.push_str(&format!("for ({} ", c_type(var_ty)));
+            output.push_str(&mangle_local_symbol(var_name));
+            output.push_str(" = ");
+            output.push_str(&render_expr(init, function, info)?);
+            output.push_str("; ");
+            output.push_str(&render_expr(condition, function, info)?);
+            output.push_str("; ");
+            output.push_str(&render_expr(increment, function, info)?);
+            output.push_str(") {\n");
+            for stmt in body {
+                render_stmt(output, stmt, function, info, level + 1, next_temp_id)?;
+            }
+            indent(output, level);
+            output.push_str("}\n");
+        }
         Stmt::While {
             condition, body, ..
         } => {
@@ -1177,6 +1218,7 @@ fn stmt_location(stmt: &Stmt) -> Option<(usize, usize)> {
         | Stmt::Expr { line, column, .. }
         | Stmt::ForRange { line, column, .. }
         | Stmt::ForEach { line, column, .. }
+        | Stmt::ForClassic { line, column, .. }
         | Stmt::While { line, column, .. }
         | Stmt::Loop { line, column, .. }
         | Stmt::Continue { line, column }
@@ -1327,6 +1369,8 @@ fn render_expr_with_hint(
             UnaryOp::Neg => Ok(format!("(-({}))", render_expr(expr, function, info)?)),
             UnaryOp::LogicalNot => Ok(format!("(!({}))", render_expr(expr, function, info)?)),
             UnaryOp::BitNot => Ok(format!("(~({}))", render_expr(expr, function, info)?)),
+            UnaryOp::PostfixInc => Ok(format!("({}++)", render_expr(expr, function, info)?)),
+            UnaryOp::PostfixDec => Ok(format!("({}--)", render_expr(expr, function, info)?)),
         },
         Expr::Pack(_) => Err(CompileError::new(
             "packed `{...}` expressions are only valid inside @print",
@@ -2090,6 +2134,9 @@ fn infer_codegen_expr_type(
             UnaryOp::Neg | UnaryOp::LogicalNot | UnaryOp::BitNot => {
                 infer_codegen_integer_unary_type(*op, expr, function, info)
             }
+            UnaryOp::PostfixInc | UnaryOp::PostfixDec => {
+                infer_codegen_expr_type(expr, function, info)
+            }
         },
         Expr::Pack(_) => Err(CompileError::new(
             "packed `{...}` expressions are only valid inside @print",
@@ -2225,6 +2272,14 @@ fn infer_codegen_integer_unary_type(
         UnaryOp::BitNot if is_codegen_integer_type(&inner_ty) => Ok(inner_ty),
         UnaryOp::BitNot => Err(CompileError::new(
             "unary `~` currently requires an integer operand",
+        )),
+        UnaryOp::PostfixInc | UnaryOp::PostfixDec
+            if is_codegen_signed_numeric_type(&inner_ty) =>
+        {
+            Ok(inner_ty)
+        }
+        UnaryOp::PostfixInc | UnaryOp::PostfixDec => Err(CompileError::new(
+            "postfix increment/decrement requires a numeric operand",
         )),
     }
 }

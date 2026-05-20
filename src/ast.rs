@@ -288,6 +288,16 @@ pub enum Stmt {
         iterable: Expr,
         body: Vec<Stmt>,
     },
+    ForClassic {
+        line: usize,
+        column: usize,
+        pragma: Option<String>,
+        var_name: String,
+        init: Expr,
+        condition: Expr,
+        increment: Expr,
+        body: Vec<Stmt>,
+    },
     While {
         line: usize,
         column: usize,
@@ -407,6 +417,8 @@ pub enum UnaryOp {
     Neg,
     LogicalNot,
     BitNot,
+    PostfixInc,
+    PostfixDec,
 }
 
 impl Expr {

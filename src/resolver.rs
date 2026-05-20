@@ -915,6 +915,28 @@ fn rewrite_stmt(
                 .map(|stmt| rewrite_stmt(stmt, local_functions, local_types, module_aliases))
                 .collect::<Result<Vec<_>, _>>()?,
         }),
+        Stmt::ForClassic {
+            line,
+            column,
+            pragma,
+            var_name,
+            init,
+            condition,
+            increment,
+            body,
+        } => Ok(Stmt::ForClassic {
+            line,
+            column,
+            pragma,
+            var_name,
+            init: rewrite_expr(init, local_functions, local_types, module_aliases)?,
+            condition: rewrite_expr(condition, local_functions, local_types, module_aliases)?,
+            increment: rewrite_expr(increment, local_functions, local_types, module_aliases)?,
+            body: body
+                .into_iter()
+                .map(|stmt| rewrite_stmt(stmt, local_functions, local_types, module_aliases))
+                .collect::<Result<Vec<_>, _>>()?,
+        }),
         Stmt::While {
             line,
             column,
@@ -1976,6 +1998,33 @@ impl GenericInstantiator {
                     },
                 }
             }
+            Stmt::ForClassic {
+                line,
+                column,
+                pragma,
+                var_name,
+                init,
+                condition,
+                increment,
+                body,
+            } => Stmt::ForClassic {
+                line,
+                column,
+                pragma,
+                var_name: var_name.clone(),
+                init: self.rewrite_expr_generics(init.clone(), scope)?,
+                condition: self.rewrite_expr_generics(condition, scope)?,
+                increment: self.rewrite_expr_generics(increment, scope)?,
+                body: {
+                    let mut nested = scope.clone();
+                    if let Some(init_ty) = self.infer_expr_type(&init, scope) {
+                        nested.insert(var_name.clone(), init_ty);
+                    }
+                    body.into_iter()
+                        .map(|stmt| self.rewrite_stmt_generics(stmt, &mut nested))
+                        .collect::<Result<Vec<_>, _>>()?
+                },
+            },
             Stmt::While {
                 line,
                 column,
@@ -2859,6 +2908,28 @@ fn substitute_stmt(stmt: Stmt, substitutions: &HashMap<String, Type>) -> Stmt {
         Stmt::Loop { line, column, body } => Stmt::Loop {
             line,
             column,
+            body: body
+                .into_iter()
+                .map(|stmt| substitute_stmt(stmt, substitutions))
+                .collect(),
+        },
+        Stmt::ForClassic {
+            line,
+            column,
+            pragma,
+            var_name,
+            init,
+            condition,
+            increment,
+            body,
+        } => Stmt::ForClassic {
+            line,
+            column,
+            pragma,
+            var_name,
+            init: substitute_expr(init, substitutions),
+            condition: substitute_expr(condition, substitutions),
+            increment: substitute_expr(increment, substitutions),
             body: body
                 .into_iter()
                 .map(|stmt| substitute_stmt(stmt, substitutions))
