@@ -560,6 +560,51 @@ impl Lexer {
         let line = self.line;
         let column = self.column;
         let start = self.pos;
+
+        if self.peek() == Some('0') && matches!(self.peek_next(), Some('x' | 'X')) {
+            self.bump();
+            self.bump();
+            let hex_start = self.pos;
+            while matches!(self.peek(), Some('0'..='9' | 'a'..='f' | 'A'..='F' | '_')) {
+                self.bump();
+            }
+            let digits: String = self.chars[hex_start..self.pos]
+                .iter()
+                .filter(|&&c| c != '_')
+                .collect();
+            if digits.is_empty() {
+                return Err(self.error("hex literal has no digits"));
+            }
+            let value = u64::from_str_radix(&digits, 16).map_err(|error| {
+                CompileError::new(format!(
+                    "invalid hex literal at {line}:{column}: {error}"
+                ))
+            })?;
+            return Ok(Token { kind: TokenKind::Int(value), line, column });
+        }
+
+        if self.peek() == Some('0') && matches!(self.peek_next(), Some('b' | 'B')) {
+            self.bump();
+            self.bump();
+            let bin_start = self.pos;
+            while matches!(self.peek(), Some('0' | '1' | '_')) {
+                self.bump();
+            }
+            let digits: String = self.chars[bin_start..self.pos]
+                .iter()
+                .filter(|&&c| c != '_')
+                .collect();
+            if digits.is_empty() {
+                return Err(self.error("binary literal has no digits"));
+            }
+            let value = u64::from_str_radix(&digits, 2).map_err(|error| {
+                CompileError::new(format!(
+                    "invalid binary literal at {line}:{column}: {error}"
+                ))
+            })?;
+            return Ok(Token { kind: TokenKind::Int(value), line, column });
+        }
+
         while matches!(self.peek(), Some('0'..='9')) {
             self.bump();
         }

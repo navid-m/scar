@@ -2195,7 +2195,7 @@ fn render_logical_shift_right(
                 signed, unsigned
             ))
         }
-        Type::U16 | Type::U32 | Type::U64 | Type::Usize => Ok(format!(
+        Type::U8 | Type::U16 | Type::U32 | Type::U64 | Type::Usize => Ok(format!(
             "(({})({rendered_lhs}) >> ({rendered_rhs}))",
             c_type(&lhs_ty)
         )),
