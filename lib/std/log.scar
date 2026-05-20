@@ -63,7 +63,7 @@ pub def warn(msg ref(u8))
 	log(Level.Warn, msg)
 end
 
-pub def error(msg ref(u8))
+pub def err(msg ref(u8))
 	log(Level.Error, msg)
 end
 
@@ -80,7 +80,7 @@ pub def warnf(format ref(u8), args ref(u8))
 end
 
 pub def errorf(format ref(u8), args ref(u8))
-	error(format)
+	err(format)
 end
 
 pub def format_timestamp[A: allocators.BumpAllocator](

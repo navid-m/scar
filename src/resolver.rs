@@ -241,9 +241,16 @@ impl Resolver {
         }
 
         self.visiting.pop();
+        let mut all_public_types = public_types;
+        for enum_def in &parsed.enum_defs {
+            if enum_def.is_pub {
+                let mapped = format!("{prefix}__{}", enum_def.name);
+                all_public_types.insert(enum_def.name.clone(), mapped);
+            }
+        }
         let exports = ModuleExports {
             functions: public_functions,
-            named_types: public_types,
+            named_types: all_public_types,
             interfaces: public_interfaces,
             typesets: public_typesets,
             globals: public_globals,
@@ -949,6 +956,13 @@ fn rewrite_expr(
             }
             let full_path = path.join(".");
             if let Some(mapped) = local_types.get(&full_path) {
+                if path.len() == 2 {
+                    let type_mapped = local_types
+                        .get(&path[0])
+                        .cloned()
+                        .unwrap_or_else(|| path[0].clone());
+                    return Ok(Expr::Path(vec![type_mapped, path[1].clone()]));
+                }
                 return Ok(Expr::Path(vec![mapped.clone()]));
             }
             Ok(expr)
@@ -974,13 +988,20 @@ fn rewrite_expr(
             )?),
         }),
         Expr::FieldAccess { base, field } => {
-            // Check if this is module.GLOBAL access
             if let Expr::Path(ref path) = *base {
                 if path.len() == 1 {
                     if let Some(module) = module_aliases.get(&path[0]) {
                         if let Some(global_name) = module.globals.get(&field) {
                             return Ok(Expr::Path(vec![global_name.clone()]));
                         }
+                    }
+                    let qualified = format!("{}.{}", path[0], field);
+                    if local_types.contains_key(&qualified) {
+                        let type_mapped = local_types
+                            .get(&path[0])
+                            .cloned()
+                            .unwrap_or_else(|| path[0].clone());
+                        return Ok(Expr::Path(vec![type_mapped, field]));
                     }
                 }
             }
