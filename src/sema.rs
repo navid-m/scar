@@ -1522,6 +1522,11 @@ fn infer_expr_type(
                 {
                     Ok(Type::Bool)
                 }
+                BinaryOp::Equal | BinaryOp::NotEqual
+                    if same_enum_type(&lhs_ty, &rhs_ty, types) =>
+                {
+                    Ok(Type::Bool)
+                }
                 BinaryOp::LessThan
                 | BinaryOp::LessEqual
                 | BinaryOp::GreaterThan
@@ -2759,6 +2764,26 @@ fn pointer_arithmetic_type(ty: &Type) -> Type {
 
 fn is_nullable_pointer_type(ty: &Type) -> bool {
     matches!(ty, Type::Ref(_) | Type::Mut(_)) || is_string_compatible(ty)
+}
+
+fn same_enum_type(lhs: &Type, rhs: &Type, types: &HashMap<String, TypeDefInfo>) -> bool {
+    let lhs_name = match lhs {
+        Type::Named(n) => n,
+        _ => return false,
+    };
+    let rhs_name = match rhs {
+        Type::Named(n) => n,
+        _ => return false,
+    };
+    if lhs_name == rhs_name {
+        return true;
+    }
+    if let (Some(lhs_info), Some(rhs_info)) = (types.get(lhs_name), types.get(rhs_name)) {
+        if lhs_info.kind == TypeDefKind::Enum && rhs_info.kind == TypeDefKind::Enum {
+            return lhs_name == rhs_name;
+        }
+    }
+    false
 }
 
 fn as_mut_type(ty: Type) -> Type {
