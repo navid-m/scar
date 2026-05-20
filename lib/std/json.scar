@@ -841,6 +841,8 @@ end
 test "parse simple object"
     var nodes [256]JsonNode = @zeroed()
     val json = Json.parse("{\"name\": \"hello\", \"value\": 42}", @bitcast(@addr(nodes), mut(ref(JsonNode))), MAX_JSON_NODES)?
+    @print("JSON test: after parse, json.root={zu} json.count={zu}\n", {json.root, json.count})
+    @flush()
     val root = json.root
     @print("JSON test: root={zu} count={zu}\n", {root, json.count})
     @flush()

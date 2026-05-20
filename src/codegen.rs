@@ -202,12 +202,29 @@ fn render_runtime_prelude(install_debug_handlers: bool) -> String {
     output
 }
 
+fn is_deref_init(expr: &Expr) -> bool {
+    matches!(expr, Expr::BuiltinCall { name, .. } if name == "deref")
+}
+
+fn collect_deref_locals(body: &[Stmt]) -> std::collections::HashSet<String> {
+    let mut set = std::collections::HashSet::new();
+    for stmt in body {
+        if let Stmt::VarDecl { name, init, .. } = stmt {
+            if is_deref_init(init) {
+                set.insert(name.clone());
+            }
+        }
+    }
+    set
+}
+
 fn render_function(
     output: &mut String,
     function: &Function,
     info: &ProgramInfo,
     _: bool,
 ) -> Result<(), CompileError> {
+    let deref_locals = collect_deref_locals(&function.body);
     let mut next_temp_id = 0usize;
     output.push_str(&render_signature(function, info));
     output.push_str(" {\n");
@@ -224,7 +241,15 @@ fn render_function(
         }
     }
     for stmt in &function.body {
-        render_stmt(output, stmt, function, info, 1, &mut next_temp_id)?;
+        render_stmt(
+            output,
+            stmt,
+            function,
+            info,
+            1,
+            &mut next_temp_id,
+            &deref_locals,
+        )?;
     }
     output.push_str("__scar_return:\n");
     if matches!(function.return_type, Type::Void) {
@@ -433,8 +458,17 @@ fn render_stmt(
     info: &ProgramInfo,
     level: usize,
     next_temp_id: &mut usize,
+    deref_locals: &std::collections::HashSet<String>,
 ) -> Result<(), CompileError> {
-    let result = render_stmt_inner(output, stmt, function, info, level, next_temp_id);
+    let result = render_stmt_inner(
+        output,
+        stmt,
+        function,
+        info,
+        level,
+        next_temp_id,
+        deref_locals,
+    );
     if let Some((line, column)) = stmt_location(stmt) {
         result.map_err(|error| error.with_location(line, column))
     } else {
@@ -449,6 +483,7 @@ fn render_stmt_inner(
     info: &ProgramInfo,
     level: usize,
     next_temp_id: &mut usize,
+    deref_locals: &std::collections::HashSet<String>,
 ) -> Result<(), CompileError> {
     match stmt {
         Stmt::VarDecl {
@@ -482,7 +517,7 @@ fn render_stmt_inner(
                 output.push(' ');
                 output.push_str(&temp_name);
                 output.push_str(" = ");
-                output.push_str(&render_expr(inner, function, info)?);
+                output.push_str(&render_expr(inner, function, info, deref_locals)?);
                 output.push_str(";\n");
                 indent(output, level);
                 output.push_str("if (");
@@ -526,7 +561,13 @@ fn render_stmt_inner(
             }
             output.push_str(&c_type_named(ty, &mangle_local_symbol(name)));
             output.push_str(" = ");
-            output.push_str(&render_expr_with_hint(init, function, info, Some(ty))?);
+            output.push_str(&render_expr_with_hint(
+                init,
+                function,
+                info,
+                Some(ty),
+                deref_locals,
+            )?);
             output.push_str(";\n");
         }
         Stmt::Assign { target, value, .. } => {
@@ -546,7 +587,7 @@ fn render_stmt_inner(
                 output.push(' ');
                 output.push_str(&temp_name);
                 output.push_str(" = ");
-                output.push_str(&render_expr(inner, function, info)?);
+                output.push_str(&render_expr(inner, function, info, deref_locals)?);
                 output.push_str(";\n");
                 indent(output, level);
                 output.push_str("if (");
@@ -575,80 +616,81 @@ fn render_stmt_inner(
                 indent(output, level);
                 output.push_str("}\n");
                 indent(output, level);
-                output.push_str(&render_expr(target, function, info)?);
+                output.push_str(&render_expr(target, function, info, deref_locals)?);
                 output.push_str(" = ");
                 output.push_str(&format!("{temp_name}.ok"));
                 output.push_str(";\n");
                 return Ok(());
             }
             indent(output, level);
-            output.push_str(&render_expr(target, function, info)?);
+            output.push_str(&render_expr(target, function, info, deref_locals)?);
             output.push_str(" = ");
             output.push_str(&render_expr_with_hint(
                 value,
                 function,
                 info,
                 Some(&target_ty),
+                deref_locals,
             )?);
             output.push_str(";\n");
         }
         Stmt::AddAssign { target, value, .. } => {
             indent(output, level);
-            output.push_str(&render_expr(target, function, info)?);
+            output.push_str(&render_expr(target, function, info, deref_locals)?);
             output.push_str(" += ");
-            output.push_str(&render_expr(value, function, info)?);
+            output.push_str(&render_expr(value, function, info, deref_locals)?);
             output.push_str(";\n");
         }
         Stmt::MulAssign { target, value, .. } => {
             indent(output, level);
-            output.push_str(&render_expr(target, function, info)?);
+            output.push_str(&render_expr(target, function, info, deref_locals)?);
             output.push_str(" *= ");
-            output.push_str(&render_expr(value, function, info)?);
+            output.push_str(&render_expr(value, function, info, deref_locals)?);
             output.push_str(";\n");
         }
         Stmt::SubAssign { target, value, .. } => {
             indent(output, level);
-            output.push_str(&render_expr(target, function, info)?);
+            output.push_str(&render_expr(target, function, info, deref_locals)?);
             output.push_str(" -= ");
-            output.push_str(&render_expr(value, function, info)?);
+            output.push_str(&render_expr(value, function, info, deref_locals)?);
             output.push_str(";\n");
         }
         Stmt::DivAssign { target, value, .. } => {
             indent(output, level);
-            output.push_str(&render_expr(target, function, info)?);
+            output.push_str(&render_expr(target, function, info, deref_locals)?);
             output.push_str(" /= ");
-            output.push_str(&render_expr(value, function, info)?);
+            output.push_str(&render_expr(value, function, info, deref_locals)?);
             output.push_str(";\n");
         }
         Stmt::BitAndAssign { target, value, .. } => {
             indent(output, level);
-            output.push_str(&render_expr(target, function, info)?);
+            output.push_str(&render_expr(target, function, info, deref_locals)?);
             output.push_str(" &= ");
-            output.push_str(&render_expr(value, function, info)?);
+            output.push_str(&render_expr(value, function, info, deref_locals)?);
             output.push_str(";\n");
         }
         Stmt::BitOrAssign { target, value, .. } => {
             indent(output, level);
-            output.push_str(&render_expr(target, function, info)?);
+            output.push_str(&render_expr(target, function, info, deref_locals)?);
             output.push_str(" |= ");
-            output.push_str(&render_expr(value, function, info)?);
+            output.push_str(&render_expr(value, function, info, deref_locals)?);
             output.push_str(";\n");
         }
         Stmt::BitXorAssign { target, value, .. } => {
             indent(output, level);
-            output.push_str(&render_expr(target, function, info)?);
+            output.push_str(&render_expr(target, function, info, deref_locals)?);
             output.push_str(" ^= ");
-            output.push_str(&render_expr(value, function, info)?);
+            output.push_str(&render_expr(value, function, info, deref_locals)?);
             output.push_str(";\n");
         }
         Stmt::Increment { target, .. } => {
             indent(output, level);
-            output.push_str(&render_expr(target, function, info)?);
+            output.push_str(&render_expr(target, function, info, deref_locals)?);
             output.push_str("++;\n");
         }
         Stmt::Decrement { target, .. } => {
             indent(output, level);
-            output.push_str(&render_expr(target, function, info)?);
+            output.push_str(&render_expr(target, function, info, deref_locals)?);
             output.push_str("--;\n");
         }
         Stmt::Assert {
@@ -658,7 +700,7 @@ fn render_stmt_inner(
         } => {
             indent(output, level);
             output.push_str("if (!(");
-            output.push_str(&render_expr(condition, function, info)?);
+            output.push_str(&render_expr(condition, function, info, deref_locals)?);
             output.push_str(")) {\n");
             indent(output, level + 1);
             output.push_str(&format!(
@@ -700,7 +742,7 @@ fn render_stmt_inner(
                 output.push(' ');
                 output.push_str(&temp_name);
                 output.push_str(" = ");
-                output.push_str(&render_expr(inner, function, info)?);
+                output.push_str(&render_expr(inner, function, info, deref_locals)?);
                 output.push_str(";\n");
                 indent(output, level);
                 output.push_str("if (");
@@ -750,6 +792,7 @@ fn render_stmt_inner(
                 function,
                 info,
                 Some(&function.return_type),
+                deref_locals,
             )?);
             output.push_str(";\n");
             indent(output, level);
@@ -763,10 +806,18 @@ fn render_stmt_inner(
         } => {
             indent(output, level);
             output.push_str("if (");
-            output.push_str(&render_expr(condition, function, info)?);
+            output.push_str(&render_expr(condition, function, info, deref_locals)?);
             output.push_str(") {\n");
             for stmt in then_body {
-                render_stmt(output, stmt, function, info, level + 1, next_temp_id)?;
+                render_stmt(
+                    output,
+                    stmt,
+                    function,
+                    info,
+                    level + 1,
+                    next_temp_id,
+                    deref_locals,
+                )?;
             }
             indent(output, level);
             output.push('}');
@@ -775,7 +826,15 @@ fn render_stmt_inner(
             } else {
                 output.push_str(" else {\n");
                 for stmt in else_body {
-                    render_stmt(output, stmt, function, info, level + 1, next_temp_id)?;
+                    render_stmt(
+                        output,
+                        stmt,
+                        function,
+                        info,
+                        level + 1,
+                        next_temp_id,
+                        deref_locals,
+                    )?;
                 }
                 indent(output, level);
                 output.push_str("}\n");
@@ -793,7 +852,7 @@ fn render_stmt_inner(
             output.push(' ');
             output.push_str(&temp_name);
             output.push_str(" = ");
-            output.push_str(&render_expr(expr, function, info)?);
+            output.push_str(&render_expr(expr, function, info, deref_locals)?);
             output.push_str(";\n");
             match resolve_codegen_aliases(&matched_ty, info)? {
                 Type::Result(ok_ty) => {
@@ -840,7 +899,15 @@ fn render_stmt_inner(
                             }
                         }
                         for stmt in &arm.body {
-                            render_stmt(output, stmt, function, info, level + 2, next_temp_id)?;
+                            render_stmt(
+                                output,
+                                stmt,
+                                function,
+                                info,
+                                level + 2,
+                                next_temp_id,
+                                deref_locals,
+                            )?;
                         }
                         indent(output, level + 1);
                         output.push_str("}\n");
@@ -877,7 +944,15 @@ fn render_stmt_inner(
                             ));
                             output.push_str(") {\n");
                             for stmt in &arm.body {
-                                render_stmt(output, stmt, function, info, level + 2, next_temp_id)?;
+                                render_stmt(
+                                    output,
+                                    stmt,
+                                    function,
+                                    info,
+                                    level + 2,
+                                    next_temp_id,
+                                    deref_locals,
+                                )?;
                             }
                             indent(output, level + 1);
                             output.push_str("}\n");
@@ -930,7 +1005,15 @@ fn render_stmt_inner(
                                 }
                             }
                             for stmt in &arm.body {
-                                render_stmt(output, stmt, function, info, level + 2, next_temp_id)?;
+                                render_stmt(
+                                    output,
+                                    stmt,
+                                    function,
+                                    info,
+                                    level + 2,
+                                    next_temp_id,
+                                    deref_locals,
+                                )?;
                             }
                             indent(output, level + 1);
                             output.push_str("}\n");
@@ -971,7 +1054,15 @@ fn render_stmt_inner(
                             output.push_str(") {\n");
                         }
                         for stmt in &arm.body {
-                            render_stmt(output, stmt, function, info, level + 2, next_temp_id)?;
+                            render_stmt(
+                                output,
+                                stmt,
+                                function,
+                                info,
+                                level + 2,
+                                next_temp_id,
+                                deref_locals,
+                            )?;
                         }
                         indent(output, level + 1);
                         output.push_str("}\n");
@@ -1000,7 +1091,7 @@ fn render_stmt_inner(
                 output.push(' ');
                 output.push_str(&temp_name);
                 output.push_str(" = ");
-                output.push_str(&render_expr(inner, function, info)?);
+                output.push_str(&render_expr(inner, function, info, deref_locals)?);
                 output.push_str(";\n");
                 indent(output, level);
                 output.push_str("if (");
@@ -1031,7 +1122,7 @@ fn render_stmt_inner(
                 return Ok(());
             }
             indent(output, level);
-            output.push_str(&render_expr(expr, function, info)?);
+            output.push_str(&render_expr(expr, function, info, deref_locals)?);
             output.push_str(";\n");
         }
         Stmt::ForRange {
@@ -1062,16 +1153,24 @@ fn render_stmt_inner(
             output.push_str(&format!("for ({} ", c_type(var_ty)));
             output.push_str(&mangle_local_symbol(var_name));
             output.push_str(" = ");
-            output.push_str(&render_expr(start, function, info)?);
+            output.push_str(&render_expr(start, function, info, deref_locals)?);
             output.push_str("; ");
             output.push_str(&mangle_local_symbol(var_name));
             output.push_str(" < ");
-            output.push_str(&render_expr(end, function, info)?);
+            output.push_str(&render_expr(end, function, info, deref_locals)?);
             output.push_str("; ++");
             output.push_str(&mangle_local_symbol(var_name));
             output.push_str(") {\n");
             for stmt in body {
-                render_stmt(output, stmt, function, info, level + 1, next_temp_id)?;
+                render_stmt(
+                    output,
+                    stmt,
+                    function,
+                    info,
+                    level + 1,
+                    next_temp_id,
+                    deref_locals,
+                )?;
             }
             indent(output, level);
             output.push_str("}\n");
@@ -1101,7 +1200,7 @@ fn render_stmt_inner(
             output.push(' ');
             output.push_str(&iter_name);
             output.push_str(" = ");
-            output.push_str(&render_expr(iterable, function, info)?);
+            output.push_str(&render_expr(iterable, function, info, deref_locals)?);
             output.push_str(";\n");
             indent(output, level + 1);
             output.push_str("for (int32_t ");
@@ -1121,7 +1220,15 @@ fn render_stmt_inner(
             output.push_str(&index_name);
             output.push_str("];\n");
             for stmt in body {
-                render_stmt(output, stmt, function, info, level + 2, next_temp_id)?;
+                render_stmt(
+                    output,
+                    stmt,
+                    function,
+                    info,
+                    level + 2,
+                    next_temp_id,
+                    deref_locals,
+                )?;
             }
             indent(output, level + 1);
             output.push_str("}\n");
@@ -1157,14 +1264,22 @@ fn render_stmt_inner(
             output.push_str(&format!("for ({} ", c_type(var_ty)));
             output.push_str(&mangle_local_symbol(var_name));
             output.push_str(" = ");
-            output.push_str(&render_expr(init, function, info)?);
+            output.push_str(&render_expr(init, function, info, deref_locals)?);
             output.push_str("; ");
-            output.push_str(&render_expr(condition, function, info)?);
+            output.push_str(&render_expr(condition, function, info, deref_locals)?);
             output.push_str("; ");
-            output.push_str(&render_expr(increment, function, info)?);
+            output.push_str(&render_expr(increment, function, info, deref_locals)?);
             output.push_str(") {\n");
             for stmt in body {
-                render_stmt(output, stmt, function, info, level + 1, next_temp_id)?;
+                render_stmt(
+                    output,
+                    stmt,
+                    function,
+                    info,
+                    level + 1,
+                    next_temp_id,
+                    deref_locals,
+                )?;
             }
             indent(output, level);
             output.push_str("}\n");
@@ -1174,10 +1289,18 @@ fn render_stmt_inner(
         } => {
             indent(output, level);
             output.push_str("while (");
-            output.push_str(&render_expr(condition, function, info)?);
+            output.push_str(&render_expr(condition, function, info, deref_locals)?);
             output.push_str(") {\n");
             for stmt in body {
-                render_stmt(output, stmt, function, info, level + 1, next_temp_id)?;
+                render_stmt(
+                    output,
+                    stmt,
+                    function,
+                    info,
+                    level + 1,
+                    next_temp_id,
+                    deref_locals,
+                )?;
             }
             indent(output, level);
             output.push_str("}\n");
@@ -1186,7 +1309,15 @@ fn render_stmt_inner(
             indent(output, level);
             output.push_str("for (;;) {\n");
             for stmt in body {
-                render_stmt(output, stmt, function, info, level + 1, next_temp_id)?;
+                render_stmt(
+                    output,
+                    stmt,
+                    function,
+                    info,
+                    level + 1,
+                    next_temp_id,
+                    deref_locals,
+                )?;
             }
             indent(output, level);
             output.push_str("}\n");
@@ -1235,8 +1366,9 @@ fn render_expr(
     expr: &Expr,
     function: &Function,
     info: &ProgramInfo,
+    deref_locals: &std::collections::HashSet<String>,
 ) -> Result<String, CompileError> {
-    render_expr_with_hint(expr, function, info, None)
+    render_expr_with_hint(expr, function, info, None, deref_locals)
 }
 
 fn render_expr_with_hint(
@@ -1244,16 +1376,17 @@ fn render_expr_with_hint(
     function: &Function,
     info: &ProgramInfo,
     hint: Option<&Type>,
+    deref_locals: &std::collections::HashSet<String>,
 ) -> Result<String, CompileError> {
     if let Some(Type::Result(ok_ty)) = hint {
         let actual_ty =
             resolve_codegen_aliases(&infer_codegen_expr_type(expr, function, info)?, info)?;
         return match actual_ty {
-            Type::Result(_) => render_expr_with_hint(expr, function, info, None),
+            Type::Result(_) => render_expr_with_hint(expr, function, info, None, deref_locals),
             Type::Error => match expr {
                 Expr::Error { message } => Ok(render_result_error_value(
                     ok_ty,
-                    &render_expr(message, function, info)?,
+                    &render_expr(message, function, info, deref_locals)?,
                 )),
                 _ => Err(CompileError::new(
                     "missing error constructor payload during code generation",
@@ -1261,7 +1394,7 @@ fn render_expr_with_hint(
             },
             _ => Ok(render_result_ok_value(
                 ok_ty,
-                &render_expr_with_hint(expr, function, info, Some(ok_ty))?,
+                &render_expr_with_hint(expr, function, info, Some(ok_ty), deref_locals)?,
             )),
         };
     }
@@ -1291,7 +1424,9 @@ fn render_expr_with_hint(
             if let Some(Type::FixedArray(_, element_ty)) = hint {
                 let rendered = values
                     .iter()
-                    .map(|v| render_expr_with_hint(v, function, info, Some(element_ty)))
+                    .map(|v| {
+                        render_expr_with_hint(v, function, info, Some(element_ty), deref_locals)
+                    })
                     .collect::<Result<Vec<_>, _>>()?;
                 return Ok(format!("{{{}}}", rendered.join(", ")));
             }
@@ -1301,10 +1436,12 @@ fn render_expr_with_hint(
                 })?,
                 _ => infer_codegen_expr_type(expr, function, info)?,
             };
-            render_list_literal(values, &list_ty, function, info)
+            render_list_literal(values, &list_ty, function, info, deref_locals)
         }
-        Expr::Index { base, index } => render_index_expr(base, index, function, info),
-        Expr::FieldAccess { base, field } => render_field_access(base, field, function, info),
+        Expr::Index { base, index } => render_index_expr(base, index, function, info, deref_locals),
+        Expr::FieldAccess { base, field } => {
+            render_field_access(base, field, function, info, deref_locals)
+        }
         Expr::StructInit { name, fields, .. } => {
             let type_info = info.types.get(name).ok_or_else(|| {
                 CompileError::new(format!("unknown type `{name}` in code generation"))
@@ -1323,18 +1460,26 @@ fn render_expr_with_hint(
                     Ok(format!(
                         ".{} = {}",
                         field.name,
-                        render_expr_with_hint(&field.value, function, info, Some(field_ty))?
+                        render_expr_with_hint(
+                            &field.value,
+                            function,
+                            info,
+                            Some(field_ty),
+                            deref_locals
+                        )?
                     ))
                 })
                 .collect::<Result<Vec<_>, CompileError>>()?;
             Ok(format!("({name}){{ {} }}", rendered_fields.join(", ")))
         }
-        Expr::BuiltinCall { name, args } => render_builtin_call(name, args, function, info),
+        Expr::BuiltinCall { name, args } => {
+            render_builtin_call(name, args, function, info, deref_locals)
+        }
         Expr::MethodCall {
             receiver,
             method,
             args,
-        } => render_list_method_call(method, receiver, args, function, info),
+        } => render_list_method_call(method, receiver, args, function, info, deref_locals),
         Expr::Path(path) => match path.as_slice() {
             [name] => Ok(render_symbol_name(name, function, info)),
             [type_name, variant_name] => {
@@ -1353,23 +1498,23 @@ fn render_expr_with_hint(
                 path.join(".")
             ))),
         },
-        Expr::Call { callee, args } => render_call(callee, args, function, info),
+        Expr::Call { callee, args } => render_call(callee, args, function, info, deref_locals),
         Expr::Specialize { .. } => Err(CompileError::new(
             "generic specialization must be resolved before code generation",
         )),
         Expr::Cast { expr, ty } => {
             if matches!(expr.as_ref(), Expr::ListLiteral(_)) {
-                return render_expr_with_hint(expr, function, info, Some(ty));
+                return render_expr_with_hint(expr, function, info, Some(ty), deref_locals);
             }
             Ok(format!(
                 "(({})({}))",
                 c_type(ty),
-                render_expr(expr, function, info)?
+                render_expr(expr, function, info, deref_locals)?
             ))
         }
         Expr::SizeOf(ty) => Ok(format!("((size_t)sizeof({}))", c_type(ty))),
         Expr::BitCast { expr, ty } => {
-            let src = render_expr(expr, function, info)?;
+            let src = render_expr(expr, function, info, deref_locals)?;
             let dst_ty = c_type(ty);
             match &*ty {
                 Type::Ref(_) | Type::Mut(_) => Ok(format!("(({dst_ty})({src}))")),
@@ -1381,20 +1526,35 @@ fn render_expr_with_hint(
         Expr::Error { .. } => Err(CompileError::new(
             "`error(...)` requires a `T|error` context during code generation",
         )),
-        Expr::Try(inner) => render_try_expr(inner, function, info),
+        Expr::Try(inner) => render_try_expr(inner, function, info, deref_locals),
         Expr::Unary { op, expr } => match op {
-            UnaryOp::Neg => Ok(format!("(-({}))", render_expr(expr, function, info)?)),
-            UnaryOp::LogicalNot => Ok(format!("(!({}))", render_expr(expr, function, info)?)),
-            UnaryOp::BitNot => Ok(format!("(~({}))", render_expr(expr, function, info)?)),
-            UnaryOp::PostfixInc => Ok(format!("({}++)", render_expr(expr, function, info)?)),
-            UnaryOp::PostfixDec => Ok(format!("({}--)", render_expr(expr, function, info)?)),
+            UnaryOp::Neg => Ok(format!(
+                "(-({}))",
+                render_expr(expr, function, info, deref_locals)?
+            )),
+            UnaryOp::LogicalNot => Ok(format!(
+                "(!({}))",
+                render_expr(expr, function, info, deref_locals)?
+            )),
+            UnaryOp::BitNot => Ok(format!(
+                "(~({}))",
+                render_expr(expr, function, info, deref_locals)?
+            )),
+            UnaryOp::PostfixInc => Ok(format!(
+                "({}++)",
+                render_expr(expr, function, info, deref_locals)?
+            )),
+            UnaryOp::PostfixDec => Ok(format!(
+                "({}--)",
+                render_expr(expr, function, info, deref_locals)?
+            )),
         },
         Expr::Pack(_) => Err(CompileError::new(
             "packed `{...}` expressions are only valid inside @print",
         )),
         Expr::Binary { lhs, op, rhs } => {
             if *op == BinaryOp::ShiftRight {
-                return render_logical_shift_right(lhs, rhs, function, info);
+                return render_logical_shift_right(lhs, rhs, function, info, deref_locals);
             }
             let operator = match op {
                 BinaryOp::Add => "+",
@@ -1420,9 +1580,9 @@ fn render_expr_with_hint(
             let rhs_type = infer_codegen_expr_type(rhs, function, info).ok();
             Ok(format!(
                 "(({}) {} ({}))",
-                render_expr_with_hint(lhs, function, info, rhs_type.as_ref())?,
+                render_expr_with_hint(lhs, function, info, rhs_type.as_ref(), deref_locals)?,
                 operator,
-                render_expr_with_hint(rhs, function, info, lhs_type.as_ref())?
+                render_expr_with_hint(rhs, function, info, lhs_type.as_ref(), deref_locals)?
             ))
         }
     }
@@ -1501,6 +1661,7 @@ fn render_try_expr(
     inner: &Expr,
     function: &Function,
     info: &ProgramInfo,
+    deref_locals: &std::collections::HashSet<String>,
 ) -> Result<String, CompileError> {
     let result_ty = infer_codegen_expr_type(inner, function, info)?;
     let resolved_result_ty = resolve_codegen_aliases(&result_ty, info)?;
@@ -1517,7 +1678,7 @@ fn render_try_expr(
     rendered.push(' ');
     rendered.push_str(&temp_name);
     rendered.push_str(" = ");
-    rendered.push_str(&render_expr(inner, function, info)?);
+    rendered.push_str(&render_expr(inner, function, info, deref_locals)?);
     rendered.push_str("; if (");
     rendered.push_str(&temp_name);
     rendered.push_str(".is_error) { ");
@@ -1549,9 +1710,10 @@ fn render_field_access(
     field: &str,
     function: &Function,
     info: &ProgramInfo,
+    deref_locals: &std::collections::HashSet<String>,
 ) -> Result<String, CompileError> {
     let base_ty = infer_codegen_expr_type(base, function, info)?;
-    let rendered_base = render_expr(base, function, info)?;
+    let rendered_base = render_expr(base, function, info, deref_locals)?;
     if is_reference_like(&base_ty) {
         Ok(format!("({rendered_base})->{field}"))
     } else {
@@ -1564,13 +1726,14 @@ fn render_index_expr(
     index: &Expr,
     function: &Function,
     info: &ProgramInfo,
+    deref_locals: &std::collections::HashSet<String>,
 ) -> Result<String, CompileError> {
     let base_ty = infer_codegen_expr_type(base, function, info)?;
     match deref_refs(&base_ty) {
         Type::FixedArray(_, _) => Ok(format!(
             "({}[{}])",
-            render_expr(base, function, info)?,
-            render_expr(index, function, info)?
+            render_expr(base, function, info, deref_locals)?,
+            render_expr(index, function, info, deref_locals)?
         )),
         _ => {
             let element_ty = list_element_type(&base_ty)?;
@@ -1578,7 +1741,7 @@ fn render_index_expr(
             Ok(format!(
                 "(*{helper_prefix}_at({}, {}))",
                 render_list_pointer(base, &base_ty, function, info)?,
-                render_expr(index, function, info)?
+                render_expr(index, function, info, deref_locals)?
             ))
         }
     }
@@ -1589,6 +1752,7 @@ fn render_call(
     args: &[Expr],
     function: &Function,
     info: &ProgramInfo,
+    deref_locals: &std::collections::HashSet<String>,
 ) -> Result<String, CompileError> {
     if let Expr::Path(path) = callee {
         if path.len() == 1 {
@@ -1610,7 +1774,7 @@ fn render_call(
                     .iter()
                     .zip(param_types.iter())
                     .map(|(arg, param_ty)| {
-                        render_expr_with_hint(arg, function, info, Some(param_ty))
+                        render_expr_with_hint(arg, function, info, Some(param_ty), deref_locals)
                     })
                     .collect::<Result<Vec<_>, _>>()?;
                 let mangled = mangle_local_symbol(name);
@@ -1625,7 +1789,9 @@ fn render_call(
             let rendered_args = args
                 .iter()
                 .zip(signature.params.iter())
-                .map(|(arg, param_ty)| render_expr_with_hint(arg, function, info, Some(param_ty)))
+                .map(|(arg, param_ty)| {
+                    render_expr_with_hint(arg, function, info, Some(param_ty), deref_locals)
+                })
                 .collect::<Result<Vec<_>, _>>()?;
             if let Some(symbol) = info.function_symbols.get(&function_name).cloned() {
                 return Ok(format!("{symbol}({})", rendered_args.join(", ")));
@@ -1655,7 +1821,9 @@ fn render_call(
                 let rendered_args = args
                     .iter()
                     .zip(type_info.fields.iter())
-                    .map(|(arg, field)| render_expr_with_hint(arg, function, info, Some(&field.ty)))
+                    .map(|(arg, field)| {
+                        render_expr_with_hint(arg, function, info, Some(&field.ty), deref_locals)
+                    })
                     .collect::<Result<Vec<_>, _>>()?;
                 return Ok(format!(
                     "({}){{ {} }}",
@@ -1679,7 +1847,13 @@ fn render_call(
                         .iter()
                         .zip(payload_types.iter())
                         .map(|(arg, payload_ty)| {
-                            render_expr_with_hint(arg, function, info, Some(payload_ty))
+                            render_expr_with_hint(
+                                arg,
+                                function,
+                                info,
+                                Some(payload_ty),
+                                deref_locals,
+                            )
                         })
                         .collect::<Result<Vec<_>, _>>()?;
                     let rendered_fields = rendered_args
@@ -1714,6 +1888,7 @@ fn render_builtin_call(
     args: &[Expr],
     function: &Function,
     info: &ProgramInfo,
+    deref_locals: &std::collections::HashSet<String>,
 ) -> Result<String, CompileError> {
     match name {
         "append" | "capacity" | "reserve" | "set" | "insert" | "remove" | "clear" | "len" => {
@@ -1722,9 +1897,12 @@ fn render_builtin_call(
                     "@{name} expects a list receiver as its first argument",
                 )));
             }
-            render_list_method_call(name, &args[0], &args[1..], function, info)
+            render_list_method_call(name, &args[0], &args[1..], function, info, deref_locals)
         }
-        "puts" => Ok(format!("puts({})", render_expr(&args[0], function, info)?)),
+        "puts" => Ok(format!(
+            "puts({})",
+            render_expr(&args[0], function, info, deref_locals)?
+        )),
         "flush" => {
             if !args.is_empty() {
                 return Err(CompileError::new("@flush expects no arguments"));
@@ -1751,37 +1929,40 @@ fn render_builtin_call(
                 .zip(flattened.into_iter())
                 .zip(arg_types.into_iter())
             {
-                let rendered = render_expr(expr, function, info)?;
+                let rendered = render_expr(expr, function, info, deref_locals)?;
                 rendered_args.push(render_print_value(marker, &arg_ty, &rendered)?);
             }
             Ok(format!("printf({})", rendered_args.join(", ")))
         }
-        "neg" => Ok(format!("(-({}))", render_expr(&args[0], function, info)?)),
+        "neg" => Ok(format!(
+            "(-({}))",
+            render_expr(&args[0], function, info, deref_locals)?
+        )),
         "shl" => Ok(format!(
             "({} << {})",
-            render_expr(&args[0], function, info)?,
-            render_expr(&args[1], function, info)?
+            render_expr(&args[0], function, info, deref_locals)?,
+            render_expr(&args[1], function, info, deref_locals)?
         )),
         "shr" => Ok(format!(
             "({} >> {})",
-            render_expr(&args[0], function, info)?,
-            render_expr(&args[1], function, info)?
+            render_expr(&args[0], function, info, deref_locals)?,
+            render_expr(&args[1], function, info, deref_locals)?
         )),
         "memcpy" => Ok(format!(
             "memcpy((void *)({}), (void const *)({}), (size_t)({}))",
-            render_expr(&args[0], function, info)?,
-            render_expr(&args[1], function, info)?,
-            render_expr(&args[2], function, info)?
+            render_expr(&args[0], function, info, deref_locals)?,
+            render_expr(&args[1], function, info, deref_locals)?,
+            render_expr(&args[2], function, info, deref_locals)?
         )),
         "zeroed" => Ok("{0}".to_string()),
         "memset" => Ok(format!(
             "memset((void *)({}), (int)({}), (size_t)({}))",
-            render_expr(&args[0], function, info)?,
-            render_expr(&args[1], function, info)?,
-            render_expr(&args[2], function, info)?
+            render_expr(&args[0], function, info, deref_locals)?,
+            render_expr(&args[1], function, info, deref_locals)?,
+            render_expr(&args[2], function, info, deref_locals)?
         )),
         "addr" => {
-            let rendered = render_expr(&args[0], function, info)?;
+            let rendered = render_expr(&args[0], function, info, deref_locals)?;
             if is_addressable_expr(&args[0]) {
                 Ok(format!("(&{})", rendered))
             } else {
@@ -1790,10 +1971,10 @@ fn render_builtin_call(
             }
         }
         "call" => {
-            let fn_ptr = render_expr(&args[0], function, info)?;
+            let fn_ptr = render_expr(&args[0], function, info, deref_locals)?;
             let rendered_args = args[1..]
                 .iter()
-                .map(|arg| render_expr(arg, function, info))
+                .map(|arg| render_expr(arg, function, info, deref_locals))
                 .collect::<Result<Vec<_>, _>>()?;
             Ok(format!("({})({})", fn_ptr, rendered_args.join(", ")))
         }
@@ -1805,28 +1986,31 @@ fn render_builtin_call(
             Ok(format!(
                 "(({})({}))",
                 c_type(&as_mut_type(arg_ty)),
-                render_expr(&args[0], function, info)?
+                render_expr(&args[0], function, info, deref_locals)?
             ))
         }
         "add" => Ok(format!(
             "(({}) + ({}))",
-            render_pointer_arithmetic_base(&args[0], function, info)?,
-            render_expr(&args[1], function, info)?
+            render_pointer_arithmetic_base(&args[0], function, info, deref_locals)?,
+            render_expr(&args[1], function, info, deref_locals)?
         )),
         "alloc" => Ok(format!(
             "scar_runtime_alloc((size_t)({}))",
-            render_expr(&args[0], function, info)?
+            render_expr(&args[0], function, info, deref_locals)?
         )),
         "realloc" => Ok(format!(
             "scar_runtime_realloc((void *)({}), (size_t)({}))",
-            render_expr(&args[0], function, info)?,
-            render_expr(&args[1], function, info)?
+            render_expr(&args[0], function, info, deref_locals)?,
+            render_expr(&args[1], function, info, deref_locals)?
         )),
         "free" => Ok(format!(
             "scar_runtime_free((void *)({}))",
-            render_expr(&args[0], function, info)?
+            render_expr(&args[0], function, info, deref_locals)?
         )),
-        "deref" => Ok(format!("(*({}))", render_expr(&args[0], function, info)?)),
+        "deref" => Ok(format!(
+            "(*({}))",
+            render_expr(&args[0], function, info, deref_locals)?
+        )),
         _ => Err(CompileError::new(format!(
             "unsupported builtin intrinsic `@{name}` during code generation"
         ))),
@@ -1839,6 +2023,7 @@ fn render_list_method_call(
     args: &[Expr],
     function: &Function,
     info: &ProgramInfo,
+    deref_locals: &std::collections::HashSet<String>,
 ) -> Result<String, CompileError> {
     let receiver_ty = infer_codegen_expr_type(receiver, function, info)?;
     let element_ty = list_element_type(&receiver_ty)?;
@@ -1848,27 +2033,27 @@ fn render_list_method_call(
     match method {
         "append" => Ok(format!(
             "{helper_prefix}_append({receiver_ptr}, {})",
-            render_expr(&args[0], function, info)?
+            render_expr(&args[0], function, info, deref_locals)?
         )),
         "capacity" => Ok(format!("{helper_prefix}_capacity({receiver_ptr})")),
         "len" => Ok(format!("{helper_prefix}_len({receiver_ptr})")),
         "reserve" => Ok(format!(
             "{helper_prefix}_reserve({receiver_ptr}, {})",
-            render_expr(&args[0], function, info)?
+            render_expr(&args[0], function, info, deref_locals)?
         )),
         "set" => Ok(format!(
             "{helper_prefix}_set({receiver_ptr}, {}, {})",
-            render_expr(&args[0], function, info)?,
-            render_expr(&args[1], function, info)?
+            render_expr(&args[0], function, info, deref_locals)?,
+            render_expr(&args[1], function, info, deref_locals)?
         )),
         "insert" => Ok(format!(
             "{helper_prefix}_insert({receiver_ptr}, {}, {})",
-            render_expr(&args[0], function, info)?,
-            render_expr(&args[1], function, info)?
+            render_expr(&args[0], function, info, deref_locals)?,
+            render_expr(&args[1], function, info, deref_locals)?
         )),
         "remove" => Ok(format!(
             "{helper_prefix}_remove({receiver_ptr}, {})",
-            render_expr(&args[0], function, info)?
+            render_expr(&args[0], function, info, deref_locals)?
         )),
         "clear" => Ok(format!("{helper_prefix}_clear({receiver_ptr})")),
         _ => Err(CompileError::new(format!(
@@ -1883,7 +2068,7 @@ fn render_list_pointer(
     function: &Function,
     info: &ProgramInfo,
 ) -> Result<String, CompileError> {
-    let rendered = render_expr(receiver, function, info)?;
+    let rendered = render_expr(receiver, function, info, &HashSet::new())?;
     match deref_refs(receiver_ty) {
         Type::List(_) => {
             if matches!(receiver_ty, Type::Ref(inner) if matches!(inner.as_ref(), Type::List(_))) {
@@ -1949,7 +2134,7 @@ fn render_global_init(
                 .collect::<Result<Vec<_>, _>>()?;
             Ok(format!("{{ {} }}", rendered_values.join(", ")))
         }
-        _ => render_expr(expr, function, info),
+        _ => render_expr(expr, function, info, &HashSet::new()),
     }
 }
 
@@ -1958,6 +2143,7 @@ fn render_list_literal(
     ty: &Type,
     function: &Function,
     info: &ProgramInfo,
+    deref_locals: &std::collections::HashSet<String>,
 ) -> Result<String, CompileError> {
     let element_ty = list_element_type(ty)?;
     let helper_prefix = list_helper_prefix(element_ty);
@@ -1966,7 +2152,7 @@ fn render_list_literal(
     }
     let rendered_values = values
         .iter()
-        .map(|value| render_expr(value, function, info))
+        .map(|value| render_expr(value, function, info, deref_locals))
         .collect::<Result<Vec<_>, _>>()?;
     Ok(format!(
         "{helper_prefix}_from_array(({}[]){{ {} }}, {})",
@@ -2256,10 +2442,11 @@ fn render_logical_shift_right(
     rhs: &Expr,
     function: &Function,
     info: &ProgramInfo,
+    deref_locals: &std::collections::HashSet<String>,
 ) -> Result<String, CompileError> {
     let lhs_ty = resolve_codegen_aliases(&infer_codegen_expr_type(lhs, function, info)?, info)?;
-    let rendered_lhs = render_expr(lhs, function, info)?;
-    let rendered_rhs = render_expr(rhs, function, info)?;
+    let rendered_lhs = render_expr(lhs, function, info, deref_locals)?;
+    let rendered_rhs = render_expr(rhs, function, info, deref_locals)?;
     match lhs_ty {
         Type::I8 | Type::I16 | Type::I32 | Type::I64 | Type::Isize => {
             let signed = c_type(&lhs_ty);
@@ -3000,8 +3187,9 @@ fn render_pointer_arithmetic_base(
     expr: &Expr,
     function: &Function,
     info: &ProgramInfo,
+    deref_locals: &std::collections::HashSet<String>,
 ) -> Result<String, CompileError> {
-    let rendered = render_expr(expr, function, info)?;
+    let rendered = render_expr(expr, function, info, deref_locals)?;
     let ty = infer_codegen_expr_type(expr, function, info)?;
     Ok(match ty {
         Type::Ref(inner) if inner.as_ref() == &Type::Void => format!("((char *)({rendered}))"),
