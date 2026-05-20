@@ -1,4 +1,4 @@
-val allocators = use("allocators")
+val allocators = use("std/allocators")
 
 extern def strcmp(x ref(u8), y ref(u8)) i32                         :: "strcmp"
 extern def strcat(dest mut(ref(u8)), src ref(u8)) ref(u8)           :: "strcat"

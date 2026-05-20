@@ -169,7 +169,7 @@ impl Resolver {
                 &module_use.path,
                 self.local_std_root.as_deref(),
                 self.home_std_root.as_deref(),
-            );
+            )?;
             let exports = self.resolve_module(&module_path)?;
             aliases.insert(module_use.name.clone(), exports);
         }
@@ -338,16 +338,58 @@ fn resolve_module_use_path(
     module_path: &str,
     local_std_root: Option<&Path>,
     home_std_root: Option<&Path>,
-) -> PathBuf {
-    if let Some(rest) = module_path.strip_prefix("std/") {
-        if let Some(local_std_root) = local_std_root {
-            return local_std_root.join(rest).with_extension("scar");
+) -> Result<PathBuf, CompileError> {
+    fn check_path(base: &Path) -> Result<Option<PathBuf>, CompileError> {
+        let mod_path = base.join("mod.scar");
+        let file_path = base.with_extension("scar");
+        
+        let mod_exists = mod_path.exists();
+        let file_exists = file_path.exists();
+        
+        if mod_exists && file_exists {
+            return Err(CompileError::new(format!(
+                "ambiguous module resolution: both {} and {} exist",
+                mod_path.display(),
+                file_path.display()
+            )));
         }
-        if let Some(home_std_root) = home_std_root {
-            return home_std_root.join(rest).with_extension("scar");
+        
+        if mod_exists {
+            Ok(Some(mod_path))
+        } else if file_exists {
+            Ok(Some(file_path))
+        } else {
+            Ok(None)
         }
     }
-    current_dir.join(module_path).with_extension("scar")
+
+    if let Some(rest) = module_path.strip_prefix("std/") {
+        if let Some(local_std_root) = local_std_root {
+            let base = local_std_root.join(rest);
+            if let Some(path) = check_path(&base)? {
+                return Ok(path);
+            }
+        }
+        if let Some(home_std_root) = home_std_root {
+            let base = home_std_root.join(rest);
+            if let Some(path) = check_path(&base)? {
+                return Ok(path);
+            }
+        }
+        
+        if let Some(local_std_root) = local_std_root {
+            return Ok(local_std_root.join(rest).with_extension("scar"));
+        } else if let Some(home_std_root) = home_std_root {
+            return Ok(home_std_root.join(rest).with_extension("scar"));
+        }
+    }
+    
+    let base = current_dir.join(module_path);
+    if let Some(path) = check_path(&base)? {
+        Ok(path)
+    } else {
+        Ok(base.with_extension("scar"))
+    }
 }
 
 fn canonicalize_path(path: &Path) -> Result<PathBuf, CompileError> {
@@ -3779,7 +3821,7 @@ mod tests {
             "std/string",
             Some(Path::new("/project/lib/std")),
             Some(Path::new("/home/test/.scar/lib/std")),
-        );
+        ).unwrap();
 
         assert_eq!(resolved, Path::new("/project/lib/std/string.scar"));
     }
@@ -3791,7 +3833,7 @@ mod tests {
             "std/string",
             None,
             Some(Path::new("/home/test/.scar/lib/std")),
-        );
+        ).unwrap();
 
         assert_eq!(resolved, Path::new("/home/test/.scar/lib/std/string.scar"));
     }
@@ -3803,7 +3845,7 @@ mod tests {
             "some_file",
             Some(Path::new("/project/lib/std")),
             Some(Path::new("/home/test/.scar/lib/std")),
-        );
+        ).unwrap();
 
         assert_eq!(resolved, Path::new("/project/src/some_file.scar"));
     }

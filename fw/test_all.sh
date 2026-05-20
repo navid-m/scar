@@ -24,11 +24,13 @@ info() {
 run_stdlib_tests() {
 	info "running stdlib tests..."
 
-	if "$SCAR" test lib/std/; then
-		pass "lib/std/"
-	else
-		fail "lib/std/"
-	fi
+	find lib/std -name "*.scar" | sort | while read -r file; do
+		if "$SCAR" test "$file"; then
+			pass "$file"
+		else
+			fail "$file"
+		fi
+	done
 }
 
 run_sample_tests() {
