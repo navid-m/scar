@@ -442,8 +442,8 @@ pub def re_compile_with[A: allocators.GeneralAllocator](ac ref(A), pattern ref(u
             return error("unexpected end of pattern")
         end
 
-        i = i + 1
-        j = j + 1
+        i++
+        j++
     end
 
     @deref(token_ptr(tokens, j)).kind = TOKEN_UNUSED
