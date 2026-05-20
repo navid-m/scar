@@ -31,6 +31,24 @@ pub def is_leap_year(year i32) bool
 	return (year % 4) == 0
 end
 
+def write_dec2(buf mut(ref(u8)), pos usize, value i32)
+	@deref(@add(buf, pos))     = (value / 10) as u8 + '0' as u8
+	@deref(@add(buf, pos + 1)) = (value % 10) as u8 + '0' as u8
+end
+
+def write_dec3(buf mut(ref(u8)), pos usize, value i32)
+	@deref(@add(buf, pos))     = (value / 100) as u8        + '0' as u8
+	@deref(@add(buf, pos + 1)) = ((value / 10) % 10) as u8  + '0' as u8
+	@deref(@add(buf, pos + 2)) = (value % 10) as u8         + '0' as u8
+end
+
+def write_dec4(buf mut(ref(u8)), pos usize, value i32)
+	@deref(@add(buf, pos))     = (value / 1000) as u8        + '0' as u8
+	@deref(@add(buf, pos + 1)) = ((value / 100) % 10) as u8  + '0' as u8
+	@deref(@add(buf, pos + 2)) = ((value / 10)  % 10) as u8  + '0' as u8
+	@deref(@add(buf, pos + 3)) = (value % 10) as u8          + '0' as u8
+end
+
 pub def format_timestamp[A: allocators.BumpAllocator](
 	ac ref(A),
 	ts i64
@@ -44,76 +62,42 @@ pub def format_timestamp[A: allocators.BumpAllocator](
 		year++
 	end
 
-	var is_leap bool = (year % 4 as i64) == 0 as i64 && ((year % 100 as i64) != 0 as i64 || (year % 400 as i64) == 0 as i64)
-	var month i32 = 1 as i32
-	for month <= 12 as i32
-		var dim i32 = days_in_month(is_leap, month)
-		if days < dim as i64
+	var is_leap bool = is_leap_year(year as i32)
+	var month i32 = 1
+	for month <= 12
+		if days < days_in_month(is_leap, month) as i64
 			break
 		end
-		days = days - dim as i64
+		days = days - days_in_month(is_leap, month) as i64
 		month++
 	end
 
 	var secs_of_day i64 = secs % 86400 as i64
 	var hour i32 = (secs_of_day / 3600 as i64) as i32
-	var min i32 = ((secs_of_day % 3600 as i64) / 60 as i64) as i32
-	var sec i32 = (secs_of_day % 60 as i64) as i32
-	var ms i32 = ((ts % 1000000000 as i64) / 1000000 as i64) as i32
+	var min  i32 = ((secs_of_day % 3600 as i64) / 60 as i64) as i32
+	var sec  i32 = (secs_of_day % 60 as i64) as i32
+	var ms   i32 = ((ts % 1000000000 as i64) / 1000000 as i64) as i32
+	var day  i32 = (days + 1 as i64) as i32
+	var buf [24]u8 = @zeroed()
+	var b mut(ref(u8)) = @as_mut(@add(@bitcast(buf, ref(void)), 0))
 
-	var buf [32]u8 = @zeroed()
-	var i usize = 0 as usize
+	write_dec4(b, 0,  year as i32)
+	@deref(@add(b, 4))  = '-' as u8
+	write_dec2(b, 5,  month)
+	@deref(@add(b, 7))  = '-' as u8
+	write_dec2(b, 8,  day)
+	@deref(@add(b, 10)) = 'T' as u8
+	write_dec2(b, 11, hour)
+	@deref(@add(b, 13)) = ':' as u8
+	write_dec2(b, 14, min)
+	@deref(@add(b, 16)) = ':' as u8
+	write_dec2(b, 17, sec)
+	@deref(@add(b, 19)) = '.' as u8
+	write_dec3(b, 20, ms)
 
-	buf[i] = ((year / 1000 as i32) as u8) + '0' as u8
-	i = i + 1 as usize
-	buf[i] = (((year / 100 as i32) % 10 as i32) as u8) + '0' as u8
-	i = i + 1 as usize
-	buf[i] = (((year / 10 as i32) % 10 as i32) as u8) + '0' as u8
-	i = i + 1 as usize
-	buf[i] = ((year % 10 as i32) as u8) + '0' as u8
-	i = i + 1 as usize
-	buf[i] = '-' as u8
-	i = i + 1 as usize
-	buf[i] = ((month / 10 as i32) as u8) + '0' as u8
-	i = i + 1 as usize
-	buf[i] = ((month % 10 as i32) as u8) + '0' as u8
-	i = i + 1 as usize
-	buf[i] = '-' as u8
-	i = i + 1 as usize
-	buf[i] = ((((days + 1 as i64) / 10 as i32) as i32) as u8) + '0' as u8
-	i = i + 1 as usize
-	buf[i] = (((days + 1 as i64) % 10 as i32) as u8) + '0' as u8
-	i = i + 1 as usize
-	buf[i] = 'T' as u8
-	i = i + 1 as usize
-	buf[i] = ((hour / 10 as i32) as u8) + '0' as u8
-	i = i + 1 as usize
-	buf[i] = ((hour % 10 as i32) as u8) + '0' as u8
-	i = i + 1 as usize
-	buf[i] = ':' as u8
-	i = i + 1 as usize
-	buf[i] = ((min / 10 as i32) as u8) + '0' as u8
-	i = i + 1 as usize
-	buf[i] = ((min % 10 as i32) as u8) + '0' as u8
-	i = i + 1 as usize
-	buf[i] = ':' as u8
-	i = i + 1 as usize
-	buf[i] = ((sec / 10 as i32) as u8) + '0' as u8
-	i = i + 1 as usize
-	buf[i] = ((sec % 10 as i32) as u8) + '0' as u8
-	i = i + 1 as usize
-	buf[i] = '.' as u8
-	i = i + 1 as usize
-	buf[i] = (((ms / 100 as i32) % 10 as i32) as u8) + '0' as u8
-	i = i + 1 as usize
-	buf[i] = (((ms / 10 as i32) % 10 as i32) as u8) + '0' as u8
-	i = i + 1 as usize
-	buf[i] = ((ms % 10 as i32) as u8) + '0' as u8
-	i = i + 1 as usize
-
-	var out ref(void) = A.alloc(ac, i + 1 as usize)?
-	@memcpy(out, @addr(buf), i)
-	@deref(@add(out, i)) = 0 as u8
+	var out ref(void) = A.alloc(ac, 24 as usize)?
+	@memcpy(out, @addr(buf), 23 as usize)
+	@deref(@add(out, 23 as usize)) = 0 as u8
 
 	return out as mut(ref(u8))
 end
