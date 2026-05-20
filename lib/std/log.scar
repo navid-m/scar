@@ -10,6 +10,11 @@ pub enum Level
 end
 
 pub val LEVEL Level = Level.Info
+var use_color bool = false
+
+pub def color(x bool) void
+	use_color = x
+end
 
 def level_to_str(level Level) ref(u8)
 	match level
@@ -29,6 +34,15 @@ def level_to_int(level Level) i32
 	end
 end
 
+def level_to_color(level Level) ref(u8)
+	match level
+		Level.Debug => ( return "36" )
+		Level.Info  => ( return "34" )
+		Level.Warn  => ( return "33" )
+		Level.Error => ( return "31" )
+	end
+end
+
 def log[A: allocators.BumpAllocator](ac ref(A), level Level, msg ref(u8)) void|error
 	if level_to_int(level) < level_to_int(LEVEL)
 		return
@@ -39,7 +53,15 @@ def log[A: allocators.BumpAllocator](ac ref(A), level Level, msg ref(u8)) void|e
 
 	var level_str ref(u8) = level_to_str(level)
 
-	@print("[{04d}-{02d}-{02d}T{02d}:{02d}:{02d}.{03d}] [{s}] ", {dt.year, dt.month, dt.day, dt.hour, dt.min, dt.sec, ms, level_str})
+	if use_color
+		var color_code ref(u8) = level_to_color(level)
+		@print(
+			"\x1b[{s}m[{04d}-{02d}-{02d}T{02d}:{02d}:{02d}.{03d}] [\x1b[1m{s}\x1b[0m\x1b[{s}m] \x1b[0m",
+			{color_code, dt.year, dt.month, dt.day, dt.hour, dt.min, dt.sec, ms, level_str, color_code}
+		)
+	else
+		@print("[{04d}-{02d}-{02d}T{02d}:{02d}:{02d}.{03d}] [{s}] ", {dt.year, dt.month, dt.day, dt.hour, dt.min, dt.sec, ms, level_str})
+	end
 	@puts(msg)
 end
 
@@ -78,6 +100,7 @@ end
 test "logging functions exist"
 	var ac = allocators.Arena.new(10240 as usize)?
 	debug[_](@addr(ac), "debug message")
+	color(true)
 	info[_](@addr(ac), "info message")
 	warn[_](@addr(ac), "warn message")
 	err[_](@addr(ac), "error message")
