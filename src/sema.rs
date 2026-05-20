@@ -1713,6 +1713,32 @@ fn analyze_builtin(
             }
             Ok(arg_ty)
         }
+        "shl" | "shr" => {
+            if args.len() != 2 {
+                return Err(CompileError::new(format!("@{name} expects exactly two arguments")));
+            }
+            let lhs_ty = resolve_aliases(
+                &infer_expr_type(&args[0], functions, types, scope, None)?,
+                types,
+            )?;
+            let rhs_ty = resolve_aliases(
+                &infer_expr_type(&args[1], functions, types, scope, None)?,
+                types,
+            )?;
+            if !is_integer_primitive_type(&lhs_ty) {
+                return Err(CompileError::new(format!(
+                    "@{name} expects an integer left operand, got {}",
+                    describe_type(&lhs_ty)
+                )));
+            }
+            if !is_integer_primitive_type(&rhs_ty) {
+                return Err(CompileError::new(format!(
+                    "@{name} expects an integer right operand, got {}",
+                    describe_type(&rhs_ty)
+                )));
+            }
+            Ok(lhs_ty)
+        }
         "memcpy" => {
             if args.len() != 3 {
                 return Err(CompileError::new("@memcpy expects exactly three arguments"));

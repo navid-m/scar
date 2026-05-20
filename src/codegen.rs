@@ -1733,6 +1733,8 @@ fn render_builtin_call(
             Ok(format!("printf({})", rendered_args.join(", ")))
         }
         "neg" => Ok(format!("(-({}))", render_expr(&args[0], function, info)?)),
+        "shl" => Ok(format!("({} << {})", render_expr(&args[0], function, info)?, render_expr(&args[1], function, info)?)),
+        "shr" => Ok(format!("({} >> {})", render_expr(&args[0], function, info)?, render_expr(&args[1], function, info)?)),
         "memcpy" => Ok(format!(
             "memcpy((void *)({}), (void const *)({}), (size_t)({}))",
             render_expr(&args[0], function, info)?,
@@ -2321,6 +2323,7 @@ fn infer_builtin_type(
         }
         "puts" | "print" | "free" | "memcpy" | "memset" | "zeroed" => Ok(Type::Void),
         "neg" => infer_codegen_expr_type(&args[0], function, info),
+        "shl" | "shr" => infer_codegen_expr_type(&args[0], function, info),
         "add" => Ok(pointer_arithmetic_type(&infer_codegen_expr_type(
             &args[0], function, info,
         )?)),
