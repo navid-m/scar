@@ -2495,12 +2495,35 @@ impl GenericInstantiator {
                     | BinaryOp::BitAnd
                     | BinaryOp::BitOr
                     | BinaryOp::BitXor
-                    | BinaryOp::ShiftLeft
-                    | BinaryOp::ShiftRight
                         if lhs_ty == rhs_ty =>
                     {
                         Some(lhs_ty)
                     }
+                    BinaryOp::Add
+                    | BinaryOp::Subtract
+                    | BinaryOp::Divide
+                    | BinaryOp::Multiply
+                    | BinaryOp::Modulo
+                    | BinaryOp::BitAnd
+                    | BinaryOp::BitOr
+                    | BinaryOp::BitXor
+                        if rhs_ty == Type::I32 =>
+                    {
+                        Some(lhs_ty)
+                    }
+                    BinaryOp::Add
+                    | BinaryOp::Subtract
+                    | BinaryOp::Divide
+                    | BinaryOp::Multiply
+                    | BinaryOp::Modulo
+                    | BinaryOp::BitAnd
+                    | BinaryOp::BitOr
+                    | BinaryOp::BitXor
+                        if lhs_ty == Type::I32 =>
+                    {
+                        Some(rhs_ty)
+                    }
+                    BinaryOp::ShiftLeft | BinaryOp::ShiftRight => Some(lhs_ty),
                     BinaryOp::LessThan
                     | BinaryOp::LessEqual
                     | BinaryOp::GreaterThan

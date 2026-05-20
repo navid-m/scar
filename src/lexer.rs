@@ -521,6 +521,14 @@ impl Lexer {
                 self.bump();
                 '\r'
             }
+            'f' => {
+                self.bump();
+                '\x0c'
+            }
+            'b' => {
+                self.bump();
+                '\x08'
+            }
             '"' => {
                 self.bump();
                 '"'
