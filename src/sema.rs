@@ -1682,6 +1682,12 @@ fn analyze_builtin(
             }
             Ok(Type::Void)
         }
+        "flush" => {
+            if !args.is_empty() {
+                return Err(CompileError::new("@flush expects no arguments"));
+            }
+            Ok(Type::Void)
+        }
         "print" => {
             if args.is_empty() {
                 return Err(CompileError::new(

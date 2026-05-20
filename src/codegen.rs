@@ -1725,6 +1725,12 @@ fn render_builtin_call(
             render_list_method_call(name, &args[0], &args[1..], function, info)
         }
         "puts" => Ok(format!("puts({})", render_expr(&args[0], function, info)?)),
+        "flush" => {
+            if !args.is_empty() {
+                return Err(CompileError::new("@flush expects no arguments"));
+            }
+            Ok("fflush(stdout)".to_string())
+        }
         "print" => {
             let Expr::String(format) = &args[0] else {
                 return Err(CompileError::new(
@@ -2347,7 +2353,7 @@ fn infer_builtin_type(
                 _ => Ok(Type::Void),
             }
         }
-        "puts" | "print" | "free" | "memcpy" | "memset" | "zeroed" => Ok(Type::Void),
+        "puts" | "print" | "flush" | "free" | "memcpy" | "memset" | "zeroed" => Ok(Type::Void),
         "neg" => infer_codegen_expr_type(&args[0], function, info),
         "shl" | "shr" => infer_codegen_expr_type(&args[0], function, info),
         "add" => Ok(pointer_arithmetic_type(&infer_codegen_expr_type(
