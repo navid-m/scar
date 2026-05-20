@@ -1,9 +1,72 @@
-pub def puts(str ref(u8))
-	@puts(str)
+val allocators = use("std/allocators")
+
+when posix
+	extern def system(command ref(u8)) i32 :: "system"
+	extern def getchar() i32 :: "getchar"
+end
+
+when windows
+	extern "conio.h"
+	extern def _getch() i32 :: "_getch"
+	extern def getchar() i32 :: "getchar"
+end
+
+pub def puts(s ref(u8))
+	@puts(s)
+end
+
+pub def read_key() u8
+	when posix
+		system("stty raw -echo")
+		var c = getchar()
+		system("stty -raw echo")
+		return c as u8
+	end
+	when windows
+		return _getch() as u8
+	end
+end
+
+pub def read_line[A: allocators.BumpAllocator](
+	ac ref(A)
+) ref(u8)|error
+	var cap usize = 128 as usize
+	var buf = @alloc(cap) as mut(ref(u8))
+	if buf == none
+		return error("allocation failed")
+	end
+	
+	var len usize = 0 as usize
+	var keep_going bool = true
+	for keep_going
+		var c = getchar()
+		if c == -1 || c == 10
+			keep_going = false
+		elif c != 13
+			if len >= cap
+				var new_cap = cap * 2 as usize
+				var new_buf = @alloc(new_cap) as mut(ref(u8))
+				if new_buf == none
+					@free(buf as ref(void))
+					return error("allocation failed")
+				end
+				@memcpy(new_buf as ref(void), buf as ref(void), len)
+				@free(buf as ref(void))
+				buf = new_buf
+				cap = new_cap
+			end
+			@deref(@add(buf, len)) = c as u8
+			len++
+		end
+	end
+	
+	var out = A.alloc(ac, len + 1 as usize)?
+	@memcpy(out as ref(void), buf as ref(void), len)
+	@deref(@add(out as ref(u8), len)) = 0 as u8
+	@free(buf as ref(void))
+	return out as ref(u8)
 end
 
 test "puts works"
 	puts("hello, world")
 end
-
-
