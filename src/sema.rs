@@ -1511,6 +1511,13 @@ fn infer_expr_type(
                     Ok(Type::Bool)
                 }
                 BinaryOp::Equal | BinaryOp::NotEqual
+                    if is_string_compatible(&lhs_ty) && is_string_compatible(&rhs_ty) =>
+                {
+                    Err(CompileError::new(
+                        "cannot compare strings with `==` or `!=`, compares pointers, not content; use `eql` from std/string instead",
+                    ))
+                }
+                BinaryOp::Equal | BinaryOp::NotEqual
                     if is_nullable_pointer_type(&lhs_ty) && is_nullable_pointer_type(&rhs_ty) =>
                 {
                     Ok(Type::Bool)
@@ -1720,7 +1727,9 @@ fn analyze_builtin(
         }
         "shl" | "shr" => {
             if args.len() != 2 {
-                return Err(CompileError::new(format!("@{name} expects exactly two arguments")));
+                return Err(CompileError::new(format!(
+                    "@{name} expects exactly two arguments"
+                )));
             }
             let lhs_ty = resolve_aliases(
                 &infer_expr_type(&args[0], functions, types, scope, None)?,
