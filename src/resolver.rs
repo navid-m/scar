@@ -2647,15 +2647,16 @@ impl GenericInstantiator {
     }
 
     fn constraint_matches(&self, constraint: &Type, type_arg: &Type) -> bool {
-        if constraint == type_arg {
+        let unwrapped = unwrap_ref_mut(type_arg);
+        if constraint == type_arg || *constraint == unwrapped {
             return true;
         }
         if let Type::Named(typeset_name) = constraint {
             if let Some(members) = self.type_sets.get(typeset_name) {
-                return members.iter().any(|member| member == type_arg);
+                return members.iter().any(|member| member == type_arg || *member == unwrapped);
             }
         }
-        match (constraint, type_arg) {
+        match (constraint, &unwrapped) {
             (Type::Named(interface_name), Type::Named(type_name))
                 if self.interface_names.contains(interface_name) =>
             {
@@ -2665,6 +2666,13 @@ impl GenericInstantiator {
             }
             _ => false,
         }
+    }
+}
+
+fn unwrap_ref_mut(ty: &Type) -> Type {
+    match ty {
+        Type::Ref(inner) | Type::Mut(inner) => (**inner).clone(),
+        _ => ty.clone(),
     }
 }
 
