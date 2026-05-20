@@ -152,6 +152,69 @@ impl Lexer {
                         self.bump();
                     }
                 }
+                '\\' => {
+                    self.bump();
+                    if self.peek() == Some('\\') {
+                        self.bump();
+                        let mut value = String::new();
+                        let start_line = self.line;
+                        let start_column = self.column;
+                        loop {
+                            while let Some(ws) = self.peek() {
+                                if ws == ' ' || ws == '\t' {
+                                    self.bump();
+                                } else {
+                                    break;
+                                }
+                            }
+                            let Some(ch) = self.peek() else {
+                                return Err(self.error("unterminated multiline string"));
+                            };
+                            if ch == '\n' {
+                                self.bump();
+                                while let Some(ws) = self.peek() {
+                                    if ws == ' ' || ws == '\t' {
+                                        self.bump();
+                                    } else {
+                                        break;
+                                    }
+                                }
+                                let next = self.peek();
+                                let next2 = self.peek_next();
+                                if next == Some('\\') && next2 == Some('\\') {
+                                    self.bump();
+                                    self.bump();
+                                    value.push('\n');
+                                    continue;
+                                } else {
+                                    break;
+                                }
+                            } else if ch == '\\' {
+                                self.bump();
+                                if let Some(next_ch) = self.peek() {
+                                    match next_ch {
+                                        'n' => { self.bump(); value.push('\n'); }
+                                        't' => { self.bump(); value.push('\t'); }
+                                        'r' => { self.bump(); value.push('\r'); }
+                                        '"' => { self.bump(); value.push('\"'); }
+                                        '\\' => { self.bump(); value.push('\\'); }
+                                        _ => { value.push('\\'); }
+                                    }
+                                } else {
+                                    value.push('\\');
+                                }
+                            } else {
+                                self.bump();
+                                value.push(ch);
+                            }
+                        }
+                        tokens.push(Token {
+                            kind: TokenKind::Str(value),
+                            line: start_line,
+                            column: start_column,
+                        });
+                    }
+                }
                 '@' => tokens.push(self.single(TokenKind::At)),
                 '(' => tokens.push(self.single(TokenKind::LParen)),
                 ')' => tokens.push(self.single(TokenKind::RParen)),
@@ -450,6 +513,20 @@ impl Lexer {
                 }
                 '\\' => {
                     self.bump();
+                    if let Some(next) = self.peek() {
+                        if next == '\\' {
+                            self.bump();
+                            value.push('\n');
+                            while let Some(ws) = self.peek() {
+                                if ws == ' ' || ws == '\t' {
+                                    self.bump();
+                                } else {
+                                    break;
+                                }
+                            }
+                            continue;
+                        }
+                    }
                     value.push(self.escaped_char()?);
                 }
                 '\n' => return Err(self.error("newline in string literal")),
@@ -721,6 +798,10 @@ impl Lexer {
 
     fn peek_next(&self) -> Option<char> {
         self.chars.get(self.pos + 1).copied()
+    }
+
+    fn peek_third(&self) -> Option<char> {
+        self.chars.get(self.pos + 2).copied()
     }
 
     fn bump(&mut self) -> Option<char> {
