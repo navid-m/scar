@@ -116,7 +116,7 @@ when posix
 	extern def close(fd i32) i32 :: "close"
 	extern def strerror(code i32) ref(u8) :: "strerror"
 
-	when linux
+	when linux | android
 		extern def __errno_location() mut(ref(i32)) :: "__errno_location"
 
 		def errno_ptr() mut(ref(i32))
@@ -124,55 +124,7 @@ when posix
 		end
 	end
 
-	when android
-		extern def __errno_location() mut(ref(i32)) :: "__errno_location"
-
-		def errno_ptr() mut(ref(i32))
-			return __errno_location()
-		end
-	end
-
-	when darwin
-		extern def __error() mut(ref(i32)) :: "__error"
-
-		def errno_ptr() mut(ref(i32))
-			return __error()
-		end
-	end
-
-	when ios
-		extern def __error() mut(ref(i32)) :: "__error"
-
-		def errno_ptr() mut(ref(i32))
-			return __error()
-		end
-	end
-
-	when freebsd
-		extern def __error() mut(ref(i32)) :: "__error"
-
-		def errno_ptr() mut(ref(i32))
-			return __error()
-		end
-	end
-
-	when openbsd
-		extern def __error() mut(ref(i32)) :: "__error"
-
-		def errno_ptr() mut(ref(i32))
-			return __error()
-		end
-	end
-
-	when netbsd
-		extern def __error() mut(ref(i32)) :: "__error"
-
-		def errno_ptr() mut(ref(i32))
-			return __error()
-		end
-	end
-
-	when dragonflybsd
+	when darwin | ios | freebsd | openbsd | netbsd | dragonflybsd
 		extern def __error() mut(ref(i32)) :: "__error"
 
 		def errno_ptr() mut(ref(i32))
@@ -934,47 +886,7 @@ when windows
 	end
 end
 
-when redox
-	pub def exec(command ref(u8)) i32|error
-		return unsupported_os[i32]()
-	end
-
-	pub def exec_capture[A: allocators.BumpAllocator](
-		ac ref(A),
-		command ref(u8)
-	) ExecResult|error
-		return unsupported_os[ExecResult]()
-	end
-
-	pub def cwd[A: allocators.BumpAllocator](ac ref(A)) ref(u8)|error
-		return unsupported_os[ref(u8)]()
-	end
-
-	pub def get_env[A: allocators.BumpAllocator](
-		ac ref(A),
-		name ref(u8)
-	) ref(u8)|error
-		return unsupported_os[ref(u8)]()
-	end
-
-	pub def set_env(name ref(u8), value ref(u8)) void|error
-		return unsupported_os[void]()
-	end
-
-	pub def get_temp_dir[A: allocators.BumpAllocator](ac ref(A)) ref(u8)|error
-		return unsupported_os[ref(u8)]()
-	end
-
-	pub def get_home_dir[A: allocators.BumpAllocator](ac ref(A)) ref(u8)|error
-		return unsupported_os[ref(u8)]()
-	end
-
-	pub def get_data_dir[A: allocators.BumpAllocator](ac ref(A)) ref(u8)|error
-		return unsupported_os[ref(u8)]()
-	end
-end
-
-when plan9
+when plan9 | redox
 	pub def exec(command ref(u8)) i32|error
 		return unsupported_os[i32]()
 	end
