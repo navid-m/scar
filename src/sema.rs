@@ -957,6 +957,29 @@ fn analyze_stmt(
                         }
                     }
                 }
+                Type::F32 | Type::F64 => {
+                    for arm in arms {
+                        let MatchArmKind::Variant(_) = &arm.kind else {
+                            return Err(CompileError::new(
+                                "float matches require variant arms of the form `value => (...)`",
+                            )
+                            .with_location(*line, *column));
+                        };
+                        for stmt in &arm.body {
+                            analyze_stmt(
+                                stmt,
+                                function_name,
+                                expected_return,
+                                functions,
+                                types,
+                                &mut scope.clone(),
+                                function_locals,
+                                in_loop,
+                                allow_try_panic,
+                            )?;
+                        }
+                    }
+                }
                 other => {
                     return Err(CompileError::new(format!(
                         "`match` currently requires a union, integer, or `T|error` expression, got {}",
@@ -1092,22 +1115,11 @@ fn analyze_stmt(
         } => {
             validate_try_usage(init, expected_return, allow_try_panic)
                 .map_err(|error| error.with_location(*line, *column))?;
-            validate_try_usage(condition, expected_return, allow_try_panic)
-                .map_err(|error| error.with_location(*line, *column))?;
             let init_ty = resolve_aliases(
                 &infer_expr_type(init, functions, types, scope, None)
                     .map_err(|error| error.with_location(*line, *column))?,
                 types,
             )?;
-            let condition_ty = resolve_aliases(
-                &infer_expr_type(condition, functions, types, scope, None)
-                    .map_err(|error| error.with_location(*line, *column))?,
-                types,
-            )?;
-            if !is_condition_primitive_type(&condition_ty) {
-                return Err(CompileError::new("`for` condition must be a boolean type")
-                    .with_location(*line, *column));
-            }
             let mut nested = scope.clone();
             nested.insert(
                 var_name.clone(),
@@ -1116,7 +1128,18 @@ fn analyze_stmt(
                     mutable: true,
                 },
             );
-            function_locals.insert(var_name.clone(), init_ty);
+            function_locals.insert(var_name.clone(), init_ty.clone());
+            validate_try_usage(condition, expected_return, allow_try_panic)
+                .map_err(|error| error.with_location(*line, *column))?;
+            let condition_ty = resolve_aliases(
+                &infer_expr_type(condition, functions, types, &nested, None)
+                    .map_err(|error| error.with_location(*line, *column))?,
+                types,
+            )?;
+            if !is_condition_primitive_type(&condition_ty) {
+                return Err(CompileError::new("`for` condition must be a boolean type")
+                    .with_location(*line, *column));
+            }
             for stmt in body {
                 analyze_stmt(
                     stmt,
@@ -1610,7 +1633,7 @@ fn analyze_builtin(
     scope: &HashMap<String, LocalBinding>,
 ) -> Result<Type, CompileError> {
     match name {
-        "append" | "capacity" | "reserve" | "set" | "insert" | "remove" | "clear" => {
+        "append" | "capacity" | "reserve" | "set" | "insert" | "remove" | "clear" | "len" => {
             analyze_builtin_list_method(name, args, functions, types, scope)
         }
         "puts" => {
@@ -2113,6 +2136,12 @@ fn analyze_list_method_with_receiver(
                 return Err(CompileError::new("@capacity expects no arguments"));
             }
             Ok(Type::I32)
+        }
+        "len" => {
+            if !args.is_empty() {
+                return Err(CompileError::new("@len expects no arguments"));
+            }
+            Ok(Type::Usize)
         }
         "reserve" => {
             if args.len() != 1 {

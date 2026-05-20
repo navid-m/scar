@@ -1699,7 +1699,7 @@ fn render_builtin_call(
     info: &ProgramInfo,
 ) -> Result<String, CompileError> {
     match name {
-        "append" | "capacity" | "reserve" | "set" | "insert" | "remove" | "clear" => {
+        "append" | "capacity" | "reserve" | "set" | "insert" | "remove" | "clear" | "len" => {
             if args.is_empty() {
                 return Err(CompileError::new(format!(
                     "@{name} expects a list receiver as its first argument",
@@ -1817,6 +1817,7 @@ fn render_list_method_call(
             render_expr(&args[0], function, info)?
         )),
         "capacity" => Ok(format!("{helper_prefix}_capacity({receiver_ptr})")),
+        "len" => Ok(format!("{helper_prefix}_len({receiver_ptr})")),
         "reserve" => Ok(format!(
             "{helper_prefix}_reserve({receiver_ptr}, {})",
             render_expr(&args[0], function, info)?
@@ -2047,6 +2048,7 @@ fn infer_codegen_expr_type(
             let element_ty = list_element_type(&receiver_ty)?;
             match method.as_str() {
                 "capacity" => Ok(Type::I32),
+                "len" => Ok(Type::Usize),
                 "remove" => Ok(element_ty.clone()),
                 "append" | "reserve" | "set" | "insert" | "clear" => Ok(Type::Void),
                 _ => Err(CompileError::new(format!(
@@ -2318,6 +2320,7 @@ fn infer_builtin_type(
             let element_ty = list_element_type(&receiver_ty)?;
             match name {
                 "capacity" => Ok(Type::I32),
+                "len" => Ok(Type::Usize),
                 "remove" => Ok(element_ty.clone()),
                 _ => Ok(Type::Void),
             }

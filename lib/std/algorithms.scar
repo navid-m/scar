@@ -2,9 +2,29 @@ val allocators = use("std/allocators")
 val math = use("std/math")
 
 def is_signed_number[T: math.Number]() bool
-    var zero T = 0 as T
-    var neg_one T = -1 as T
-    return neg_one < zero
+    var size usize = @sizeof(T)
+
+    if size == 1 as usize
+        return false
+    end
+    if size == 2 as usize
+        return false
+    end
+    if size == 4 as usize
+        var zero_f f32 = 0.0 as f32
+        match @deref(@addr(zero_f))
+            0.0 => ( return false )
+        end
+        return true
+    end
+    if size == 8 as usize
+        var zero_f f64 = 0.0
+        match @deref(@addr(zero_f))
+            0.0 => ( return false )
+        end
+        return true
+    end
+    return false
 end
 
 def is_float_type[T: math.Float]() bool
@@ -30,7 +50,7 @@ def float_to_sortable_f32(v f32) u64
     return (0xFFFFFFFF as u64) - (bits as u64)
 end
 
-pub def sort[T: math.Number, A: allocators.GeneralAllocator](l mut(list[T]), ac A) bool
+pub def sort[T: math.Number, A: allocators.GeneralAllocator](l mut(list[T]), ac A) bool|error
     var n usize = @len(l)
     if n <= 1 as usize
         return true
@@ -219,7 +239,7 @@ pub def sort[T: math.Number, A: allocators.GeneralAllocator](l mut(list[T]), ac 
     end
 end
 
-pub def sort_strings[A: allocators.GeneralAllocator](l mut(list[ref(u8)]), ac A) bool
+pub def sort_strings[A: allocators.GeneralAllocator](l mut(list[ref(u8)]), ac A) bool|error
     var n usize = @len(l)
     if n <= 1 as usize
         return true
