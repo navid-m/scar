@@ -1,0 +1,725 @@
+val allocators = use("std/allocators")
+val stdio      = use("std/stdio")
+
+pub val MAX_REGEXP_OBJECTS usize = 30
+pub val MAX_CHAR_CLASS_LEN   usize = 40
+
+val TOKEN_UNUSED       u8 = 0 as u8
+val TOKEN_DOT          u8 = 1 as u8
+val TOKEN_BEGIN        u8 = 2 as u8
+val TOKEN_END          u8 = 3 as u8
+val TOKEN_QUESTIONMARK u8 = 4 as u8
+val TOKEN_STAR         u8 = 5 as u8
+val TOKEN_PLUS         u8 = 6 as u8
+val TOKEN_CHAR         u8 = 7 as u8
+val TOKEN_CHAR_CLASS   u8 = 8 as u8
+val TOKEN_INV_CHAR_CLASS u8 = 9 as u8
+val TOKEN_DIGIT        u8 = 10 as u8
+val TOKEN_NOT_DIGIT    u8 = 11 as u8
+val TOKEN_ALPHA        u8 = 12 as u8
+val TOKEN_NOT_ALPHA    u8 = 13 as u8
+val TOKEN_WHITESPACE   u8 = 14 as u8
+val TOKEN_NOT_WHITESPACE u8 = 15 as u8
+
+type RegexToken
+    kind u8
+    ch   u8
+    pad0 u8
+    pad1 u8
+    pad2 u8
+    pad3 u8
+    pad4 u8
+    pad5 u8
+    ccl  ref(u8)
+end
+
+pub type RegexHandle
+    tokens  ref(RegexToken)
+    ccl_buf ref(u8)
+end
+
+def char_at(ptr ref(u8), offset usize) u8
+    return @deref(@add(ptr, offset))
+end
+
+def token_ptr(tokens ref(RegexToken), idx usize) ref(RegexToken)
+    return @add(tokens, idx)
+end
+
+def token_next(token ref(RegexToken), delta usize) ref(RegexToken)
+    return @add(token, delta)
+end
+
+def ccl_slot(buf ref(u8), idx usize) ref(u8)
+    return @add(buf, idx)
+end
+
+def matchdigit(c u8) bool
+    return c >= '0' && c <= '9'
+end
+
+def matchalpha(c u8) bool
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+end
+
+def matchwhitespace(c u8) bool
+    return c == (9 as u8) || c == (10 as u8) || c == (11 as u8) || c == (12 as u8) || c == (13 as u8) || c == (32 as u8)
+end
+
+def matchalphanum(c u8) bool
+    return c == '_' || matchalpha(c) || matchdigit(c)
+end
+
+def matchrange(c u8, str ref(u8)) bool
+    return c != '-' && char_at(str, 0) != 0 && char_at(str, 0) != '-' && char_at(str, 1) == '-' && char_at(str, 2) != 0 && c >= char_at(str, 0) && c <= char_at(str, 2)
+end
+
+def matchdot(c u8) bool
+    return c != 10 && c != 13
+end
+
+def ismetachar(c u8) bool
+    return c == 's' || c == 'S' || c == 'w' || c == 'W' || c == 'd' || c == 'D'
+end
+
+def matchmetachar(c u8, str ref(u8)) bool
+    val meta = char_at(str, 0)
+    if meta == 'd'
+        return matchdigit(c)
+    end
+    if meta == 'D'
+        return !matchdigit(c)
+    end
+    if meta == 'w'
+        return matchalphanum(c)
+    end
+    if meta == 'W'
+        return !matchalphanum(c)
+    end
+    if meta == 's'
+        return matchwhitespace(c)
+    end
+    if meta == 'S'
+        return !matchwhitespace(c)
+    end
+    return c == meta
+end
+
+def matchcharclass(c u8, str ref(u8)) bool
+    var i usize = 0
+    var prev u8 = 0
+
+    for
+        val current = char_at(str, i)
+
+        if matchrange(c, @add(str, i))
+            return true
+        end
+        if current == '\\'
+            i = i + 1
+            val escaped = char_at(str, i)
+            if matchmetachar(c, @add(str, i))
+                return true
+            end
+            if c == escaped && !ismetachar(c)
+                return true
+            end
+        end
+        if c == current
+            if c == '-'
+                return prev == 0 || char_at(str, i + 1) == 0
+            end
+            return true
+        end
+
+        val consumed = char_at(str, i)
+        if consumed == 0
+            break
+        end
+
+        prev = consumed
+        i = i + 1
+    end
+
+    return false
+end
+
+def matchone(token ref(RegexToken), c u8) bool
+    val kind = @deref(@addr(@deref(token).kind))
+    if kind == TOKEN_DOT
+        return matchdot(c)
+    end
+    if kind == TOKEN_CHAR_CLASS
+        return matchcharclass(c, @deref(token).ccl)
+    end
+    if kind == TOKEN_INV_CHAR_CLASS
+        return !matchcharclass(c, @deref(token).ccl)
+    end
+    if kind == TOKEN_DIGIT
+        return matchdigit(c)
+    end
+    if kind == TOKEN_NOT_DIGIT
+        return !matchdigit(c)
+    end
+    if kind == TOKEN_ALPHA
+        return matchalphanum(c)
+    end
+    if kind == TOKEN_NOT_ALPHA
+        return !matchalphanum(c)
+    end
+    if kind == TOKEN_WHITESPACE
+        return matchwhitespace(c)
+    end
+    if kind == TOKEN_NOT_WHITESPACE
+        return !matchwhitespace(c)
+    end
+    return @deref(token).ch == c
+end
+
+def matchquestion(token ref(RegexToken), pattern ref(RegexToken), text ref(u8), matchlength mut(ref(i64))) bool
+    val kind = @deref(token).kind
+    if kind == TOKEN_UNUSED
+        return true
+    end
+    if matchpattern(pattern, text, matchlength)
+        return true
+    end
+
+    val c = char_at(text, 0)
+    if c != 0 && matchone(token, c)
+        if matchpattern(pattern, @add(text, 1), matchlength)
+            @deref(matchlength) = @deref(matchlength) + 1
+            return true
+        end
+    end
+
+    return false
+end
+
+def matchstar(token ref(RegexToken), pattern ref(RegexToken), text ref(u8), matchlength mut(ref(i64))) bool
+    val prelen = @deref(matchlength)
+    var cursor = text
+    var span i64 = 0
+
+    for
+        val c = char_at(cursor, 0)
+        if c == 0 || !matchone(token, c)
+            break
+        end
+        cursor = @add(cursor, 1)
+        span = span + 1
+        @deref(matchlength) = @deref(matchlength) + 1
+    end
+
+    for span >= 0
+        if matchpattern(pattern, @add(text, span as usize), matchlength)
+            return true
+        end
+        @deref(matchlength) = @deref(matchlength) - 1
+        span = span - 1
+    end
+
+    @deref(matchlength) = prelen
+    return false
+end
+
+def matchplus(token ref(RegexToken), pattern ref(RegexToken), text ref(u8), matchlength mut(ref(i64))) bool
+    var cursor = text
+    var span i64 = 0
+
+    for
+        val c = char_at(cursor, 0)
+        if c == 0 || !matchone(token, c)
+            break
+        end
+        cursor = @add(cursor, 1)
+        span = span + 1
+        @deref(matchlength) = @deref(matchlength) + 1
+    end
+
+    for span > 0
+        if matchpattern(pattern, @add(text, span as usize), matchlength)
+            return true
+        end
+        @deref(matchlength) = @deref(matchlength) - 1
+        span = span - 1
+    end
+
+    return false
+end
+
+def matchpattern(pattern ref(RegexToken), text ref(u8), matchlength mut(ref(i64))) bool
+    val pre_ml = @deref(matchlength)
+    var cursor = text
+    var current = pattern
+
+    for
+        val kind0 = @deref(current).kind
+        val kind1 = @deref(token_next(current, 1)).kind
+
+        if kind0 == TOKEN_UNUSED || kind1 == TOKEN_QUESTIONMARK
+            return matchquestion(current, token_next(current, 2), cursor, matchlength)
+        end
+        if kind1 == TOKEN_STAR
+            return matchstar(current, token_next(current, 2), cursor, matchlength)
+        end
+        if kind1 == TOKEN_PLUS
+            return matchplus(current, token_next(current, 2), cursor, matchlength)
+        end
+        if kind0 == TOKEN_END && kind1 == TOKEN_UNUSED
+            return char_at(cursor, 0) == 0
+        end
+
+        val current_char = char_at(cursor, 0)
+        if current_char == 0 || !matchone(current, current_char)
+            break
+        end
+
+        @deref(matchlength) = @deref(matchlength) + 1
+        current = @as_mut(token_next(current, 1))
+        cursor = @add(cursor, 1)
+    end
+
+    @deref(matchlength) = pre_ml
+    return false
+end
+
+pub def re_compile_with[A: allocators.GeneralAllocator](ac ref(A), pattern ref(u8)) ref(RegexHandle)|error
+    guard pattern != none else
+        return error("null pattern")
+    end
+
+    val handle_mem = A.alloc(ac, @sizeof(RegexHandle))?
+    val handle = @bitcast(handle_mem, ref(RegexHandle))
+
+    val tokens_mem = A.alloc(ac, MAX_REGEXP_OBJECTS * @sizeof(RegexToken))?
+    val tokens = @bitcast(tokens_mem, ref(RegexToken))
+    @memset(tokens_mem, 0, MAX_REGEXP_OBJECTS * @sizeof(RegexToken))
+
+    val ccl_mem = A.alloc(ac, MAX_CHAR_CLASS_LEN)?
+    val ccl_buf = @bitcast(ccl_mem, ref(u8))
+    @memset(ccl_mem, 0, MAX_CHAR_CLASS_LEN)
+
+    @deref(handle).tokens = tokens
+    @deref(handle).ccl_buf = ccl_buf
+
+    var ccl_bufidx usize = 1
+    var i usize = 0
+    var j usize = 0
+
+    for
+        val c = char_at(pattern, i)
+        if c == 0 || j + 1 >= MAX_REGEXP_OBJECTS
+            break
+        end
+
+        val token = token_ptr(tokens, j)
+
+        if c == '^'
+            @deref(token).kind = TOKEN_BEGIN
+        else
+            if c == '$'
+                @deref(token).kind = TOKEN_END
+            else
+                if c == '.'
+                    @deref(token).kind = TOKEN_DOT
+                else
+                    if c == '*'
+                        @deref(token).kind = TOKEN_STAR
+                    else
+                        if c == '+'
+                            @deref(token).kind = TOKEN_PLUS
+                        else
+                            if c == '?'
+                                @deref(token).kind = TOKEN_QUESTIONMARK
+                            else
+                                if c == '\\'
+                                    val next = char_at(pattern, i + 1)
+                                    if next == 0
+                                        re_free_with[_](ac, handle)
+                                        return error("incomplete escape sequence")
+                                    end
+                                    i = i + 1
+                                    val escaped = char_at(pattern, i)
+                                    if escaped == 'd'
+                                        @deref(token).kind = TOKEN_DIGIT
+                                    else
+                                        if escaped == 'D'
+                                            @deref(token).kind = TOKEN_NOT_DIGIT
+                                        else
+                                            if escaped == 'w'
+                                                @deref(token).kind = TOKEN_ALPHA
+                                            else
+                                                if escaped == 'W'
+                                                    @deref(token).kind = TOKEN_NOT_ALPHA
+                                                else
+                                                    if escaped == 's'
+                                                        @deref(token).kind = TOKEN_WHITESPACE
+                                                    else
+                                                        if escaped == 'S'
+                                                            @deref(token).kind = TOKEN_NOT_WHITESPACE
+                                                        else
+                                                            @deref(token).kind = TOKEN_CHAR
+                                                            @deref(token).ch = escaped
+                                                        end
+                                                    end
+                                                end
+                                            end
+                                        end
+                                    end
+                                else
+                                    if c == '['
+                                        val buf_begin = ccl_bufidx
+
+                                        if char_at(pattern, i + 1) == '^'
+                                            @deref(token).kind = TOKEN_INV_CHAR_CLASS
+                                            i = i + 1
+                                            if char_at(pattern, i + 1) == 0
+                                                re_free_with[_](ac, handle)
+                                                return error("unterminated character class")
+                                            end
+                                        else
+                                            @deref(token).kind = TOKEN_CHAR_CLASS
+                                        end
+
+                                        for
+                                            i = i + 1
+                                            val cls_char = char_at(pattern, i)
+                                            if cls_char == ']' || cls_char == 0
+                                                break
+                                            end
+
+                                            if cls_char == '\\'
+                                                if ccl_bufidx >= MAX_CHAR_CLASS_LEN - 1
+                                                    re_free_with[_](ac, handle)
+                                                    return error("character class too long")
+                                                end
+                                                if char_at(pattern, i + 1) == 0
+                                                    re_free_with[_](ac, handle)
+                                                    return error("incomplete escape in character class")
+                                                end
+                                                @deref(@add(ccl_buf, ccl_bufidx)) = cls_char
+                                                ccl_bufidx = ccl_bufidx + 1
+                                                i = i + 1
+                                            else
+                                                if ccl_bufidx >= MAX_CHAR_CLASS_LEN
+                                                    re_free_with[_](ac, handle)
+                                                    return error("character class too long")
+                                                end
+                                            end
+
+                                            if ccl_bufidx >= MAX_CHAR_CLASS_LEN
+                                                re_free_with[_](ac, handle)
+                                                return error("character class too long")
+                                            end
+
+                                            @deref(@add(ccl_buf, ccl_bufidx)) = char_at(pattern, i)
+                                            ccl_bufidx = ccl_bufidx + 1
+                                        end
+
+                                        if ccl_bufidx >= MAX_CHAR_CLASS_LEN
+                                            re_free_with[_](ac, handle)
+                                            return error("character class too long")
+                                        end
+
+                                        @deref(@add(ccl_buf, ccl_bufidx)) = 0
+                                        ccl_bufidx = ccl_bufidx + 1
+                                        @deref(token).ccl = @add(ccl_buf, buf_begin)
+                                    else
+                                        @deref(token).kind = TOKEN_CHAR
+                                        @deref(token).ch = c
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+
+        if char_at(pattern, i) == 0
+            re_free_with[_](ac, handle)
+            return error("unexpected end of pattern")
+        end
+
+        i = i + 1
+        j = j + 1
+    end
+
+    @deref(token_ptr(tokens, j)).kind = TOKEN_UNUSED
+    return handle
+end
+
+pub def re_compile(pattern ref(u8)) ref(RegexHandle)|error
+    var ac = allocators.HeapAllocator()
+    return re_compile_with[allocators.HeapAllocator](@addr(ac), pattern)
+end
+
+pub def re_free_with[A: allocators.GeneralAllocator](ac ref(A), handle ref(RegexHandle)) void
+    guard handle != none else
+        return
+    end
+
+    val tokens = @deref(handle).tokens
+    if tokens != none
+        A.free(ac, @bitcast(tokens, ref(void)))
+    end
+    val ccl_buf = @deref(handle).ccl_buf
+    if ccl_buf != none
+        A.free(ac, ccl_buf as ref(void))
+    end
+    A.free(ac, @bitcast(handle, ref(void)))
+end
+
+pub def re_free(handle ref(RegexHandle)) void
+    var ac = allocators.HeapAllocator()
+    re_free_with[_](@addr(ac), handle)
+end
+
+pub def re_matchp(handle ref(RegexHandle), text ref(u8), matchlength mut(ref(i64))) bool|error
+    guard matchlength != none else
+        return error("null matchlength pointer")
+    end
+
+    @deref(matchlength) = 0
+
+    guard handle != none else
+        return error("null handle")
+    end
+    guard text != none else
+        return error("null text")
+    end
+
+    val tokens = @deref(handle).tokens
+    if tokens == none
+        return error("invalid compiled pattern")
+    end
+
+    if @deref(token_ptr(tokens, 0)).kind == TOKEN_BEGIN
+        if matchpattern(token_ptr(tokens, 1), text, matchlength)
+            return true
+        end
+        return false
+    end
+
+    var idx i64 = 0
+    var cursor = text
+
+    for
+        if matchpattern(tokens, cursor, matchlength)
+            if char_at(cursor, 0) != 0
+                return true
+            end
+            return false
+        end
+
+        if char_at(cursor, 0) == 0
+            break
+        end
+        cursor = @add(cursor, 1)
+        idx = idx + 1
+    end
+
+    return false
+end
+
+pub def re_match_with[A: allocators.GeneralAllocator](ac A, pattern ref(u8), text ref(u8), matchlength mut(ref(i64))) i64|error
+    guard matchlength != none else
+        return error("null matchlength pointer")
+    end
+
+    @deref(matchlength) = 0
+
+    guard pattern != none else
+        return error("null pattern")
+    end
+    guard text != none else
+        return error("null text")
+    end
+
+    val compiled = re_compile_with[_](ac, pattern)?
+    val matched = re_matchp(compiled, text, matchlength)?
+    re_free_with[_](ac, compiled)
+
+    if matched
+        return @deref(matchlength)
+    end
+    return error("no match")
+end
+
+pub def re_match(pattern ref(u8), text ref(u8), matchlength mut(ref(i64))) i64|error
+    var ac = allocators.HeapAllocator()
+    return re_match_with[_](@addr(ac), pattern, text, matchlength)
+end
+
+def kind_name(kind u8) ref(u8)
+    if kind == TOKEN_UNUSED
+        return "UNUSED"
+    end
+    if kind == TOKEN_DOT
+        return "DOT"
+    end
+    if kind == TOKEN_BEGIN
+        return "BEGIN"
+    end
+    if kind == TOKEN_END
+        return "END"
+    end
+    if kind == TOKEN_QUESTIONMARK
+        return "QUESTIONMARK"
+    end
+    if kind == TOKEN_STAR
+        return "STAR"
+    end
+    if kind == TOKEN_PLUS
+        return "PLUS"
+    end
+    if kind == TOKEN_CHAR
+        return "CHAR"
+    end
+    if kind == TOKEN_CHAR_CLASS
+        return "CHAR_CLASS"
+    end
+    if kind == TOKEN_INV_CHAR_CLASS
+        return "INV_CHAR_CLASS"
+    end
+    if kind == TOKEN_DIGIT
+        return "DIGIT"
+    end
+    if kind == TOKEN_NOT_DIGIT
+        return "NOT_DIGIT"
+    end
+    if kind == TOKEN_ALPHA
+        return "ALPHA"
+    end
+    if kind == TOKEN_NOT_ALPHA
+        return "NOT_ALPHA"
+    end
+    if kind == TOKEN_WHITESPACE
+        return "WHITESPACE"
+    end
+    if kind == TOKEN_NOT_WHITESPACE
+        return "NOT_WHITESPACE"
+    end
+    return "UNKNOWN"
+end
+
+pub def re_print(handle ref(RegexHandle)) void
+    guard handle != none else
+        return
+    end
+
+    val tokens = @deref(handle).tokens
+    guard tokens != none else
+        return
+    end
+
+    var i usize = 0
+
+    for i < MAX_REGEXP_OBJECTS
+        val token = token_ptr(tokens, i)
+        val kind = @deref(token).kind
+        if kind == TOKEN_UNUSED
+            break
+        end
+
+        @print("type: {s}\n", {kind_name(kind)})
+        if kind == TOKEN_CHAR_CLASS || kind == TOKEN_INV_CHAR_CLASS
+            @print(" [", {})
+            val ccl = @deref(token).ccl
+            var j usize = 0
+            for j < MAX_CHAR_CLASS_LEN
+                val c = char_at(ccl, j)
+                if c == 0 || c == ']'
+                    break
+                end
+                @print("{s}", {ccl})
+                j = j + 1
+            end
+            @print("]", {})
+        end
+        @print("\n", {})
+        i = i + 1
+    end
+end
+
+test "re_match anchored"
+    var matchlength i64 = 0
+    val result = re_match("^h.llo$", "hello", @addr(matchlength))
+    match result
+        error _ => ( assert false )
+        ok pos => (
+            assert pos == 5
+        )
+    end
+end
+
+test "re_match star"
+    var matchlength i64 = 0
+    val result = re_match("a*bc", "aaabc", @addr(matchlength))
+    match result
+        error _ => ( assert false )
+        ok pos => (
+            assert pos == 5
+        )
+    end
+end
+
+test "re_match question"
+    var matchlength i64 = 0
+    val result = re_match("colou?r", "color", @addr(matchlength))
+    match result
+        error _ => ( assert false )
+        ok pos => (
+            assert pos == 5
+        )
+    end
+end
+
+test "re_match digit plus"
+    var matchlength i64 = 0
+    val result = re_match("\\d+", "abc123z", @addr(matchlength))
+    match result
+        error _ => ( assert false )
+        ok pos => (
+            assert pos == 3
+        )
+    end
+end
+
+test "re_match no match"
+    var matchlength i64 = 0
+    val result = re_match("xyz", "hello", @addr(matchlength))
+    match result
+        error _ => (
+            assert true
+        )
+        ok _ => (
+            assert false
+        )
+    end
+end
+
+test "re_match character class"
+    var matchlength i64 = 0
+    val result = re_match("[a-z]+", "spectre", @addr(matchlength))
+    match result
+        error _ => ( assert false )
+        ok pos => (
+            assert pos == 7
+        )
+    end
+end
+
+test "re_match invalid pattern"
+    var matchlength i64 = 0
+    val result = re_match("[", "hello", @addr(matchlength))
+    match result
+        error _ => (
+            assert true
+        )
+        ok _ => (
+            assert false
+        )
+    end
+end

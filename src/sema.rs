@@ -2939,6 +2939,12 @@ fn common_integer_type(lhs: &Type, rhs: &Type) -> Option<Type> {
     if lhs == rhs && is_integer_primitive_type(lhs) {
         return Some(lhs.clone());
     }
+    if *lhs == Type::I32 && is_integer_primitive_type(rhs) {
+        return Some(rhs.clone());
+    }
+    if *rhs == Type::I32 && is_integer_primitive_type(lhs) {
+        return Some(lhs.clone());
+    }
     if is_signed_integer_primitive_type(lhs) && is_signed_integer_primitive_type(rhs) {
         return Some(if integer_rank(lhs)? >= integer_rank(rhs)? {
             lhs.clone()
