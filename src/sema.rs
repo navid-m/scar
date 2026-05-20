@@ -865,15 +865,29 @@ fn analyze_stmt(
                                 .with_location(*line, *column),
                             );
                         };
-                        
+
                         let payload_types = if type_info.kind == TypeDefKind::Enum {
-                            if let Some(full_name) = variant_name.strip_prefix(&format!("{}.", name)) {
-                                type_info.variant_map.get(full_name).cloned().unwrap_or_default()
+                            if let Some(full_name) =
+                                variant_name.strip_prefix(&format!("{}.", name))
+                            {
+                                type_info
+                                    .variant_map
+                                    .get(full_name)
+                                    .cloned()
+                                    .unwrap_or_default()
                             } else {
-                                type_info.variant_map.get(variant_name).cloned().unwrap_or_default()
+                                type_info
+                                    .variant_map
+                                    .get(variant_name)
+                                    .cloned()
+                                    .unwrap_or_default()
                             }
                         } else {
-                            type_info.variant_map.get(variant_name).cloned().unwrap_or_default()
+                            type_info
+                                .variant_map
+                                .get(variant_name)
+                                .cloned()
+                                .unwrap_or_default()
                         };
                         if !seen_variants.insert(variant_name.clone()) {
                             return Err(CompileError::new(format!(
@@ -1314,11 +1328,7 @@ fn infer_expr_type(
                         Type::FnPtr(sig.params.clone(), Box::new(sig.return_type.clone()))
                     })
                 })
-                .or_else(|| {
-                    types.get(name).map(|type_info| {
-                        Type::Named(name.clone())
-                    })
-                })
+                .or_else(|| types.get(name).map(|type_info| Type::Named(name.clone())))
                 .ok_or_else(|| CompileError::new(format!("unknown name `{name}`"))),
             [type_name, variant_name] => {
                 if let Some(type_info) = types.get(type_name) {
@@ -1417,6 +1427,9 @@ fn infer_expr_type(
                 {
                     Ok(inner_ty)
                 }
+                UnaryOp::PostfixInc | UnaryOp::PostfixDec => Err(CompileError::new(
+                    "postfix increment/decrement requires a numeric operand",
+                )),
                 UnaryOp::PostfixInc | UnaryOp::PostfixDec => Err(CompileError::new(
                     "postfix increment/decrement requires a numeric operand",
                 )),
@@ -1683,6 +1696,22 @@ fn analyze_builtin(
                 }
             }
             Ok(Type::Void)
+        }
+        "neg" => {
+            if args.len() != 1 {
+                return Err(CompileError::new("@neg expects exactly one argument"));
+            }
+            let arg_ty = resolve_aliases(
+                &infer_expr_type(&args[0], functions, types, scope, None)?,
+                types,
+            )?;
+            if !is_numeric_primitive_type(&arg_ty) {
+                return Err(CompileError::new(format!(
+                    "@neg expects a numeric operand, got {}",
+                    describe_type(&arg_ty)
+                )));
+            }
+            Ok(arg_ty)
         }
         "memcpy" => {
             if args.len() != 3 {
@@ -2045,22 +2074,24 @@ fn infer_field_type(
     let resolved = resolve_aliases(base_ty, types)?;
     match deref_refs(&resolved) {
         Type::Named(name) => {
-            let type_info = types.get(name.as_str()).ok_or_else(|| {
-                CompileError::new(format!("unknown type `{name}`"))
-            })?;
-            
+            let type_info = types
+                .get(name.as_str())
+                .ok_or_else(|| CompileError::new(format!("unknown type `{name}`")))?;
+
             if let Some(field_ty) = type_info.field_map.get(field) {
                 return Ok(field_ty.clone());
             }
-            
+
             if let Some(payloads) = type_info.variant_map.get(field) {
                 if payloads.is_empty() {
                     return Ok(Type::Named(name.clone()));
                 }
                 return Ok(Type::Applied(name.clone(), payloads.clone()));
             }
-            
-            Err(CompileError::new(format!("type `{name}` has no field `{field}`")))
+
+            Err(CompileError::new(format!(
+                "type `{name}` has no field `{field}`"
+            )))
         }
         other => Err(CompileError::new(format!(
             "field access requires a named type, got {}",
@@ -2372,9 +2403,13 @@ fn format_type_matches(marker: PrintMarker, ty: &Type) -> bool {
         PrintMarker::Float => matches!(ty, Type::F32),
         PrintMarker::Double => matches!(ty, Type::F64),
         PrintMarker::Char => is_integer_primitive_type(ty),
-        PrintMarker::Hex | PrintMarker::HexUpper | PrintMarker::Octal => is_integer_primitive_type(ty),
-        PrintMarker::Scientific | PrintMarker::ScientificUpper
-        | PrintMarker::Shortest | PrintMarker::ShortestUpper => {
+        PrintMarker::Hex | PrintMarker::HexUpper | PrintMarker::Octal => {
+            is_integer_primitive_type(ty)
+        }
+        PrintMarker::Scientific
+        | PrintMarker::ScientificUpper
+        | PrintMarker::Shortest
+        | PrintMarker::ShortestUpper => {
             matches!(ty, Type::F32 | Type::F64)
         }
     }

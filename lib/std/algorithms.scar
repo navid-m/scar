@@ -146,7 +146,7 @@ pub def sort[T: math.Number, A: allocators.GeneralAllocator](l mut(list[T]), ac 
                     var v T = l[i]
                     if is_signed
                         if v < 0 as T
-                            var neg_v T = -v
+                            var neg_v T = @neg(v)
                             if neg_v > max_val
                                 max_val = neg_v
                             end

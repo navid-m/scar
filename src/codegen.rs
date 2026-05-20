@@ -109,7 +109,12 @@ pub fn generate_c(
             line: 0,
             column: 0,
         };
-        output.push_str(&render_global_init(&global.init, &global.ty, &dummy_function, info)?);
+        output.push_str(&render_global_init(
+            &global.init,
+            &global.ty,
+            &dummy_function,
+            info,
+        )?);
         output.push_str(";\n");
     }
     if !program.globals.is_empty() {
@@ -878,58 +883,58 @@ fn render_stmt_inner(
                             output.push_str("}\n");
                         }
                     } else {
-                    for (index, arm) in arms.iter().enumerate() {
-                        let MatchArmKind::Variant(variant_name) = &arm.kind else {
-                            return Err(CompileError::new(
-                                "result-style match arms are not supported for union code generation",
-                            ));
-                        };
-                        let payload_types =
-                            type_info.variant_map.get(variant_name).ok_or_else(|| {
-                                CompileError::new(format!(
-                                    "union `{union_name}` has no variant `{variant_name}`"
-                                ))
-                            })?;
-                        indent(output, level + 1);
-                        if index == 0 {
-                            output.push_str("if (");
-                        } else {
-                            output.push_str("else if (");
-                        }
-                        output.push_str(&temp_name);
-                        output.push_str(".tag == ");
-                        output.push_str(&union_tag_symbol(&union_name, variant_name));
-                        output.push_str(") {\n");
-                        for (binding, payload_ty, payload_index) in arm
-                            .bindings
-                            .iter()
-                            .zip(payload_types.iter())
-                            .zip(0usize..)
-                            .map(|((binding, payload_ty), payload_index)| {
-                                (binding, payload_ty, payload_index)
-                            })
-                        {
-                            if let Some(binding) = binding {
-                                indent(output, level + 2);
-                                output.push_str(&c_type_named(
-                                    payload_ty,
-                                    &mangle_local_symbol(binding),
+                        for (index, arm) in arms.iter().enumerate() {
+                            let MatchArmKind::Variant(variant_name) = &arm.kind else {
+                                return Err(CompileError::new(
+                                    "result-style match arms are not supported for union code generation",
                                 ));
-                                output.push_str(" = ");
-                                output.push_str(&temp_name);
-                                output.push_str(".data.");
-                                output.push_str(variant_name);
-                                output.push('.');
-                                output.push_str(&union_payload_field(payload_index));
-                                output.push_str(";\n");
+                            };
+                            let payload_types =
+                                type_info.variant_map.get(variant_name).ok_or_else(|| {
+                                    CompileError::new(format!(
+                                        "union `{union_name}` has no variant `{variant_name}`"
+                                    ))
+                                })?;
+                            indent(output, level + 1);
+                            if index == 0 {
+                                output.push_str("if (");
+                            } else {
+                                output.push_str("else if (");
                             }
+                            output.push_str(&temp_name);
+                            output.push_str(".tag == ");
+                            output.push_str(&union_tag_symbol(&union_name, variant_name));
+                            output.push_str(") {\n");
+                            for (binding, payload_ty, payload_index) in arm
+                                .bindings
+                                .iter()
+                                .zip(payload_types.iter())
+                                .zip(0usize..)
+                                .map(|((binding, payload_ty), payload_index)| {
+                                    (binding, payload_ty, payload_index)
+                                })
+                            {
+                                if let Some(binding) = binding {
+                                    indent(output, level + 2);
+                                    output.push_str(&c_type_named(
+                                        payload_ty,
+                                        &mangle_local_symbol(binding),
+                                    ));
+                                    output.push_str(" = ");
+                                    output.push_str(&temp_name);
+                                    output.push_str(".data.");
+                                    output.push_str(variant_name);
+                                    output.push('.');
+                                    output.push_str(&union_payload_field(payload_index));
+                                    output.push_str(";\n");
+                                }
+                            }
+                            for stmt in &arm.body {
+                                render_stmt(output, stmt, function, info, level + 2, next_temp_id)?;
+                            }
+                            indent(output, level + 1);
+                            output.push_str("}\n");
                         }
-                        for stmt in &arm.body {
-                            render_stmt(output, stmt, function, info, level + 2, next_temp_id)?;
-                        }
-                        indent(output, level + 1);
-                        output.push_str("}\n");
-                    }
                     }
                 }
                 other => {
@@ -1324,11 +1329,7 @@ fn render_expr_with_hint(
             [type_name, variant_name] => {
                 if let Some(type_info) = info.types.get(type_name) {
                     if type_info.kind == TypeDefKind::Enum {
-                        return Ok(format!(
-                            "{}_{}",
-                            enum_c_name(type_name),
-                            variant_name
-                        ));
+                        return Ok(format!("{}_{}", enum_c_name(type_name), variant_name));
                     }
                 }
                 Err(CompileError::new(format!(
@@ -1548,13 +1549,11 @@ fn render_index_expr(
 ) -> Result<String, CompileError> {
     let base_ty = infer_codegen_expr_type(base, function, info)?;
     match deref_refs(&base_ty) {
-        Type::FixedArray(_, _) => {
-            Ok(format!(
-                "({}[{}])",
-                render_expr(base, function, info)?,
-                render_expr(index, function, info)?
-            ))
-        }
+        Type::FixedArray(_, _) => Ok(format!(
+            "({}[{}])",
+            render_expr(base, function, info)?,
+            render_expr(index, function, info)?
+        )),
         _ => {
             let element_ty = list_element_type(&base_ty)?;
             let helper_prefix = list_helper_prefix(element_ty);
@@ -1733,6 +1732,7 @@ fn render_builtin_call(
             }
             Ok(format!("printf({})", rendered_args.join(", ")))
         }
+        "neg" => Ok(format!("(-({}))", render_expr(&args[0], function, info)?)),
         "memcpy" => Ok(format!(
             "memcpy((void *)({}), (void const *)({}), (size_t)({}))",
             render_expr(&args[0], function, info)?,
@@ -1874,9 +1874,7 @@ fn render_global_base_type(ty: &Type) -> String {
 
 fn render_global_dims(ty: &Type) -> String {
     match ty {
-        Type::FixedArray(n, inner) => {
-            format!("[{}]", n) + &render_global_dims(inner)
-        }
+        Type::FixedArray(n, inner) => format!("[{}]", n) + &render_global_dims(inner),
         _ => String::new(),
     }
 }
@@ -1995,9 +1993,7 @@ fn infer_codegen_expr_type(
                         Type::FnPtr(sig.params.clone(), Box::new(sig.return_type.clone()))
                     })
                 })
-                .or_else(|| {
-                    info.globals.get(name).map(|(ty, _)| ty.clone())
-                })
+                .or_else(|| info.globals.get(name).map(|(ty, _)| ty.clone()))
                 .ok_or_else(|| {
                     CompileError::new(format!("unknown expression `{name}` in code generation"))
                 }),
@@ -2275,9 +2271,7 @@ fn infer_codegen_integer_unary_type(
         UnaryOp::BitNot => Err(CompileError::new(
             "unary `~` currently requires an integer operand",
         )),
-        UnaryOp::PostfixInc | UnaryOp::PostfixDec
-            if is_codegen_signed_numeric_type(&inner_ty) =>
-        {
+        UnaryOp::PostfixInc | UnaryOp::PostfixDec if is_codegen_signed_numeric_type(&inner_ty) => {
             Ok(inner_ty)
         }
         UnaryOp::PostfixInc | UnaryOp::PostfixDec => Err(CompileError::new(
@@ -2326,6 +2320,7 @@ fn infer_builtin_type(
             }
         }
         "puts" | "print" | "free" | "memcpy" | "memset" | "zeroed" => Ok(Type::Void),
+        "neg" => infer_codegen_expr_type(&args[0], function, info),
         "add" => Ok(pointer_arithmetic_type(&infer_codegen_expr_type(
             &args[0], function, info,
         )?)),
@@ -2334,10 +2329,8 @@ fn infer_builtin_type(
             &args[0], function, info,
         )?))),
         "call" => {
-            let fn_ty = resolve_codegen_aliases(
-                &infer_codegen_expr_type(&args[0], function, info)?,
-                info,
-            )?;
+            let fn_ty =
+                resolve_codegen_aliases(&infer_codegen_expr_type(&args[0], function, info)?, info)?;
             match fn_ty {
                 Type::FnPtr(_, ret) => Ok(*ret),
                 other => Err(CompileError::new(format!(
@@ -2482,9 +2475,7 @@ fn convert_format_string(
             let arg_ty = arg_types.get(arg_index).ok_or_else(|| {
                 CompileError::new("@print format expects more values than were provided")
             })?;
-            let width_prefix: String = marker.chars()
-                .take_while(|c| c.is_ascii_digit())
-                .collect();
+            let width_prefix: String = marker.chars().take_while(|c| c.is_ascii_digit()).collect();
             let base_specifier = print_format_specifier(parsed, arg_ty)?;
             let specifier = if width_prefix.is_empty() {
                 base_specifier.to_string()
@@ -3254,8 +3245,16 @@ fn escape_c_string(value: &str) -> String {
 fn is_integer_codegen_type(ty: &Type) -> bool {
     matches!(
         ty,
-        Type::I8 | Type::I16 | Type::I32 | Type::I64 | Type::Isize
-        | Type::U8 | Type::U16 | Type::U32 | Type::U64 | Type::Usize
+        Type::I8
+            | Type::I16
+            | Type::I32
+            | Type::I64
+            | Type::Isize
+            | Type::U8
+            | Type::U16
+            | Type::U32
+            | Type::U64
+            | Type::Usize
     )
 }
 
