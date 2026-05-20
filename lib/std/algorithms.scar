@@ -1,56 +1,8 @@
 val allocators = use("std/allocators")
 val math = use("std/math")
+val str = use("std/string")
 
-def is_signed_number[T: math.Number]() bool
-    var size usize = @sizeof(T)
-
-    if size == 1 as usize
-        return false
-    end
-    if size == 2 as usize
-        return false
-    end
-    if size == 4 as usize
-        var zero_f f32 = 0.0 as f32
-        match @deref(@addr(zero_f))
-            0.0 => ( return false )
-        end
-        return true
-    end
-    if size == 8 as usize
-        var zero_f f64 = 0.0
-        match @deref(@addr(zero_f))
-            0.0 => ( return false )
-        end
-        return true
-    end
-    return false
-end
-
-def is_float_type[T: math.Float]() bool
-    return true
-end
-
-def float_to_sortable(v f64) u64
-    var bits u64 = @bitcast(v, u64)
-    var sign u64 = (bits >> 63 as u64) & 1 as u64
-    if sign == 0 as u64
-        return bits ^ 0x8000000000000000 as u64
-    end
-    return (0xFFFFFFFFFFFFFFFF as u64) - bits
-end
-
-def float_to_sortable_f32(v f32) u64
-    var bits u32 = @bitcast(v, u32)
-    var sign u32 = (bits >> 31 as u32) & 1 as u32
-    if sign == 0 as u32
-        var result u64 = bits as u64
-        return result ^ 0x80000000 as u64
-    end
-    return (0xFFFFFFFF as u64) - (bits as u64)
-end
-
-pub def sort[T: math.Number, A: allocators.GeneralAllocator](l mut(list[T]), ac A) bool|error
+pub def isort[T: math.Integer, A: allocators.GeneralAllocator](l ref(list[T]), ac A) bool|error
     var n usize = @len(l)
     if n <= 1 as usize
         return true
@@ -67,169 +19,84 @@ pub def sort[T: math.Number, A: allocators.GeneralAllocator](l mut(list[T]), ac 
             var temp ref(void) = A.alloc(@addr(ac), n * elem_size)?
             var temp_bytes ref(u8) = @bitcast(temp, ref(u8))
 
-            var is_signed bool = is_signed_number[T]()
-            var is_float bool = false
-            match @deref(@addr(0 as T))
-                none => ( is_float = true )
+            var is_signed bool = @sizeof(T) != 1 as usize && @sizeof(T) != 2 as usize && @sizeof(T) != 4 as usize && @sizeof(T) != 8 as usize || @bitcast(@deref(@addr(0 as T)), ref(u8)) != none
+
+            var max_val T = 0 as T
+
+            for var i = 0 as usize .. n
+                var v T = @bitcast(@deref(@add(l, i)), T)
+                if v < 0 as T
+                    var neg_v T = @neg(v)
+                    if neg_v > max_val
+                        max_val = neg_v
+                    end
+                else
+                    if v > max_val
+                        max_val = v
+                    end
+                end
             end
 
-            if is_float
-                var max_as_u64 u64 = 0 as u64
-                for var i = 0 as usize .. n
-                    var v T = l[i]
-                    var sortable u64 = 0 as u64
-                    if @sizeof(T) == 4 as usize
-                        sortable = float_to_sortable_f32(v as f32)
-                    else
-                        sortable = float_to_sortable(v as f64)
-                    end
-                    if sortable > max_as_u64
-                        max_as_u64 = sortable
-                    end
-                end
+            var bytes_per_elem i32 = @sizeof(T) as i32
+            var bytes_passed i32 = 0 as i32
 
-                var bytes_per_elem i32 = 8 as i32
-                var bytes_passed i32 = 0 as i32
-
-                for max_as_u64 > 0 as u64 || bytes_passed < bytes_per_elem
-                    @memset(cm, 0, 256 as usize * @sizeof(usize))
-
-                    for var i = 0 as usize .. n
-                        var v T = l[i]
-                        var sortable u64 = 0 as u64
-                        if @sizeof(T) == 4 as usize
-                            sortable = float_to_sortable_f32(v as f32)
-                        else
-                            sortable = float_to_sortable(v as f64)
-                        end
-                        var idx usize = ((sortable >> (bytes_passed * 8 as i32)) & 255 as u64) as usize
-                        @deref(@add(counts, idx)) = @deref(@add(counts, idx)) + 1 as usize
-                    end
-
-                    for var i = 1 as usize .. 256 as usize
-                        @deref(@add(counts, i)) = @deref(@add(counts, i)) + @deref(@add(counts, i - 1 as usize))
-                    end
-
-                    for var i = n, i > 0 as usize, i--
-                        var i_idx usize = i - 1 as usize
-                        var v T = l[i_idx]
-                        var sortable u64 = 0 as u64
-                        if @sizeof(T) == 4 as usize
-                            sortable = float_to_sortable_f32(v as f32)
-                        else
-                            sortable = float_to_sortable(v as f64)
-                        end
-                        var idx usize = ((sortable >> (bytes_passed * 8 as i32)) & 255 as u64) as usize
-                        var ci usize = @deref(@add(counts, idx)) - 1 as usize
-                        var dest_ptr ref(u8) = @add(temp_bytes, ci * elem_size)
-                        @memcpy(dest_ptr, @addr(l[i_idx]), elem_size)
-                        @deref(@add(counts, idx)) = ci
-                    end
-
-                    for var i = 0 as usize .. n
-                        @memcpy(@addr(l[i]), @add(temp_bytes, i * elem_size), elem_size)
-                    end
-
-                    if max_as_u64 == 0 as u64 && bytes_passed >= 7 as i32
-                        break
-                    end
-                    max_as_u64 = max_as_u64 >> 8 as u64
-                    if max_as_u64 == 0 as u64 && bytes_passed >= 7 as i32
-                        break
-                    end
-                    bytes_passed = bytes_passed + 1 as i32
-                end
-            else
-                var max_val T = 0 as T
+            for max_val > 0 as T || bytes_passed < bytes_per_elem
+                @memset(cm, 0, 256 as usize * @sizeof(usize))
 
                 for var i = 0 as usize .. n
-                    var v T = l[i]
-                    if is_signed
-                        if v < 0 as T
-                            var neg_v T = @neg(v)
-                            if neg_v > max_val
-                                max_val = neg_v
-                            end
-                        else
-                            if v > max_val
-                                max_val = v
-                            end
-                        end
-                    else
-                        if v > max_val
-                            max_val = v
-                        end
+                    var v T = @bitcast(@deref(@add(l, i)), T)
+                    var byte_val u8 = 0 as u8
+
+                    if bytes_passed < bytes_per_elem
+                        var shift i32 = bytes_passed * 8 as i32
+                        var masked T = @shr(v, shift)
+                        byte_val = masked as u8
                     end
+
+                    if v < 0 as T
+                        byte_val = 255 as u8 - byte_val
+                    end
+
+                    var idx usize = byte_val as usize
+                    @deref(@add(counts, idx)) = @deref(@add(counts, idx)) + 1 as usize
                 end
 
-                var bytes_per_elem i32 = @sizeof(T) as i32
-                var bytes_passed i32 = 0 as i32
-
-                for max_val > 0 as T || bytes_passed >= bytes_per_elem
-                    @memset(cm, 0, 256 as usize * @sizeof(usize))
-
-                    for var i = 0 as usize .. n
-                        var v T = l[i]
-                        var byte_val u8 = 0 as u8
-
-                        if bytes_passed < bytes_per_elem
-                            var shift i32 = bytes_passed * 8 as i32
-                            var masked T = v >> shift
-                            byte_val = masked as u8
-                        end
-
-                        if is_signed
-                            if v < 0 as T
-                                byte_val = 255 as u8 - byte_val
-                            end
-                        end
-
-                        var idx usize = byte_val as usize
-                        @deref(@add(counts, idx)) = @deref(@add(counts, idx)) + 1 as usize
-                    end
-
-                    for var i = 1 as usize .. 256 as usize
-                        @deref(@add(counts, i)) = @deref(@add(counts, i)) + @deref(@add(counts, i - 1 as usize))
-                    end
-
-                    for var i = n, i > 0 as usize, i--
-                        var i_idx usize = i - 1 as usize
-                        var v T = l[i_idx]
-                        var byte_val u8 = 0 as u8
-
-                        if bytes_passed < bytes_per_elem
-                            var shift i32 = bytes_passed * 8 as i32
-                            var masked T = v >> shift
-                            byte_val = masked as u8
-                        end
-
-                        if is_signed
-                            if v < 0 as T
-                                byte_val = 255 as u8 - byte_val
-                            end
-                        end
-
-                        var idx usize = byte_val as usize
-                        var ci usize = @deref(@add(counts, idx)) - 1 as usize
-                        var dest_ptr ref(u8) = @add(temp_bytes, ci * elem_size)
-                        @memcpy(dest_ptr, @addr(l[i_idx]), elem_size)
-                        @deref(@add(counts, idx)) = ci
-                    end
-
-                    for var i = 0 as usize .. n
-                        @memcpy(@addr(l[i]), @add(temp_bytes, i * elem_size), elem_size)
-                    end
-
-                    if max_val == 0 as T && bytes_passed >= bytes_per_elem - 1 as i32
-                        break
-                    end
-                    var zero T = 0 as T
-                    max_val = max_val >> 8 as T
-                    if max_val == zero && bytes_passed >= bytes_per_elem - 1 as i32
-                        break
-                    end
-                    bytes_passed = bytes_passed + 1 as i32
+                for var i = 1 as usize .. 256 as usize
+                    @deref(@add(counts, i)) = @deref(@add(counts, i)) + @deref(@add(counts, i - 1 as usize))
                 end
+
+                for var i = n, i > 0 as usize, i--
+                    var i_idx usize = i - 1 as usize
+                    var v T = @bitcast(@deref(@add(l, i_idx)), T)
+                    var byte_val u8 = 0 as u8
+
+                    if bytes_passed < bytes_per_elem
+                        var shift i32 = bytes_passed * 8 as i32
+                        var masked T = @shr(v, shift)
+                        byte_val = masked as u8
+                    end
+
+                    if v < 0 as T
+                        byte_val = 255 as u8 - byte_val
+                    end
+
+                    var idx usize = byte_val as usize
+                    var ci usize = @deref(@add(counts, idx)) - 1 as usize
+                    var dest_ptr ref(u8) = @add(temp_bytes, ci * elem_size)
+                    @memcpy(dest_ptr, @addr(@deref(@add(l, i_idx))), elem_size)
+                    @deref(@add(counts, idx)) = ci
+                end
+
+                for var i = 0 as usize .. n
+                    @memcpy(@addr(@deref(@add(l, i))), @add(temp_bytes, i * elem_size), elem_size)
+                end
+
+                var zero T = 0 as T
+                max_val = @shr(max_val, 8)
+                if max_val == zero && bytes_passed >= bytes_per_elem - 1 as i32
+                    break
+                end
+                bytes_passed = bytes_passed + 1 as i32
             end
 
             A.free(@addr(ac), temp)
@@ -239,7 +106,136 @@ pub def sort[T: math.Number, A: allocators.GeneralAllocator](l mut(list[T]), ac 
     end
 end
 
-pub def sort_strings[A: allocators.GeneralAllocator](l mut(list[ref(u8)]), ac A) bool|error
+pub def fsort[T: math.Float, A: allocators.GeneralAllocator](l ref(list[T]), ac A) bool|error
+    var n usize = @len(l)
+    if n <= 1 as usize
+        return true
+    end
+
+    var count_mem ref(void)|error = A.alloc(@addr(ac), 256 as usize * @sizeof(usize))
+    match count_mem
+        error _ => ( return false )
+        ok cm => (
+            var counts ref(usize) = @bitcast(cm, ref(usize))
+            @memset(cm, 0, 256 as usize * @sizeof(usize))
+
+            var elem_size usize = @sizeof(T)
+            var temp ref(void) = A.alloc(@addr(ac), n * elem_size)?
+            var temp_bytes ref(u8) = @bitcast(temp, ref(u8))
+
+            var max_as_u64 u64 = 0 as u64
+            for var i = 0 as usize .. n
+                var v T = @bitcast(@deref(@add(l, i)), T)
+                var sortable u64 = 0 as u64
+                if @sizeof(T) == 4 as usize
+                    var bits u32 = @bitcast(v, u32)
+                    var sign u32 = (bits >> 31 as u32) & 1 as u32
+                    if sign == 0 as u32
+                        var result u64 = bits as u64
+                        sortable = result ^ 0x80000000 as u64
+                    else
+                        sortable = (0xFFFFFFFF as u64) - (bits as u64)
+                    end
+                else
+                    var bits u64 = @bitcast(v, u64)
+                    var sign u64 = (bits >> 63 as u64) & 1 as u64
+                    if sign == 0 as u64
+                        sortable = bits ^ 0x8000000000000000 as u64
+                    else
+                        sortable = (0xFFFFFFFFFFFFFFFF as u64) - bits
+                    end
+                end
+                if sortable > max_as_u64
+                    max_as_u64 = sortable
+                end
+            end
+
+            var bytes_per_elem i32 = 8 as i32
+            var bytes_passed i32 = 0 as i32
+
+            for max_as_u64 > 0 as u64 || bytes_passed < bytes_per_elem
+                @memset(cm, 0, 256 as usize * @sizeof(usize))
+
+                for var i = 0 as usize .. n
+                    var v T = @bitcast(@deref(@add(l, i)), T)
+                    var sortable u64 = 0 as u64
+                    if @sizeof(T) == 4 as usize
+                        var bits u32 = @bitcast(v, u32)
+                        var sign u32 = (bits >> 31 as u32) & 1 as u32
+                        if sign == 0 as u32
+                            var result u64 = bits as u64
+                            sortable = result ^ 0x80000000 as u64
+                        else
+                            sortable = (0xFFFFFFFF as u64) - (bits as u64)
+                        end
+                    else
+                        var bits u64 = @bitcast(v, u64)
+                        var sign u64 = (bits >> 63 as u64) & 1 as u64
+                        if sign == 0 as u64
+                            sortable = bits ^ 0x8000000000000000 as u64
+                        else
+                            sortable = (0xFFFFFFFFFFFFFFFF as u64) - bits
+                        end
+                    end
+                    var idx usize = ((sortable >> (bytes_passed * 8 as i32)) & 255 as u64) as usize
+                    @deref(@add(counts, idx)) = @deref(@add(counts, idx)) + 1 as usize
+                end
+
+                for var i = 1 as usize .. 256 as usize
+                    @deref(@add(counts, i)) = @deref(@add(counts, i)) + @deref(@add(counts, i - 1 as usize))
+                end
+
+                for var i = n, i > 0 as usize, i--
+                    var i_idx usize = i - 1 as usize
+                    var v T = @bitcast(@deref(@add(l, i_idx)), T)
+                    var sortable u64 = 0 as u64
+                    if @sizeof(T) == 4 as usize
+                        var bits u32 = @bitcast(v, u32)
+                        var sign u32 = (bits >> 31 as u32) & 1 as u32
+                        if sign == 0 as u32
+                            var result u64 = bits as u64
+                            sortable = result ^ 0x80000000 as u64
+                        else
+                            sortable = (0xFFFFFFFF as u64) - (bits as u64)
+                        end
+                    else
+                        var bits u64 = @bitcast(v, u64)
+                        var sign u64 = (bits >> 63 as u64) & 1 as u64
+                        if sign == 0 as u64
+                            sortable = bits ^ 0x8000000000000000 as u64
+                        else
+                            sortable = (0xFFFFFFFFFFFFFFFF as u64) - bits
+                        end
+                    end
+                    var idx usize = ((sortable >> (bytes_passed * 8 as i32)) & 255 as u64) as usize
+                    var ci usize = @deref(@add(counts, idx)) - 1 as usize
+                    var dest_ptr ref(u8) = @add(temp_bytes, ci * elem_size)
+                    @memcpy(dest_ptr, @addr(@deref(@add(l, i_idx))), elem_size)
+                    @deref(@add(counts, idx)) = ci
+                end
+
+                for var i = 0 as usize .. n
+                    @memcpy(@addr(@deref(@add(l, i))), @add(temp_bytes, i * elem_size), elem_size)
+                end
+
+                if max_as_u64 == 0 as u64 && bytes_passed >= 7 as i32
+                    break
+                end
+                max_as_u64 = max_as_u64 >> 8 as u64
+                if max_as_u64 == 0 as u64 && bytes_passed >= 7 as i32
+                    break
+                end
+                bytes_passed = bytes_passed + 1 as i32
+            end
+
+            A.free(@addr(ac), temp)
+            A.free(@addr(ac), cm)
+            return true
+        )
+    end
+end
+
+pub def sort_strings[A: allocators.GeneralAllocator](l ref(list[ref(u8)]), ac A) bool|error
     var n usize = @len(l)
     if n <= 1 as usize
         return true
@@ -247,10 +243,10 @@ pub def sort_strings[A: allocators.GeneralAllocator](l mut(list[ref(u8)]), ac A)
 
     var max_len usize = 0 as usize
     for var i = 0 as usize .. n
-        var s ref(u8) = l[i]
+        var s ref(u8) = @bitcast(@deref(@add(l, i)), ref(u8))
         var len usize = 0 as usize
         if s != none
-            for @deref(s + len) != 0 as u8
+            for @deref(@add(s, len)) != 0 as u8
                 len = len + 1 as usize
             end
         end
@@ -266,7 +262,7 @@ pub def sort_strings[A: allocators.GeneralAllocator](l mut(list[ref(u8)]), ac A)
             var counts ref(usize) = @bitcast(cm, ref(usize))
             @memset(cm, 0, 256 as usize * @sizeof(usize))
 
-            var temp ref(ref(u8)) = A.alloc(@addr(ac), n * @sizeof(ref(u8)))?
+            var temp ref(ref(u8)) = @bitcast(A.alloc(@addr(ac), n * @sizeof(ref(u8)))?, ref(ref(u8)))
             var temp_str ref(ref(u8)) = @bitcast(temp, ref(ref(u8)))
 
             var pos i32 = max_len as i32 - 1 as i32
@@ -275,11 +271,11 @@ pub def sort_strings[A: allocators.GeneralAllocator](l mut(list[ref(u8)]), ac A)
                 @memset(cm, 0, 256 as usize * @sizeof(usize))
 
                 for var i = 0 as usize .. n
-                    var s ref(u8) = l[i]
+                    var s ref(u8) = @bitcast(@deref(@add(l, i)), ref(u8))
                     var c u8 = 0 as u8
                     if s != none
                         var str_len usize = 0 as usize
-                        for @deref(s + str_len) != 0 as u8
+                        for @deref(@add(s, str_len)) != 0 as u8
                             str_len = str_len + 1 as usize
                         end
                         if pos as usize < str_len
@@ -296,11 +292,11 @@ pub def sort_strings[A: allocators.GeneralAllocator](l mut(list[ref(u8)]), ac A)
 
                 for var i = n, i > 0 as usize, i--
                     var i_idx usize = i - 1 as usize
-                    var s ref(u8) = l[i_idx]
+                    var s ref(u8) = @bitcast(@deref(@add(l, i_idx)), ref(u8))
                     var c u8 = 0 as u8
                     if s != none
                         var str_len usize = 0 as usize
-                        for @deref(s + str_len) != 0 as u8
+                        for @deref(@add(s, str_len)) != 0 as u8
                             str_len = str_len + 1 as usize
                         end
                         if pos as usize < str_len
@@ -314,23 +310,23 @@ pub def sort_strings[A: allocators.GeneralAllocator](l mut(list[ref(u8)]), ac A)
                 end
 
                 for var i = 0 as usize .. n
-                    l[i] = @deref(@add(temp_str, i))
+                    @deref(@add(l, i)) = @bitcast(@deref(@add(temp_str, i)), list[ref(u8)])
                 end
 
                 pos = pos - 1 as i32
             end
 
-            A.free(@addr(ac), temp)
+            A.free(@addr(ac), @bitcast(temp, ref(void)))
             A.free(@addr(ac), cm)
             return true
         )
     end
 end
 
-test "sort i32 list"
+test "isort i32 list"
     var ac = allocators.HeapAllocator()
     var l list[i32] = [3, 1, 4, 1, 5, 9, 2, 6]
-    assert sort[i32, _](@as_mut(@addr(l)), ac)
+    assert isort[i32, _](@addr(l), ac)?
     assert l[0] == 1
     assert l[1] == 1
     assert l[2] == 2
@@ -341,10 +337,10 @@ test "sort i32 list"
     assert l[7] == 9
 end
 
-test "sort i32 with negatives"
+test "isort i32 with negatives"
     var ac = allocators.HeapAllocator()
     var l list[i32] = [5, -3, 2, -1, 4, 0, -2, 3]
-    assert sort[i32, _](@as_mut(@addr(l)), ac)
+    assert isort[i32, _](@addr(l), ac)?
     assert l[0] == -3
     assert l[1] == -2
     assert l[2] == -1
@@ -355,21 +351,21 @@ test "sort i32 with negatives"
     assert l[7] == 5
 end
 
-test "sort u32 list"
+test "isort u32 list"
     var ac = allocators.HeapAllocator()
-    var l list[u32] = [100, 50, 200, 25, 150]
-    assert sort[u32, _](@as_mut(@addr(l)), ac)
-    assert l[0] == 25
-    assert l[1] == 50
-    assert l[2] == 100
-    assert l[3] == 150
-    assert l[4] == 200
+    var l list[u32] = [100 as u32, 50 as u32, 200 as u32, 25 as u32, 150 as u32]
+    assert isort[u32, _](@addr(l), ac)?
+    assert l[0] == 25 as u32
+    assert l[1] == 50 as u32
+    assert l[2] == 100 as u32
+    assert l[3] == 150 as u32
+    assert l[4] == 200 as u32
 end
 
-test "sort i64 list"
+test "isort i64 list"
     var ac = allocators.HeapAllocator()
     var l list[i64] = [1000000, -500000, 0, 999999, -999999]
-    assert sort[i64, _](@as_mut(@addr(l)), ac)
+    assert isort[i64, _](@addr(l), ac)?
     assert l[0] == -999999
     assert l[1] == -500000
     assert l[2] == 0
@@ -377,10 +373,21 @@ test "sort i64 list"
     assert l[4] == 999999
 end
 
-test "sort f64 list"
+test "isort i8 list"
+    var ac = allocators.HeapAllocator()
+    var l list[i8] = [5 as i8, -3 as i8, 0 as i8, 2 as i8, -1 as i8]
+    assert isort[i8, _](@addr(l), ac)?
+    assert l[0] == -3 as i8
+    assert l[1] == -1 as i8
+    assert l[2] == 0 as i8
+    assert l[3] == 2 as i8
+    assert l[4] == 5 as i8
+end
+
+test "fsort f64 list"
     var ac = allocators.HeapAllocator()
     var l list[f64] = [3.5, 1.2, 4.9, -2.1, 0.0, 2.5]
-    assert sort[f64, _](@as_mut(@addr(l)), ac)
+    assert fsort[f64, _](@addr(l), ac)?
     assert l[0] == -2.1
     assert l[1] == 0.0
     assert l[2] == 1.2
@@ -389,43 +396,32 @@ test "sort f64 list"
     assert l[5] == 4.9
 end
 
-test "sort f32 list"
+test "fsort f32 list"
     var ac = allocators.HeapAllocator()
     var l list[f32] = [3.5, 1.2, -0.5, 2.0]
-    assert sort[f32, _](@as_mut(@addr(l)), ac)
+    assert fsort[f32, _](@addr(l), ac)?
     assert l[0] == -0.5
     assert l[1] == 1.2
     assert l[2] == 2.0
     assert l[3] == 3.5
 end
 
-test "sort i8 list"
-    var ac = allocators.HeapAllocator()
-    var l list[i8] = [5, -3, 0, 2, -1]
-    assert sort[i8, _](@as_mut(@addr(l)), ac)
-    assert l[0] == -3
-    assert l[1] == -1
-    assert l[2] == 0
-    assert l[3] == 2
-    assert l[4] == 5
-end
-
 test "sort strings list"
     var ac = allocators.HeapAllocator()
     var l list[ref(u8)] = ["banana", "apple", "cherry", "date"]
-    assert sort_strings[_](@as_mut(@addr(l)), ac)
-    assert l[0] == "apple"
-    assert l[1] == "banana"
-    assert l[2] == "cherry"
-    assert l[3] == "date"
+    assert sort_strings[_](@addr(l), ac)?
+    assert str.eql(l[0], "apple")
+    assert str.eql(l[1], "banana")
+    assert str.eql(l[2], "cherry")
+    assert str.eql(l[3], "date")
 end
 
 test "sort strings different lengths"
     var ac = allocators.HeapAllocator()
     var l list[ref(u8)] = ["b", "aaa", "aa", "a"]
-    assert sort_strings[_](@as_mut(@addr(l)), ac)
-    assert l[0] == "a"
-    assert l[1] == "aa"
-    assert l[2] == "aaa"
-    assert l[3] == "b"
+    assert sort_strings[_](@addr(l), ac)?
+    assert str.eql(l[0], "a")
+    assert str.eql(l[1], "aa")
+    assert str.eql(l[2], "aaa")
+    assert str.eql(l[3], "b")
 end
