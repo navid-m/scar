@@ -208,14 +208,37 @@ fn is_deref_init(expr: &Expr) -> bool {
 
 fn collect_deref_locals(body: &[Stmt]) -> std::collections::HashSet<String> {
     let mut set = std::collections::HashSet::new();
+    collect_deref_locals_recursive(body, &mut set);
+    set
+}
+
+fn collect_deref_locals_recursive(body: &[Stmt], set: &mut std::collections::HashSet<String>) {
     for stmt in body {
-        if let Stmt::VarDecl { name, init, .. } = stmt {
-            if is_deref_init(init) {
-                set.insert(name.clone());
+        match stmt {
+            Stmt::VarDecl { name, init, .. } => {
+                if is_deref_init(init) {
+                    set.insert(name.clone());
+                }
             }
+            Stmt::If { then_body, else_body, .. } => {
+                collect_deref_locals_recursive(then_body, set);
+                collect_deref_locals_recursive(else_body, set);
+            }
+            Stmt::Match { arms, .. } => {
+                for arm in arms {
+                    collect_deref_locals_recursive(&arm.body, set);
+                }
+            }
+            Stmt::ForRange { body, .. }
+            | Stmt::ForEach { body, .. }
+            | Stmt::ForClassic { body, .. }
+            | Stmt::While { body, .. }
+            | Stmt::Loop { body, .. } => {
+                collect_deref_locals_recursive(body, set);
+            }
+            _ => {}
         }
     }
-    set
 }
 
 fn render_function(
@@ -546,20 +569,40 @@ fn render_stmt_inner(
                 indent(output, level);
                 output.push_str("}\n");
                 indent(output, level);
-                if !mutable {
+                let c_ty_str = c_type_named(ty, &mangle_local_symbol(name));
+                let is_aggregate = matches!(ty, Type::Named(_));
+                if !mutable && !c_ty_str.starts_with("const ") && !is_aggregate {
                     output.push_str("const ");
                 }
-                output.push_str(&c_type_named(ty, &mangle_local_symbol(name)));
+                output.push_str(&c_ty_str);
                 output.push_str(" = ");
                 output.push_str(&format!("{temp_name}.ok"));
                 output.push_str(";\n");
                 return Ok(());
             }
+            if let Expr::BuiltinCall { name: bname, args } = init {
+                if bname == "deref" && args.len() == 1 && matches!(ty, Type::Named(_)) {
+                    let inner_expr = &args[0];
+                    indent(output, level);
+                    if !*mutable {
+                        output.push_str("const ");
+                    }
+                    output.push_str(&c_type(ty));
+                    output.push_str(" *");
+                    output.push_str(&mangle_local_symbol(name));
+                    output.push_str(" = ");
+                    output.push_str(&render_expr(inner_expr, function, info, deref_locals)?);
+                    output.push_str(";\n");
+                    return Ok(());
+                }
+            }
             indent(output, level);
-            if !mutable {
+            let c_ty_str = c_type_named(ty, &mangle_local_symbol(name));
+            let is_aggregate = matches!(ty, Type::Named(_));
+            if !mutable && !c_ty_str.starts_with("const ") && !is_aggregate {
                 output.push_str("const ");
             }
-            output.push_str(&c_type_named(ty, &mangle_local_symbol(name)));
+            output.push_str(&c_ty_str);
             output.push_str(" = ");
             output.push_str(&render_expr_with_hint(
                 init,
@@ -1714,7 +1757,8 @@ fn render_field_access(
 ) -> Result<String, CompileError> {
     let base_ty = infer_codegen_expr_type(base, function, info)?;
     let rendered_base = render_expr(base, function, info, deref_locals)?;
-    if is_reference_like(&base_ty) {
+    let base_is_deref_local = matches!(base, Expr::Path(path) if path.len() == 1 && deref_locals.contains(&path[0]));
+    if is_reference_like(&base_ty) || base_is_deref_local {
         Ok(format!("({rendered_base})->{field}"))
     } else {
         Ok(format!("({rendered_base}).{field}"))
@@ -1962,6 +2006,11 @@ fn render_builtin_call(
             render_expr(&args[2], function, info, deref_locals)?
         )),
         "addr" => {
+            if let Expr::Path(path) = &args[0] {
+                if path.len() == 1 && deref_locals.contains(&path[0]) {
+                    return Ok(mangle_local_symbol(&path[0]));
+                }
+            }
             let rendered = render_expr(&args[0], function, info, deref_locals)?;
             if is_addressable_expr(&args[0]) {
                 Ok(format!("(&{})", rendered))

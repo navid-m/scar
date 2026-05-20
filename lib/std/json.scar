@@ -53,15 +53,9 @@ def find_char(src ref(u8), pos usize, len usize, target u8) usize
 end
 
 def alloc_node(j mut(ref(Json))) usize
-    @print("JSON: alloc_node entry, j.count={zu} j.cap={zu}\n", {j.count, j.cap})
-    @flush()
     if j.count >= j.cap
-        @print("JSON: pool exhausted! count={d} cap={d}\n", {j.count, j.cap})
-        @flush()
         return 0
     end
-    @print("JSON: alloc_node proceeding, idx will be {zu}\n", {j.count})
-    @flush()
     val idx = j.count
     j.count = j.count + 1
     var node = @deref(@add(j.nodes, idx))
@@ -328,8 +322,6 @@ def parse_object(src ref(u8), pos usize, len usize, j mut(ref(Json)), node_idx u
         if child_idx >= j.cap
             return error("json node pool exhausted")
         end
-        @print("JSON: alloc node {d} for key\n", {child_idx})
-        @flush()
         val name_start = p + 1
         p = parse_string(src, p, len)?
         var child = @deref(@add(j.nodes, child_idx))
@@ -380,8 +372,6 @@ def parse_array(src ref(u8), pos usize, len usize, j mut(ref(Json)), node_idx us
         if child_idx >= j.cap
             return error("json node pool exhausted")
         end
-        @print("JSON: alloc node {d} for array element\n", {child_idx})
-        @flush()
         p = parse_value(src, p, len, j, child_idx)?
         if last_child == -1
             var parent = @deref(@add(j.nodes, node_idx))
@@ -414,8 +404,6 @@ pub def Json.parse(src ref(u8), nodes mut(ref(JsonNode)), cap usize) Json|error
     if first != '{' && first != '['
         return error("expected '{' or '[' at top level")
     end
-    @print("JSON: parsing, len={d}, cap={d}\n", {len, cap})
-    @flush()
     var j = Json(
         nodes: nodes,
         cap: cap,
@@ -423,18 +411,12 @@ pub def Json.parse(src ref(u8), nodes mut(ref(JsonNode)), cap usize) Json|error
         count: 0,
         source: src,
     )
-    @print("JSON: j.cap={zu} j.count={zu}\n", {j.cap, j.count})
-    @flush()
     val root_idx = alloc_node(@addr(j))
     if root_idx >= j.cap
         return error("json node pool exhausted")
     end
-    @print("JSON: root_idx={d}\n", {root_idx})
-    @flush()
     @deref(@addr(j.root)) = root_idx
     parse_value(src, p, len, @addr(j), root_idx)?
-    @print("JSON: parsed {d} nodes\n", {j.count})
-    @flush()
     return j
 end
 
@@ -841,13 +823,7 @@ end
 test "parse simple object"
     var nodes [256]JsonNode = @zeroed()
     val json = Json.parse("{\"name\": \"hello\", \"value\": 42}", @bitcast(@addr(nodes), mut(ref(JsonNode))), MAX_JSON_NODES)?
-    @print("JSON test: after parse, json.root={zu} json.count={zu}\n", {json.root, json.count})
-    @flush()
     val root = json.root
-    @print("JSON test: root={zu} count={zu}\n", {root, json.count})
-    @flush()
-    @print("JSON test: is_obj result={b}\n", {Json.is_obj(@addr(json), root)})
-    @flush()
     assert Json.is_obj(@addr(json), root)
     val name_node = Json.get(@addr(json), root, "name")
     assert name_node != 0
