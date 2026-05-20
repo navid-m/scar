@@ -3,7 +3,7 @@ val allocators = use("std/allocators")
 val str = use("std/string")
 
 pub def main() i32
-	var ac = allocators.Arena.new(32768 as usize)?
+	var ac = allocators.Arena.new(327680 as usize)?
 
 	match net.get[_](@addr(ac), "http://www.google.com")
 		ok res => (
