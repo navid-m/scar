@@ -36,17 +36,15 @@ def log(level Level, msg ref(u8))
 
 	var ts i64 = time.now()
 	var secs i64 = ts / 1000000000 as i64
-	var hours i32 = ((secs % 86400 as i64) / 3600 as i64) as i32
-	var mins i32 = ((secs % 3600 as i64) / 60 as i64) as i32
-	var secs_in_day i32 = (secs % 3600 as i64) as i32
-	var secs_sec i32 = secs_in_day % 60 as i32
+	var total_secs i64 = secs % 86400 as i64
+	var hours i32 = (total_secs / 3600 as i64) as i32
+	var mins i32 = ((total_secs % 3600 as i64) / 60 as i64) as i32
+	var secs_sec i32 = (total_secs % 60 as i64) as i32
 	var ms i32 = ((ts % 1000000000 as i64) / 1000000 as i64) as i32
 
 	var level_str ref(u8) = level_to_str(level)
 
-	@puts(level_str)
-	@puts(" ")
-	@print("[{d}:{d}:{d}.{d}] ", {hours, mins, secs_sec, ms})
+	@print("[{s}] [{02d}:{02d}:{02d}.{03d}] ", {level_str, hours, mins, secs_sec, ms})
 	@puts(msg)
 	@puts("\n")
 end

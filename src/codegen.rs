@@ -2330,11 +2330,21 @@ fn flatten_print_args(args: &[Expr]) -> Vec<&Expr> {
 #[derive(Clone, Copy)]
 enum PrintMarker {
     Int,
+    Uint,
     Bool,
     Pointer,
     String,
     Float,
     Double,
+    Char,
+    Hex,
+    HexUpper,
+    Octal,
+    Scientific,
+    ScientificUpper,
+    Shortest,
+    ShortestUpper,
+    Size,
 }
 
 fn convert_format_string(
@@ -2358,23 +2368,72 @@ fn convert_format_string(
             }
             let marker: String = chars[start..end].iter().collect();
             let parsed = match marker.as_str() {
-                "d" => PrintMarker::Int,
+                "d" | "ld" | "lld" => PrintMarker::Int,
+                "u" | "lu" | "llu" => PrintMarker::Uint,
                 "b" => PrintMarker::Bool,
                 "p" => PrintMarker::Pointer,
                 "s" => PrintMarker::String,
                 "f" => PrintMarker::Float,
                 "lf" => PrintMarker::Double,
-                _ => {
-                    return Err(CompileError::new(format!(
-                        "unsupported @print marker `{{{marker}}}`"
-                    )));
+                "c" => PrintMarker::Char,
+                "x" | "lx" | "llx" => PrintMarker::Hex,
+                "X" | "lX" | "llX" => PrintMarker::HexUpper,
+                "o" | "lo" | "llo" => PrintMarker::Octal,
+                "e" => PrintMarker::Scientific,
+                "E" => PrintMarker::ScientificUpper,
+                "g" => PrintMarker::Shortest,
+                "G" => PrintMarker::ShortestUpper,
+                "zu" => PrintMarker::Size,
+                other => {
+                    let split_pos = other.find(|c: char| c.is_ascii_alphabetic());
+                    if let Some(pos) = split_pos {
+                        let (width_part, spec_part) = other.split_at(pos);
+                        if !width_part.is_empty() {
+                            match spec_part {
+                                "d" | "ld" | "lld" => PrintMarker::Int,
+                                "u" | "lu" | "llu" => PrintMarker::Uint,
+                                "s" => PrintMarker::String,
+                                "f" => PrintMarker::Float,
+                                "lf" => PrintMarker::Double,
+                                "x" | "lx" | "llx" => PrintMarker::Hex,
+                                "X" | "lX" | "llX" => PrintMarker::HexUpper,
+                                "o" | "lo" | "llo" => PrintMarker::Octal,
+                                "e" => PrintMarker::Scientific,
+                                "E" => PrintMarker::ScientificUpper,
+                                "g" => PrintMarker::Shortest,
+                                "G" => PrintMarker::ShortestUpper,
+                                "zu" => PrintMarker::Size,
+                                _ => {
+                                    return Err(CompileError::new(format!(
+                                        "unsupported @print marker `{{{marker}}}`"
+                                    )));
+                                }
+                            }
+                        } else {
+                            return Err(CompileError::new(format!(
+                                "unsupported @print marker `{{{marker}}}`"
+                            )));
+                        }
+                    } else {
+                        return Err(CompileError::new(format!(
+                            "unsupported @print marker `{{{marker}}}`"
+                        )));
+                    }
                 }
             };
             let arg_ty = arg_types.get(arg_index).ok_or_else(|| {
                 CompileError::new("@print format expects more values than were provided")
             })?;
-            let specifier = print_format_specifier(parsed, arg_ty)?;
-            output.push_str(specifier);
+            let width_prefix: String = marker.chars()
+                .take_while(|c| c.is_ascii_digit())
+                .collect();
+            let base_specifier = print_format_specifier(parsed, arg_ty)?;
+            let specifier = if width_prefix.is_empty() {
+                base_specifier.to_string()
+            } else {
+                format!("%{}{}", width_prefix, &base_specifier[1..])
+            };
+            output.push_str(&specifier);
             markers.push(parsed);
             arg_index += 1;
             index = end + 1;
@@ -2820,10 +2879,6 @@ fn infer_index_type(ty: &Type) -> Result<Type, CompileError> {
     }
 }
 
-fn is_codegen_integer_type(ty: &Type) -> bool {
-    codegen_integer_rank(ty).is_some()
-}
-
 fn is_codegen_condition_type(ty: &Type) -> bool {
     matches!(ty, Type::Bool) || is_codegen_integer_type(ty)
 }
@@ -2984,6 +3039,8 @@ fn print_format_specifier(marker: PrintMarker, ty: &Type) -> Result<&'static str
     match marker {
         PrintMarker::Int if is_codegen_signed_integer_type(ty) => Ok("%jd"),
         PrintMarker::Int if is_codegen_unsigned_integer_type(ty) => Ok("%ju"),
+        PrintMarker::Uint if is_codegen_unsigned_integer_type(ty) => Ok("%ju"),
+        PrintMarker::Uint if is_codegen_signed_integer_type(ty) => Ok("%ju"),
         PrintMarker::Bool if matches!(ty, Type::Bool) => Ok("%s"),
         PrintMarker::Pointer
             if matches!(ty, Type::Ref(_) | Type::Mut(_) | Type::Named(_))
@@ -2992,33 +3049,46 @@ fn print_format_specifier(marker: PrintMarker, ty: &Type) -> Result<&'static str
             Ok("%p")
         }
         PrintMarker::String if is_codegen_string_compatible(ty) => Ok("%s"),
-        PrintMarker::Float if matches!(ty, Type::F32) => Ok("%f"),
-        PrintMarker::Double if matches!(ty, Type::F64) => Ok("%lf"),
-        PrintMarker::Int => Err(CompileError::new(format!(
-            "format marker `{{d}}` does not accept value of type {}",
-            describe_type(ty)
-        ))),
-        PrintMarker::Bool => Err(CompileError::new(format!(
-            "format marker `{{b}}` does not accept value of type {}",
-            describe_type(ty)
-        ))),
-        PrintMarker::Float => Err(CompileError::new(format!(
-            "format marker `{{f}}` does not accept value of type {}",
-            describe_type(ty)
-        ))),
-        PrintMarker::Double => Err(CompileError::new(format!(
-            "format marker `{{lf}}` does not accept value of type {}",
-            describe_type(ty)
-        ))),
-        PrintMarker::Pointer => Err(CompileError::new(format!(
-            "format marker `{{p}}` does not accept value of type {}",
-            describe_type(ty)
-        ))),
-        PrintMarker::String => Err(CompileError::new(format!(
-            "format marker `{{s}}` does not accept value of type {}",
-            describe_type(ty)
-        ))),
+        PrintMarker::Float if matches!(ty, Type::F32 | Type::F64) => Ok("%f"),
+        PrintMarker::Double if matches!(ty, Type::F32 | Type::F64) => Ok("%lf"),
+        PrintMarker::Char if matches!(ty, Type::U8 | Type::I8) => Ok("%c"),
+        PrintMarker::Hex if is_codegen_integer_type(ty) => Ok("%jx"),
+        PrintMarker::HexUpper if is_codegen_integer_type(ty) => Ok("%jX"),
+        PrintMarker::Octal if is_codegen_integer_type(ty) => Ok("%jo"),
+        PrintMarker::Scientific if matches!(ty, Type::F32 | Type::F64) => Ok("%e"),
+        PrintMarker::ScientificUpper if matches!(ty, Type::F32 | Type::F64) => Ok("%E"),
+        PrintMarker::Shortest if matches!(ty, Type::F32 | Type::F64) => Ok("%g"),
+        PrintMarker::ShortestUpper if matches!(ty, Type::F32 | Type::F64) => Ok("%G"),
+        PrintMarker::Size if matches!(ty, Type::Usize | Type::Isize) => Ok("%zu"),
+        other => {
+            let name = match other {
+                PrintMarker::Int => "d",
+                PrintMarker::Uint => "u",
+                PrintMarker::Bool => "b",
+                PrintMarker::Pointer => "p",
+                PrintMarker::String => "s",
+                PrintMarker::Float => "f",
+                PrintMarker::Double => "lf",
+                PrintMarker::Char => "c",
+                PrintMarker::Hex => "x",
+                PrintMarker::HexUpper => "X",
+                PrintMarker::Octal => "o",
+                PrintMarker::Scientific => "e",
+                PrintMarker::ScientificUpper => "E",
+                PrintMarker::Shortest => "g",
+                PrintMarker::ShortestUpper => "G",
+                PrintMarker::Size => "zu",
+            };
+            Err(CompileError::new(format!(
+                "format marker `{{{name}}}` does not accept value of type {}",
+                describe_type(ty)
+            )))
+        }
     }
+}
+
+fn is_codegen_integer_type(ty: &Type) -> bool {
+    is_codegen_signed_integer_type(ty) || is_codegen_unsigned_integer_type(ty)
 }
 
 fn render_print_value(
@@ -3033,11 +3103,36 @@ fn render_print_value(
         PrintMarker::Int if is_codegen_unsigned_integer_type(ty) => {
             Ok(format!("((uintmax_t)({rendered}))"))
         }
+        PrintMarker::Uint if is_codegen_integer_type(ty) => {
+            Ok(format!("((uintmax_t)({rendered}))"))
+        }
+        PrintMarker::Hex | PrintMarker::HexUpper | PrintMarker::Octal
+            if is_codegen_signed_integer_type(ty) =>
+        {
+            Ok(format!("((uintmax_t)((intmax_t)({rendered})))"))
+        }
+        PrintMarker::Hex | PrintMarker::HexUpper | PrintMarker::Octal
+            if is_codegen_unsigned_integer_type(ty) =>
+        {
+            Ok(format!("((uintmax_t)({rendered}))"))
+        }
+        PrintMarker::Size if matches!(ty, Type::Usize | Type::Isize) => {
+            Ok(format!("((size_t)({rendered}))"))
+        }
         PrintMarker::Bool if matches!(ty, Type::Bool) => {
-            Ok(format!("(({}) ? \"true\" : \"false\")", rendered))
+            Ok(format!("(({rendered}) ? \"true\" : \"false\")"))
+        }
+        PrintMarker::Char if matches!(ty, Type::U8 | Type::I8) => {
+            Ok(format!("((int)({rendered}))"))
         }
         PrintMarker::Pointer => Ok(format!("(void *)({rendered})")),
-        PrintMarker::String | PrintMarker::Float | PrintMarker::Double => Ok(rendered.to_string()),
+        PrintMarker::String
+        | PrintMarker::Float
+        | PrintMarker::Double
+        | PrintMarker::Scientific
+        | PrintMarker::ScientificUpper
+        | PrintMarker::Shortest
+        | PrintMarker::ShortestUpper => Ok(rendered.to_string()),
         _ => Err(CompileError::new(format!(
             "unsupported @print argument type {}",
             describe_type(ty)

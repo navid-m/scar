@@ -2179,11 +2179,21 @@ fn flatten_print_args<'a>(args: &'a [Expr]) -> Vec<&'a Expr> {
 #[derive(Clone, Copy)]
 enum PrintMarker {
     Int,
+    Uint,
     Bool,
     String,
     Pointer,
     Float,
     Double,
+    Char,
+    Hex,
+    HexUpper,
+    Octal,
+    Scientific,
+    ScientificUpper,
+    Shortest,
+    ShortestUpper,
+    Size,
 }
 
 fn parse_format_markers(format: &str) -> Result<Vec<PrintMarker>, CompileError> {
@@ -2202,16 +2212,57 @@ fn parse_format_markers(format: &str) -> Result<Vec<PrintMarker>, CompileError> 
             }
             let marker: String = chars[start..index].iter().collect();
             let parsed = match marker.as_str() {
-                "d" => PrintMarker::Int,
+                "d" | "ld" | "lld" => PrintMarker::Int,
+                "u" | "lu" | "llu" => PrintMarker::Uint,
                 "b" => PrintMarker::Bool,
                 "s" => PrintMarker::String,
                 "p" => PrintMarker::Pointer,
                 "f" => PrintMarker::Float,
                 "lf" => PrintMarker::Double,
-                _ => {
-                    return Err(CompileError::new(format!(
-                        "unsupported @print marker `{{{marker}}}`"
-                    )));
+                "c" => PrintMarker::Char,
+                "x" | "lx" | "llx" => PrintMarker::Hex,
+                "X" | "lX" | "llX" => PrintMarker::HexUpper,
+                "o" | "lo" | "llo" => PrintMarker::Octal,
+                "e" => PrintMarker::Scientific,
+                "E" => PrintMarker::ScientificUpper,
+                "g" => PrintMarker::Shortest,
+                "G" => PrintMarker::ShortestUpper,
+                "zu" => PrintMarker::Size,
+                other => {
+                    let split_pos = other.find(|c: char| c.is_ascii_alphabetic());
+                    if let Some(pos) = split_pos {
+                        let (width_part, spec_part) = other.split_at(pos);
+                        if !width_part.is_empty() {
+                            match spec_part {
+                                "d" | "ld" | "lld" => PrintMarker::Int,
+                                "u" | "lu" | "llu" => PrintMarker::Uint,
+                                "s" => PrintMarker::String,
+                                "f" => PrintMarker::Float,
+                                "lf" => PrintMarker::Double,
+                                "x" | "lx" | "llx" => PrintMarker::Hex,
+                                "X" | "lX" | "llX" => PrintMarker::HexUpper,
+                                "o" | "lo" | "llo" => PrintMarker::Octal,
+                                "e" => PrintMarker::Scientific,
+                                "E" => PrintMarker::ScientificUpper,
+                                "g" => PrintMarker::Shortest,
+                                "G" => PrintMarker::ShortestUpper,
+                                "zu" => PrintMarker::Size,
+                                _ => {
+                                    return Err(CompileError::new(format!(
+                                        "unsupported @print marker `{{{marker}}}`"
+                                    )));
+                                }
+                            }
+                        } else {
+                            return Err(CompileError::new(format!(
+                                "unsupported @print marker `{{{marker}}}`"
+                            )));
+                        }
+                    } else {
+                        return Err(CompileError::new(format!(
+                            "unsupported @print marker `{{{marker}}}`"
+                        )));
+                    }
                 }
             };
             markers.push(parsed);
@@ -2224,6 +2275,7 @@ fn parse_format_markers(format: &str) -> Result<Vec<PrintMarker>, CompileError> 
 fn format_type_matches(marker: PrintMarker, ty: &Type) -> bool {
     match marker {
         PrintMarker::Int => is_integer_primitive_type(ty),
+        PrintMarker::Uint | PrintMarker::Size => is_integer_primitive_type(ty),
         PrintMarker::Bool => matches!(ty, Type::Bool),
         PrintMarker::String => is_string_compatible(ty),
         PrintMarker::Pointer => {
@@ -2231,17 +2283,33 @@ fn format_type_matches(marker: PrintMarker, ty: &Type) -> bool {
         }
         PrintMarker::Float => matches!(ty, Type::F32),
         PrintMarker::Double => matches!(ty, Type::F64),
+        PrintMarker::Char => is_integer_primitive_type(ty),
+        PrintMarker::Hex | PrintMarker::HexUpper | PrintMarker::Octal => is_integer_primitive_type(ty),
+        PrintMarker::Scientific | PrintMarker::ScientificUpper
+        | PrintMarker::Shortest | PrintMarker::ShortestUpper => {
+            matches!(ty, Type::F32 | Type::F64)
+        }
     }
 }
 
 fn print_marker_name(marker: PrintMarker) -> &'static str {
     match marker {
         PrintMarker::Int => "d",
+        PrintMarker::Uint => "u",
         PrintMarker::Bool => "b",
         PrintMarker::String => "s",
         PrintMarker::Pointer => "p",
         PrintMarker::Float => "f",
         PrintMarker::Double => "lf",
+        PrintMarker::Char => "c",
+        PrintMarker::Hex => "x",
+        PrintMarker::HexUpper => "X",
+        PrintMarker::Octal => "o",
+        PrintMarker::Scientific => "e",
+        PrintMarker::ScientificUpper => "E",
+        PrintMarker::Shortest => "g",
+        PrintMarker::ShortestUpper => "G",
+        PrintMarker::Size => "zu",
     }
 }
 
