@@ -7,6 +7,7 @@ pub struct GlobalVar {
     pub init: Expr,
     pub line: usize,
     pub column: usize,
+    pub file_path: Option<std::path::PathBuf>,
 }
 
 #[derive(Debug, Clone)]
@@ -42,6 +43,7 @@ pub struct TypeDef {
     pub variants: Vec<UnionVariantDef>,
     pub line: usize,
     pub column: usize,
+    pub file_path: Option<std::path::PathBuf>,
 }
 
 #[derive(Debug, Clone)]
@@ -63,6 +65,7 @@ pub struct InterfaceDef {
     pub is_pub: bool,
     pub name: String,
     pub methods: Vec<InterfaceMethod>,
+    pub file_path: Option<std::path::PathBuf>,
 }
 
 #[derive(Debug, Clone)]
@@ -80,6 +83,7 @@ pub struct EnumDef {
     pub variants: Vec<EnumVariant>,
     pub line: usize,
     pub column: usize,
+    pub file_path: Option<std::path::PathBuf>,
 }
 
 #[derive(Debug, Clone)]
@@ -112,6 +116,7 @@ pub struct Function {
     pub body: Vec<Stmt>,
     pub line: usize,
     pub column: usize,
+    pub file_path: Option<std::path::PathBuf>,
 }
 
 #[derive(Debug, Clone)]

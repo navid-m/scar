@@ -1,8 +1,16 @@
 val allocators = use("std/allocators")
 val str = use("std/string")
 
-link "-lcurl"
+when posix
+	link "-lcurl"
+	link "-lssl"
+	link "-lcrypto"
+	link "-lbrotlidec"
+	link "-lz"
+end
+
 when windows
+	link "-lcurl"
 	link "-lws2_32"
 end
 
@@ -27,11 +35,11 @@ type Buffer
 	capacity mut(usize)
 end
 
-def write_callback(ptr ref(u8), size usize, nmemb usize, userdata ref(void)) usize
+pub def write_callback(ptr ref(u8), size usize, nmemb usize, userdata ref(void)) usize
 	var total_size usize = size * nmemb
 	var buffer = @bitcast(userdata, mut(ref(Buffer)))
 
-	if (@deref(buffer).size as mut(usize)) + total_size as usize + (1 as usize) > @deref(buffer).capacity
+	if @deref(buffer).size + total_size + 1 as usize > @deref(buffer).capacity
 		var new_cap usize = (@deref(buffer).capacity + total_size) * 2 as usize
 		var new_data = @realloc(@deref(buffer).data as mut(ref(void)), new_cap) as mut(ref(u8))
 		if new_data == none
@@ -81,8 +89,8 @@ pub def request[A: allocators.BumpAllocator](
 		curl_easy_setopt(curl, 10023, headers)
 	end
 
-	curl_easy_setopt(curl, 20011, write_callback as ref(void)) 
-	curl_easy_setopt(curl, 10001, @addr(response_buffer) as ref(void)) 
+	curl_easy_setopt(curl, 20011, @bitcast(@addr(write_callback), ref(void))) 
+	curl_easy_setopt(curl, 10001, @bitcast(@addr(response_buffer), ref(void))) 
 
 	var res = curl_easy_perform(curl)
 	if res != 0
@@ -186,7 +194,7 @@ when posix
 				var received = recv(client_fd, buffer as mut(ref(void)), 4095 as usize, 0)
 				if received > 0
 					@deref(@add(buffer, received as usize)) = 0 as u8
-					var response Response = handler(buffer as ref(u8))
+					var response ref(u8) = handler(buffer as ref(u8))
 					send(client_fd, response as ref(void), str.len(response), 0)
 				end
 				close(client_fd)

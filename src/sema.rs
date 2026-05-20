@@ -56,16 +56,19 @@ pub fn analyze(program: &Program) -> Result<ProgramInfo, CompileError> {
             return Err(CompileError::new(format!(
                 "duplicate function definition `{}`",
                 function.name
-            )));
+            ))
+            .with_file_opt(function.file_path.clone()));
         }
         if function.name == "main" && !function.is_pub {
             return Err(CompileError::new(
                 "function `main` must be declared as `pub def main`",
-            ));
+            )
+            .with_file_opt(function.file_path.clone()));
         }
         validate_type(&function.return_type, &types).map_err(|e| {
             CompileError::new(format!("in function `{}`: {}", function.name, e.message()))
                 .with_location(function.line, function.column)
+                .with_file_opt(function.file_path.clone())
         })?;
         functions.insert(
             function.name.clone(),
@@ -82,6 +85,7 @@ pub fn analyze(program: &Program) -> Result<ProgramInfo, CompileError> {
                                 e.message()
                             ))
                             .with_location(param.line, param.column)
+                            .with_file_opt(function.file_path.clone())
                         })?;
                         Ok(param.ty.clone())
                     })
@@ -105,6 +109,7 @@ pub fn analyze(program: &Program) -> Result<ProgramInfo, CompileError> {
         validate_type(&global.ty, &types).map_err(|e| {
             CompileError::new(format!("in global `{}`: {}", global.name, e.message()))
                 .with_location(global.line, global.column)
+                .with_file_opt(global.file_path.clone())
         })?;
         let actual = infer_expr_type(
             &global.init,
@@ -113,10 +118,10 @@ pub fn analyze(program: &Program) -> Result<ProgramInfo, CompileError> {
             &HashMap::new(),
             Some(&global.ty),
         )
-        .map_err(|e| e.with_location(global.line, global.column))?;
+        .map_err(|e| e.with_location(global.line, global.column).with_file_opt(global.file_path.clone()))?;
         if !matches!(global.init, Expr::BuiltinCall { ref name, .. } if name == "zeroed") {
             expect_same_type(&global.ty, &actual, &types, "global initializer")
-                .map_err(|e| e.with_location(global.line, global.column))?;
+                .map_err(|e| e.with_location(global.line, global.column).with_file_opt(global.file_path.clone()))?;
         }
         globals.insert(global.name.clone(), (global.ty.clone(), global.mutable));
     }
@@ -181,101 +186,108 @@ fn collect_types(program: &Program) -> Result<HashMap<String, TypeDefInfo>, Comp
             return Err(CompileError::new(format!(
                 "duplicate type definition `{}`",
                 type_def.name
-            )));
+            ))
+            .with_file_opt(type_def.file_path.clone()));
         }
 
         let mut field_map = HashMap::new();
         let mut variant_map = HashMap::new();
-        if let Some(alias) = &type_def.alias {
-            if !type_def.fields.is_empty() || !type_def.variants.is_empty() {
-                return Err(CompileError::new(format!(
-                    "type `{}` cannot declare both an alias and fields",
-                    type_def.name
-                )));
-            }
-            if type_def.kind != TypeDefKind::Struct {
-                return Err(CompileError::new(format!(
-                    "union `{}` cannot be declared as an alias",
-                    type_def.name
-                )));
-            }
-            validate_type_with_known_names(alias, &known_type_names).map_err(|e| {
-                CompileError::new(format!("in type `{}`: {}", type_def.name, e.message()))
-                    .with_location(type_def.line, type_def.column)
-            })?;
-        } else {
-            for derive in &type_def.derives {
-                validate_type_with_known_names(derive, &known_type_names).map_err(|e| {
+
+        let mut process_type_def = || -> Result<(), CompileError> {
+            if let Some(alias) = &type_def.alias {
+                if !type_def.fields.is_empty() || !type_def.variants.is_empty() {
+                    return Err(CompileError::new(format!(
+                        "type `{}` cannot declare both an alias and fields",
+                        type_def.name
+                    )));
+                }
+                if type_def.kind != TypeDefKind::Struct {
+                    return Err(CompileError::new(format!(
+                        "union `{}` cannot be declared as an alias",
+                        type_def.name
+                    )));
+                }
+                validate_type_with_known_names(alias, &known_type_names).map_err(|e| {
                     CompileError::new(format!("in type `{}`: {}", type_def.name, e.message()))
                         .with_location(type_def.line, type_def.column)
                 })?;
-            }
-            match type_def.kind {
-                TypeDefKind::Struct => {
-                    for field in &type_def.fields {
-                        if field_map.contains_key(&field.name) {
-                            return Err(CompileError::new(format!(
-                                "duplicate field `{}` in type `{}`",
-                                field.name, type_def.name
-                            )));
-                        }
-                        validate_type_with_known_names(&field.ty, &known_type_names).map_err(
-                            |e| {
-                                CompileError::new(format!(
-                                    "in type `{}`, field `{}`: {}",
-                                    type_def.name,
-                                    field.name,
-                                    e.message()
-                                ))
-                                .with_location(field.line, field.column)
-                            },
-                        )?;
-                        field_map.insert(field.name.clone(), field.ty.clone());
-                    }
+            } else {
+                for derive in &type_def.derives {
+                    validate_type_with_known_names(derive, &known_type_names).map_err(|e| {
+                        CompileError::new(format!("in type `{}`: {}", type_def.name, e.message()))
+                            .with_location(type_def.line, type_def.column)
+                    })?;
                 }
-                TypeDefKind::Union => {
-                    if type_def.is_extern {
-                        return Err(CompileError::new(format!(
-                            "extern unions are not supported: `{}`",
-                            type_def.name
-                        )));
-                    }
-                    for variant in &type_def.variants {
-                        if variant_map.contains_key(&variant.name) {
-                            return Err(CompileError::new(format!(
-                                "duplicate variant `{}` in union `{}`",
-                                variant.name, type_def.name
-                            )));
-                        }
-                        for payload_ty in &variant.payload_types {
-                            validate_type_with_known_names(payload_ty, &known_type_names).map_err(
+                match type_def.kind {
+                    TypeDefKind::Struct => {
+                        for field in &type_def.fields {
+                            if field_map.contains_key(&field.name) {
+                                return Err(CompileError::new(format!(
+                                    "duplicate field `{}` in type `{}`",
+                                    field.name, type_def.name
+                                )));
+                            }
+                            validate_type_with_known_names(&field.ty, &known_type_names).map_err(
                                 |e| {
                                     CompileError::new(format!(
-                                        "in type `{}`, variant `{}`: {}",
+                                        "in type `{}`, field `{}`: {}",
                                         type_def.name,
-                                        variant.name,
+                                        field.name,
                                         e.message()
                                     ))
-                                    .with_location(type_def.line, type_def.column)
+                                    .with_location(field.line, field.column)
                                 },
                             )?;
+                            field_map.insert(field.name.clone(), field.ty.clone());
                         }
-                        variant_map.insert(variant.name.clone(), variant.payload_types.clone());
                     }
-                }
-                TypeDefKind::Enum => {
-                    for variant in &type_def.variants {
-                        if variant_map.contains_key(&variant.name) {
+                    TypeDefKind::Union => {
+                        if type_def.is_extern {
                             return Err(CompileError::new(format!(
-                                "duplicate variant `{}` in enum `{}`",
-                                variant.name, type_def.name
+                                "extern unions are not supported: `{}`",
+                                type_def.name
                             )));
                         }
-                        variant_map.insert(variant.name.clone(), vec![]);
+                        for variant in &type_def.variants {
+                            if variant_map.contains_key(&variant.name) {
+                                return Err(CompileError::new(format!(
+                                    "duplicate variant `{}` in union `{}`",
+                                    variant.name, type_def.name
+                                )));
+                            }
+                            for payload_ty in &variant.payload_types {
+                                validate_type_with_known_names(payload_ty, &known_type_names).map_err(
+                                    |e| {
+                                        CompileError::new(format!(
+                                            "in type `{}`, variant `{}`: {}",
+                                            type_def.name,
+                                            variant.name,
+                                            e.message()
+                                        ))
+                                        .with_location(type_def.line, type_def.column)
+                                    },
+                                )?;
+                            }
+                            variant_map.insert(variant.name.clone(), variant.payload_types.clone());
+                        }
+                    }
+                    TypeDefKind::Enum => {
+                        for variant in &type_def.variants {
+                            if variant_map.contains_key(&variant.name) {
+                                return Err(CompileError::new(format!(
+                                    "duplicate variant `{}` in enum `{}`",
+                                    variant.name, type_def.name
+                                )));
+                            }
+                            variant_map.insert(variant.name.clone(), vec![]);
+                        }
                     }
                 }
             }
-        }
+            Ok(())
+        };
+
+        process_type_def().map_err(|e| e.with_file_opt(type_def.file_path.clone()))?;
 
         types.insert(
             type_def.name.clone(),
@@ -309,38 +321,45 @@ fn collect_interfaces(
             return Err(CompileError::new(format!(
                 "duplicate interface definition `{}`",
                 interface_def.name
-            )));
+            ))
+            .with_file_opt(interface_def.file_path.clone()));
         }
         let mut methods = Vec::new();
         let mut seen = HashSet::new();
-        for method in &interface_def.methods {
-            if !seen.insert(method.name.clone()) {
-                return Err(CompileError::new(format!(
-                    "duplicate interface method `{}` in `{}`",
-                    method.name, interface_def.name
-                )));
-            }
-            for param in &method.params {
-                validate_type_with_known_names(&param.ty, &known_names).map_err(|e| {
+
+        let mut process_interface_def = || -> Result<(), CompileError> {
+            for method in &interface_def.methods {
+                if !seen.insert(method.name.clone()) {
+                    return Err(CompileError::new(format!(
+                        "duplicate interface method `{}` in `{}`",
+                        method.name, interface_def.name
+                    )));
+                }
+                for param in &method.params {
+                    validate_type_with_known_names(&param.ty, &known_names).map_err(|e| {
+                        CompileError::new(format!(
+                            "in interface `{}`, method `{}`, parameter `{}`: {}",
+                            interface_def.name,
+                            method.name,
+                            param.name,
+                            e.message()
+                        ))
+                    })?;
+                }
+                validate_type_with_known_names(&method.return_type, &known_names).map_err(|e| {
                     CompileError::new(format!(
-                        "in interface `{}`, method `{}`, parameter `{}`: {}",
+                        "in interface `{}`, method `{}` return type: {}",
                         interface_def.name,
                         method.name,
-                        param.name,
                         e.message()
                     ))
                 })?;
+                methods.push(method.clone());
             }
-            validate_type_with_known_names(&method.return_type, &known_names).map_err(|e| {
-                CompileError::new(format!(
-                    "in interface `{}`, method `{}` return type: {}",
-                    interface_def.name,
-                    method.name,
-                    e.message()
-                ))
-            })?;
-            methods.push(method.clone());
-        }
+            Ok(())
+        };
+
+        process_interface_def().map_err(|e| e.with_file_opt(interface_def.file_path.clone()))?;
         interfaces.insert(interface_def.name.clone(), InterfaceDefInfo { methods });
     }
     Ok(interfaces)
@@ -392,7 +411,8 @@ fn analyze_function_with_globals(
             &mut function_locals,
             false,
             function.name == "main" || function.name.starts_with("__scar_test_case_"),
-        )?;
+        )
+        .map_err(|e| e.with_file_opt(function.file_path.clone()))?;
     }
 
     locals.insert(function.name.clone(), function_locals);
@@ -2034,7 +2054,9 @@ fn analyze_arithmetic_assignment(
             .map_err(|error| error.with_location(line, column))?,
         types,
     )?;
-    if common_numeric_type(&target_ty, &value_ty) == Some(target_ty.clone()) {
+    if common_numeric_type(&target_ty, &value_ty) == Some(target_ty.clone())
+        || common_numeric_type(strip_mut(&target_ty), &value_ty) == Some(strip_mut(&target_ty).clone())
+    {
         Ok(())
     } else {
         Err(CompileError::new(format!(
@@ -2100,7 +2122,12 @@ fn infer_mutable_target(
         }
         Expr::FieldAccess { base, field } => {
             let base_ty = infer_mutable_target(base, functions, types, scope)?;
-            infer_field_type(&base_ty, field, types)
+            let resolved = resolve_aliases(&base_ty, types)?;
+            if matches!(resolved, Type::Mut(_)) {
+                infer_field_type(&resolved, field, types)
+            } else {
+                infer_field_type(&base_ty, field, types)
+            }
         }
         Expr::Index { base, index } => {
             let base_ty = infer_mutable_target(base, functions, types, scope)?;
@@ -2879,11 +2906,11 @@ fn is_integer_type(ty: &Type, types: &HashMap<String, TypeDefInfo>) -> Result<bo
 }
 
 fn is_numeric_primitive_type(ty: &Type) -> bool {
-    is_integer_primitive_type(ty) || matches!(ty, Type::F32 | Type::F64)
+    is_integer_primitive_type(ty) || matches!(strip_mut(ty), Type::F32 | Type::F64)
 }
 
 fn is_condition_primitive_type(ty: &Type) -> bool {
-    matches!(ty, Type::Bool) || is_integer_primitive_type(ty)
+    matches!(strip_mut(ty), Type::Bool) || is_integer_primitive_type(ty)
 }
 
 fn is_integer_primitive_type(ty: &Type) -> bool {
@@ -2891,25 +2918,25 @@ fn is_integer_primitive_type(ty: &Type) -> bool {
 }
 
 fn is_signed_numeric_type(ty: &Type) -> bool {
-    is_signed_integer_primitive_type(ty) || matches!(ty, Type::F32 | Type::F64)
+    is_signed_integer_primitive_type(ty) || matches!(strip_mut(ty), Type::F32 | Type::F64)
 }
 
 fn is_signed_integer_primitive_type(ty: &Type) -> bool {
     matches!(
-        ty,
+        strip_mut(ty),
         Type::I8 | Type::I16 | Type::I32 | Type::I64 | Type::Isize
     )
 }
 
 fn is_unsigned_integer_primitive_type(ty: &Type) -> bool {
     matches!(
-        ty,
+        strip_mut(ty),
         Type::U8 | Type::U16 | Type::U32 | Type::U64 | Type::Usize
     )
 }
 
 fn integer_rank(ty: &Type) -> Option<u8> {
-    match ty {
+    match strip_mut(ty) {
         Type::U8 => Some(1),
         Type::I8 => Some(1),
         Type::I16 => Some(2),
@@ -2964,7 +2991,7 @@ fn integer_cast_bounds(ty: &Type) -> Option<(i128, i128)> {
 }
 
 fn float_rank(ty: &Type) -> Option<u8> {
-    match ty {
+    match strip_mut(ty) {
         Type::F32 => Some(1),
         Type::F64 => Some(2),
         _ => None,
@@ -2972,6 +2999,8 @@ fn float_rank(ty: &Type) -> Option<u8> {
 }
 
 fn common_integer_type(lhs: &Type, rhs: &Type) -> Option<Type> {
+    let lhs = strip_mut(lhs);
+    let rhs = strip_mut(rhs);
     if lhs == rhs && is_integer_primitive_type(lhs) {
         return Some(lhs.clone());
     }
@@ -3014,6 +3043,8 @@ fn common_numeric_type(lhs: &Type, rhs: &Type) -> Option<Type> {
     if let Some(common) = common_integer_type(lhs, rhs) {
         return Some(common);
     }
+    let lhs = strip_mut(lhs);
+    let rhs = strip_mut(rhs);
     if lhs == rhs && matches!(lhs, Type::F32 | Type::F64) {
         return Some(lhs.clone());
     }
@@ -3037,6 +3068,15 @@ fn deref_refs(mut ty: &Type) -> &Type {
     loop {
         match ty {
             Type::Ref(inner) | Type::Mut(inner) => ty = inner,
+            _ => return ty,
+        }
+    }
+}
+
+fn strip_mut(mut ty: &Type) -> &Type {
+    loop {
+        match ty {
+            Type::Mut(inner) => ty = inner,
             _ => return ty,
         }
     }

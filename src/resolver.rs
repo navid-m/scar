@@ -285,11 +285,28 @@ impl Resolver {
 fn parse_program_file(path: &Path) -> Result<Program, CompileError> {
     let source = fs::read_to_string(path).map_err(|error| {
         CompileError::new(format!("failed to read {}: {error}", path.display()))
+            .with_file(path)
     })?;
     let tokens = lex(&source)
-        .map_err(|error| CompileError::new(format!("in {}: {error}", path.display())))?;
-    parse_program(tokens)
-        .map_err(|error| CompileError::new(format!("in {}: {error}", path.display())))
+        .map_err(|error| CompileError::new(format!("in {}: {error}", path.display())).with_file(path))?;
+    let mut program = parse_program(tokens)
+        .map_err(|error| error.with_file(path))?;
+    for f in &mut program.functions {
+        f.file_path = Some(path.to_path_buf());
+    }
+    for t in &mut program.type_defs {
+        t.file_path = Some(path.to_path_buf());
+    }
+    for e in &mut program.enum_defs {
+        e.file_path = Some(path.to_path_buf());
+    }
+    for g in &mut program.globals {
+        g.file_path = Some(path.to_path_buf());
+    }
+    for i in &mut program.interface_defs {
+        i.file_path = Some(path.to_path_buf());
+    }
+    Ok(program)
 }
 
 fn discover_local_std_root() -> Result<Option<PathBuf>, CompileError> {
@@ -521,12 +538,64 @@ fn module_prefix(module_path: &Path, root_dir: &Path) -> String {
     }
 }
 
+thread_local! {
+    static LOCAL_VARS: std::cell::RefCell<HashSet<String>> = std::cell::RefCell::new(HashSet::new());
+}
+
+fn collect_local_vars(params: &[Param], body: &[Stmt]) -> HashSet<String> {
+    let mut vars = HashSet::new();
+    for param in params {
+        vars.insert(param.name.clone());
+    }
+    fn collect(stmts: &[Stmt], vars: &mut HashSet<String>) {
+        for stmt in stmts {
+            match stmt {
+                Stmt::VarDecl { name, .. } => {
+                    vars.insert(name.clone());
+                }
+                Stmt::If { then_body, else_body, .. } => {
+                    collect(then_body, vars);
+                    collect(else_body, vars);
+                }
+                Stmt::Match { arms, .. } => {
+                    for arm in arms {
+                        collect(&arm.body, vars);
+                    }
+                }
+                Stmt::ForRange { var_name, body, .. } => {
+                    vars.insert(var_name.clone());
+                    collect(body, vars);
+                }
+                Stmt::ForEach { var_name, body, .. } => {
+                    vars.insert(var_name.clone());
+                    collect(body, vars);
+                }
+                Stmt::ForClassic { var_name, body, .. } => {
+                    vars.insert(var_name.clone());
+                    collect(body, vars);
+                }
+                Stmt::While { body, .. } | Stmt::Loop { body, .. } => {
+                    collect(body, vars);
+                }
+                _ => {}
+            }
+        }
+    }
+    collect(body, &mut vars);
+    vars
+}
+
 fn rewrite_function(
     mut function: Function,
     local_functions: &HashMap<String, String>,
     local_symbols: &HashMap<String, String>,
     module_aliases: &ModuleAliases,
 ) -> Result<Function, CompileError> {
+    let vars = collect_local_vars(&function.params, &function.body);
+    LOCAL_VARS.with(|lv| {
+        *lv.borrow_mut() = vars;
+    });
+
     if let Some(mapped) = local_functions.get(&function.name) {
         function.name = mapped.clone();
     }
@@ -592,6 +661,7 @@ fn rewrite_interface_def(
         is_pub: interface_def.is_pub,
         name,
         methods,
+        file_path: interface_def.file_path,
     })
 }
 
@@ -658,6 +728,7 @@ fn rewrite_type_def(
             .collect(),
         line: type_def.line,
         column: type_def.column,
+        file_path: type_def.file_path,
     })
 }
 
@@ -997,6 +1068,12 @@ fn rewrite_expr(
                 if let Some(mapped) = local_types.get(&path[0]) {
                     return Ok(Expr::Path(vec![mapped.clone()]));
                 }
+                let is_local = LOCAL_VARS.with(|lv| lv.borrow().contains(&path[0]));
+                if !is_local {
+                    if let Some(mapped) = local_functions.get(&path[0]) {
+                        return Ok(Expr::Path(vec![mapped.clone()]));
+                    }
+                }
             }
             let full_path = path.join(".");
             if let Some(mapped) = local_types.get(&full_path) {
@@ -1008,6 +1085,19 @@ fn rewrite_expr(
                     return Ok(Expr::Path(vec![type_mapped, path[1].clone()]));
                 }
                 return Ok(Expr::Path(vec![mapped.clone()]));
+            }
+            if let Some(mapped) = local_functions.get(&full_path) {
+                return Ok(Expr::Path(vec![mapped.clone()]));
+            }
+            if path.len() == 2 {
+                let is_local = LOCAL_VARS.with(|lv| lv.borrow().contains(&path[0]));
+                if !is_local {
+                    if let Some(module) = module_aliases.get(&path[0]) {
+                        if let Some(func_name) = module.functions.get(&path[1]) {
+                            return Ok(Expr::Path(vec![func_name.clone()]));
+                        }
+                    }
+                }
             }
             Ok(expr)
         }
@@ -1034,9 +1124,15 @@ fn rewrite_expr(
         Expr::FieldAccess { base, field } => {
             if let Expr::Path(ref path) = *base {
                 if path.len() == 1 {
-                    if let Some(module) = module_aliases.get(&path[0]) {
-                        if let Some(global_name) = module.globals.get(&field) {
-                            return Ok(Expr::Path(vec![global_name.clone()]));
+                    let is_local = LOCAL_VARS.with(|lv| lv.borrow().contains(&path[0]));
+                    if !is_local {
+                        if let Some(module) = module_aliases.get(&path[0]) {
+                            if let Some(global_name) = module.globals.get(&field) {
+                                return Ok(Expr::Path(vec![global_name.clone()]));
+                            }
+                            if let Some(func_name) = module.functions.get(&field) {
+                                return Ok(Expr::Path(vec![func_name.clone()]));
+                            }
                         }
                     }
                     let qualified = format!("{}.{}", path[0], field);

@@ -22,6 +22,7 @@ use sema::analyze;
 pub struct CompileError {
     message: String,
     location: Option<SourceLocation>,
+    pub file_path: Option<PathBuf>,
 }
 
 impl CompileError {
@@ -29,6 +30,7 @@ impl CompileError {
         Self {
             message: message.into(),
             location: None,
+            file_path: None,
         }
     }
 
@@ -46,6 +48,20 @@ impl CompileError {
     pub fn location(&self) -> Option<(usize, usize)> {
         self.location
             .map(|location| (location.line, location.column))
+    }
+
+    pub fn with_file(mut self, file_path: impl Into<PathBuf>) -> Self {
+        if self.file_path.is_none() {
+            self.file_path = Some(file_path.into());
+        }
+        self
+    }
+
+    pub fn with_file_opt(mut self, file_path: Option<PathBuf>) -> Self {
+        if self.file_path.is_none() {
+            self.file_path = file_path;
+        }
+        self
     }
 }
 
@@ -466,6 +482,7 @@ fn build_test_program(program: &Program) -> Program {
             body: test.body.clone(),
             line: 0,
             column: 0,
+            file_path: None,
         });
         main_body.push(Stmt::Expr {
             line: 0,
@@ -495,6 +512,7 @@ fn build_test_program(program: &Program) -> Program {
         body: main_body,
         line: 0,
         column: 0,
+        file_path: None,
     });
 
 Program {
@@ -793,9 +811,13 @@ fn resolve_error_site(
     error: &CompileError,
     default_path: Option<&Path>,
 ) -> (Option<PathBuf>, Option<usize>, Option<usize>, String) {
+    let default_or_err_path = error
+        .file_path
+        .clone()
+        .or_else(|| default_path.map(Path::to_path_buf));
     if let Some((line, column)) = error.location() {
         return (
-            default_path.map(Path::to_path_buf),
+            default_or_err_path,
             Some(line),
             Some(column),
             error.message().to_string(),
@@ -807,10 +829,10 @@ fn resolve_error_site(
         if let Some((path, tail)) = rest.split_once(": ") {
             (Some(PathBuf::from(path)), tail.to_string())
         } else {
-            (default_path.map(Path::to_path_buf), message.to_string())
+            (default_or_err_path, message.to_string())
         }
     } else {
-        (default_path.map(Path::to_path_buf), message.to_string())
+        (default_or_err_path, message.to_string())
     };
 
     if let Some((tail, line, column)) = parse_location_suffix(&message) {

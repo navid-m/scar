@@ -108,6 +108,7 @@ pub fn generate_c(
             body: Vec::new(),
             line: 0,
             column: 0,
+            file_path: None,
         };
         output.push_str(&render_global_init(
             &global.init,
@@ -1532,7 +1533,14 @@ fn render_expr_with_hint(
             args,
         } => render_list_method_call(method, receiver, args, function, info, deref_locals),
         Expr::Path(path) => match path.as_slice() {
-            [name] => Ok(render_symbol_name(name, function, info)),
+            [name] => {
+                let symbol = render_symbol_name(name, function, info);
+                if matches!(hint, Some(Type::FnPtr(_, _))) {
+                    Ok(format!("&{symbol}"))
+                } else {
+                    Ok(symbol)
+                }
+            }
             [type_name, variant_name] => {
                 if let Some(type_info) = info.types.get(type_name) {
                     if type_info.kind == TypeDefKind::Enum {

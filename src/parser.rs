@@ -140,6 +140,7 @@ impl Parser {
                         .collect(),
                     line: enum_def.line,
                     column: enum_def.column,
+                    file_path: None,
                 });
             } else if self.check_simple(&TokenKind::Enum) {
                 let enum_def = self.parse_enum_def(false)?;
@@ -163,6 +164,7 @@ impl Parser {
                         .collect(),
                     line: enum_def.line,
                     column: enum_def.column,
+                    file_path: None,
                 });
             } else if self.check_simple(&TokenKind::Pub) && self.check_next_simple(&TokenKind::Type)
             {
@@ -257,6 +259,7 @@ impl Parser {
             init,
             line,
             column,
+            file_path: None,
         })
     }
 
@@ -325,6 +328,7 @@ impl Parser {
                 variants: Vec::new(),
                 line: def_line,
                 column: def_column,
+                file_path: None,
             });
         }
         self.expect_newline("expected a newline after type name")?;
@@ -359,6 +363,7 @@ impl Parser {
             variants: Vec::new(),
             line: def_line,
             column: def_column,
+            file_path: None,
         })
     }
 
@@ -418,6 +423,7 @@ impl Parser {
             variants,
             line: def_line,
             column: def_column,
+            file_path: None,
         })
     }
 
@@ -477,6 +483,7 @@ impl Parser {
             variants,
             line,
             column,
+            file_path: None,
         })
     }
 
@@ -517,6 +524,7 @@ impl Parser {
             is_pub,
             name,
             methods,
+            file_path: None,
         })
     }
 
@@ -544,6 +552,7 @@ impl Parser {
             body,
             line: fn_line,
             column: fn_column,
+            file_path: None,
         })
     }
 
@@ -572,6 +581,7 @@ impl Parser {
             body: Vec::new(),
             line: fn_line,
             column: fn_column,
+            file_path: None,
         })
     }
 
