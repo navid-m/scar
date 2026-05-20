@@ -2709,6 +2709,14 @@ fn render_list_helpers(list_ty: &Type) -> Result<String, CompileError> {
     output.push_str("    return list->cap;\n");
     output.push_str("}\n\n");
 
+    output.push_str("static uintptr_t ");
+    output.push_str(&helper_prefix);
+    output.push_str("_len(");
+    output.push_str(&list_name);
+    output.push_str(" *list) {\n");
+    output.push_str("    return (uintptr_t)list->len;\n");
+    output.push_str("}\n\n");
+
     output.push_str("static void ");
     output.push_str(&helper_prefix);
     output.push_str("_reserve(");
@@ -2938,10 +2946,18 @@ fn is_codegen_condition_type(ty: &Type) -> bool {
 fn pointer_arithmetic_type(ty: &Type) -> Type {
     match ty {
         Type::Ref(inner) if inner.as_ref() == &Type::Void => Type::Ref(Box::new(Type::U8)),
+        Type::Ref(inner) => match inner.as_ref() {
+            Type::List(elem) => Type::Ref(elem.clone()),
+            _ => ty.clone(),
+        },
         Type::Mut(inner) => match inner.as_ref() {
             Type::Ref(pointee) if pointee.as_ref() == &Type::Void => {
                 Type::Mut(Box::new(Type::Ref(Box::new(Type::U8))))
             }
+            Type::Ref(pointee) => match pointee.as_ref() {
+                Type::List(elem) => Type::Mut(Box::new(Type::Ref(elem.clone()))),
+                _ => ty.clone(),
+            },
             _ => ty.clone(),
         },
         _ => ty.clone(),
@@ -2957,10 +2973,18 @@ fn render_pointer_arithmetic_base(
     let ty = infer_codegen_expr_type(expr, function, info)?;
     Ok(match ty {
         Type::Ref(inner) if inner.as_ref() == &Type::Void => format!("((char *)({rendered}))"),
+        Type::Ref(inner) => match inner.as_ref() {
+            Type::List(_) => format!("(({rendered})->data)"),
+            _ => rendered,
+        },
         Type::Mut(inner) => match inner.as_ref() {
             Type::Ref(pointee) if pointee.as_ref() == &Type::Void => {
                 format!("((char *)({rendered}))")
             }
+            Type::Ref(pointee) => match pointee.as_ref() {
+                Type::List(_) => format!("(({rendered})->data)"),
+                _ => rendered,
+            },
             _ => rendered,
         },
         _ => rendered,

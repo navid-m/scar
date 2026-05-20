@@ -1510,6 +1510,11 @@ fn infer_expr_type(
                 BinaryOp::Equal | BinaryOp::NotEqual if can_compare_with_none(&lhs_ty, &rhs_ty) => {
                     Ok(Type::Bool)
                 }
+                BinaryOp::Equal | BinaryOp::NotEqual
+                    if is_nullable_pointer_type(&lhs_ty) && is_nullable_pointer_type(&rhs_ty) =>
+                {
+                    Ok(Type::Bool)
+                }
                 BinaryOp::LessThan
                 | BinaryOp::LessEqual
                 | BinaryOp::GreaterThan
@@ -2720,10 +2725,18 @@ fn is_memory_pointer_type(ty: &Type) -> bool {
 fn pointer_arithmetic_type(ty: &Type) -> Type {
     match ty {
         Type::Ref(inner) if inner.as_ref() == &Type::Void => Type::Ref(Box::new(Type::U8)),
+        Type::Ref(inner) => match inner.as_ref() {
+            Type::List(elem) => Type::Ref(elem.clone()),
+            _ => ty.clone(),
+        },
         Type::Mut(inner) => match inner.as_ref() {
             Type::Ref(pointee) if pointee.as_ref() == &Type::Void => {
                 Type::Mut(Box::new(Type::Ref(Box::new(Type::U8))))
             }
+            Type::Ref(pointee) => match pointee.as_ref() {
+                Type::List(elem) => Type::Mut(Box::new(Type::Ref(elem.clone()))),
+                _ => ty.clone(),
+            },
             _ => ty.clone(),
         },
         _ => ty.clone(),

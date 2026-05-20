@@ -3102,10 +3102,18 @@ fn deref_type_refs(mut ty: &Type) -> &Type {
 fn pointer_arithmetic_type(ty: &Type) -> Type {
     match ty {
         Type::Ref(inner) if inner.as_ref() == &Type::Void => Type::Ref(Box::new(Type::U8)),
+        Type::Ref(inner) => match inner.as_ref() {
+            Type::List(elem) => Type::Ref(elem.clone()),
+            _ => ty.clone(),
+        },
         Type::Mut(inner) => match inner.as_ref() {
             Type::Ref(pointee) if pointee.as_ref() == &Type::Void => {
                 Type::Mut(Box::new(Type::Ref(Box::new(Type::U8))))
             }
+            Type::Ref(pointee) => match pointee.as_ref() {
+                Type::List(elem) => Type::Mut(Box::new(Type::Ref(elem.clone()))),
+                _ => ty.clone(),
+            },
             _ => ty.clone(),
         },
         _ => ty.clone(),

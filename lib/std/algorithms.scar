@@ -1,6 +1,5 @@
 val allocators = use("std/allocators")
 val math = use("std/math")
-val str = use("std/string")
 
 pub def isort[T: math.Integer, A: allocators.GeneralAllocator](l ref(list[T]), ac A) bool|error
     var n usize = @len(l)
@@ -19,21 +18,21 @@ pub def isort[T: math.Integer, A: allocators.GeneralAllocator](l ref(list[T]), a
             var temp ref(void) = A.alloc(@addr(ac), n * elem_size)?
             var temp_bytes ref(u8) = @bitcast(temp, ref(u8))
 
-            var is_signed bool = @sizeof(T) != 1 as usize && @sizeof(T) != 2 as usize && @sizeof(T) != 4 as usize && @sizeof(T) != 8 as usize || @bitcast(@deref(@addr(0 as T)), ref(u8)) != none
-
-            var max_val T = 0 as T
+            var sign_mask usize = 1 as usize
+            var total_bits i32 = @sizeof(T) as i32 * 8 as i32
+            sign_mask = sign_mask << (total_bits - 1 as i32)
+            var sign_bit T = @bitcast(sign_mask, T)
 
             for var i = 0 as usize .. n
-                var v T = @bitcast(@deref(@add(l, i)), T)
-                if v < 0 as T
-                    var neg_v T = @neg(v)
-                    if neg_v > max_val
-                        max_val = neg_v
-                    end
-                else
-                    if v > max_val
-                        max_val = v
-                    end
+                var v T = @deref(@add(l, i))
+                @deref(@add(l, i)) = v ^ sign_bit
+            end
+
+            var max_val T = 0 as T
+            for var i = 0 as usize .. n
+                var v T = @deref(@add(l, i))
+                if v > max_val
+                    max_val = v
                 end
             end
 
@@ -44,17 +43,13 @@ pub def isort[T: math.Integer, A: allocators.GeneralAllocator](l ref(list[T]), a
                 @memset(cm, 0, 256 as usize * @sizeof(usize))
 
                 for var i = 0 as usize .. n
-                    var v T = @bitcast(@deref(@add(l, i)), T)
+                    var v T = @deref(@add(l, i))
                     var byte_val u8 = 0 as u8
 
                     if bytes_passed < bytes_per_elem
                         var shift i32 = bytes_passed * 8 as i32
                         var masked T = @shr(v, shift)
                         byte_val = masked as u8
-                    end
-
-                    if v < 0 as T
-                        byte_val = 255 as u8 - byte_val
                     end
 
                     var idx usize = byte_val as usize
@@ -67,17 +62,13 @@ pub def isort[T: math.Integer, A: allocators.GeneralAllocator](l ref(list[T]), a
 
                 for var i = n, i > 0 as usize, i--
                     var i_idx usize = i - 1 as usize
-                    var v T = @bitcast(@deref(@add(l, i_idx)), T)
+                    var v T = @deref(@add(l, i_idx))
                     var byte_val u8 = 0 as u8
 
                     if bytes_passed < bytes_per_elem
                         var shift i32 = bytes_passed * 8 as i32
                         var masked T = @shr(v, shift)
                         byte_val = masked as u8
-                    end
-
-                    if v < 0 as T
-                        byte_val = 255 as u8 - byte_val
                     end
 
                     var idx usize = byte_val as usize
@@ -97,6 +88,11 @@ pub def isort[T: math.Integer, A: allocators.GeneralAllocator](l ref(list[T]), a
                     break
                 end
                 bytes_passed = bytes_passed + 1 as i32
+            end
+
+            for var i = 0 as usize .. n
+                var v T = @deref(@add(l, i))
+                @deref(@add(l, i)) = v ^ sign_bit
             end
 
             A.free(@addr(ac), temp)
@@ -125,7 +121,7 @@ pub def fsort[T: math.Float, A: allocators.GeneralAllocator](l ref(list[T]), ac 
 
             var max_as_u64 u64 = 0 as u64
             for var i = 0 as usize .. n
-                var v T = @bitcast(@deref(@add(l, i)), T)
+                var v T = @deref(@add(l, i))
                 var sortable u64 = 0 as u64
                 if @sizeof(T) == 4 as usize
                     var bits u32 = @bitcast(v, u32)
@@ -157,7 +153,7 @@ pub def fsort[T: math.Float, A: allocators.GeneralAllocator](l ref(list[T]), ac 
                 @memset(cm, 0, 256 as usize * @sizeof(usize))
 
                 for var i = 0 as usize .. n
-                    var v T = @bitcast(@deref(@add(l, i)), T)
+                    var v T = @deref(@add(l, i))
                     var sortable u64 = 0 as u64
                     if @sizeof(T) == 4 as usize
                         var bits u32 = @bitcast(v, u32)
@@ -187,7 +183,7 @@ pub def fsort[T: math.Float, A: allocators.GeneralAllocator](l ref(list[T]), ac 
 
                 for var i = n, i > 0 as usize, i--
                     var i_idx usize = i - 1 as usize
-                    var v T = @bitcast(@deref(@add(l, i_idx)), T)
+                    var v T = @deref(@add(l, i_idx))
                     var sortable u64 = 0 as u64
                     if @sizeof(T) == 4 as usize
                         var bits u32 = @bitcast(v, u32)
@@ -243,7 +239,7 @@ pub def sort_strings[A: allocators.GeneralAllocator](l ref(list[ref(u8)]), ac A)
 
     var max_len usize = 0 as usize
     for var i = 0 as usize .. n
-        var s ref(u8) = @bitcast(@deref(@add(l, i)), ref(u8))
+        var s ref(u8) = @deref(@add(l, i))
         var len usize = 0 as usize
         if s != none
             for @deref(@add(s, len)) != 0 as u8
@@ -262,7 +258,7 @@ pub def sort_strings[A: allocators.GeneralAllocator](l ref(list[ref(u8)]), ac A)
             var counts ref(usize) = @bitcast(cm, ref(usize))
             @memset(cm, 0, 256 as usize * @sizeof(usize))
 
-            var temp ref(ref(u8)) = @bitcast(A.alloc(@addr(ac), n * @sizeof(ref(u8)))?, ref(ref(u8)))
+            var temp ref(void) = A.alloc(@addr(ac), n * @sizeof(ref(u8)))?
             var temp_str ref(ref(u8)) = @bitcast(temp, ref(ref(u8)))
 
             var pos i32 = max_len as i32 - 1 as i32
@@ -271,7 +267,7 @@ pub def sort_strings[A: allocators.GeneralAllocator](l ref(list[ref(u8)]), ac A)
                 @memset(cm, 0, 256 as usize * @sizeof(usize))
 
                 for var i = 0 as usize .. n
-                    var s ref(u8) = @bitcast(@deref(@add(l, i)), ref(u8))
+                    var s ref(u8) = @deref(@add(l, i))
                     var c u8 = 0 as u8
                     if s != none
                         var str_len usize = 0 as usize
@@ -292,7 +288,7 @@ pub def sort_strings[A: allocators.GeneralAllocator](l ref(list[ref(u8)]), ac A)
 
                 for var i = n, i > 0 as usize, i--
                     var i_idx usize = i - 1 as usize
-                    var s ref(u8) = @bitcast(@deref(@add(l, i_idx)), ref(u8))
+                    var s ref(u8) = @deref(@add(l, i_idx))
                     var c u8 = 0 as u8
                     if s != none
                         var str_len usize = 0 as usize
@@ -310,13 +306,13 @@ pub def sort_strings[A: allocators.GeneralAllocator](l ref(list[ref(u8)]), ac A)
                 end
 
                 for var i = 0 as usize .. n
-                    @deref(@add(l, i)) = @bitcast(@deref(@add(temp_str, i)), list[ref(u8)])
+                    @deref(@add(l, i)) = @deref(@add(temp_str, i))
                 end
 
                 pos = pos - 1 as i32
             end
 
-            A.free(@addr(ac), @bitcast(temp, ref(void)))
+            A.free(@addr(ac), temp)
             A.free(@addr(ac), cm)
             return true
         )
@@ -326,7 +322,10 @@ end
 test "isort i32 list"
     var ac = allocators.HeapAllocator()
     var l list[i32] = [3, 1, 4, 1, 5, 9, 2, 6]
-    assert isort[i32, _](@addr(l), ac)?
+    match isort[i32, _](@addr(l), ac)
+        error _ => ( assert false )
+        ok result => ( assert result )
+    end
     assert l[0] == 1
     assert l[1] == 1
     assert l[2] == 2
@@ -339,11 +338,14 @@ end
 
 test "isort i32 with negatives"
     var ac = allocators.HeapAllocator()
-    var l list[i32] = [5, -3, 2, -1, 4, 0, -2, 3]
-    assert isort[i32, _](@addr(l), ac)?
-    assert l[0] == -3
-    assert l[1] == -2
-    assert l[2] == -1
+    var l list[i32] = [5, (-3), 2, (-1), 4, 0, (-2), 3]
+    match isort[i32, _](@addr(l), ac)
+        error _ => ( assert false )
+        ok result => ( assert result )
+    end
+    assert l[0] == (-3)
+    assert l[1] == (-2)
+    assert l[2] == (-1)
     assert l[3] == 0
     assert l[4] == 2
     assert l[5] == 3
@@ -354,7 +356,10 @@ end
 test "isort u32 list"
     var ac = allocators.HeapAllocator()
     var l list[u32] = [100 as u32, 50 as u32, 200 as u32, 25 as u32, 150 as u32]
-    assert isort[u32, _](@addr(l), ac)?
+    match isort[u32, _](@addr(l), ac)
+        error _ => ( assert false )
+        ok result => ( assert result )
+    end
     assert l[0] == 25 as u32
     assert l[1] == 50 as u32
     assert l[2] == 100 as u32
@@ -364,21 +369,27 @@ end
 
 test "isort i64 list"
     var ac = allocators.HeapAllocator()
-    var l list[i64] = [1000000, -500000, 0, 999999, -999999]
-    assert isort[i64, _](@addr(l), ac)?
-    assert l[0] == -999999
-    assert l[1] == -500000
-    assert l[2] == 0
-    assert l[3] == 1000000
-    assert l[4] == 999999
+    var l list[i64] = [1000000 as i64, (-500000 as i64), 0 as i64, 999999 as i64, (-999999 as i64)]
+    match isort[i64, _](@addr(l), ac)
+        error _ => ( assert false )
+        ok result => ( assert result )
+    end
+    assert l[0] == (-999999 as i64)
+    assert l[1] == (-500000 as i64)
+    assert l[2] == 0 as i64
+    assert l[3] == 1000000 as i64
+    assert l[4] == 999999 as i64
 end
 
 test "isort i8 list"
     var ac = allocators.HeapAllocator()
-    var l list[i8] = [5 as i8, -3 as i8, 0 as i8, 2 as i8, -1 as i8]
-    assert isort[i8, _](@addr(l), ac)?
-    assert l[0] == -3 as i8
-    assert l[1] == -1 as i8
+    var l list[i8] = [5 as i8, (-3 as i8), 0 as i8, 2 as i8, (-1 as i8)]
+    match isort[i8, _](@addr(l), ac)
+        error _ => ( assert false )
+        ok result => ( assert result )
+    end
+    assert l[0] == (-3 as i8)
+    assert l[1] == (-1 as i8)
     assert l[2] == 0 as i8
     assert l[3] == 2 as i8
     assert l[4] == 5 as i8
@@ -387,7 +398,10 @@ end
 test "fsort f64 list"
     var ac = allocators.HeapAllocator()
     var l list[f64] = [3.5, 1.2, 4.9, -2.1, 0.0, 2.5]
-    assert fsort[f64, _](@addr(l), ac)?
+    match fsort[f64, _](@addr(l), ac)
+        error _ => ( assert false )
+        ok result => ( assert result )
+    end
     assert l[0] == -2.1
     assert l[1] == 0.0
     assert l[2] == 1.2
@@ -399,7 +413,10 @@ end
 test "fsort f32 list"
     var ac = allocators.HeapAllocator()
     var l list[f32] = [3.5, 1.2, -0.5, 2.0]
-    assert fsort[f32, _](@addr(l), ac)?
+    match fsort[f32, _](@addr(l), ac)
+        error _ => ( assert false )
+        ok result => ( assert result )
+    end
     assert l[0] == -0.5
     assert l[1] == 1.2
     assert l[2] == 2.0
@@ -409,19 +426,25 @@ end
 test "sort strings list"
     var ac = allocators.HeapAllocator()
     var l list[ref(u8)] = ["banana", "apple", "cherry", "date"]
-    assert sort_strings[_](@addr(l), ac)?
-    assert str.eql(l[0], "apple")
-    assert str.eql(l[1], "banana")
-    assert str.eql(l[2], "cherry")
-    assert str.eql(l[3], "date")
+    match sort_strings[_](@addr(l), ac)
+        error _ => ( assert false )
+        ok result => ( assert result )
+    end
+    assert l[0] == "apple"
+    assert l[1] == "banana"
+    assert l[2] == "cherry"
+    assert l[3] == "date"
 end
 
 test "sort strings different lengths"
     var ac = allocators.HeapAllocator()
     var l list[ref(u8)] = ["b", "aaa", "aa", "a"]
-    assert sort_strings[_](@addr(l), ac)?
-    assert str.eql(l[0], "a")
-    assert str.eql(l[1], "aa")
-    assert str.eql(l[2], "aaa")
-    assert str.eql(l[3], "b")
+    match sort_strings[_](@addr(l), ac)
+        error _ => ( assert false )
+        ok result => ( assert result )
+    end
+    assert l[0] == "a"
+    assert l[1] == "aa"
+    assert l[2] == "aaa"
+    assert l[3] == "b"
 end
