@@ -377,8 +377,8 @@ test "isort i64 list"
     assert l[0] == (-999999 as i64)
     assert l[1] == (-500000 as i64)
     assert l[2] == 0 as i64
-    assert l[3] == 1000000 as i64
-    assert l[4] == 999999 as i64
+    assert l[3] == 999999 as i64
+    assert l[4] == 1000000 as i64
 end
 
 test "isort i8 list"
