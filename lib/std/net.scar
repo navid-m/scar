@@ -35,7 +35,7 @@ type Buffer
 	capacity mut(usize)
 end
 
-pub def write_callback(ptr ref(u8), size usize, nmemb usize, userdata ref(void)) usize
+def write_callback(ptr ref(u8), size usize, nmemb usize, userdata ref(void)) usize
 	var total_size usize = size * nmemb
 	var buffer = @bitcast(userdata, mut(ref(Buffer)))
 
