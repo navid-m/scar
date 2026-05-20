@@ -34,12 +34,12 @@ def log[A: allocators.BumpAllocator](ac ref(A), level Level, msg ref(u8)) void|e
 		return
 	end
 
-	var ts i64 = time.now()
-	val fmt_tstring = time.format_timestamp[A](ac, ts)?
+	var dt time.DateTime = time.now_datetime()
+	var ms i32 = ((time.now() % 1000000000 as i64) / 1000000 as i64) as i32
 
 	var level_str ref(u8) = level_to_str(level)
 
-	@print("[{s}] [{s}] ", {fmt_tstring, level_str})
+	@print("[{04d}-{02d}-{02d}T{02d}:{02d}:{02d}.{03d}] [{s}] ", {dt.year, dt.month, dt.day, dt.hour, dt.min, dt.sec, ms, level_str})
 	@puts(msg)
 end
 

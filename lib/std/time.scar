@@ -1,6 +1,8 @@
 val allocators = use("std/allocators")
 val str = use("std/string")
 
+extern "time.h"
+
 def unsupported_platform[T]() T|error
 	return error("std/time is not supported on this platform yet")
 end
@@ -251,16 +253,34 @@ end
 
 when posix
 	extern def time(t mut(ref(i64))) i64 :: "time"
-	extern def clock_gettime(clk_id i32, tv_sec mut(ref(i64)), tv_nsec mut(ref(i64))) i32 :: "clock_gettime"
+
+	extern type Timespec
+		tv_sec  i64
+		tv_nsec i64
+	end
+
+	extern type Tm
+		tm_sec   i32
+		tm_min   i32
+		tm_hour  i32
+		tm_mday  i32
+		tm_mon   i32
+		tm_year  i32
+		tm_wday  i32
+		tm_yday  i32
+		tm_isdst i32
+	end
+
+	extern def clock_gettime(clk_id i32, ts mut(ref(Timespec))) i32 :: "clock_gettime"
+	extern def localtime(t ref(i64)) ref(Tm) :: "localtime"
 	extern def clock() i64 :: "clock"
 
 	extern def nanosleep(tv_sec ref(i64), tv_nsec ref(i64)) i32 :: "nanosleep"
 
 	pub def now() i64
-		var tv_sec  i64 = 0 as i64
-		var tv_nsec i64 = 0 as i64
-		clock_gettime(0, @as_mut(@addr(tv_sec)), @as_mut(@addr(tv_nsec)))
-		return tv_sec * 1000000000 as i64 + tv_nsec
+		var ts Timespec = @zeroed()
+		clock_gettime(0, @as_mut(@addr(ts)))
+		return ts.tv_sec * 1000000000 as i64 + ts.tv_nsec
 	end
 
 	pub def epoch() i64
@@ -288,7 +308,16 @@ when posix
 	end
 
 	pub def now_datetime() DateTime
-		return DateTime.from_epoch(epoch())
+		var t i64 = epoch()
+		var tm ref(Tm) = localtime(@addr(t))
+		return DateTime(
+			year:  (tm.tm_year + 1900) as i32,
+			month: (tm.tm_mon + 1) as i32,
+			day:   (tm.tm_mday) as i32,
+			hour:  (tm.tm_hour) as i32,
+			min:   (tm.tm_min) as i32,
+			sec:   (tm.tm_sec) as i32
+		)
 	end
 end
 

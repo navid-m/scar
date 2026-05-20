@@ -33,6 +33,7 @@ pub fn resolve_entry_program(entry: &Path) -> Result<Program, CompileError> {
         resolved_enums: Vec::new(),
         resolved_functions: Vec::new(),
         resolved_globals: Vec::new(),
+        resolved_extern_headers: Vec::new(),
         visiting: Vec::new(),
     };
 
@@ -92,7 +93,11 @@ pub fn resolve_entry_program(entry: &Path) -> Result<Program, CompileError> {
 
     instantiate_generic_functions(Program {
         module_uses: Vec::new(),
-        extern_headers: program.extern_headers,
+        extern_headers: {
+            let mut headers = resolver.resolved_extern_headers;
+            headers.extend(program.extern_headers);
+            headers
+        },
         interface_defs,
         type_defs,
         typesets,
@@ -126,6 +131,7 @@ struct Resolver {
     resolved_enums: Vec<EnumDef>,
     resolved_functions: Vec<Function>,
     resolved_globals: Vec<GlobalVar>,
+    resolved_extern_headers: Vec<String>,
     visiting: Vec<PathBuf>,
 }
 
@@ -238,6 +244,7 @@ impl Resolver {
             self.resolved_typesets.extend(rewritten_typesets);
             self.resolved_functions.extend(rewritten_functions);
             self.resolved_globals.extend(rewritten_globals);
+            self.resolved_extern_headers.extend(parsed.extern_headers);
         }
 
         self.visiting.pop();

@@ -263,7 +263,7 @@ fn render_type_def(type_def: &TypeDef) -> String {
     match type_def.kind {
         TypeDefKind::Struct => {
             if type_def.is_extern {
-                output.push_str("typedef struct __attribute__((packed)) ");
+                output.push_str("typedef struct ");
             } else {
                 output.push_str("typedef struct ");
             }
