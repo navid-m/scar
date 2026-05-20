@@ -87,18 +87,18 @@ pub def pow(x f64, y f64) f64
 	end
 	if y == (y as i64) as f64
 		var result f64 = 1 as f64
-		var exp i64 = y as i64
+		var exps i64 = y as i64
 		var base f64 = x
-		if exp < 0 as i64
+		if exps < 0 as i64
 			base = 1 as f64 / base
-			exp = -exp
+			exps = -exps
 		end
-		for exp > 0 as i64
-			if (exp & 1 as i64) != 0 as i64
+		for exps > 0 as i64
+			if (exps & 1 as i64) != 0 as i64
 				result = result * base
 			end
 			base = base * base
-			exp = exp >> 1 as i64
+			exps = exps >> 1 as i64
 		end
 		return result
 	end

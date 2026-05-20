@@ -1535,11 +1535,7 @@ fn render_expr_with_hint(
         Expr::Path(path) => match path.as_slice() {
             [name] => {
                 let symbol = render_symbol_name(name, function, info);
-                if matches!(hint, Some(Type::FnPtr(_, _))) {
-                    Ok(format!("&{symbol}"))
-                } else {
-                    Ok(symbol)
-                }
+                Ok(symbol)
             }
             [type_name, variant_name] => {
                 if let Some(type_info) = info.types.get(type_name) {
