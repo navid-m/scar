@@ -1273,7 +1273,18 @@ fn render_expr_with_hint(
         } else {
             "0".to_string()
         }),
-        Expr::Float(value) => Ok(value.to_string()),
+        Expr::Float(value) => {
+            if let Some(Type::F32) = hint {
+                let s = value.to_string();
+                if s.contains('.') {
+                    Ok(format!("{s}f"))
+                } else {
+                    Ok(format!("{s}.0f"))
+                }
+            } else {
+                Ok(value.to_string())
+            }
+        }
         Expr::String(value) => Ok(format!("\"{}\"", escape_c_string(value))),
         Expr::None => Ok("NULL".to_string()),
         Expr::ListLiteral(values) => {
@@ -1357,11 +1368,16 @@ fn render_expr_with_hint(
             ))
         }
         Expr::SizeOf(ty) => Ok(format!("((size_t)sizeof({}))", c_type(ty))),
-        Expr::BitCast { expr, ty } => Ok(format!(
-            "(({})({}))",
-            c_type(ty),
-            render_expr(expr, function, info)?
-        )),
+        Expr::BitCast { expr, ty } => {
+            let src = render_expr(expr, function, info)?;
+            let dst_ty = c_type(ty);
+            match &*ty {
+                Type::Ref(_) | Type::Mut(_) => Ok(format!("(({dst_ty})({src}))")),
+                _ => Ok(format!(
+                    "({{ {dst_ty} __scar_bc; memcpy(&__scar_bc, &({src}), sizeof(__scar_bc)); __scar_bc; }})"
+                )),
+            }
+        }
         Expr::Error { .. } => Err(CompileError::new(
             "`error(...)` requires a `T|error` context during code generation",
         )),
@@ -1400,11 +1416,13 @@ fn render_expr_with_hint(
                 BinaryOp::NotEqual => "!=",
                 BinaryOp::ShiftRight => unreachable!("handled above"),
             };
+            let lhs_type = infer_codegen_expr_type(lhs, function, info).ok();
+            let rhs_type = infer_codegen_expr_type(rhs, function, info).ok();
             Ok(format!(
                 "(({}) {} ({}))",
-                render_expr(lhs, function, info)?,
+                render_expr_with_hint(lhs, function, info, rhs_type.as_ref())?,
                 operator,
-                render_expr(rhs, function, info)?
+                render_expr_with_hint(rhs, function, info, lhs_type.as_ref())?
             ))
         }
     }
@@ -1733,8 +1751,16 @@ fn render_builtin_call(
             Ok(format!("printf({})", rendered_args.join(", ")))
         }
         "neg" => Ok(format!("(-({}))", render_expr(&args[0], function, info)?)),
-        "shl" => Ok(format!("({} << {})", render_expr(&args[0], function, info)?, render_expr(&args[1], function, info)?)),
-        "shr" => Ok(format!("({} >> {})", render_expr(&args[0], function, info)?, render_expr(&args[1], function, info)?)),
+        "shl" => Ok(format!(
+            "({} << {})",
+            render_expr(&args[0], function, info)?,
+            render_expr(&args[1], function, info)?
+        )),
+        "shr" => Ok(format!(
+            "({} >> {})",
+            render_expr(&args[0], function, info)?,
+            render_expr(&args[1], function, info)?
+        )),
         "memcpy" => Ok(format!(
             "memcpy((void *)({}), (void const *)({}), (size_t)({}))",
             render_expr(&args[0], function, info)?,
