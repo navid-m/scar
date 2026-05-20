@@ -14,8 +14,8 @@ pub val LEVEL Level = Level.Info
 def level_to_str(level Level) ref(u8)
 	match level
 		Level.Debug => ( return "DEBUG" )
-		Level.Info  => ( return "INFO " )
-		Level.Warn  => ( return "WARN " )
+		Level.Info  => ( return "INFO" )
+		Level.Warn  => ( return "WARN" )
 		Level.Error => ( return "ERROR" )
 	end
 end
@@ -29,60 +29,57 @@ def level_to_int(level Level) i32
 	end
 end
 
-def log(level Level, msg ref(u8))
+def log[A: allocators.BumpAllocator](ac ref(A), level Level, msg ref(u8)) void|error
 	if level_to_int(level) < level_to_int(LEVEL)
 		return
 	end
 
 	var ts i64 = time.now()
-	var secs i64 = ts / 1000000000 as i64
-	var total_secs i64 = secs % 86400 as i64
-	var hours i32 = (total_secs / 3600 as i64) as i32
-	var mins i32 = ((total_secs % 3600 as i64) / 60 as i64) as i32
-	var secs_sec i32 = (total_secs % 60 as i64) as i32
-	var ms i32 = ((ts % 1000000000 as i64) / 1000000 as i64) as i32
+	val fmt_tstring = time.format_timestamp[A](ac, ts)?
 
 	var level_str ref(u8) = level_to_str(level)
 
-	@print("[{s}] [{02d}:{02d}:{02d}.{03d}] ", {level_str, hours, mins, secs_sec, ms})
+	@print("[{s}] [{s}] ", {fmt_tstring, level_str})
 	@puts(msg)
 end
 
-pub def debug(msg ref(u8))
-	log(Level.Debug, msg)
+pub def debug[A: allocators.BumpAllocator](ac ref(A), msg ref(u8))
+	log[A](ac, Level.Debug, msg)
 end
 
-pub def info(msg ref(u8))
-	log(Level.Info, msg)
+pub def info[A: allocators.BumpAllocator](ac ref(A), msg ref(u8))
+	log[A](ac, Level.Info, msg)
 end
 
-pub def warn(msg ref(u8))
-	log(Level.Warn, msg)
+pub def warn[A: allocators.BumpAllocator](ac ref(A), msg ref(u8))
+	log[A](ac, Level.Warn, msg)
 end
 
-pub def err(msg ref(u8))
-	log(Level.Error, msg)
+pub def err[A: allocators.BumpAllocator](ac ref(A), msg ref(u8))
+	log[A](ac, Level.Error, msg)
 end
 
-pub def debugf(format ref(u8), args ref(u8))
-	debug(format)
+pub def debugf[A: allocators.BumpAllocator](ac ref(A), format ref(u8), args ref(u8))
+	debug[A](ac, format)
 end
 
-pub def infof(format ref(u8), args ref(u8))
-	info(format)
+pub def infof[A: allocators.BumpAllocator](ac ref(A), format ref(u8), args ref(u8))
+	info[A](ac, format)
 end
 
-pub def warnf(format ref(u8), args ref(u8))
-	warn(format)
+pub def warnf[A: allocators.BumpAllocator](ac ref(A), format ref(u8), args ref(u8))
+	warn[A](ac, format)
 end
 
-pub def errorf(format ref(u8), args ref(u8))
-	err(format)
+pub def errorf[A: allocators.BumpAllocator](ac ref(A), format ref(u8), args ref(u8))
+	err[A](ac, format)
 end
 
 test "logging functions exist"
-	debug("debug message")
-	info("info message")
-	warn("warn message")
-	err("error message")
+	var ac = allocators.Arena.new(10240 as usize)?
+	debug[_](@addr(ac), "debug message")
+	info[_](@addr(ac), "info message")
+	warn[_](@addr(ac), "warn message")
+	err[_](@addr(ac), "error message")
+	allocators.Arena.destroy(@addr(ac))
 end
