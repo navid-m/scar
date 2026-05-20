@@ -14,8 +14,8 @@ pub val LEVEL Level = Level.Info
 def level_to_str(level Level) ref(u8)
 	match level
 		Level.Debug => ( return "DEBUG" )
-		Level.Info => ( return "INFO " )
-		Level.Warn => ( return "WARN " )
+		Level.Info  => ( return "INFO " )
+		Level.Warn  => ( return "WARN " )
 		Level.Error => ( return "ERROR" )
 	end
 end
@@ -23,8 +23,8 @@ end
 def level_to_int(level Level) i32
 	match level
 		Level.Debug => ( return 0 )
-		Level.Info =>  ( return 1 )
-		Level.Warn =>  ( return 2 )
+		Level.Info  => ( return 1 )
+		Level.Warn  => ( return 2 )
 		Level.Error => ( return 3 )
 	end
 end
