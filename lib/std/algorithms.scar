@@ -15,9 +15,9 @@ def float_to_sortable(v f64) u64
     var bits u64 = @bitcast(v, u64)
     var sign u64 = (bits >> 63 as u64) & 1 as u64
     if sign == 0 as u64
-        return bits ^ 0x8000000000000000u64
+        return bits ^ 0x8000000000000000 as u64
     end
-    return 0xFFFFFFFFFFFFFFFFu64 - bits
+    return (0xFFFFFFFFFFFFFFFF as u64) - bits
 end
 
 def float_to_sortable_f32(v f32) u64
@@ -25,9 +25,9 @@ def float_to_sortable_f32(v f32) u64
     var sign u32 = (bits >> 31 as u32) & 1 as u32
     if sign == 0 as u32
         var result u64 = bits as u64
-        return result ^ 0x80000000u64
+        return result ^ 0x80000000 as u64
     end
-    return 0xFFFFFFFFu64 - (bits as u64)
+    return (0xFFFFFFFF as u64) - (bits as u64)
 end
 
 pub def sort[T: math.Number, A: allocators.GeneralAllocator](l mut(list[T]), ac A) bool
@@ -50,7 +50,7 @@ pub def sort[T: math.Number, A: allocators.GeneralAllocator](l mut(list[T]), ac 
             var is_signed bool = is_signed_number[T]()
             var is_float bool = false
             match @deref(@addr(0 as T))
-                0 as T => ( is_float = true )
+                none => ( is_float = true )
             end
 
             if is_float
@@ -172,7 +172,7 @@ pub def sort[T: math.Number, A: allocators.GeneralAllocator](l mut(list[T]), ac 
                         @deref(@add(counts, i)) = @deref(@add(counts, i)) + @deref(@add(counts, i - 1 as usize))
                     end
 
-                    for var i = n; i > 0 as usize; i--
+                    for var i = n, i > 0 as usize, i--
                         var i_idx usize = i - 1 as usize
                         var v T = l[i_idx]
                         var byte_val u8 = 0 as u8
@@ -274,7 +274,7 @@ pub def sort_strings[A: allocators.GeneralAllocator](l mut(list[ref(u8)]), ac A)
                     @deref(@add(counts, i)) = @deref(@add(counts, i)) + @deref(@add(counts, i - 1 as usize))
                 end
 
-                for var i = n; i > 0 as usize; i--
+                for var i = n, i > 0 as usize, i--
                     var i_idx usize = i - 1 as usize
                     var s ref(u8) = l[i_idx]
                     var c u8 = 0 as u8
