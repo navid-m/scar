@@ -2,24 +2,24 @@ val allocators = use("std/allocators")
 val stdio      = use("std/stdio")
 
 pub val MAX_REGEXP_OBJECTS usize = 30
-pub val MAX_CHAR_CLASS_LEN   usize = 40
+pub val MAX_CHAR_CLASS_LEN usize = 40
 
-val TOKEN_UNUSED       u8 = 0 as u8
-val TOKEN_DOT          u8 = 1 as u8
-val TOKEN_BEGIN        u8 = 2 as u8
-val TOKEN_END          u8 = 3 as u8
-val TOKEN_QUESTIONMARK u8 = 4 as u8
-val TOKEN_STAR         u8 = 5 as u8
-val TOKEN_PLUS         u8 = 6 as u8
-val TOKEN_CHAR         u8 = 7 as u8
-val TOKEN_CHAR_CLASS   u8 = 8 as u8
-val TOKEN_INV_CHAR_CLASS u8 = 9 as u8
-val TOKEN_DIGIT        u8 = 10 as u8
-val TOKEN_NOT_DIGIT    u8 = 11 as u8
-val TOKEN_ALPHA        u8 = 12 as u8
-val TOKEN_NOT_ALPHA    u8 = 13 as u8
-val TOKEN_WHITESPACE   u8 = 14 as u8
-val TOKEN_NOT_WHITESPACE u8 = 15 as u8
+val TOKEN_UNUSED           u8    = 0 as u8
+val TOKEN_DOT              u8    = 1 as u8
+val TOKEN_BEGIN            u8    = 2 as u8
+val TOKEN_END              u8    = 3 as u8
+val TOKEN_QUESTIONMARK     u8    = 4 as u8
+val TOKEN_STAR             u8    = 5 as u8
+val TOKEN_PLUS             u8    = 6 as u8
+val TOKEN_CHAR             u8    = 7 as u8
+val TOKEN_CHAR_CLASS       u8    = 8 as u8
+val TOKEN_INV_CHAR_CLASS   u8    = 9 as u8
+val TOKEN_DIGIT            u8    = 10 as u8
+val TOKEN_NOT_DIGIT        u8    = 11 as u8
+val TOKEN_ALPHA            u8    = 12 as u8
+val TOKEN_NOT_ALPHA        u8    = 13 as u8
+val TOKEN_WHITESPACE       u8    = 14 as u8
+val TOKEN_NOT_WHITESPACE   u8    = 15 as u8
 
 type RegexToken
     kind u8
