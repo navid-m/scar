@@ -148,14 +148,14 @@ pub def DateTime.from_epoch(unix_secs i64) DateTime
 
 	var year i32 = 1970
 	for
-		var days_in_year i64 = 366 as i64
+		var diy i64 = 366 as i64
 		if !is_leap_year(year)
-			days_in_year = 365 as i64
+			diy = 365 as i64
 		end
-		if days < days_in_year
+		if days < diy
 			break
 		end
-		days = days - days_in_year
+		days = days - diy
 		year++
 	end
 
