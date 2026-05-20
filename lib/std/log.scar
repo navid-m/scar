@@ -14,8 +14,8 @@ pub val LEVEL Level = Level.Info
 def level_to_str(level Level) ref(u8)
 	match level
 		Level.Debug => ( return "DEBUG" )
-		Level.Info => ( return "INFO" )
-		Level.Warn => ( return "WARN" )
+		Level.Info => ( return "INFO " )
+		Level.Warn => ( return "WARN " )
 		Level.Error => ( return "ERROR" )
 	end
 end
@@ -46,7 +46,6 @@ def log(level Level, msg ref(u8))
 
 	@print("[{s}] [{02d}:{02d}:{02d}.{03d}] ", {level_str, hours, mins, secs_sec, ms})
 	@puts(msg)
-	@puts("\n")
 end
 
 pub def debug(msg ref(u8))
