@@ -1,5 +1,6 @@
 val allocators = use("std/allocators")
 val math = use("std/math")
+val str = use("std/string")
 
 pub def isort[T: math.Integer, A: allocators.GeneralAllocator](l ref(list[T]), ac A) bool|error
     var n usize = @len(l)
@@ -349,7 +350,6 @@ test "fsort f64 list"
         ok result => ( assert result )
     end
 
-    @print("l[0] = {lf}\nl[1] = {lf}\nl[2] = {lf}", {l[0], l[1], l[2]})
     assert l[0] == -2.1
     assert l[1] == 0.0
     assert l[2] == 1.2
@@ -378,10 +378,10 @@ test "sort strings list"
         error _ => ( assert false )
         ok result => ( assert result )
     end
-    assert l[0] == "apple"
-    assert l[1] == "banana"
-    assert l[2] == "cherry"
-    assert l[3] == "date"
+    assert str.eql(l[0], "apple")
+    assert str.eql(l[1], "banana")
+    assert str.eql(l[2], "cherry")
+    assert str.eql(l[3], "date")
 end
 
 test "sort strings different lengths"
@@ -391,8 +391,8 @@ test "sort strings different lengths"
         error _ => ( assert false )
         ok result => ( assert result )
     end
-    assert l[0] == "a"
-    assert l[1] == "aa"
-    assert l[2] == "aaa"
-    assert l[3] == "b"
+    assert str.eql(l[0], "a")
+    assert str.eql(l[1], "aa")
+    assert str.eql(l[2], "aaa")
+    assert str.eql(l[3], "b")
 end
