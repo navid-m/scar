@@ -513,20 +513,6 @@ impl Lexer {
                 }
                 '\\' => {
                     self.bump();
-                    if let Some(next) = self.peek() {
-                        if next == '\\' {
-                            self.bump();
-                            value.push('\n');
-                            while let Some(ws) = self.peek() {
-                                if ws == ' ' || ws == '\t' {
-                                    self.bump();
-                                } else {
-                                    break;
-                                }
-                            }
-                            continue;
-                        }
-                    }
                     value.push(self.escaped_char()?);
                 }
                 '\n' => return Err(self.error("newline in string literal")),
