@@ -1,0 +1,271 @@
+val allocators = use("std/allocators")
+val str = use("std/string")
+
+link "-lcurl"
+when windows
+	link "-lws2_32"
+end
+
+extern "curl/curl.h"
+
+extern def curl_easy_init() ref(void) :: "curl_easy_init"
+extern def curl_easy_setopt(handle ref(void), option i32, parameter ref(void)) i32 :: "curl_easy_setopt"
+extern def curl_easy_perform(handle ref(void)) i32 :: "curl_easy_perform"
+extern def curl_easy_cleanup(handle ref(void)) void :: "curl_easy_cleanup"
+extern def curl_easy_getinfo(handle ref(void), info i32, parameter ref(void)) i32 :: "curl_easy_getinfo"
+extern def curl_slist_append(l ref(void), s ref(u8)) ref(void) :: "curl_slist_append"
+extern def curl_slist_free_all(l ref(void)) void :: "curl_slist_free_all"
+
+pub type Response
+	status_code i32
+	body ref(u8)
+end
+
+type Buffer
+	data mut(ref(u8))
+	size mut(usize)
+	capacity mut(usize)
+end
+
+def write_callback(ptr ref(u8), size usize, nmemb usize, userdata ref(void)) usize
+	var total_size usize = size * nmemb
+	var buffer = @bitcast(userdata, mut(ref(Buffer)))
+
+	if (@deref(buffer).size as mut(usize)) + total_size as usize + (1 as usize) > @deref(buffer).capacity
+		var new_cap usize = (@deref(buffer).capacity + total_size) * 2 as usize
+		var new_data = @realloc(@deref(buffer).data as mut(ref(void)), new_cap) as mut(ref(u8))
+		if new_data == none
+			return 0 as usize
+		end
+		@deref(buffer).data = new_data
+		@deref(buffer).capacity = new_cap
+	end
+
+	@memcpy(@add(@deref(buffer).data, @deref(buffer).size) as mut(ref(void)), ptr as ref(void), total_size)
+	@deref(buffer).size += total_size
+	@deref(@add(@deref(buffer).data, @deref(buffer).size)) = 0 as u8
+
+	return total_size
+end
+
+pub def request[A: allocators.BumpAllocator](
+	ac ref(A),
+	method ref(u8),
+	url ref(u8),
+	body ref(u8),
+	headers ref(void)
+) Response|error
+	var curl = curl_easy_init()
+	if curl == none
+		return error("failed to initialize curl")
+	end
+
+	var response_buffer = Buffer(
+		data: @alloc(1024 as usize) as mut(ref(u8)),
+		size: 0 as usize,
+		capacity: 1024 as usize
+	)
+	if response_buffer.data == none
+		curl_easy_cleanup(curl)
+		return error("failed to allocate response buffer")
+	end
+	@deref(response_buffer.data) = 0 as u8
+
+	curl_easy_setopt(curl, 10002, url as ref(void)) 
+	curl_easy_setopt(curl, 10036, method as ref(void))
+	if body != none
+		curl_easy_setopt(curl, 10015, body as ref(void)) 
+	end
+
+	if headers != none
+		curl_easy_setopt(curl, 10023, headers)
+	end
+
+	curl_easy_setopt(curl, 20011, write_callback as ref(void)) 
+	curl_easy_setopt(curl, 10001, @addr(response_buffer) as ref(void)) 
+
+	var res = curl_easy_perform(curl)
+	if res != 0
+		@free(response_buffer.data as mut(ref(void)))
+		curl_easy_cleanup(curl)
+		return error("curl request failed")
+	end
+
+	var status_code i32 = 0
+	curl_easy_getinfo(curl, 0x200002, @addr(status_code) as ref(void)) 
+
+	var final_body ref(u8) = none
+	if response_buffer.size > 0 as usize
+		var mem = A.alloc(ac, response_buffer.size + 1 as usize)?
+		@memcpy(mem, response_buffer.data as ref(void), response_buffer.size)
+		@deref(@as_mut(@add(mem, response_buffer.size))) = 0 as u8
+		final_body = mem as ref(u8)
+	end
+
+	@free(response_buffer.data as mut(ref(void)))
+	curl_easy_cleanup(curl)
+
+	return Response(
+		status_code: status_code,
+		body: final_body
+	)
+end
+
+pub def get[A: allocators.BumpAllocator](ac ref(A), url ref(u8)) Response|error
+	return request[A](ac, "GET", url, none, none)
+end
+
+pub def post[A: allocators.BumpAllocator](ac ref(A), url ref(u8), body ref(u8)) Response|error
+	return request[A](ac, "POST", url, body, none)
+end
+
+pub def put[A: allocators.BumpAllocator](ac ref(A), url ref(u8), body ref(u8)) Response|error
+	return request[A](ac, "PUT", url, body, none)
+end
+
+pub def patch[A: allocators.BumpAllocator](ac ref(A), url ref(u8), body ref(u8)) Response|error
+	return request[A](ac, "PATCH", url, body, none)
+end
+
+pub def delete[A: allocators.BumpAllocator](ac ref(A), url ref(u8)) Response|error
+	return request[A](ac, "DELETE", url, none, none)
+end
+
+pub def head[A: allocators.BumpAllocator](ac ref(A), url ref(u8)) Response|error
+	return request[A](ac, "HEAD", url, none, none)
+end
+
+pub def options[A: allocators.BumpAllocator](ac ref(A), url ref(u8)) Response|error
+	return request[A](ac, "OPTIONS", url, none, none)
+end
+
+when posix
+	extern "sys/socket.h"
+	extern "netinet/in.h"
+	extern "arpa/inet.h"
+	extern "unistd.h"
+
+	extern def socket(domain i32, typ i32, protocol i32) i32 :: "socket"
+	extern def bind(sockfd i32, addr ref(void), addrlen u32) i32 :: "bind"
+	extern def listen(sockfd i32, backlog i32) i32 :: "listen"
+	extern def accept(sockfd i32, addr mut(ref(void)), addrlen mut(ref(u32))) i32 :: "accept"
+	extern def send(sockfd i32, buf ref(void), len usize, flags i32) isize :: "send"
+	extern def recv(sockfd i32, buf mut(ref(void)), len usize, flags i32) isize :: "recv"
+	extern def close(fd i32) i32 :: "close"
+	extern def htons(hostshort u16) u16 :: "htons"
+
+	pub def serve_http(port u16, handler (fn(ref(u8)) ref(u8))) void|error
+		var fd = socket(2, 1, 0) 
+		if fd < 0
+			return error("failed to create socket")
+		end
+
+		var addr_bytes = @alloc(16 as usize) as mut(ref(u8))
+		@memset(addr_bytes as mut(ref(void)), 0, 16)
+		@deref(addr_bytes as mut(ref(u16))) = 2 as u16  
+		@deref(@add(addr_bytes, 2) as mut(ref(u16))) = htons(port)
+
+		if bind(fd, addr_bytes as ref(void), 16 as u32) < 0
+			close(fd)
+			@free(addr_bytes as mut(ref(void)))
+			return error("failed to bind socket")
+		end
+		@free(addr_bytes as mut(ref(void)))
+
+		if listen(fd, 10) < 0
+			close(fd)
+			return error("failed to listen on socket")
+		end
+
+		@print("Listening on port {d}...\n", {port as i32})
+
+		for
+			var client_fd = accept(fd, none, none)
+			if client_fd >= 0
+				var buffer = @alloc(4096 as usize) as mut(ref(u8))
+				var received = recv(client_fd, buffer as mut(ref(void)), 4095 as usize, 0)
+				if received > 0
+					@deref(@add(buffer, received as usize)) = 0 as u8
+					var response Response = handler(buffer as ref(u8))
+					send(client_fd, response as ref(void), str.len(response), 0)
+				end
+				close(client_fd)
+				@free(buffer as mut(ref(void)))
+			end
+		end
+	end
+end
+
+when windows
+	extern "winsock2.h"
+
+	type WSAData
+		version u16
+		high_version u16
+		description_1 u64
+		description_2 u64
+		description_3 u64
+		description_4 u64
+		system_status_1 u64
+		system_status_2 u64
+		max_sockets u16
+		max_udp_dg u16
+		vendor_info ref(u8)
+	end
+
+	extern def WSAStartup(version u16, data mut(ref(WSAData))) i32 :: "WSAStartup"
+	extern def socket(domain i32, typ i32, protocol i32) usize :: "socket"
+	extern def bind(s usize, name ref(void), namelen i32) i32 :: "bind"
+	extern def listen(s usize, backlog i32) i32 :: "listen"
+	extern def accept(s usize, addr mut(ref(void)), addrlen mut(ref(i32))) usize :: "accept"
+	extern def send(s usize, buf ref(void), len i32, flags i32) i32 :: "send"
+	extern def recv(s usize, buf mut(ref(void)), len i32, flags i32) i32 :: "recv"
+	extern def closesocket(s usize) i32 :: "closesocket"
+	extern def htons(hostshort u16) u16 :: "htons"
+
+	pub def serve_http(port u16, handler (fn(ref(u8)) ref(u8))) void|error
+		var wsa_data WSAData = @zeroed()
+		if WSAStartup(0x0202 as u16, @addr(wsa_data) as mut(ref(WSAData))) != 0
+			return error("WSAStartup failed")
+		end
+
+		var fd = socket(2, 1, 0)
+		if fd == 18446744073709551615 as usize 
+			return error("failed to create socket")
+		end
+
+		var addr_bytes = @alloc(16 as usize) as mut(ref(u8))
+		@memset(addr_bytes as mut(ref(void)), 0, 16)
+		@deref(addr_bytes as mut(ref(u16))) = 2 as u16
+		@deref(@add(addr_bytes, 2) as mut(ref(u16))) = htons(port)
+
+		if bind(fd, addr_bytes as ref(void), 16 as i32) != 0
+			closesocket(fd)
+			@free(addr_bytes as mut(ref(void)))
+			return error("failed to bind socket")
+		end
+		@free(addr_bytes as mut(ref(void)))
+
+		if listen(fd, 10) != 0
+			closesocket(fd)
+			return error("failed to listen on socket")
+		end
+
+		@print("Listening on port {d}...\n", {port as i32})
+
+		for
+			var client_fd = accept(fd, none, none)
+			if client_fd != 18446744073709551615 as usize
+				var buffer = @alloc(4096 as usize) as mut(ref(u8))
+				var received = recv(client_fd, buffer as mut(ref(void)), 4095 as i32, 0)
+				if received > 0
+					@deref(@add(buffer, received as usize)) = 0 as u8
+					var response = handler(buffer as ref(u8))
+					send(client_fd, response as ref(void), str.len(response) as i32, 0)
+				end
+				closesocket(client_fd)
+				@free(buffer as mut(ref(void)))
+			end
+		end
+	end
+end

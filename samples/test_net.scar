@@ -1,0 +1,22 @@
+val net = use("std/net")
+val allocators = use("std/allocators")
+val str = use("std/string")
+
+pub def main() i32
+	var ac = allocators.Arena.new(32768 as usize)?
+
+	match net.get[_](@addr(ac), "http://www.google.com")
+		ok res => (
+			@print("Status: {d}\n", {res.status_code})
+			if res.body != none
+				@print("Body starts with: {s}...\n", {res.body})
+			end
+		)
+		error e => (
+			@print("Error: {s}\n", {e})
+		)
+	end
+
+	allocators.Arena.destroy(@addr(ac))
+	return 0
+end
