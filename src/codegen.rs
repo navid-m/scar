@@ -235,8 +235,15 @@ fn type_def_struct_tag(name: &str) -> String {
     format!("{name}_scar_tag")
 }
 
+fn enum_c_name(name: &str) -> String {
+    format!("scar__enum__{name}")
+}
+
 fn render_type_def_forward_decl(type_def: &TypeDef) -> Option<String> {
     if type_def.alias.is_some() {
+        return None;
+    }
+    if type_def.kind == TypeDefKind::Enum {
         return None;
     }
     Some(format!(
@@ -305,10 +312,11 @@ fn render_type_def(type_def: &TypeDef) -> String {
             output.push_str(";\n");
         }
         TypeDefKind::Enum => {
+            let c_name = enum_c_name(&type_def.name);
             output.push_str("typedef enum {\n");
             for (index, variant) in type_def.variants.iter().enumerate() {
                 output.push_str("    ");
-                output.push_str(&tag);
+                output.push_str(&c_name);
                 output.push('_');
                 output.push_str(&variant.name);
                 output.push_str(" = ");
@@ -316,6 +324,11 @@ fn render_type_def(type_def: &TypeDef) -> String {
                 output.push_str(",\n");
             }
             output.push_str("} ");
+            output.push_str(&c_name);
+            output.push_str(";\n");
+            output.push_str("typedef ");
+            output.push_str(&c_name);
+            output.push(' ');
             output.push_str(&type_def.name);
             output.push_str(";\n");
         }
@@ -854,7 +867,7 @@ fn render_stmt_inner(
                             output.push_str(" == ");
                             output.push_str(&format!(
                                 "{}_{}",
-                                type_def_struct_tag(&union_name),
+                                enum_c_name(&union_name),
                                 bare_variant
                             ));
                             output.push_str(") {\n");
@@ -1271,7 +1284,7 @@ fn render_expr_with_hint(
                     if type_info.kind == TypeDefKind::Enum {
                         return Ok(format!(
                             "{}_{}",
-                            type_def_struct_tag(type_name),
+                            enum_c_name(type_name),
                             variant_name
                         ));
                     }

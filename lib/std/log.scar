@@ -205,7 +205,7 @@ test "logging functions exist"
 	debug("debug message")
 	info("info message")
 	warn("warn message")
-	error("error message")
+	err("error message")
 end
 
 test "format_timestamp works"
