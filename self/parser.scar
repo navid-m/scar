@@ -1,0 +1,620 @@
+val str = use("std/string")
+val ast = use("ast")
+val lxr = use("lexer")
+
+val KW_PUB    u8 = 1
+val KW_DEF    u8 = 2
+val KW_END    u8 = 3
+val KW_VAR    u8 = 4
+val KW_VAL    u8 = 5
+val KW_RETURN u8 = 6
+val KW_IF     u8 = 7
+val KW_ELSE   u8 = 8
+val KW_ELIF   u8 = 9
+val KW_FOR    u8 = 10
+val KW_WHILE  u8 = 11
+val KW_MATCH  u8 = 12
+val KW_BREAK  u8 = 13
+val KW_CONT   u8 = 14
+val KW_VOID   u8 = 15
+val KW_BOOL   u8 = 16
+val KW_I8     u8 = 17
+val KW_I16    u8 = 18
+val KW_I32    u8 = 19
+val KW_I64    u8 = 20
+val KW_ISIZE  u8 = 21
+val KW_U8     u8 = 22
+val KW_U16    u8 = 23
+val KW_U32    u8 = 24
+val KW_U64    u8 = 25
+val KW_USIZE  u8 = 26
+val KW_F32    u8 = 27
+val KW_F64    u8 = 28
+val KW_MUT    u8 = 29
+val KW_REF    u8 = 30
+val KW_LIST   u8 = 31
+val KW_AS     u8 = 32
+val KW_IN     u8 = 33
+val KW_EXTERN u8 = 34
+val KW_TEST   u8 = 35
+val KW_TRUE   u8 = 36
+val KW_FALSE  u8 = 37
+val KW_NONE   u8 = 38
+val KW_TYPE   u8 = 39
+val KW_UNION  u8 = 40
+val KW_ENUM   u8 = 41
+val KW_IFACE  u8 = 42
+val KW_TSET   u8 = 43
+val KW_DEFER  u8 = 44
+val KW_WHEN   u8 = 45
+val KW_LINK   u8 = 46
+val KW_GUARD  u8 = 47
+
+def is_keyword(p ref(ast.TokenList), id u8) bool
+    match p.tokens[p.pos].kind
+        ast.TokenKind.Keyword(v) => return v == id
+        _ => return false
+    end
+end
+
+def advance(p ref(ast.TokenList))
+    p.pos++
+end
+
+def is_eof(p ref(ast.TokenList)) bool
+    match p.tokens[p.pos].kind
+        ast.TokenKind.Eof(_) => return true
+        _ => return false
+    end
+end
+
+def consume_newlines(p ref(ast.TokenList))
+    for
+        match p.tokens[p.pos].kind
+            ast.TokenKind.Newline(_) => p.pos++
+            _ => break
+        end
+    end
+end
+
+def expect_ident(p ref(ast.TokenList)) ref(u8)
+    match p.tokens[p.pos].kind
+        ast.TokenKind.Ident(name) => (
+            advance(p)
+            return name
+        )
+        _ => return @alloc(1)
+    end
+end
+
+def expect_newline(p ref(ast.TokenList))
+    match p.tokens[p.pos].kind
+        ast.TokenKind.Newline(_) => consume_newlines(p)
+        _ => consume_newlines(p)
+    end
+end
+
+def next_is_keyword(p ref(ast.TokenList), id u8) bool
+    var i usize = p.pos + 1
+    for i < @len(p.tokens)
+        match p.tokens[i].kind
+            ast.TokenKind.Newline(_) => i++
+            _ => (
+                match p.tokens[i].kind
+                    ast.TokenKind.Keyword(v) => return v == id
+                    _ => return false
+                end
+            )
+        end
+    end
+    return false
+end
+
+def next_non_newline_kind(p ref(ast.TokenList)) u8
+    var i usize = p.pos
+    for i < @len(p.tokens)
+        match p.tokens[i].kind
+            ast.TokenKind.Newline(_) => i++
+            ast.TokenKind.Keyword(v) => return v
+            ast.TokenKind.Ident(_) => return 100
+            ast.TokenKind.Int(_) => return 101
+            ast.TokenKind.LParen(_) => return 200
+            ast.TokenKind.RParen(_) => return 201
+            ast.TokenKind.LBracket(_) => return 202
+            ast.TokenKind.RBracket(_) => return 203
+            ast.TokenKind.ColonColon(_) => return 204
+            ast.TokenKind.Str(_) => return 205
+            ast.TokenKind.Eof(_) => return 255
+            _ => i++
+        end
+    end
+    return 255
+end
+
+def skip_to_newline(p ref(ast.TokenList))
+    for !is_eof(p)
+        match p.tokens[p.pos].kind
+            ast.TokenKind.Newline(_) => (
+                advance(p)
+                return
+            )
+            _ => advance(p)
+        end
+    end
+end
+
+def needs_end_kw(kw_id u8) bool
+    return kw_id == KW_IF || kw_id == KW_FOR || kw_id == KW_MATCH || kw_id == KW_WHEN || kw_id == KW_DEFER || kw_id == KW_GUARD || kw_id == KW_TYPE || kw_id == KW_ENUM || kw_id == KW_UNION || kw_id == KW_IFACE || kw_id == KW_TSET || kw_id == KW_DEF || kw_id == KW_TEST
+end
+
+def skip_block(p ref(ast.TokenList))
+    var depth usize = 0
+    consume_newlines(p)
+    for !is_eof(p)
+        match p.tokens[p.pos].kind
+            ast.TokenKind.Keyword(v) => (
+                if v == KW_END
+                    if depth == 0
+                        advance(p)
+                        return
+                    end
+                    depth--
+                elif needs_end_kw(v)
+                    depth++
+                end
+                advance(p)
+            )
+            _ => advance(p)
+        end
+    end
+end
+
+def starts_type(tokens_val ref(ast.TokenList)) bool
+    match tokens_val.tokens[tokens_val.pos].kind
+        ast.TokenKind.Keyword(v) => return v == KW_VOID || v == KW_BOOL || v == KW_I8 || v == KW_I16 || v == KW_I32 || v == KW_I64 || v == KW_ISIZE || v == KW_U8 || v == KW_U16 || v == KW_U32 || v == KW_U64 || v == KW_USIZE || v == KW_F32 || v == KW_F64 || v == KW_MUT || v == KW_REF || v == KW_LIST
+        ast.TokenKind.Ident(_) => return true
+        ast.TokenKind.LParen(_) => return true
+        ast.TokenKind.LBracket(_) => return true
+        _ => return false
+    end
+end
+
+def parse_type(p ref(ast.TokenList)) ast.Type
+    match p.tokens[p.pos].kind
+        ast.TokenKind.Keyword(v) => (
+            if v == KW_VOID
+                advance(p)
+                return ast.Type.Void(0)
+            elif v == KW_BOOL
+                advance(p)
+                return ast.Type.Bool(0)
+            elif v == KW_I8
+                advance(p)
+                return ast.Type.I8(0)
+            elif v == KW_I16
+                advance(p)
+                return ast.Type.I16(0)
+            elif v == KW_I32
+                advance(p)
+                return ast.Type.I32(0)
+            elif v == KW_I64
+                advance(p)
+                return ast.Type.I64(0)
+            elif v == KW_ISIZE
+                advance(p)
+                return ast.Type.Isize(0)
+            elif v == KW_U8
+                advance(p)
+                return ast.Type.U8(0)
+            elif v == KW_U16
+                advance(p)
+                return ast.Type.U16(0)
+            elif v == KW_U32
+                advance(p)
+                return ast.Type.U32(0)
+            elif v == KW_U64
+                advance(p)
+                return ast.Type.U64(0)
+            elif v == KW_USIZE
+                advance(p)
+                return ast.Type.Usize(0)
+            elif v == KW_F32
+                advance(p)
+                return ast.Type.F32(0)
+            elif v == KW_F64
+                advance(p)
+                return ast.Type.F64(0)
+            elif v == KW_MUT
+                advance(p)
+                match p.tokens[p.pos].kind
+                    ast.TokenKind.LParen(_) => advance(p)
+                end
+                parse_type(p)
+                match p.tokens[p.pos].kind
+                    ast.TokenKind.RParen(_) => advance(p)
+                end
+                return ast.Type.Void(0)
+            elif v == KW_REF
+                advance(p)
+                match p.tokens[p.pos].kind
+                    ast.TokenKind.LParen(_) => advance(p)
+                end
+                parse_type(p)
+                match p.tokens[p.pos].kind
+                    ast.TokenKind.RParen(_) => advance(p)
+                end
+                return ast.Type.Void(0)
+            elif v == KW_LIST
+                advance(p)
+                match p.tokens[p.pos].kind
+                    ast.TokenKind.LBracket(_) => advance(p)
+                end
+                parse_type(p)
+                match p.tokens[p.pos].kind
+                    ast.TokenKind.RBracket(_) => advance(p)
+                end
+                return ast.Type.Void(0)
+            end
+            advance(p)
+            return ast.Type.Void(0)
+        )
+        ast.TokenKind.Ident(name) => (
+            advance(p)
+            match p.tokens[p.pos].kind
+                ast.TokenKind.LBracket(_) => (
+                    advance(p)
+                    var type_args list[ast.Type] = []
+                    for
+                        @append(type_args, parse_type(p))
+                        match p.tokens[p.pos].kind
+                            ast.TokenKind.Comma(_) => advance(p)
+                            _ => break
+                        end
+                    end
+                    match p.tokens[p.pos].kind
+                        ast.TokenKind.RBracket(_) => advance(p)
+                    end
+                    return ast.Type.Applied(name, type_args)
+                )
+                _ => return ast.Type.Named(name)
+            end
+        )
+        _ => return ast.Type.Void(0)
+    
+    end
+end
+
+def parse_dotted_name(p ref(ast.TokenList)) ref(u8)
+    val first ref(u8) = expect_ident(p)
+    match p.tokens[p.pos].kind
+        ast.TokenKind.Dot(_) => (
+            advance(p)
+            val second ref(u8) = expect_ident(p)
+            val len1 usize = str.len(first)
+            val len2 usize = str.len(second)
+            var combined ref(u8) = @alloc(len1 + 1 + len2 + 1)
+            @memcpy(combined, first, len1)
+            @deref(@as_mut(@add(combined, len1))) = 46
+            @memcpy(@add(combined, len1 + 1), second, len2)
+            @deref(@as_mut(@add(combined, len1 + 1 + len2))) = 0
+            return combined
+        )
+        _ => return first
+    end
+end
+
+def is_module_use(p ref(ast.TokenList)) bool
+    var i usize = p.pos + 1
+    for i < @len(p.tokens)
+        match p.tokens[i].kind
+            ast.TokenKind.Newline(_) => i++
+            _ => break
+        end
+    end
+    match p.tokens[i].kind
+        ast.TokenKind.Ident(_) => i++
+        _ => return false
+    end
+    match p.tokens[i].kind
+        ast.TokenKind.Assign(_) => i++
+        _ => return false
+    end
+    match p.tokens[i].kind
+        ast.TokenKind.Ident(name) => return str.eql(name, "use")
+        _ => return false
+    end
+end
+
+def parse_module_use(p ref(ast.TokenList)) ast.ModuleUse
+    advance(p)
+    val name ref(u8) = expect_ident(p)
+    match p.tokens[p.pos].kind
+        ast.TokenKind.Assign(_) => advance(p)
+    end
+    match p.tokens[p.pos].kind
+        ast.TokenKind.Ident(_) => advance(p)
+    end
+    match p.tokens[p.pos].kind
+        ast.TokenKind.LParen(_) => advance(p)
+    end
+    val path ref(u8) = @zeroed()
+    match p.tokens[p.pos].kind
+        ast.TokenKind.Str(s) => (
+            path = s
+            advance(p)
+        )
+        _ => path = @alloc(1)
+    end
+    match p.tokens[p.pos].kind
+        ast.TokenKind.RParen(_) => advance(p)
+    end
+    expect_newline(p)
+    return ast.ModuleUse(name: name, path: path)
+end
+
+def parse_function(p ref(ast.TokenList), is_pub bool) ast.Function
+    val line usize = p.tokens[p.pos].line
+    val column usize = p.tokens[p.pos].column
+    advance(p)
+
+    val name ref(u8) = parse_dotted_name(p)
+
+    match p.tokens[p.pos].kind
+        ast.TokenKind.LParen(_) => advance(p)
+    end
+    consume_newlines(p)
+
+    var params list[ast.Param] = []
+    match p.tokens[p.pos].kind
+        ast.TokenKind.RParen(_) => advance(p)
+        _ => (
+            for
+                val pline usize = p.tokens[p.pos].line
+                val pcol usize = p.tokens[p.pos].column
+                val pname ref(u8) = expect_ident(p)
+                val ptype ast.Type = parse_type(p)
+                @append(params, ast.Param(name: pname, ty: ptype, line: pline, column: pcol))
+                match p.tokens[p.pos].kind
+                    ast.TokenKind.Comma(_) => (
+                        advance(p)
+                        consume_newlines(p)
+                    )
+                    _ => break
+                end
+            end
+            match p.tokens[p.pos].kind
+                ast.TokenKind.RParen(_) => advance(p)
+            end
+        )
+    end
+
+    val return_type ast.Type = @zeroed()
+    if starts_type(p)
+        return_type = parse_type(p)
+    else
+        return_type = ast.Type.Void(0)
+    end
+
+    expect_newline(p)
+    skip_block(p)
+
+    return ast.Function(
+        name: name,
+        params: params,
+        return_type: return_type,
+        body: [],
+        is_pub: is_pub,
+        is_extern: false,
+        extern_name: @alloc(1),
+        line: line,
+        column: column
+    )
+end
+
+def parse_extern_function(p ref(ast.TokenList), is_pub bool) ast.Function
+    val line usize = p.tokens[p.pos].line
+    val column usize = p.tokens[p.pos].column
+    advance(p)
+
+    val name ref(u8) = parse_dotted_name(p)
+
+    match p.tokens[p.pos].kind
+        ast.TokenKind.LParen(_) => advance(p)
+    end
+    consume_newlines(p)
+
+    var params list[ast.Param] = []
+    match p.tokens[p.pos].kind
+        ast.TokenKind.RParen(_) => advance(p)
+        _ => (
+            for
+                val pline usize = p.tokens[p.pos].line
+                val pcol usize = p.tokens[p.pos].column
+                val pname ref(u8) = expect_ident(p)
+                val ptype ast.Type = parse_type(p)
+                @append(params, ast.Param(name: pname, ty: ptype, line: pline, column: pcol))
+                match p.tokens[p.pos].kind
+                    ast.TokenKind.Comma(_) => (
+                        advance(p)
+                        consume_newlines(p)
+                    )
+                    _ => break
+                end
+            end
+            match p.tokens[p.pos].kind
+                ast.TokenKind.RParen(_) => advance(p)
+            end
+        )
+    end
+
+    val return_type ast.Type = @zeroed()
+    if next_non_newline_kind(p) == 204
+        return_type = ast.Type.Void(0)
+    elif starts_type(p)
+        return_type = parse_type(p)
+    else
+        return_type = ast.Type.Void(0)
+    end
+
+    match p.tokens[p.pos].kind
+        ast.TokenKind.ColonColon(_) => advance(p)
+    end
+
+    val extern_name ref(u8) = @zeroed()
+    match p.tokens[p.pos].kind
+        ast.TokenKind.Str(s) => (
+            extern_name = s
+            advance(p)
+        )
+        _ => extern_name = @alloc(1)
+    end
+
+    expect_newline(p)
+
+    return ast.Function(
+        name: name,
+        params: params,
+        return_type: return_type,
+        body: [],
+        is_pub: is_pub,
+        is_extern: true,
+        extern_name: extern_name,
+        line: line,
+        column: column
+    )
+end
+
+def parse_test_block(p ref(ast.TokenList)) ast.TestBlock
+    advance(p)
+
+    val name ref(u8) = @zeroed()
+    match p.tokens[p.pos].kind
+        ast.TokenKind.Str(s) => (
+            name = s
+            advance(p)
+        )
+        _ => name = @alloc(1)
+    end
+
+    expect_newline(p)
+    skip_block(p)
+
+    return ast.TestBlock(name: name, body: [])
+end
+
+def skip_top_level_item(p ref(ast.TokenList))
+    match p.tokens[p.pos].kind
+        ast.TokenKind.Keyword(v) => (
+            if v == KW_PUB
+                advance(p)
+                skip_top_level_item(p)
+            elif needs_end_kw(v)
+                advance(p)
+                if v == KW_WHEN
+                    skip_to_newline(p)
+                end
+                skip_block(p)
+            elif v == KW_LINK
+                advance(p)
+                skip_to_newline(p)
+            else
+                advance(p)
+            end
+        )
+        _ => advance(p)
+    end
+end
+
+pub def parse_program(tokens list[ast.Token]) ast.Program
+    var p ast.TokenList = ast.TokenList(tokens: tokens, pos: 0)
+    var module_uses list[ast.ModuleUse] = []
+    var functions list[ast.Function] = []
+    var tests list[ast.TestBlock] = []
+
+    consume_newlines(@addr(p))
+
+    for !is_eof(@addr(p))
+        consume_newlines(@addr(p))
+        if is_keyword(@addr(p), KW_DEF)
+            @append(functions, parse_function(@addr(p), false))
+        elif is_keyword(@addr(p), KW_PUB) && next_is_keyword(@addr(p), KW_EXTERN)
+            advance(@addr(p))
+            advance(@addr(p))
+            if is_keyword(@addr(p), KW_DEF)
+                @append(functions, parse_extern_function(@addr(p), true))
+            else
+                skip_to_newline(@addr(p))
+            end
+        elif is_keyword(@addr(p), KW_PUB) && next_is_keyword(@addr(p), KW_DEF)
+            advance(@addr(p))
+            @append(functions, parse_function(@addr(p), true))
+        elif is_keyword(@addr(p), KW_PUB)
+            advance(@addr(p))
+            skip_top_level_item(@addr(p))
+        elif is_keyword(@addr(p), KW_EXTERN)
+            advance(@addr(p))
+            if is_keyword(@addr(p), KW_DEF)
+                @append(functions, parse_extern_function(@addr(p), false))
+            else
+                skip_to_newline(@addr(p))
+            end
+        elif is_keyword(@addr(p), KW_TEST)
+            @append(tests, parse_test_block(@addr(p)))
+        elif is_keyword(@addr(p), KW_VAL) && is_module_use(@addr(p))
+            @append(module_uses, parse_module_use(@addr(p)))
+        elif is_keyword(@addr(p), KW_VAL) || is_keyword(@addr(p), KW_VAR)
+            skip_to_newline(@addr(p))
+        else
+            skip_top_level_item(@addr(p))
+        end
+        consume_newlines(@addr(p))
+    end
+
+    return ast.Program(
+        module_uses: module_uses,
+        functions: functions,
+        tests: tests
+    )
+end
+
+test "parses pub function"
+    val tokens list[ast.Token] = lxr.lex("pub def main() void\nend\n")
+    val prog ast.Program = parse_program(tokens)
+    assert @len(prog.functions) == 1
+    assert str.eql(prog.functions[0].name, "main")
+    assert prog.functions[0].is_pub
+end
+
+test "parses namespaced function definition"
+    val tokens list[ast.Token] = lxr.lex("pub def Arena.new(cap usize) Arena\n\treturn Arena(cap: cap)\nend\n")
+    val prog ast.Program = parse_program(tokens)
+    assert @len(prog.functions) == 1
+    assert str.eql(prog.functions[0].name, "Arena.new")
+end
+
+test "parses extern function and test block"
+    val tokens list[ast.Token] = lxr.lex("extern def strcmp(x ref(u8), y ref(u8)) :: \"strcmp\"\n\ntest \"equals works\"\n\tassert strcmp(\"a\", \"a\")\nend\n\npub def main() void\nend\n")
+    val prog ast.Program = parse_program(tokens)
+    assert @len(prog.functions) == 2
+    assert @len(prog.tests) == 1
+    assert str.eql(prog.functions[0].name, "strcmp")
+    assert str.eql(prog.functions[1].name, "main")
+end
+
+test "parses function parameters"
+    val tokens list[ast.Token] = lxr.lex("def add(a i32, b i32) i32\n\treturn a + b\nend\n")
+    val prog ast.Program = parse_program(tokens)
+    assert @len(prog.functions) == 1
+    assert @len(prog.functions[0].params) == 2
+    assert str.eql(prog.functions[0].params[0].name, "a")
+    assert str.eql(prog.functions[0].params[1].name, "b")
+end
+
+test "parses module use"
+    val tokens list[ast.Token] = lxr.lex("val str = use(\"std/string\")\npub def main() void\nend\n")
+    val prog ast.Program = parse_program(tokens)
+    assert @len(prog.module_uses) == 1
+    assert str.eql(prog.module_uses[0].name, "str")
+    assert str.eql(prog.module_uses[0].path, "std/string")
+    assert @len(prog.functions) == 1
+end
