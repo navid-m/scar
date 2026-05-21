@@ -1,0 +1,404 @@
+val ast = use("ast")
+
+pub def resolve(program ref(ast.Program)) ast.Program
+    var result ast.Program = ast.Program(
+        module_uses: program.module_uses,
+        functions: [],
+        tests: program.tests
+    )
+
+    var i usize = 0
+    for i < @len(program.functions)
+        val fn_ref ref(ast.Function) = @addr(program.functions[i])
+        val resolved ast.Function = resolve_function(fn_ref)
+        @append(result.functions, resolved)
+        i++
+    end
+
+    return result
+end
+
+def resolve_function(fun ref(ast.Function)) ast.Function
+    var resolved ast.Function = ast.Function(
+        name: fun.name,
+        params: [],
+        return_type: resolve_type(@addr(fun.return_type)),
+        body: [],
+        is_pub: fun.is_pub,
+        is_extern: fun.is_extern,
+        extern_name: fun.extern_name,
+        line: fun.line,
+        column: fun.column
+    )
+
+    var i usize = 0
+    for i < @len(fun.params)
+        val param_ref ref(ast.Param) = @addr(fun.params[i])
+        var resolved_param ast.Param = ast.Param(
+            name: param_ref.name,
+            ty: resolve_type(@addr(param_ref.ty)),
+            line: param_ref.line,
+            column: param_ref.column
+        )
+        @append(resolved.params, resolved_param)
+        i++
+    end
+
+    i = 0
+    for i < @len(fun.body)
+        val resolved_stmt ast.Stmt = resolve_stmt(@addr(fun.body[i]))
+        @append(resolved.body, resolved_stmt)
+        i++
+    end
+
+    return resolved
+end
+
+def resolve_stmt(stmt ref(ast.Stmt)) ast.Stmt
+    match stmt
+        ast.Stmt.VarDecl(vd) => (
+            var resolved_init ast.Expr = resolve_expr(@addr(vd.init))
+            var resolved_decl_type ast.Type = resolve_type(@addr(vd.declared_type))
+            return ast.Stmt.VarDecl(@addr(ast.StmtVarDecl(
+                mutable: vd.mutable,
+                name: vd.name,
+                declared_type: resolved_decl_type,
+                init: resolved_init,
+                line: vd.line,
+                column: vd.column
+            )))
+        )
+        ast.Stmt.Assign(a) => (
+            var resolved_target ast.Expr = resolve_expr(@addr(a.target))
+            var resolved_value ast.Expr = resolve_expr(@addr(a.value))
+            return ast.Stmt.Assign(@addr(ast.StmtAssign(
+                target: resolved_target,
+                value: resolved_value,
+                line: a.line,
+                column: a.column
+            )))
+        )
+        ast.Stmt.Return(r) => (
+            var resolved_value ast.Expr = resolve_expr(@addr(r.value))
+            return ast.Stmt.Return(@addr(ast.StmtReturn(
+                value: resolved_value,
+                line: r.line,
+                column: r.column
+            )))
+        )
+        ast.Stmt.If(if_stmt) => (
+            var resolved_cond ast.Expr = resolve_expr(@addr(if_stmt.condition))
+            var resolved_then list[ast.Stmt] = []
+            var resolved_else list[ast.Stmt] = []
+            var k usize = 0
+            for k < @len(if_stmt.then_body)
+                @append(resolved_then, resolve_stmt(@addr(if_stmt.then_body[k])))
+                k++
+            end
+            k = 0
+            for k < @len(if_stmt.else_body)
+                @append(resolved_else, resolve_stmt(@addr(if_stmt.else_body[k])))
+                k++
+            end
+            return ast.Stmt.If(@addr(ast.StmtIf(
+                condition: resolved_cond,
+                then_body: resolved_then,
+                else_body: resolved_else,
+                line: if_stmt.line,
+                column: if_stmt.column
+            )))
+        )
+        ast.Stmt.While(w) => (
+            var resolved_cond ast.Expr = resolve_expr(@addr(w.condition))
+            var resolved_body list[ast.Stmt] = []
+            var k usize = 0
+            for k < @len(w.body)
+                @append(resolved_body, resolve_stmt(@addr(w.body[k])))
+                k++
+            end
+            return ast.Stmt.While(@addr(ast.StmtWhile(
+                condition: resolved_cond,
+                body: resolved_body,
+                line: w.line,
+                column: w.column
+            )))
+        )
+        ast.Stmt.ForRange(fr) => (
+            var resolved_start ast.Expr = resolve_expr(@addr(fr.start))
+            var resolved_end ast.Expr = resolve_expr(@addr(fr.End))
+            var resolved_body list[ast.Stmt] = []
+            var k usize = 0
+            for k < @len(fr.body)
+                @append(resolved_body, resolve_stmt(@addr(fr.body[k])))
+                k++
+            end
+            return ast.Stmt.ForRange(@addr(ast.StmtForRange(
+                var_name: fr.var_name,
+                start: resolved_start,
+                End: resolved_end,
+                body: resolved_body,
+                line: fr.line,
+                column: fr.column
+            )))
+        )
+        ast.Stmt.Match(m) => (
+            var resolved_expr ast.Expr = resolve_expr(@addr(m.expr))
+            var resolved_arms list[ast.MatchArm] = []
+            var k usize = 0
+            for k < @len(m.arms)
+                var resolved_body list[ast.Stmt] = []
+                var l usize = 0
+                for l < @len(m.arms[k].body)
+                    @append(resolved_body, resolve_stmt(@addr(m.arms[k].body[l])))
+                    l++
+                end
+                @append(resolved_arms, ast.MatchArm(
+                    kind: m.arms[k].kind,
+                    bindings: m.arms[k].bindings,
+                    body: resolved_body
+                ))
+                k++
+            end
+            return ast.Stmt.Match(@addr(ast.StmtMatch(
+                expr: resolved_expr,
+                arms: resolved_arms,
+                line: m.line,
+                column: m.column
+            )))
+        )
+        ast.Stmt.ExprStmt(e) => (
+            var resolved ast.Expr = resolve_expr(e)
+            return ast.Stmt.ExprStmt(@addr(resolved))
+        )
+        ast.Stmt.Increment(e) => (
+            var resolved ast.Expr = resolve_expr(e)
+            return ast.Stmt.Increment(@addr(resolved))
+        )
+        ast.Stmt.Decrement(e) => (
+            var resolved ast.Expr = resolve_expr(e)
+            return ast.Stmt.Decrement(@addr(resolved))
+        )
+        ast.Stmt.Assert(e) => (
+            var resolved ast.Expr = resolve_expr(e)
+            return ast.Stmt.Assert(@addr(resolved))
+        )
+        ast.Stmt.Block(body) => (
+            var resolved_body list[ast.Stmt] = []
+            var k usize = 0
+            for k < @len(body)
+                @append(resolved_body, resolve_stmt(@addr(body[k])))
+                k++
+            end
+            return ast.Stmt.Block(resolved_body)
+        )
+        _ => return @deref(stmt)
+    end
+end
+
+def resolve_expr(expr ref(ast.Expr)) ast.Expr
+    match expr
+        ast.Expr.IntLit(v) => return ast.Expr.IntLit(v)
+        ast.Expr.FloatLit(v) => return ast.Expr.FloatLit(v)
+        ast.Expr.BoolLit(v) => return ast.Expr.BoolLit(v)
+        ast.Expr.CharLit(v) => return ast.Expr.CharLit(v)
+        ast.Expr.StrLit(v) => return ast.Expr.StrLit(v)
+        ast.Expr.Ident(v) => return ast.Expr.Ident(v)
+        ast.Expr.None(v) => return ast.Expr.None(v)
+        ast.Expr.ErrorLit(v) => return ast.Expr.ErrorLit(v)
+        ast.Expr.Path(segments) => return ast.Expr.Path(segments)
+        ast.Expr.Binary(b) => (
+            var resolved_lhs ast.Expr = resolve_expr(b.lhs)
+            var resolved_rhs ast.Expr = resolve_expr(b.rhs)
+            return ast.Expr.Binary(@addr(ast.ExprBinary(
+                lhs: @addr(resolved_lhs),
+                op: b.op,
+                rhs: @addr(resolved_rhs)
+            )))
+        )
+        ast.Expr.Unary(u) => (
+            var resolved_inner ast.Expr = resolve_expr(u.expr)
+            return ast.Expr.Unary(@addr(ast.ExprUnary(
+                op: u.op,
+                expr: @addr(resolved_inner)
+            )))
+        )
+        ast.Expr.Call(c) => (
+            var resolved_callee ast.Expr = resolve_expr(c.callee)
+            var resolved_args list[ast.Expr] = []
+            var i usize = 0
+            for i < @len(c.args)
+                @append(resolved_args, resolve_expr(@addr(c.args[i])))
+                i++
+            end
+            return ast.Expr.Call(@addr(ast.ExprCall(
+                callee: @addr(resolved_callee),
+                args: resolved_args
+            )))
+        )
+        ast.Expr.Index(idx) => (
+            var resolved_base ast.Expr = resolve_expr(idx.base)
+            var resolved_index ast.Expr = resolve_expr(idx.index)
+            return ast.Expr.Index(@addr(ast.ExprIndex(
+                base: @addr(resolved_base),
+                index: @addr(resolved_index)
+            )))
+        )
+        ast.Expr.Field(f) => (
+            var resolved_base ast.Expr = resolve_expr(f.base)
+            return ast.Expr.Field(@addr(ast.ExprField(
+                base: @addr(resolved_base),
+                field: f.field
+            )))
+        )
+        ast.Expr.Cast(c) => (
+            var resolved_inner ast.Expr = resolve_expr(c.expr)
+            var resolved_ty ast.Type = resolve_type(@addr(c.ty))
+            return ast.Expr.Cast(@addr(ast.ExprCast(
+                expr: @addr(resolved_inner),
+                ty: resolved_ty
+            )))
+        )
+        ast.Expr.BitCast(bc) => (
+            var resolved_inner ast.Expr = resolve_expr(bc.expr)
+            var resolved_ty ast.Type = resolve_type(@addr(bc.ty))
+            return ast.Expr.BitCast(@addr(ast.ExprBitCast(
+                expr: @addr(resolved_inner),
+                ty: resolved_ty
+            )))
+        )
+        ast.Expr.SizeOf(ty) => (
+            var resolved_ty ast.Type = resolve_type(ty)
+            return ast.Expr.SizeOf(@addr(resolved_ty))
+        )
+        ast.Expr.ListLit(elems) => (
+            var resolved list[ast.Expr] = []
+            var i usize = 0
+            for i < @len(elems)
+                @append(resolved, resolve_expr(@addr(elems[i])))
+                i++
+            end
+            return ast.Expr.ListLit(resolved)
+        )
+        ast.Expr.StructInit(si) => (
+            var resolved_fields list[ast.FieldInit] = []
+            var i usize = 0
+            for i < @len(si.fields)
+                var resolved_value ast.Expr = resolve_expr(@addr(si.fields[i].value))
+                @append(resolved_fields, ast.FieldInit(
+                    name: si.fields[i].name,
+                    value: resolved_value
+                ))
+                i++
+            end
+            var resolved_type_args list[ast.Type] = []
+            i = 0
+            for i < @len(si.type_args)
+                @append(resolved_type_args, resolve_type(@addr(si.type_args[i])))
+                i++
+            end
+            return ast.Expr.StructInit(@addr(ast.ExprStructInit(
+                name: si.name,
+                type_args: resolved_type_args,
+                fields: resolved_fields
+            )))
+        )
+        ast.Expr.MethodCall(mc) => (
+            var resolved_receiver ast.Expr = resolve_expr(mc.receiver)
+            var resolved_args list[ast.Expr] = []
+            var i usize = 0
+            for i < @len(mc.args)
+                @append(resolved_args, resolve_expr(@addr(mc.args[i])))
+                i++
+            end
+            return ast.Expr.MethodCall(@addr(ast.ExprMethodCall(
+                receiver: @addr(resolved_receiver),
+                method: mc.method,
+                args: resolved_args
+            )))
+        )
+        ast.Expr.Specialize(sp) => (
+            var resolved_callee ast.Expr = resolve_expr(sp.callee)
+            var resolved_type_args list[ast.Type] = []
+            var i usize = 0
+            for i < @len(sp.type_args)
+                @append(resolved_type_args, resolve_type(@addr(sp.type_args[i])))
+                i++
+            end
+            return ast.Expr.Specialize(@addr(ast.ExprSpecialize(
+                callee: @addr(resolved_callee),
+                type_args: resolved_type_args
+            )))
+        )
+        ast.Expr.BuiltinCall(bc) => (
+            var resolved_args list[ast.Expr] = []
+            var i usize = 0
+            for i < @len(bc.args)
+                @append(resolved_args, resolve_expr(@addr(bc.args[i])))
+                i++
+            end
+            return ast.Expr.BuiltinCall(@addr(ast.ExprBuiltinCall(
+                name: bc.name,
+                args: resolved_args
+            )))
+        )
+        ast.Expr.Try(inner) => (
+            var resolved_inner ast.Expr = resolve_expr(inner)
+            return ast.Expr.Try(@addr(resolved_inner))
+        )
+        ast.Expr.Pack(elems) => (
+            var resolved list[ast.Expr] = []
+            var i usize = 0
+            for i < @len(elems)
+                @append(resolved, resolve_expr(@addr(elems[i])))
+                i++
+            end
+            return ast.Expr.Pack(resolved)
+        )
+    end
+end
+
+def resolve_type(ty ref(ast.Type)) ast.Type
+    match ty
+        ast.Type.Void(v) => return ast.Type.Void(v)
+        ast.Type.Bool(v) => return ast.Type.Bool(v)
+        ast.Type.I8(v) => return ast.Type.I8(v)
+        ast.Type.I16(v) => return ast.Type.I16(v)
+        ast.Type.I32(v) => return ast.Type.I32(v)
+        ast.Type.I64(v) => return ast.Type.I64(v)
+        ast.Type.Isize(v) => return ast.Type.Isize(v)
+        ast.Type.U8(v) => return ast.Type.U8(v)
+        ast.Type.U16(v) => return ast.Type.U16(v)
+        ast.Type.U32(v) => return ast.Type.U32(v)
+        ast.Type.U64(v) => return ast.Type.U64(v)
+        ast.Type.Usize(v) => return ast.Type.Usize(v)
+        ast.Type.F32(v) => return ast.Type.F32(v)
+        ast.Type.F64(v) => return ast.Type.F64(v)
+        ast.Type.Infer(v) => return ast.Type.Infer(v)
+        ast.Type.Error(v) => return ast.Type.Error(v)
+        ast.Type.None(v) => return ast.Type.None(v)
+        ast.Type.Named(name) => return ast.Type.Named(name)
+        ast.Type.Applied(name, type_args) => (
+            var resolved list[ast.Type] = []
+            var i usize = 0
+            for i < @len(type_args)
+                @append(resolved, resolve_type(@addr(type_args[i])))
+                i++
+            end
+            return ast.Type.Applied(name, resolved)
+        )
+        ast.Type.Ref(inner) => return ast.Type.Ref(@addr(resolve_type(inner)))
+        ast.Type.Mut(inner) => return ast.Type.Mut(@addr(resolve_type(inner)))
+        ast.Type.List(inner) => return ast.Type.List(@addr(resolve_type(inner)))
+        ast.Type.Result(inner) => return ast.Type.Result(@addr(resolve_type(inner)))
+        ast.Type.FnPtr(params, ret) => (
+            var resolved_params list[ast.Type] = []
+            var i usize = 0
+            for i < @len(params)
+                @append(resolved_params, resolve_type(@addr(params[i])))
+                i++
+            end
+            var resolved_ret ast.Type = resolve_type(ret)
+            return ast.Type.FnPtr(resolved_params, @addr(resolved_ret))
+        )
+    end
+end

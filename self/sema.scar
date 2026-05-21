@@ -1,0 +1,824 @@
+val str = use("std/string")
+val ast = use("ast")
+
+pub type FunctionSig
+    params list[ast.Type]
+    return_type ast.Type
+end
+
+pub type TypeDefInfo
+    kind TypeDefKind
+    fields list[ast.FieldDef]
+    field_map list[FieldEntry]
+    variants list[UnionVariantDef]
+    variant_map list[VariantEntry]
+    alias ast.Type
+    has_alias bool
+end
+
+pub type FieldEntry
+    name ref(u8)
+    ty ast.Type
+end
+
+pub type VariantEntry
+    name ref(u8)
+    payload_types list[ast.Type]
+end
+
+pub type ProgramInfo
+    functions list[FunctionEntry]
+    function_symbols list[SymbolEntry]
+    types list[TypeEntry]
+    locals list[LocalEntry]
+end
+
+pub type FunctionEntry
+    name ref(u8)
+    sig FunctionSig
+end
+
+pub type SymbolEntry
+    name ref(u8)
+    symbol ref(u8)
+end
+
+pub type TypeEntry
+    name ref(u8)
+    info TypeDefInfo
+end
+
+pub type LocalEntry
+    function_name ref(u8)
+    bindings list[BindingEntry]
+end
+
+pub type BindingEntry
+    name ref(u8)
+    ty ast.Type
+end
+
+pub type LocalBinding
+    ty ast.Type
+    mutable bool
+    used bool
+    mutated bool
+end
+
+pub enum TypeDefKind
+    Struct
+    Union
+end
+
+pub def analyze(program ref(ast.Program)) ProgramInfo
+    var functions list[FunctionEntry] = []
+    var function_symbols list[SymbolEntry] = []
+    var types list[TypeEntry] = []
+
+    types = collect_types(program)
+
+    var i usize = 0
+    for i < @len(program.functions)
+        val fn_ref ref(ast.Function) = @addr(program.functions[i])
+        @append(functions, FunctionEntry(
+            name: fn_ref.name,
+            sig: FunctionSig(
+                params: extract_param_types(fn_ref),
+                return_type: fn_ref.return_type
+            )
+        ))
+        @append(function_symbols, SymbolEntry(
+            name: fn_ref.name,
+            symbol: mangle_function_symbol(fn_ref.name)
+        ))
+        i++
+    end
+
+    var locals list[LocalEntry] = []
+    i = 0
+    for i < @len(program.functions)
+        val fn_ref ref(ast.Function) = @addr(program.functions[i])
+        val fn_locals list[BindingEntry] = analyze_function(fn_ref, @addr(functions), @addr(types))
+        @append(locals, LocalEntry(
+            function_name: fn_ref.name,
+            bindings: fn_locals
+        ))
+        i++
+    end
+
+    return ProgramInfo(
+        functions: functions,
+        function_symbols: function_symbols,
+        types: types,
+        locals: locals
+    )
+end
+
+def collect_types(program ref(ast.Program)) list[TypeEntry]
+    var types list[TypeEntry] = []
+    var i usize = 0
+    for i < @len(program.functions)
+        val fn_ref ref(ast.Function) = @addr(program.functions[i])
+        var j usize = 0
+        for j < @len(fn_ref.body)
+            collect_types_from_stmt(@addr(fn_ref.body[j]), @addr(types))
+            j++
+        end
+        i++
+    end
+    return types
+end
+
+def collect_types_from_stmt(stmt ref(ast.Stmt), types ref(list[TypeEntry]))
+    match stmt
+        ast.Stmt.VarDecl(vd) => (
+            collect_type_from_expr(@addr(vd.init), types)
+        )
+        ast.Stmt.Assign(a) => (
+            collect_type_from_expr(@addr(a.target), types)
+            collect_type_from_expr(@addr(a.value), types)
+        )
+        ast.Stmt.Return(r) => (
+            collect_type_from_expr(@addr(r.value), types)
+        )
+        ast.Stmt.If(if_stmt) => (
+            collect_type_from_expr(@addr(if_stmt.condition), types)
+            var k usize = 0
+            for k < @len(if_stmt.then_body)
+                collect_types_from_stmt(@addr(if_stmt.then_body[k]), types)
+                k++
+            end
+            k = 0
+            for k < @len(if_stmt.else_body)
+                collect_types_from_stmt(@addr(if_stmt.else_body[k]), types)
+                k++
+            end
+        )
+        ast.Stmt.Match(m) => (
+            collect_type_from_expr(@addr(m.expr), types)
+            var k usize = 0
+            for k < @len(m.arms)
+                var l usize = 0
+                for l < @len(m.arms[k].body)
+                    collect_types_from_stmt(@addr(m.arms[k].body[l]), types)
+                    l++
+                end
+                k++
+            end
+        )
+        ast.Stmt.While(w) => (
+            collect_type_from_expr(@addr(w.condition), types)
+            var k usize = 0
+            for k < @len(w.body)
+                collect_types_from_stmt(@addr(w.body[k]), types)
+                k++
+            end
+        )
+        ast.Stmt.ForRange(fr) => (
+            collect_type_from_expr(@addr(fr.start), types)
+            collect_type_from_expr(@addr(fr.End), types)
+            var k usize = 0
+            for k < @len(fr.body)
+                collect_types_from_stmt(@addr(fr.body[k]), types)
+                k++
+            end
+        )
+        ast.Stmt.ExprStmt(e) => collect_type_from_expr(e, types)
+        ast.Stmt.Increment(e) => collect_type_from_expr(e, types)
+        ast.Stmt.Decrement(e) => collect_type_from_expr(e, types)
+        ast.Stmt.Assert(e) => collect_type_from_expr(e, types)
+        ast.Stmt.Block(body) => (
+            var k usize = 0
+            for k < @len(body)
+                collect_types_from_stmt(@addr(body[k]), types)
+                k++
+            end
+        )
+        _ => ()
+    end
+end
+
+def collect_type_from_expr(expr ref(ast.Expr), types ref(list[TypeEntry]))
+    match expr
+        ast.Expr.Binary(b) => (
+            collect_type_from_expr(b.lhs, types)
+            collect_type_from_expr(b.rhs, types)
+        )
+        ast.Expr.Unary(u) => collect_type_from_expr(u.expr, types)
+        ast.Expr.Call(c) => (
+            collect_type_from_expr(c.callee, types)
+            var i usize = 0
+            for i < @len(c.args)
+                collect_type_from_expr(@addr(c.args[i]), types)
+                i++
+            end
+        )
+        ast.Expr.Index(idx) => (
+            collect_type_from_expr(idx.base, types)
+            collect_type_from_expr(idx.index, types)
+        )
+        ast.Expr.Field(f) => (
+            collect_type_from_expr(f.base, types)
+        )
+        ast.Expr.Cast(c) => collect_type_from_expr(c.expr, types)
+        ast.Expr.BitCast(bc) => collect_type_from_expr(bc.expr, types)
+        ast.Expr.ListLit(elems) => (
+            var i usize = 0
+            for i < @len(elems)
+                collect_type_from_expr(@addr(elems[i]), types)
+                i++
+            end
+        )
+        ast.Expr.StructInit(si) => (
+            var i usize = 0
+            for i < @len(si.fields)
+                collect_type_from_expr(@addr(si.fields[i].value), types)
+                i++
+            end
+        )
+        ast.Expr.MethodCall(mc) => (
+            collect_type_from_expr(mc.receiver, types)
+            var i usize = 0
+            for i < @len(mc.args)
+                collect_type_from_expr(@addr(mc.args[i]), types)
+                i++
+            end
+        )
+        ast.Expr.BuiltinCall(bc) => (
+            var i usize = 0
+            for i < @len(bc.args)
+                collect_type_from_expr(@addr(bc.args[i]), types)
+                i++
+            end
+        )
+        ast.Expr.Try(inner) => collect_type_from_expr(inner, types)
+        ast.Expr.Pack(elems) => (
+            var i usize = 0
+            for i < @len(elems)
+                collect_type_from_expr(@addr(elems[i]), types)
+                i++
+            end
+        )
+        ast.Expr.SizeOf(_) => ()
+        _ => ()
+    end
+end
+
+def extract_param_types(fun ref(ast.Function)) list[ast.Type]
+    var types list[ast.Type] = []
+    var i usize = 0
+    for i < @len(fun.params)
+        @append(types, fun.params[i].ty)
+        i++
+    end
+    return types
+end
+
+def mangle_function_symbol(name ref(u8)) ref(u8)
+    val prefix ref(u8) = "fn__"
+    val plen usize = str.len(prefix)
+    val nlen usize = str.len(name)
+    var result ref(u8) = @alloc(plen + nlen + 1)
+    @memcpy(result, prefix, plen)
+    var i usize = 0
+    for i < nlen
+        val ch u8 = @deref(@add(name, i))
+        if (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '_'
+            @deref(@as_mut(@add(result, plen + i))) = ch
+        else
+            @deref(@as_mut(@add(result, plen + i))) = '_'
+        end
+        i++
+    end
+    @deref(@as_mut(@add(result, plen + nlen))) = 0
+    return result
+end
+
+def analyze_function(fun ref(ast.Function), functions ref(list[FunctionEntry]), types ref(list[TypeEntry])) list[BindingEntry]
+    var bindings list[BindingEntry] = []
+    var i usize = 0
+    for i < @len(fun.params)
+        @append(bindings, BindingEntry(
+            name: fun.params[i].name,
+            ty: fun.params[i].ty
+        ))
+        i++
+    end
+    i = 0
+    for i < @len(fun.body)
+        analyze_stmt(@addr(fun.body[i]), @addr(bindings), functions, types)
+        i++
+    end
+    return bindings
+end
+
+def analyze_stmt(stmt ref(ast.Stmt), bindings ref(list[BindingEntry]), functions ref(list[FunctionEntry]), types ref(list[TypeEntry]))
+    match stmt
+        ast.Stmt.VarDecl(vd) => (
+            val inferred ast.Type = infer_expr_type(@addr(vd.init), bindings, functions, types)
+            @append(bindings, BindingEntry(
+                name: vd.name,
+                ty: inferred
+            ))
+        )
+        ast.Stmt.Assign(a) => (
+            analyze_expr(@addr(a.target), bindings, functions, types)
+            analyze_expr(@addr(a.value), bindings, functions, types)
+        )
+        ast.Stmt.Return(r) => analyze_expr(@addr(r.value), bindings, functions, types)
+        ast.Stmt.If(if_stmt) => (
+            analyze_expr(@addr(if_stmt.condition), bindings, functions, types)
+            var k usize = 0
+            for k < @len(if_stmt.then_body)
+                analyze_stmt(@addr(if_stmt.then_body[k]), bindings, functions, types)
+                k++
+            end
+            k = 0
+            for k < @len(if_stmt.else_body)
+                analyze_stmt(@addr(if_stmt.else_body[k]), bindings, functions, types)
+                k++
+            end
+        )
+        ast.Stmt.Match(m) => (
+            analyze_expr(@addr(m.expr), bindings, functions, types)
+            var k usize = 0
+            for k < @len(m.arms)
+                var l usize = 0
+                for l < @len(m.arms[k].body)
+                    analyze_stmt(@addr(m.arms[k].body[l]), bindings, functions, types)
+                    l++
+                end
+                k++
+            end
+        )
+        ast.Stmt.While(w) => (
+            analyze_expr(@addr(w.condition), bindings, functions, types)
+            var k usize = 0
+            for k < @len(w.body)
+                analyze_stmt(@addr(w.body[k]), bindings, functions, types)
+                k++
+            end
+        )
+        ast.Stmt.ForRange(fr) => (
+            analyze_expr(@addr(fr.start), bindings, functions, types)
+            analyze_expr(@addr(fr.End), bindings, functions, types)
+            var k usize = 0
+            for k < @len(fr.body)
+                analyze_stmt(@addr(fr.body[k]), bindings, functions, types)
+                k++
+            end
+        )
+        ast.Stmt.ExprStmt(e) => analyze_expr(e, bindings, functions, types)
+        ast.Stmt.Increment(e) => analyze_expr(e, bindings, functions, types)
+        ast.Stmt.Decrement(e) => analyze_expr(e, bindings, functions, types)
+        ast.Stmt.Assert(e) => analyze_expr(e, bindings, functions, types)
+        ast.Stmt.Block(body) => (
+            var k usize = 0
+            for k < @len(body)
+                analyze_stmt(@addr(body[k]), bindings, functions, types)
+                k++
+            end
+        )
+        _ => ()
+    end
+end
+
+def analyze_expr(expr ref(ast.Expr), bindings ref(list[BindingEntry]), functions ref(list[FunctionEntry]), types ref(list[TypeEntry])) ast.Type
+    match expr
+        ast.Expr.IntLit(_) => return ast.Type.I32(0)
+        ast.Expr.FloatLit(_) => return ast.Type.F32(0)
+        ast.Expr.BoolLit(_) => return ast.Type.Bool(0)
+        ast.Expr.CharLit(_) => return ast.Type.U8(0)
+        ast.Expr.StrLit(_) => return ast.Type.Ref(@addr(ast.Type.U8(0)))
+        ast.Expr.None(_) => return ast.Type.None(0)
+        ast.Expr.Ident(name) => (
+            return lookup_name(name, bindings, functions, types)
+        )
+        ast.Expr.Path(segments) => (
+            if @len(segments) == 1
+                return lookup_name(segments[0], bindings, functions, types)
+            end
+            return ast.Type.Void(0)
+        )
+        ast.Expr.Binary(b) => (
+            val lhs_ty ast.Type = analyze_expr(b.lhs, bindings, functions, types)
+            val rhs_ty ast.Type = analyze_expr(b.rhs, bindings, functions, types)
+            match b.op
+                ast.BinaryOp.Add | ast.BinaryOp.Subtract | ast.BinaryOp.Multiply | ast.BinaryOp.Divide | ast.BinaryOp.Modulo => (
+                    return common_numeric_type(@addr(lhs_ty), @addr(rhs_ty))
+                )
+                ast.BinaryOp.LogicalAnd | ast.BinaryOp.LogicalOr => return ast.Type.Bool(0)
+                ast.BinaryOp.BitAnd | ast.BinaryOp.BitOr | ast.BinaryOp.BitXor => (
+                    return common_integer_type(@addr(lhs_ty), @addr(rhs_ty))
+                )
+                ast.BinaryOp.ShiftLeft | ast.BinaryOp.ShiftRight => return lhs_ty
+                ast.BinaryOp.LessThan | ast.BinaryOp.LessEqual | ast.BinaryOp.GreaterThan | ast.BinaryOp.GreaterEqual | ast.BinaryOp.Equal | ast.BinaryOp.NotEqual => return ast.Type.Bool(0)
+            end
+        )
+        ast.Expr.Unary(u) => (
+            val inner_ty ast.Type = analyze_expr(u.expr, bindings, functions, types)
+            match u.op
+                ast.UnaryOp.Neg => return inner_ty
+                ast.UnaryOp.LogicalNot => return ast.Type.Bool(0)
+                ast.UnaryOp.BitNot => return inner_ty
+            end
+        )
+        ast.Expr.Call(c) => (
+            val callee_ty ast.Type = analyze_expr(c.callee, bindings, functions, types)
+            var i usize = 0
+            for i < @len(c.args)
+                analyze_expr(@addr(c.args[i]), bindings, functions, types)
+                i++
+            end
+            match callee_ty
+                ast.Type.FnPtr(_, ret) => return @deref(ret)
+                _ => return ast.Type.Void(0)
+            end
+        )
+        ast.Expr.Index(idx) => (
+            val base_ty ast.Type = analyze_expr(idx.base, bindings, functions, types)
+            match base_ty
+                ast.Type.List(inner) => return @deref(inner)
+                _ => return ast.Type.Void(0)
+            end
+        )
+        ast.Expr.Field(f) => (
+            val base_ty ast.Type = analyze_expr(f.base, bindings, functions, types)
+            return infer_field_type(@addr(base_ty), f.field, types)
+        )
+        ast.Expr.Cast(c) => (
+            analyze_expr(c.expr, bindings, functions, types)
+            return c.ty
+        )
+        ast.Expr.BitCast(bc) => (
+            analyze_expr(bc.expr, bindings, functions, types)
+            return bc.ty
+        )
+        ast.Expr.SizeOf(_) => return ast.Type.Usize(0)
+        ast.Expr.ListLit(elems) => (
+            if @len(elems) > 0
+                val elem_ty ast.Type = analyze_expr(@addr(elems[0]), bindings, functions, types)
+                return ast.Type.List(@addr(elem_ty))
+            end
+            return ast.Type.Void(0)
+        )
+        ast.Expr.StructInit(si) => return ast.Type.Named(si.name)
+        ast.Expr.MethodCall(mc) => (
+            val receiver_ty ast.Type = analyze_expr(mc.receiver, bindings, functions, types)
+            var i usize = 0
+            for i < @len(mc.args)
+                analyze_expr(@addr(mc.args[i]), bindings, functions, types)
+                i++
+            end
+            match mc.method
+                "len" => return ast.Type.Usize(0)
+                "capacity" => return ast.Type.I32(0)
+                "append" | "reserve" | "set" | "insert" | "remove" | "clear" => return ast.Type.Void(0)
+                _ => return ast.Type.Void(0)
+            end
+        )
+        ast.Expr.Specialize(sp) => (
+            analyze_expr(sp.callee, bindings, functions, types)
+            return ast.Type.Void(0)
+        )
+        ast.Expr.BuiltinCall(bc) => return infer_builtin_type(bc.name, @addr(bc.args), bindings, functions, types)
+        ast.Expr.Try(inner) => (
+            val inner_ty ast.Type = analyze_expr(inner, bindings, functions, types)
+            match inner_ty
+                ast.Type.Result(ok) => return @deref(ok)
+                _ => return ast.Type.Void(0)
+            end
+        )
+        ast.Expr.Pack(_) => return ast.Type.Void(0)
+        ast.Expr.ErrorLit(_) => return ast.Type.Error(0)
+    end
+    return ast.Type.Void(0)
+end
+
+def infer_expr_type(expr ref(ast.Expr), bindings ref(list[BindingEntry]), functions ref(list[FunctionEntry]), types ref(list[TypeEntry])) ast.Type
+    return analyze_expr(expr, bindings, functions, types)
+end
+
+def lookup_name(name ref(u8), bindings ref(list[BindingEntry]), functions ref(list[FunctionEntry]), types ref(list[TypeEntry])) ast.Type
+    var i usize = 0
+    for i < @len(bindings)
+        if str.eql(bindings[i].name, name)
+            return bindings[i].ty
+        end
+        i++
+    end
+    i = 0
+    for i < @len(functions)
+        if str.eql(functions[i].name, name)
+            return ast.Type.FnPtr(functions[i].sig.params, @addr(functions[i].sig.return_type))
+        end
+        i++
+    end
+    return ast.Type.Void(0)
+end
+
+def infer_field_type(base_ty ref(ast.Type), field ref(u8), types ref(list[TypeEntry])) ast.Type
+    match base_ty
+        ast.Type.Named(name) => (
+            var i usize = 0
+            for i < @len(types)
+                if str.eql(types[i].name, name)
+                    var j usize = 0
+                    for j < @len(types[i].info.field_map)
+                        if str.eql(types[i].info.field_map[j].name, field)
+                            return types[i].info.field_map[j].ty
+                        end
+                        j++
+                    end
+                    break
+                end
+                i++
+            end
+        )
+        _ => ()
+    end
+    return ast.Type.Void(0)
+end
+
+def infer_builtin_type(name ref(u8), args ref(list[ast.Expr]), bindings ref(list[BindingEntry]), functions ref(list[FunctionEntry]), types ref(list[TypeEntry])) ast.Type
+    if str.eql(name, "puts") || str.eql(name, "print") || str.eql(name, "flush")
+        return ast.Type.Void(0)
+    elif str.eql(name, "alloc") || str.eql(name, "realloc")
+        return ast.Type.Mut(@addr(ast.Type.Ref(@addr(ast.Type.U8(0)))))
+    elif str.eql(name, "addr")
+        if @len(args) > 0
+            val inner ast.Type = analyze_expr(@addr(args[0]), bindings, functions, types)
+            return ast.Type.Ref(@addr(inner))
+        end
+    elif str.eql(name, "deref")
+        if @len(args) > 0
+            val arg_ty ast.Type = analyze_expr(@addr(args[0]), bindings, functions, types)
+            match arg_ty
+                ast.Type.Ref(inner) => return @deref(inner)
+                ast.Type.Mut(inner) => (
+                    match @deref(inner)
+                        ast.Type.Ref(inner2) => return @deref(inner2)
+                        _ => ()
+                    end
+                )
+                _ => ()
+            end
+        end
+    elif str.eql(name, "free") || str.eql(name, "memcpy") || str.eql(name, "memset")
+        return ast.Type.Void(0)
+    elif str.eql(name, "len")
+        return ast.Type.Usize(0)
+    elif str.eql(name, "append") || str.eql(name, "capacity") || str.eql(name, "reserve") || str.eql(name, "set") || str.eql(name, "insert") || str.eql(name, "remove") || str.eql(name, "clear")
+        return ast.Type.Void(0)
+    elif str.eql(name, "zeroed")
+        return ast.Type.Void(0)
+    elif str.eql(name, "as_mut")
+        if @len(args) > 0
+            val inner ast.Type = analyze_expr(@addr(args[0]), bindings, functions, types)
+            return ast.Type.Mut(@addr(inner))
+        end
+    elif str.eql(name, "add")
+        if @len(args) > 0
+            return analyze_expr(@addr(args[0]), bindings, functions, types)
+        end
+    elif str.eql(name, "neg")
+        if @len(args) > 0
+            return analyze_expr(@addr(args[0]), bindings, functions, types)
+        end
+    elif str.eql(name, "shl") || str.eql(name, "shr")
+        if @len(args) > 0
+            return analyze_expr(@addr(args[0]), bindings, functions, types)
+        end
+    elif str.eql(name, "call")
+        if @len(args) > 0
+            val fn_ty ast.Type = analyze_expr(@addr(args[0]), bindings, functions, types)
+            match fn_ty
+                ast.Type.FnPtr(_, ret) => return @deref(ret)
+                _ => ()
+            end
+        end
+    end
+    return ast.Type.Void(0)
+end
+
+def common_numeric_type(a ref(ast.Type), b ref(ast.Type)) ast.Type
+    if types_equal(a, b)
+        return @deref(a)
+    end
+    if is_float_type(a) || is_float_type(b)
+        return ast.Type.F64(0)
+    end
+    if is_integer_type(a) && is_integer_type(b)
+        return ast.Type.I64(0)
+    end
+    return ast.Type.Void(0)
+end
+
+def common_integer_type(a ref(ast.Type), b ref(ast.Type)) ast.Type
+    if types_equal(a, b)
+        return @deref(a)
+    end
+    return ast.Type.I64(0)
+end
+
+def is_float_type(ty ref(ast.Type)) bool
+    match ty
+        ast.Type.F32(_) => return true
+        ast.Type.F64(_) => return true
+        _ => return false
+    end
+end
+
+def is_integer_type(ty ref(ast.Type)) bool
+    match ty
+        ast.Type.I8(_) => return true
+        ast.Type.I16(_) => return true
+        ast.Type.I32(_) => return true
+        ast.Type.I64(_) => return true
+        ast.Type.Isize(_) => return true
+        ast.Type.U8(_) => return true
+        ast.Type.U16(_) => return true
+        ast.Type.U32(_) => return true
+        ast.Type.U64(_) => return true
+        ast.Type.Usize(_) => return true
+        _ => return false
+    end
+end
+
+def types_equal(a ref(ast.Type), b ref(ast.Type)) bool
+    match a
+        ast.Type.Void(_) => (
+            match b
+                ast.Type.Void(_) => return true
+                _ => return false
+            end
+        )
+        ast.Type.Bool(_) => (
+            match b
+                ast.Type.Bool(_) => return true
+                _ => return false
+            end
+        )
+        ast.Type.I8(_) => (
+            match b
+                ast.Type.I8(_) => return true
+                _ => return false
+            end
+        )
+        ast.Type.I16(_) => (
+            match b
+                ast.Type.I16(_) => return true
+                _ => return false
+            end
+        )
+        ast.Type.I32(_) => (
+            match b
+                ast.Type.I32(_) => return true
+                _ => return false
+            end
+        )
+        ast.Type.I64(_) => (
+            match b
+                ast.Type.I64(_) => return true
+                _ => return false
+            end
+        )
+        ast.Type.Isize(_) => (
+            match b
+                ast.Type.Isize(_) => return true
+                _ => return false
+            end
+        )
+        ast.Type.U8(_) => (
+            match b
+                ast.Type.U8(_) => return true
+                _ => return false
+            end
+        )
+        ast.Type.U16(_) => (
+            match b
+                ast.Type.U16(_) => return true
+                _ => return false
+            end
+        )
+        ast.Type.U32(_) => (
+            match b
+                ast.Type.U32(_) => return true
+                _ => return false
+            end
+        )
+        ast.Type.U64(_) => (
+            match b
+                ast.Type.U64(_) => return true
+                _ => return false
+            end
+        )
+        ast.Type.Usize(_) => (
+            match b
+                ast.Type.Usize(_) => return true
+                _ => return false
+            end
+        )
+        ast.Type.F32(_) => (
+            match b
+                ast.Type.F32(_) => return true
+                _ => return false
+            end
+        )
+        ast.Type.F64(_) => (
+            match b
+                ast.Type.F64(_) => return true
+                _ => return false
+            end
+        )
+        ast.Type.Named(na) => (
+            match b
+                ast.Type.Named(nb) => return str.eql(na, nb)
+                _ => return false
+            end
+        )
+        ast.Type.List(a_inner) => (
+            match b
+                ast.Type.List(b_inner) => return types_equal(a_inner, b_inner)
+                _ => return false
+            end
+        )
+        ast.Type.Ref(a_inner) => (
+            match b
+                ast.Type.Ref(b_inner) => return types_equal(a_inner, b_inner)
+                _ => return false
+            end
+        )
+        ast.Type.Mut(a_inner) => (
+            match b
+                ast.Type.Mut(b_inner) => return types_equal(a_inner, b_inner)
+                _ => return false
+            end
+        )
+        ast.Type.Result(a_inner) => (
+            match b
+                ast.Type.Result(b_inner) => return types_equal(a_inner, b_inner)
+                _ => return false
+            end
+        )
+        ast.Type.Infer(_) => (
+            match b
+                ast.Type.Infer(_) => return true
+                _ => return false
+            end
+        )
+        ast.Type.Error(_) => (
+            match b
+                ast.Type.Error(_) => return true
+                _ => return false
+            end
+        )
+        ast.Type.None(_) => (
+            match b
+                ast.Type.None(_) => return true
+                _ => return false
+            end
+        )
+        ast.Type.Applied(na, ta) => (
+            match b
+                ast.Type.Applied(nb, tb) => (
+                    if !str.eql(na, nb)
+                        return false
+                    end
+                    if @len(ta) != @len(tb)
+                        return false
+                    end
+                    var i usize = 0
+                    for i < @len(ta)
+                        if !types_equal(@addr(ta[i]), @addr(tb[i]))
+                            return false
+                        end
+                        i++
+                    end
+                    return true
+                )
+                _ => return false
+            end
+        )
+        ast.Type.FnPtr(a_params, a_ret) => (
+            match b
+                ast.Type.FnPtr(b_params, b_ret) => (
+                    if @len(a_params) != @len(b_params)
+                        return false
+                    end
+                    var i usize = 0
+                    for i < @len(a_params)
+                        if !types_equal(@addr(a_params[i]), @addr(b_params[i]))
+                            return false
+                        end
+                        i++
+                    end
+                    return types_equal(a_ret, b_ret)
+                )
+                _ => return false
+            end
+        )
+    end
+    return false
+end
+

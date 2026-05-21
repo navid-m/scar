@@ -1,0 +1,876 @@
+val str = use("std/string")
+val ast = use("ast")
+val sema = use("sema")
+
+val KW_VOID    u8 = 15
+val KW_BOOL    u8 = 16
+val KW_I8      u8 = 17
+val KW_I16     u8 = 18
+val KW_I32     u8 = 19
+val KW_I64     u8 = 20
+val KW_ISIZE   u8 = 21
+val KW_U8      u8 = 22
+val KW_U16     u8 = 23
+val KW_U32     u8 = 24
+val KW_U64     u8 = 25
+val KW_USIZE   u8 = 26
+val KW_F32     u8 = 27
+val KW_F64     u8 = 28
+
+pub def generate_c(program ref(ast.Program), info ref(sema.ProgramInfo)) ref(u8)
+    var output ref(u8) = @alloc(4096)
+    var output_len usize = 0
+
+    append_str(@addr(output), @addr(output_len), "#include <inttypes.h>\n")
+    append_str(@addr(output), @addr(output_len), "#include <signal.h>\n")
+    append_str(@addr(output), @addr(output_len), "#include <stdint.h>\n")
+    append_str(@addr(output), @addr(output_len), "#include <stdio.h>\n")
+    append_str(@addr(output), @addr(output_len), "#include <stdlib.h>\n")
+    append_str(@addr(output), @addr(output_len), "#include <string.h>\n")
+    append_str(@addr(output), @addr(output_len), "#include <errno.h>\n")
+    append_str(@addr(output), @addr(output_len), "#include <sys/stat.h>\n")
+    append_str(@addr(output), @addr(output_len), "#if !defined(_WIN32)\n")
+    append_str(@addr(output), @addr(output_len), "#include <unistd.h>\n")
+    append_str(@addr(output), @addr(output_len), "#endif\n\n")
+
+    append_runtime_prelude(@addr(output), @addr(output_len))
+
+    var i usize = 0
+    for i < @len(program.functions)
+        val fn_ref ref(ast.Function) = @addr(program.functions[i])
+        if fn_ref.is_extern
+            i++
+            continue
+        end
+        render_signature(fn_ref, info, @addr(output), @addr(output_len))
+        append_str(@addr(output), @addr(output_len), ";\n")
+        i++
+    end
+    append_str(@addr(output), @addr(output_len), "\n")
+
+    i = 0
+    for i < @len(program.functions)
+        val fn_ref ref(ast.Function) = @addr(program.functions[i])
+        if fn_ref.is_extern
+            i++
+            continue
+        end
+        render_function(fn_ref, info, @addr(output), @addr(output_len))
+        append_str(@addr(output), @addr(output_len), "\n")
+        i++
+    end
+
+    i = 0
+    for i < @len(program.functions)
+        if str.eql(program.functions[i].name, "main") && !program.functions[i].is_extern
+            render_entrypoint(@addr(program.functions[i]), info, @addr(output), @addr(output_len))
+            break
+        end
+        i++
+    end
+
+    @deref(@as_mut(@add(output, output_len))) = 0
+    return output
+end
+
+def append_runtime_prelude(output ref(ref(u8)), output_len ref(usize))
+    append_str(output, output_len, "static void scar_runtime_panic(const char *message) {\n")
+    append_str(output, output_len, "    fprintf(stderr, \"scar: panic: %s\\n\", message);\n")
+    append_str(output, output_len, "    exit(1);\n")
+    append_str(output, output_len, "}\n\n")
+    append_str(output, output_len, "static void *scar_runtime_alloc(size_t size) {\n")
+    append_str(output, output_len, "    void *ptr = malloc(size);\n")
+    append_str(output, output_len, "    if (ptr == NULL) {\n")
+    append_str(output, output_len, "        scar_runtime_panic(\"allocation failed\");\n")
+    append_str(output, output_len, "    }\n")
+    append_str(output, output_len, "    return ptr;\n")
+    append_str(output, output_len, "}\n\n")
+    append_str(output, output_len, "static void *scar_runtime_realloc(void *ptr, size_t size) {\n")
+    append_str(output, output_len, "    void *resized = realloc(ptr, size);\n")
+    append_str(output, output_len, "    if (resized == NULL) {\n")
+    append_str(output, output_len, "        scar_runtime_panic(\"reallocation failed\");\n")
+    append_str(output, output_len, "    }\n")
+    append_str(output, output_len, "    return resized;\n")
+    append_str(output, output_len, "}\n\n")
+    append_str(output, output_len, "static void scar_runtime_free(void *ptr) {\n")
+    append_str(output, output_len, "    free(ptr);\n")
+    append_str(output, output_len, "}\n\n")
+end
+
+def render_function(fun ref(ast.Function), info ref(sema.ProgramInfo), output ref(ref(u8)), output_len ref(usize))
+    render_signature(fun, info, output, output_len)
+    append_str(output, output_len, " {\n")
+
+    if !is_void_type(@addr(fun.return_type))
+        indent(output, output_len, 1)
+        append_str(output, output_len, c_type(@addr(fun.return_type)))
+        append_str(output, output_len, " __scar_return_value;\n")
+    end
+
+    var next_temp_id usize = 0
+    var i usize = 0
+    for i < @len(fun.body)
+        render_stmt(@addr(fun.body[i]), fun, info, 1, @addr(next_temp_id), output, output_len)
+        i++
+    end
+
+    append_str(output, output_len, "__scar_return:\n")
+    if is_void_type(@addr(fun.return_type))
+        append_str(output, output_len, "    return;\n")
+    else
+        append_str(output, output_len, "    return __scar_return_value;\n")
+    end
+    append_str(output, output_len, "}\n")
+end
+
+def render_signature(fun ref(ast.Function), info ref(sema.ProgramInfo), output ref(ref(u8)), output_len ref(usize))
+    val return_type ref(u8) = c_type(@addr(fun.return_type))
+    val symbol ref(u8) = lookup_symbol(fun.name, info)
+
+    if fun.is_extern
+        append_str(output, output_len, "extern ")
+    end
+    append_str(output, output_len, return_type)
+    append_str(output, output_len, " ")
+    append_str(output, output_len, symbol)
+    append_str(output, output_len, "(")
+
+    if @len(fun.params) == 0
+        append_str(output, output_len, "void")
+    else
+        var i usize = 0
+        for i < @len(fun.params)
+            if i > 0
+                append_str(output, output_len, ", ")
+            end
+            append_str(output, output_len, c_type(@addr(fun.params[i].ty)))
+            append_str(output, output_len, " ")
+            append_str(output, output_len, mangle_local_symbol(fun.params[i].name))
+            i++
+        end
+    end
+    append_str(output, output_len, ")")
+end
+
+def render_stmt(stmt ref(ast.Stmt), fun ref(ast.Function), info ref(sema.ProgramInfo), level usize, next_temp_id ref(usize), output ref(ref(u8)), output_len ref(usize))
+    match stmt
+        ast.Stmt.VarDecl(vd) => (
+            val ty ref(ast.Type) = lookup_local_type(vd.name, fun, info)
+            indent(output, output_len, level)
+            if !vd.mutable && !is_aggregate_type(ty)
+                append_str(output, output_len, "const ")
+            end
+            append_str(output, output_len, c_type_named(ty, vd.name))
+            append_str(output, output_len, " = ")
+            append_expr(@addr(vd.init), fun, info, output, output_len)
+            append_str(output, output_len, ";\n")
+        )
+        ast.Stmt.Assign(a) => (
+            indent(output, output_len, level)
+            append_expr(@addr(a.target), fun, info, output, output_len)
+            append_str(output, output_len, " = ")
+            append_expr(@addr(a.value), fun, info, output, output_len)
+            append_str(output, output_len, ";\n")
+        )
+        ast.Stmt.Return(r) => (
+            indent(output, output_len, level)
+            if !is_void_type(@addr(r.value))
+                append_str(output, output_len, "__scar_return_value = ")
+                append_expr(@addr(r.value), fun, info, output, output_len)
+                append_str(output, output_len, ";\n")
+            end
+            append_str(output, output_len, "    goto __scar_return;\n")
+        )
+        ast.Stmt.If(if_stmt) => (
+            indent(output, output_len, level)
+            append_str(output, output_len, "if (")
+            append_expr(@addr(if_stmt.condition), fun, info, output, output_len)
+            append_str(output, output_len, ") {\n")
+            var k usize = 0
+            for k < @len(if_stmt.then_body)
+                render_stmt(@addr(if_stmt.then_body[k]), fun, info, level + 1, next_temp_id, output, output_len)
+                k++
+            end
+            indent(output, output_len, level)
+            append_str(output, output_len, "}")
+            if @len(if_stmt.else_body) > 0
+                append_str(output, output_len, " else {\n")
+                k = 0
+                for k < @len(if_stmt.else_body)
+                    render_stmt(@addr(if_stmt.else_body[k]), fun, info, level + 1, next_temp_id, output, output_len)
+                    k++
+                end
+                indent(output, output_len, level)
+                append_str(output, output_len, "}\n")
+            else
+                append_str(output, output_len, "\n")
+            end
+        )
+        ast.Stmt.While(w) => (
+            indent(output, output_len, level)
+            append_str(output, output_len, "while (")
+            append_expr(@addr(w.condition), fun, info, output, output_len)
+            append_str(output, output_len, ") {\n")
+            var k usize = 0
+            for k < @len(w.body)
+                render_stmt(@addr(w.body[k]), fun, info, level + 1, next_temp_id, output, output_len)
+                k++
+            end
+            indent(output, output_len, level)
+            append_str(output, output_len, "}\n")
+        )
+        ast.Stmt.ForRange(fr) => (
+            val var_ty ref(ast.Type) = lookup_local_type(fr.var_name, fun, info)
+            indent(output, output_len, level)
+            append_str(output, output_len, "for (")
+            append_str(output, output_len, c_type(var_ty))
+            append_str(output, output_len, " ")
+            append_str(output, output_len, mangle_local_symbol(fr.var_name))
+            append_str(output, output_len, " = ")
+            append_expr(@addr(fr.start), fun, info, output, output_len)
+            append_str(output, output_len, "; ")
+            append_str(output, output_len, mangle_local_symbol(fr.var_name))
+            append_str(output, output_len, " < ")
+            append_expr(@addr(fr.End), fun, info, output, output_len)
+            append_str(output, output_len, "; ++")
+            append_str(output, output_len, mangle_local_symbol(fr.var_name))
+            append_str(output, output_len, ") {\n")
+            var k usize = 0
+            for k < @len(fr.body)
+                render_stmt(@addr(fr.body[k]), fun, info, level + 1, next_temp_id, output, output_len)
+                k++
+            end
+            indent(output, output_len, level)
+            append_str(output, output_len, "}\n")
+        )
+        ast.Stmt.Match(m) => (
+            val temp_id usize = @deref(next_temp_id)
+            @deref(next_temp_id) = temp_id + 1
+            var temp_name_buf list[u8] = []
+            format_temp_name("__scar_match_", temp_id, @addr(temp_name_buf))
+            val temp_name ref(u8) = @addr(temp_name_buf[0])
+
+            indent(output, output_len, level)
+            append_str(output, output_len, "{\n")
+            indent(output, output_len, level + 1)
+            append_str(output, output_len, "int32_t ")
+            append_str(output, output_len, temp_name)
+            append_str(output, output_len, " = ")
+            append_expr(@addr(m.expr), fun, info, output, output_len)
+            append_str(output, output_len, ";\n")
+
+            var k usize = 0
+            for k < @len(m.arms)
+                indent(output, output_len, level + 1)
+                if k == 0
+                    append_str(output, output_len, "if (")
+                else
+                    append_str(output, output_len, "else if (")
+                end
+                append_str(output, output_len, temp_name)
+                append_str(output, output_len, ".tag == ")
+
+                match m.arms[k].kind
+                    ast.MatchArmKind.VariantName(vname) => (
+                        append_str(output, output_len, vname)
+                        append_str(output, output_len, "_tag\n")
+
+                        var l usize = 0
+                        for l < @len(m.arms[k].bindings)
+                            if @len(m.arms[k].bindings[l]) > 0
+                                indent(output, output_len, level + 2)
+                                append_str(output, output_len, m.arms[k].bindings[l])
+                                append_str(output, output_len, " = ")
+                                append_str(output, output_len, temp_name)
+                                append_str(output, output_len, ".data.")
+                                append_str(output, output_len, vname)
+                                append_str(output, output_len, "._")
+                                append_usize(output, output_len, l)
+                                append_str(output, output_len, ";\n")
+                            end
+                            l++
+                        end
+                    )
+                    _ => ()
+                end
+
+                var l usize = 0
+                for l < @len(m.arms[k].body)
+                    render_stmt(@addr(m.arms[k].body[l]), fun, info, level + 2, next_temp_id, output, output_len)
+                    l++
+                end
+                indent(output, output_len, level + 1)
+                append_str(output, output_len, "}\n")
+                k++
+            end
+            indent(output, output_len, level)
+            append_str(output, output_len, "}\n")
+        )
+        ast.Stmt.ExprStmt(e) => (
+            indent(output, output_len, level)
+            append_expr(e, fun, info, output, output_len)
+            append_str(output, output_len, ";\n")
+        )
+        ast.Stmt.Increment(e) => (
+            indent(output, output_len, level)
+            append_expr(e, fun, info, output, output_len)
+            append_str(output, output_len, "++;\n")
+        )
+        ast.Stmt.Decrement(e) => (
+            indent(output, output_len, level)
+            append_expr(e, fun, info, output, output_len)
+            append_str(output, output_len, ";\n")
+        )
+        ast.Stmt.Assert(e) => (
+            indent(output, output_len, level)
+            append_str(output, output_len, "if (!(")
+            append_expr(e, fun, info, output, output_len)
+            append_str(output, output_len, ")) {\n")
+            indent(output, output_len, level + 1)
+            append_str(output, output_len, "scar_runtime_panic(\"assertion failed\");\n")
+            indent(output, output_len, level)
+            append_str(output, output_len, "}\n")
+        )
+        ast.Stmt.Block(body) => (
+            var k usize = 0
+            for k < @len(body)
+                render_stmt(@addr(body[k]), fun, info, level, next_temp_id, output, output_len)
+                k++
+            end
+        )
+        _ => ()
+    end
+end
+
+def append_expr(expr ref(ast.Expr), fun ref(ast.Function), info ref(sema.ProgramInfo), output ref(ref(u8)), output_len ref(usize))
+    match expr
+        ast.Expr.IntLit(v) => append_u64(output, output_len, v)
+        ast.Expr.FloatLit(v) => append_f64(output, output_len, v)
+        ast.Expr.BoolLit(v) => (
+            if v
+                append_str(output, output_len, "1")
+            else
+                append_str(output, output_len, "0")
+            end
+        )
+        ast.Expr.CharLit(v) => append_u64(output, output_len, v as u64)
+        ast.Expr.StrLit(s) => (
+            append_str(output, output_len, "\"")
+            append_str(output, output_len, s)
+            append_str(output, output_len, "\"")
+        )
+        ast.Expr.None(_) => append_str(output, output_len, "NULL")
+        ast.Expr.Ident(name) => append_str(output, output_len, mangle_local_symbol(name))
+        ast.Expr.Path(segments) => (
+            if @len(segments) == 1
+                append_str(output, output_len, mangle_local_symbol(segments[0]))
+            else
+                var i usize = 0
+                for i < @len(segments)
+                    if i > 0
+                        append_str(output, output_len, "__")
+                    end
+                    append_str(output, output_len, segments[i])
+                    i++
+                end
+            end
+        )
+        ast.Expr.Binary(b) => (
+            append_str(output, output_len, "(")
+            append_expr(b.lhs, fun, info, output, output_len)
+            append_str(output, output_len, " ")
+            append_str(output, output_len, binary_op_str(b.op))
+            append_str(output, output_len, " ")
+            append_expr(b.rhs, fun, info, output, output_len)
+            append_str(output, output_len, ")")
+        )
+        ast.Expr.Unary(u) => (
+            match u.op
+                ast.UnaryOp.Neg => (
+                    append_str(output, output_len, "(-")
+                    append_expr(u.expr, fun, info, output, output_len)
+                    append_str(output, output_len, ")")
+                )
+                ast.UnaryOp.LogicalNot => (
+                    append_str(output, output_len, "(!")
+                    append_expr(u.expr, fun, info, output, output_len)
+                    append_str(output, output_len, ")")
+                )
+                ast.UnaryOp.BitNot => (
+                    append_str(output, output_len, "(~")
+                    append_expr(u.expr, fun, info, output, output_len)
+                    append_str(output, output_len, ")")
+                )
+            end
+        )
+        ast.Expr.Call(c) => (
+            append_expr(c.callee, fun, info, output, output_len)
+            append_str(output, output_len, "(")
+            var i usize = 0
+            for i < @len(c.args)
+                if i > 0
+                    append_str(output, output_len, ", ")
+                end
+                append_expr(@addr(c.args[i]), fun, info, output, output_len)
+                i++
+            end
+            append_str(output, output_len, ")")
+        )
+        ast.Expr.Index(idx) => (
+            append_str(output, output_len, "(")
+            append_expr(idx.base, fun, info, output, output_len)
+            append_str(output, output_len, ".data[")
+            append_expr(idx.index, fun, info, output, output_len)
+            append_str(output, output_len, "])")
+        )
+        ast.Expr.Field(f) => (
+            append_str(output, output_len, "(")
+            append_expr(f.base, fun, info, output, output_len)
+            append_str(output, output_len, ").")
+            append_str(output, output_len, f.field)
+        )
+        ast.Expr.Cast(c) => (
+            append_str(output, output_len, "((")
+            append_str(output, output_len, c_type(@addr(c.ty)))
+            append_str(output, output_len, ")(")
+            append_expr(c.expr, fun, info, output, output_len)
+            append_str(output, output_len, "))")
+        )
+        ast.Expr.BitCast(bc) => (
+            append_str(output, output_len, "((")
+            append_str(output, output_len, c_type(@addr(bc.ty)))
+            append_str(output, output_len, ")(")
+            append_expr(bc.expr, fun, info, output, output_len)
+            append_str(output, output_len, "))")
+        )
+        ast.Expr.SizeOf(ty) => (
+            append_str(output, output_len, "((size_t)sizeof(")
+            append_str(output, output_len, c_type(ty))
+            append_str(output, output_len, "))")
+        )
+        ast.Expr.ListLit(elems) => (
+            if @len(elems) == 0
+                append_str(output, output_len, "list_new()")
+            else
+                append_str(output, output_len, "{")
+                var i usize = 0
+                for i < @len(elems)
+                    if i > 0
+                        append_str(output, output_len, ", ")
+                    end
+                    append_expr(@addr(elems[i]), fun, info, output, output_len)
+                    i++
+                end
+                append_str(output, output_len, "}")
+            end
+        )
+        ast.Expr.StructInit(si) => (
+            append_str(output, output_len, "(")
+            append_str(output, output_len, si.name)
+            append_str(output, output_len, "){ ")
+            var i usize = 0
+            for i < @len(si.fields)
+                if i > 0
+                    append_str(output, output_len, ", ")
+                end
+                append_str(output, output_len, ".")
+                append_str(output, output_len, si.fields[i].name)
+                append_str(output, output_len, " = ")
+                append_expr(@addr(si.fields[i].value), fun, info, output, output_len)
+                i++
+            end
+            append_str(output, output_len, " }")
+        )
+        ast.Expr.MethodCall(mc) => (
+            val element_ty ref(u8) = "void"
+            append_str(output, output_len, "list_")
+            append_str(output, output_len, mc.method)
+            append_str(output, output_len, "(")
+            append_expr(mc.receiver, fun, info, output, output_len)
+            var i usize = 0
+            for i < @len(mc.args)
+                append_str(output, output_len, ", ")
+                append_expr(@addr(mc.args[i]), fun, info, output, output_len)
+                i++
+            end
+            append_str(output, output_len, ")")
+        )
+        ast.Expr.BuiltinCall(bc) => (
+            append_builtin_call(bc, fun, info, output, output_len)
+        )
+        ast.Expr.Try(inner) => (
+            append_str(output, output_len, "(")
+            append_expr(inner, fun, info, output, output_len)
+            append_str(output, output_len, ".ok)")
+        )
+        ast.Expr.Pack(elems) => (
+            var i usize = 0
+            for i < @len(elems)
+                if i > 0
+                    append_str(output, output_len, ", ")
+                end
+                append_expr(@addr(elems[i]), fun, info, output, output_len)
+                i++
+            end
+        )
+        ast.Expr.ErrorLit(msg) => (
+            append_str(output, output_len, msg)
+        )
+        ast.Expr.Specialize(sp) => (
+            append_expr(sp.callee, fun, info, output, output_len)
+        )
+    end
+end
+
+def append_builtin_call(bc ref(ast.ExprBuiltinCall), fun ref(ast.Function), info ref(sema.ProgramInfo), output ref(ref(u8)), output_len ref(usize))
+    if str.eql(bc.name, "puts")
+        append_str(output, output_len, "puts(")
+        append_expr(@addr(bc.args[0]), fun, info, output, output_len)
+        append_str(output, output_len, ")")
+    elif str.eql(bc.name, "flush")
+        append_str(output, output_len, "fflush(stdout)")
+    elif str.eql(bc.name, "print")
+        append_str(output, output_len, "printf(")
+        append_expr(@addr(bc.args[0]), fun, info, output, output_len)
+        var i usize = 1
+        for i < @len(bc.args)
+            append_str(output, output_len, ", ")
+            append_expr(@addr(bc.args[i]), fun, info, output, output_len)
+            i++
+        end
+        append_str(output, output_len, ")")
+    elif str.eql(bc.name, "alloc")
+        append_str(output, output_len, "scar_runtime_alloc(")
+        append_expr(@addr(bc.args[0]), fun, info, output, output_len)
+        append_str(output, output_len, ")")
+    elif str.eql(bc.name, "realloc")
+        append_str(output, output_len, "scar_runtime_realloc(")
+        append_expr(@addr(bc.args[0]), fun, info, output, output_len)
+        append_str(output, output_len, ", ")
+        append_expr(@addr(bc.args[1]), fun, info, output, output_len)
+        append_str(output, output_len, ")")
+    elif str.eql(bc.name, "free")
+        append_str(output, output_len, "scar_runtime_free(")
+        append_expr(@addr(bc.args[0]), fun, info, output, output_len)
+        append_str(output, output_len, ")")
+    elif str.eql(bc.name, "addr")
+        append_str(output, output_len, "(&")
+        append_expr(@addr(bc.args[0]), fun, info, output, output_len)
+        append_str(output, output_len, ")")
+    elif str.eql(bc.name, "deref")
+        append_str(output, output_len, "(*")
+        append_expr(@addr(bc.args[0]), fun, info, output, output_len)
+        append_str(output, output_len, ")")
+    elif str.eql(bc.name, "memcpy")
+        append_str(output, output_len, "memcpy(")
+        append_expr(@addr(bc.args[0]), fun, info, output, output_len)
+        append_str(output, output_len, ", ")
+        append_expr(@addr(bc.args[1]), fun, info, output, output_len)
+        append_str(output, output_len, ", ")
+        append_expr(@addr(bc.args[2]), fun, info, output, output_len)
+        append_str(output, output_len, ")")
+    elif str.eql(bc.name, "memset")
+        append_str(output, output_len, "memset(")
+        append_expr(@addr(bc.args[0]), fun, info, output, output_len)
+        append_str(output, output_len, ", ")
+        append_expr(@addr(bc.args[1]), fun, info, output, output_len)
+        append_str(output, output_len, ", ")
+        append_expr(@addr(bc.args[2]), fun, info, output, output_len)
+        append_str(output, output_len, ")")
+    elif str.eql(bc.name, "zeroed")
+        append_str(output, output_len, "{0}")
+    elif str.eql(bc.name, "neg")
+        append_str(output, output_len, "(-")
+        append_expr(@addr(bc.args[0]), fun, info, output, output_len)
+        append_str(output, output_len, ")")
+    elif str.eql(bc.name, "shl")
+        append_str(output, output_len, "(")
+        append_expr(@addr(bc.args[0]), fun, info, output, output_len)
+        append_str(output, output_len, " << ")
+        append_expr(@addr(bc.args[1]), fun, info, output, output_len)
+        append_str(output, output_len, ")")
+    elif str.eql(bc.name, "shr")
+        append_str(output, output_len, "(")
+        append_expr(@addr(bc.args[0]), fun, info, output, output_len)
+        append_str(output, output_len, " >> ")
+        append_expr(@addr(bc.args[1]), fun, info, output, output_len)
+        append_str(output, output_len, ")")
+    elif str.eql(bc.name, "as_mut")
+        append_expr(@addr(bc.args[0]), fun, info, output, output_len)
+    elif str.eql(bc.name, "add")
+        append_str(output, output_len, "(")
+        append_expr(@addr(bc.args[0]), fun, info, output, output_len)
+        append_str(output, output_len, " + ")
+        append_expr(@addr(bc.args[1]), fun, info, output, output_len)
+        append_str(output, output_len, ")")
+    elif str.eql(bc.name, "call")
+        append_expr(@addr(bc.args[0]), fun, info, output, output_len)
+        append_str(output, output_len, "(")
+        var i usize = 1
+        for i < @len(bc.args)
+            if i > 1
+                append_str(output, output_len, ", ")
+            end
+            append_expr(@addr(bc.args[i]), fun, info, output, output_len)
+            i++
+        end
+        append_str(output, output_len, ")")
+    elif str.eql(bc.name, "len")
+        if @len(bc.args) > 0
+            append_expr(@addr(bc.args[0]), fun, info, output, output_len)
+            append_str(output, output_len, ".len")
+        else
+            append_str(output, output_len, "0")
+        end
+    elif str.eql(bc.name, "append")
+        if @len(bc.args) > 0
+            append_expr(@addr(bc.args[0]), fun, info, output, output_len)
+            append_str(output, output_len, ".append(")
+            var i usize = 1
+            for i < @len(bc.args)
+                if i > 1
+                    append_str(output, output_len, ", ")
+                end
+                append_expr(@addr(bc.args[i]), fun, info, output, output_len)
+                i++
+            end
+            append_str(output, output_len, ")")
+        end
+    else
+        append_str(output, output_len, "0")
+    end
+end
+
+def render_entrypoint(fun ref(ast.Function), info ref(sema.ProgramInfo), output ref(ref(u8)), output_len ref(usize))
+    val symbol ref(u8) = lookup_symbol(fun.name, info)
+    append_str(output, output_len, "int main(void) {\n")
+    append_str(output, output_len, "    ")
+    append_str(output, output_len, symbol)
+    append_str(output, output_len, "();\n")
+    append_str(output, output_len, "    return 0;\n")
+    append_str(output, output_len, "}\n")
+end
+
+def c_type(ty ref(ast.Type)) ref(u8)
+    match ty
+        ast.Type.Void(_) => return "void"
+        ast.Type.Bool(_) => return "int32_t"
+        ast.Type.I8(_) => return "int8_t"
+        ast.Type.I16(_) => return "int16_t"
+        ast.Type.I32(_) => return "int32_t"
+        ast.Type.I64(_) => return "int64_t"
+        ast.Type.Isize(_) => return "intptr_t"
+        ast.Type.U8(_) => return "uint8_t"
+        ast.Type.U16(_) => return "uint16_t"
+        ast.Type.U32(_) => return "uint32_t"
+        ast.Type.U64(_) => return "uint64_t"
+        ast.Type.Usize(_) => return "size_t"
+        ast.Type.F32(_) => return "float"
+        ast.Type.F64(_) => return "double"
+        ast.Type.Ref(inner) => (
+            val inner_type ref(u8) = c_type(inner)
+            val inner_len usize = str.len(inner_type)
+            var result ref(u8) = @alloc(inner_len + 3)
+            @memcpy(result, inner_type, inner_len)
+            @deref(@as_mut(@add(result, inner_len))) = ' '
+            @deref(@as_mut(@add(result, inner_len + 1))) = '*'
+            @deref(@as_mut(@add(result, inner_len + 2))) = 0
+            return result
+        )
+        ast.Type.Mut(inner) => (
+            val inner_type ref(u8) = c_type(inner)
+            val inner_len usize = str.len(inner_type)
+            var result ref(u8) = @alloc(inner_len + 3)
+            @memcpy(result, inner_type, inner_len)
+            @deref(@as_mut(@add(result, inner_len))) = ' '
+            @deref(@as_mut(@add(result, inner_len + 1))) = '*'
+            @deref(@as_mut(@add(result, inner_len + 2))) = 0
+            return result
+        )
+        ast.Type.List(_) => return "list"
+        ast.Type.Result(_) => return "scar_result"
+        ast.Type.Named(name) => return name
+        ast.Type.Applied(name, _) => return name
+        ast.Type.FnPtr(_, _) => return "void *"
+        ast.Type.Infer(_) => return "void"
+        ast.Type.Error(_) => return "const char *"
+        ast.Type.None(_) => return "NULL"
+    end
+    return "void"
+end
+
+def c_type_named(ty ref(ast.Type), name ref(u8)) ref(u8)
+    val base ref(u8) = c_type(ty)
+    val base_len usize = str.len(base)
+    val name_len usize = str.len(name)
+    var result ref(u8) = @alloc(base_len + 1 + name_len + 1)
+    @memcpy(result, base, base_len)
+    @deref(@as_mut(@add(result, base_len))) = ' '
+    @memcpy(@add(result, base_len + 1), mangle_local_symbol(name), name_len)
+    @deref(@as_mut(@add(result, base_len + 1 + name_len))) = 0
+    return result
+end
+
+def mangle_local_symbol(name ref(u8)) ref(u8)
+    val prefix ref(u8) = "loc__"
+    val plen usize = str.len(prefix)
+    val nlen usize = str.len(name)
+    var result ref(u8) = @alloc(plen + nlen + 1)
+    @memcpy(result, prefix, plen)
+    @memcpy(@add(result, plen), name, nlen)
+    @deref(@as_mut(@add(result, plen + nlen))) = 0
+    return result
+end
+
+def lookup_symbol(name ref(u8), info ref(sema.ProgramInfo)) ref(u8)
+    var i usize = 0
+    for i < @len(info.function_symbols)
+        if str.eql(info.function_symbols[i].name, name)
+            return info.function_symbols[i].symbol
+        end
+        i++
+    end
+    return mangle_local_symbol(name)
+end
+
+def lookup_local_type(name ref(u8), fun ref(ast.Function), info ref(sema.ProgramInfo)) ref(ast.Type)
+    var i usize = 0
+    for i < @len(info.locals)
+        if str.eql(info.locals[i].function_name, fun.name)
+            var j usize = 0
+            for j < @len(info.locals[i].bindings)
+                if str.eql(info.locals[i].bindings[j].name, name)
+                    return @addr(info.locals[i].bindings[j].ty)
+                end
+                j++
+            end
+            break
+        end
+        i++
+    end
+    i = 0
+    for i < @len(fun.params)
+        if str.eql(fun.params[i].name, name)
+            return @addr(fun.params[i].ty)
+        end
+        i++
+    end
+    return @addr(ast.Type.Void(0))
+end
+
+def binary_op_str(op ast.BinaryOp) ref(u8)
+    match op
+        ast.BinaryOp.Add => return "+"
+        ast.BinaryOp.Subtract => return "-"
+        ast.BinaryOp.Multiply => return "*"
+        ast.BinaryOp.Divide => return "/"
+        ast.BinaryOp.Modulo => return "%"
+        ast.BinaryOp.LogicalAnd => return "&&"
+        ast.BinaryOp.LogicalOr => return "||"
+        ast.BinaryOp.BitAnd => return "&"
+        ast.BinaryOp.BitOr => return "|"
+        ast.BinaryOp.BitXor => return "^"
+        ast.BinaryOp.ShiftLeft => return "<<"
+        ast.BinaryOp.ShiftRight => return ">>"
+        ast.BinaryOp.LessThan => return "<"
+        ast.BinaryOp.LessEqual => return "<="
+        ast.BinaryOp.GreaterThan => return ">"
+        ast.BinaryOp.GreaterEqual => return ">="
+        ast.BinaryOp.Equal => return "=="
+        ast.BinaryOp.NotEqual => return "!="
+    end
+    return "?"
+end
+
+def is_void_type(ty ref(ast.Type)) bool
+    match ty
+        ast.Type.Void(_) => return true
+        _ => return false
+    end
+end
+
+def is_aggregate_type(ty ref(ast.Type)) bool
+    match ty
+        ast.Type.Named(_) => return true
+        ast.Type.Applied(_, _) => return true
+        _ => return false
+    end
+end
+
+def indent(output ref(ref(u8)), output_len ref(usize), level usize)
+    var i usize = 0
+    for i < level
+        append_str(output, output_len, "    ")
+        i++
+    end
+end
+
+def append_str(output ref(ref(u8)), output_len ref(usize), s ref(u8))
+    val slen usize = str.len(s)
+    val current_len usize = @deref(output_len)
+    val needed usize = current_len + slen + 1
+    val old_capacity usize = needed
+    val old_ptr ref(u8) = @deref(output)
+
+    if needed > old_capacity
+        val new_ptr ref(u8) = @alloc(needed * 2)
+        @memcpy(new_ptr, old_ptr, current_len)
+        @deref(output) = new_ptr
+    end
+
+    @memcpy(@add(@deref(output), current_len), s, slen)
+    @deref(output_len) = current_len + slen
+end
+
+def append_u64(output ref(ref(u8)), output_len ref(usize), v u64)
+    var buf ref(u8) = @alloc(32)
+    var i usize = 31
+    var value u64 = v
+    @deref(@as_mut(@add(buf, 31))) = 0
+    if value == 0
+        @deref(@as_mut(@add(buf, 30))) = '0'
+        i = 30
+    else
+        for value > 0
+            val digit u8 = (value % 10) as u8 + '0'
+            @deref(@as_mut(@add(buf, i))) = digit
+            i--
+            value /= 10
+        end
+        i++
+    end
+    append_str(output, output_len, @add(buf, i))
+end
+
+def append_usize(output ref(ref(u8)), output_len ref(usize), v usize)
+    append_u64(output, output_len, v as u64)
+end
+
+def append_f64(output ref(ref(u8)), output_len ref(usize), v f64)
+    append_str(output, output_len, "0.0")
+end
+
+def format_temp_name(prefix ref(u8), id usize, buf ref(list[u8]))
+    val plen usize = str.len(prefix)
+    var i usize = 0
+    for i < plen
+        @append(buf, @deref(@add(prefix, i)))
+        i++
+    end
+    var value usize = id
+    if value == 0
+        @append(buf, '0')
+    else
+        var digits list[u8] = []
+        for value > 0
+            @append(digits, ((value % 10) as u8) + '0')
+            value = value / 10
+        end
+        var k usize = @len(digits)
+        for k > 0
+            k--
+            @append(buf, digits[k])
+        end
+    end
+    @append(buf, 0)
+end

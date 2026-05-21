@@ -266,6 +266,22 @@ def parse_type(p ref(ast.TokenList)) ast.Type
         )
         ast.TokenKind.Ident(name) => (
             advance(p)
+            var type_name ref(u8) = name
+            match p.tokens[p.pos].kind
+                ast.TokenKind.Dot(_) => (
+                    advance(p)
+                    val second ref(u8) = expect_ident(p)
+                    val len1 usize = str.len(type_name)
+                    val len2 usize = str.len(second)
+                    var combined ref(u8) = @alloc(len1 + 1 + len2 + 1)
+                    @memcpy(combined, type_name, len1)
+                    @deref(@as_mut(@add(combined, len1))) = 46
+                    @memcpy(@add(combined, len1 + 1), second, len2)
+                    @deref(@as_mut(@add(combined, len1 + 1 + len2))) = 0
+                    type_name = combined
+                )
+                _ => ()
+            end
             match p.tokens[p.pos].kind
                 ast.TokenKind.LBracket(_) => (
                     advance(p)
@@ -281,9 +297,9 @@ def parse_type(p ref(ast.TokenList)) ast.Type
                         ast.TokenKind.RBracket(_) => advance(p)
                         _ => ()
                     end
-                    return ast.Type.Applied(name, type_args)
+                    return ast.Type.Applied(type_name, type_args)
                 )
-                _ => return ast.Type.Named(name)
+                _ => return ast.Type.Named(type_name)
             end
         )
         _ => return ast.Type.Void(0)
