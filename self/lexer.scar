@@ -3,7 +3,16 @@ val ast = use("ast")
 
 pub def lex(source ref(u8)) list[ast.Token]
 	val len usize = str.len(source)
-	var l ast.Lexer = ast.Lexer(source: source, len: len, pos: 0, line: 1, column: 1, tokens: [ast.Token(kind: ast.TokenKind.Eof(0), line: 0, column: 0)])
+	var l ast.Lexer = ast.Lexer(
+		source: source,
+		len: len,
+		pos: 0,
+		line: 1,
+		column: 1,
+		tokens: [
+			ast.Token(kind: ast.TokenKind.Eof(0), line: 0, column: 0)
+		]
+	)
 	@clear(l.tokens)
 
 	for l.pos < l.len
@@ -11,152 +20,159 @@ pub def lex(source ref(u8)) list[ast.Token]
 
 		match ch
 			' ' => (
-				l.pos = l.pos + 1
-				l.column = l.column + 1
+				l.pos++
+				l.column++
 			)
 			'\t' => (
-				l.pos = l.pos + 1
-				l.column = l.column + 1
+				l.pos++
+				l.column++
 			)
-			'\r' => l.pos = l.pos + 1
+			'\r' => l.pos++
 			'\n' => (
-				@append(l.tokens, ast.Token(kind: ast.TokenKind.Newline(0), line: l.line, column: l.column))
-				l.pos = l.pos + 1
-				l.line = l.line + 1
+				@append(
+					l.tokens,
+					ast.Token(
+						kind: ast.TokenKind.Newline(0),
+						line: l.line,
+						column: l.column
+					)
+				)
+				l.pos++
+				l.line++
 				l.column = 1
 			)
 			'#' => (
-				l.pos = l.pos + 1
+				l.pos++
 				for l.pos < l.len
 					val c u8 = @deref(@add(l.source, l.pos))
 					if c == '\n'
-						l.pos = l.pos + 1
+						l.pos++
 						break
 					end
-					l.pos = l.pos + 1
+					l.pos++
 				end
 			)
 			'@' => (
 				@append(l.tokens, ast.Token(kind: ast.TokenKind.At(0), line: l.line, column: l.column))
-				l.pos = l.pos + 1
-				l.column = l.column + 1
+				l.pos++
+				l.column++
 			)
 			'(' => (
 				@append(l.tokens, ast.Token(kind: ast.TokenKind.LParen(0), line: l.line, column: l.column))
-				l.pos = l.pos + 1
-				l.column = l.column + 1
+				l.pos++
+				l.column++
 			)
 			')' => (
 				@append(l.tokens, ast.Token(kind: ast.TokenKind.RParen(0), line: l.line, column: l.column))
-				l.pos = l.pos + 1
-				l.column = l.column + 1
+				l.pos++
+				l.column++
 			)
 			',' => (
 				@append(l.tokens, ast.Token(kind: ast.TokenKind.Comma(0), line: l.line, column: l.column))
-				l.pos = l.pos + 1
-				l.column = l.column + 1
+				l.pos++
+				l.column++
 			)
 			'.' => (
-				l.pos = l.pos + 1
-				l.column = l.column + 1
+				l.pos++
+				l.column++
 				if @deref(@add(l.source, l.pos)) == '.'
-					l.pos = l.pos + 1
-					l.column = l.column + 1
+					l.pos++
+					l.column++
 					@append(l.tokens, ast.Token(kind: ast.TokenKind.DotDot(0), line: l.line, column: l.column))
 				else
 					@append(l.tokens, ast.Token(kind: ast.TokenKind.Dot(0), line: l.line, column: l.column))
 				end
 			)
 			':' => (
-				l.pos = l.pos + 1
-				l.column = l.column + 1
+				l.pos++
+				l.column++
 				if @deref(@add(l.source, l.pos)) == ':'
-					l.pos = l.pos + 1
-					l.column = l.column + 1
+					l.pos++
+					l.column++
 					@append(l.tokens, ast.Token(kind: ast.TokenKind.ColonColon(0), line: l.line, column: l.column))
 				else
 					@append(l.tokens, ast.Token(kind: ast.TokenKind.Colon(0), line: l.line, column: l.column))
 				end
 			)
 			'=' => (
-				l.pos = l.pos + 1
-				l.column = l.column + 1
+				l.pos++
+				l.column++
 				match @deref(@add(l.source, l.pos))
 					'=' => (
-						l.pos = l.pos + 1
-						l.column = l.column + 1
+						l.pos++
+						l.column++
 						@append(l.tokens, ast.Token(kind: ast.TokenKind.EqualEqual(0), line: l.line, column: l.column))
 					)
 					'>' => (
-						l.pos = l.pos + 1
-						l.column = l.column + 1
+						l.pos++
+						l.column++
 						@append(l.tokens, ast.Token(kind: ast.TokenKind.FatArrow(0), line: l.line, column: l.column))
 					)
 					_ => @append(l.tokens, ast.Token(kind: ast.TokenKind.Assign(0), line: l.line, column: l.column))
 				end
 			)
 			'!' => (
-				l.pos = l.pos + 1
-				l.column = l.column + 1
+				l.pos++
+				l.column++
 				if @deref(@add(l.source, l.pos)) == '='
-					l.pos = l.pos + 1
-					l.column = l.column + 1
+					l.pos++
+					l.column++
 					@append(l.tokens, ast.Token(kind: ast.TokenKind.BangEqual(0), line: l.line, column: l.column))
 				else
 					@append(l.tokens, ast.Token(kind: ast.TokenKind.Bang(0), line: l.line, column: l.column))
 				end
 			)
 			'<' => (
-				l.pos = l.pos + 1
-				l.column = l.column + 1
+				l.pos++
+				l.column++
 				match @deref(@add(l.source, l.pos))
 					'<' => (
-						l.pos = l.pos + 1
-						l.column = l.column + 1
+						l.pos++
+						l.column++
 						@append(l.tokens, ast.Token(kind: ast.TokenKind.ShiftLeft(0), line: l.line, column: l.column))
 					)
 					'=' => (
-						l.pos = l.pos + 1
-						l.column = l.column + 1
+						l.pos++
+						l.column++
 						@append(l.tokens, ast.Token(kind: ast.TokenKind.LessEqual(0), line: l.line, column: l.column))
 					)
 					_ => @append(l.tokens, ast.Token(kind: ast.TokenKind.Less(0), line: l.line, column: l.column))
 				end
 			)
 			'>' => (
-				l.pos = l.pos + 1
-				l.column = l.column + 1
+				l.pos++
+				l.column++
 				match @deref(@add(l.source, l.pos))
 					'>' => (
-						l.pos = l.pos + 1
-						l.column = l.column + 1
+						l.pos++
+						l.column++
 						@append(l.tokens, ast.Token(kind: ast.TokenKind.ShiftRight(0), line: l.line, column: l.column))
 					)
 					'=' => (
-						l.pos = l.pos + 1
-						l.column = l.column + 1
+						l.pos++
+						l.column++
 						@append(l.tokens, ast.Token(kind: ast.TokenKind.GreaterEqual(0), line: l.line, column: l.column))
 					)
 					_ => @append(l.tokens, ast.Token(kind: ast.TokenKind.Greater(0), line: l.line, column: l.column))
 				end
 			)
 			'*' => (
-				l.pos = l.pos + 1
-				l.column = l.column + 1
+				l.pos++
+				l.column++
 				if @deref(@add(l.source, l.pos)) == '='
-					l.pos = l.pos + 1
-					l.column = l.column + 1
+					l.pos++
+					l.column++
 					@append(l.tokens, ast.Token(kind: ast.TokenKind.StarEqual(0), line: l.line, column: l.column))
 				else
 					@append(l.tokens, ast.Token(kind: ast.TokenKind.Star(0), line: l.line, column: l.column))
 				end
 			)
 			'/' => (
-				l.pos = l.pos + 1
-				l.column = l.column + 1
+				l.pos++
+				l.column++
 				if @deref(@add(l.source, l.pos)) == '='
-					l.pos = l.pos + 1
-					l.column = l.column + 1
+					l.pos++
+					l.column++
 					@append(l.tokens, ast.Token(kind: ast.TokenKind.SlashEqual(0), line: l.line, column: l.column))
 				else
 					@append(l.tokens, ast.Token(kind: ast.TokenKind.Slash(0), line: l.line, column: l.column))
@@ -164,83 +180,83 @@ pub def lex(source ref(u8)) list[ast.Token]
 			)
 			'%' => (
 				@append(l.tokens, ast.Token(kind: ast.TokenKind.Percent(0), line: l.line, column: l.column))
-				l.pos = l.pos + 1
-				l.column = l.column + 1
+				l.pos++
+				l.column++
 			)
 			'+' => (
-				l.pos = l.pos + 1
-				l.column = l.column + 1
+				l.pos++
+				l.column++
 				match @deref(@add(l.source, l.pos))
 					'+' => (
-						l.pos = l.pos + 1
-						l.column = l.column + 1
+						l.pos++
+						l.column++
 						@append(l.tokens, ast.Token(kind: ast.TokenKind.PlusPlus(0), line: l.line, column: l.column))
 					)
 					'=' => (
-						l.pos = l.pos + 1
-						l.column = l.column + 1
+						l.pos++
+						l.column++
 						@append(l.tokens, ast.Token(kind: ast.TokenKind.PlusEqual(0), line: l.line, column: l.column))
 					)
 					_ => @append(l.tokens, ast.Token(kind: ast.TokenKind.Plus(0), line: l.line, column: l.column))
 				end
 			)
 			'-' => (
-				l.pos = l.pos + 1
-				l.column = l.column + 1
+				l.pos++
+				l.column++
 				match @deref(@add(l.source, l.pos))
 					'-' => (
-						l.pos = l.pos + 1
-						l.column = l.column + 1
+						l.pos++
+						l.column++
 						@append(l.tokens, ast.Token(kind: ast.TokenKind.MinusMinus(0), line: l.line, column: l.column))
 					)
 					'=' => (
-						l.pos = l.pos + 1
-						l.column = l.column + 1
+						l.pos++
+						l.column++
 						@append(l.tokens, ast.Token(kind: ast.TokenKind.MinusEqual(0), line: l.line, column: l.column))
 					)
 					_ => @append(l.tokens, ast.Token(kind: ast.TokenKind.Minus(0), line: l.line, column: l.column))
 				end
 			)
 			'&' => (
-				l.pos = l.pos + 1
-				l.column = l.column + 1
+				l.pos++
+				l.column++
 				match @deref(@add(l.source, l.pos))
 					'&' => (
-						l.pos = l.pos + 1
-						l.column = l.column + 1
+						l.pos++
+						l.column++
 						@append(l.tokens, ast.Token(kind: ast.TokenKind.AmpAmp(0), line: l.line, column: l.column))
 					)
 					'=' => (
-						l.pos = l.pos + 1
-						l.column = l.column + 1
+						l.pos++
+						l.column++
 						@append(l.tokens, ast.Token(kind: ast.TokenKind.AmpEqual(0), line: l.line, column: l.column))
 					)
 					_ => @append(l.tokens, ast.Token(kind: ast.TokenKind.Amp(0), line: l.line, column: l.column))
 				end
 			)
 			'|' => (
-				l.pos = l.pos + 1
-				l.column = l.column + 1
+				l.pos++
+				l.column++
 				match @deref(@add(l.source, l.pos))
 					'|' => (
-						l.pos = l.pos + 1
-						l.column = l.column + 1
+						l.pos++
+						l.column++
 						@append(l.tokens, ast.Token(kind: ast.TokenKind.PipePipe(0), line: l.line, column: l.column))
 					)
 					'=' => (
-						l.pos = l.pos + 1
-						l.column = l.column + 1
+						l.pos++
+						l.column++
 						@append(l.tokens, ast.Token(kind: ast.TokenKind.PipeEqual(0), line: l.line, column: l.column))
 					)
 					_ => @append(l.tokens, ast.Token(kind: ast.TokenKind.Pipe(0), line: l.line, column: l.column))
 				end
 			)
 			'^' => (
-				l.pos = l.pos + 1
-				l.column = l.column + 1
+				l.pos++
+				l.column++
 				if @deref(@add(l.source, l.pos)) == '='
-					l.pos = l.pos + 1
-					l.column = l.column + 1
+					l.pos++
+					l.column++
 					@append(l.tokens, ast.Token(kind: ast.TokenKind.CaretEqual(0), line: l.line, column: l.column))
 				else
 					@append(l.tokens, ast.Token(kind: ast.TokenKind.Caret(0), line: l.line, column: l.column))
@@ -248,52 +264,52 @@ pub def lex(source ref(u8)) list[ast.Token]
 			)
 			'~' => (
 				@append(l.tokens, ast.Token(kind: ast.TokenKind.Tilde(0), line: l.line, column: l.column))
-				l.pos = l.pos + 1
-				l.column = l.column + 1
+				l.pos++
+				l.column++
 			)
 			'?' => (
 				@append(l.tokens, ast.Token(kind: ast.TokenKind.Question(0), line: l.line, column: l.column))
-				l.pos = l.pos + 1
-				l.column = l.column + 1
+				l.pos++
+				l.column++
 			)
 			'#' => (
-				l.pos = l.pos + 1
+				l.pos++
 				for l.pos < l.len
 					val c u8 = @deref(@add(l.source, l.pos))
 					if c == '\n'
 						break
 					end
-					l.pos = l.pos + 1
+					l.pos++
 				end
 			)
 			'[' => (
 				@append(l.tokens, ast.Token(kind: ast.TokenKind.LBracket(0), line: l.line, column: l.column))
-				l.pos = l.pos + 1
-				l.column = l.column + 1
+				l.pos++
+				l.column++
 			)
 			']' => (
 				@append(l.tokens, ast.Token(kind: ast.TokenKind.RBracket(0), line: l.line, column: l.column))
-				l.pos = l.pos + 1
-				l.column = l.column + 1
+				l.pos++
+				l.column++
 			)
 			'{' => (
 				@append(l.tokens, ast.Token(kind: ast.TokenKind.LBrace(0), line: l.line, column: l.column))
-				l.pos = l.pos + 1
-				l.column = l.column + 1
+				l.pos++
+				l.column++
 			)
 			'}' => (
 				@append(l.tokens, ast.Token(kind: ast.TokenKind.RBrace(0), line: l.line, column: l.column))
-				l.pos = l.pos + 1
-				l.column = l.column + 1
+				l.pos++
+				l.column++
 			)
 			'\'' => (
-				l.pos = l.pos + 1
-				l.column = l.column + 1
+				l.pos++
+				l.column++
 				@append(l.tokens, lex_char_lit(@addr(l)))
 			)
 			'"' => (
-				l.pos = l.pos + 1
-				l.column = l.column + 1
+				l.pos++
+				l.column++
 				@append(l.tokens, lex_string_lit(@addr(l)))
 			)
 			_ => (
@@ -302,8 +318,8 @@ pub def lex(source ref(u8)) list[ast.Token]
 				elif ch == '_' || (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z')
 					@append(l.tokens, lex_ident(@addr(l)))
 				else
-					l.pos = l.pos + 1
-					l.column = l.column + 1
+					l.pos++
+					l.column++
 				end
 			)
 		end
@@ -322,22 +338,22 @@ def lex_string_lit(l ref(ast.Lexer)) ast.Token
 	for l.pos < l.len
 		val ch u8 = @deref(@add(l.source, l.pos))
 		if ch == '"'
-			l.pos = l.pos + 1
-			l.column = l.column + 1
+			l.pos++
+			l.column++
 			@deref(@as_mut(@add(buf, buf_len))) = 0
 			return ast.Token(kind: ast.TokenKind.Str(buf), line: line, column: column)
 		elif ch == '\\'
-			l.pos = l.pos + 1
+			l.pos++
 			@deref(@as_mut(@add(buf, buf_len))) = lex_escape(l)
 			buf_len = buf_len + 1
 		elif ch == '\n'
-			l.pos = l.pos + 1
+			l.pos++
 			return ast.Token(kind: ast.TokenKind.Str(none), line: line, column: column)
 		else
 			@deref(@as_mut(@add(buf, buf_len))) = ch
 			buf_len = buf_len + 1
-			l.pos = l.pos + 1
-			l.column = l.column + 1
+			l.pos++
+			l.column++
 		end
 	end
 
@@ -349,23 +365,23 @@ def lex_char_lit(l ref(ast.Lexer)) ast.Token
 	val column usize = l.column
 	var ch u8 = @deref(@add(l.source, l.pos))
 	if ch == '\\'
-		l.pos = l.pos + 1
+		l.pos++
 		ch = lex_escape(l)
 	else
-		l.pos = l.pos + 1
-		l.column = l.column + 1
+		l.pos++
+		l.column++
 	end
 	if @deref(@add(l.source, l.pos)) == '\''
-		l.pos = l.pos + 1
-		l.column = l.column + 1
+		l.pos++
+		l.column++
 	end
 	return ast.Token(kind: ast.TokenKind.Char(ch), line: line, column: column)
 end
 
 def lex_escape(l ref(ast.Lexer)) u8
 	val ch u8 = @deref(@add(l.source, l.pos))
-	l.pos = l.pos + 1
-	l.column = l.column + 1
+	l.pos++
+	l.column++
 	match ch
 		'n' => return '\n'
 		't' => return '\t'
@@ -383,10 +399,10 @@ def lex_number(l ref(ast.Lexer)) ast.Token
 	val column usize = l.column
 	
 	if @deref(@add(l.source, l.pos)) == '0' && (@deref(@add(l.source, l.pos + 1)) == 'x' || @deref(@add(l.source, l.pos + 1)) == 'X')
-		l.pos = l.pos + 1
-		l.column = l.column + 1
-		l.pos = l.pos + 1
-		l.column = l.column + 1
+		l.pos++
+		l.column++
+		l.pos++
+		l.column++
 		var value u64 = 0
 		for l.pos < l.len
 			val ch u8 = @deref(@add(l.source, l.pos))
@@ -398,8 +414,8 @@ def lex_number(l ref(ast.Lexer)) ast.Token
 				elif ch >= 'A' && ch <= 'F'
 					value = value * 16 + (ch - 'A' + 10) as u64
 				end
-				l.pos = l.pos + 1
-				l.column = l.column + 1
+				l.pos++
+				l.column++
 			else
 				break
 			end
@@ -408,10 +424,10 @@ def lex_number(l ref(ast.Lexer)) ast.Token
 	end
 
 	if @deref(@add(l.source, l.pos)) == '0' && (@deref(@add(l.source, l.pos + 1)) == 'b' || @deref(@add(l.source, l.pos + 1)) == 'B')
-		l.pos = l.pos + 1
-		l.column = l.column + 1
-		l.pos = l.pos + 1
-		l.column = l.column + 1
+		l.pos++
+		l.column++
+		l.pos++
+		l.column++
 		var value u64 = 0
 		for l.pos < l.len
 			val ch u8 = @deref(@add(l.source, l.pos))
@@ -421,8 +437,8 @@ def lex_number(l ref(ast.Lexer)) ast.Token
 			else
 				break
 			end
-			l.pos = l.pos + 1
-			l.column = l.column + 1
+			l.pos++
+			l.column++
 		end
 		return ast.Token(kind: ast.TokenKind.Int(value), line: line, column: column)
 	end
@@ -434,15 +450,15 @@ def lex_number(l ref(ast.Lexer)) ast.Token
 		val ch u8 = @deref(@add(l.source, l.pos))
 		if ch == '_' || (ch >= '0' && ch <= '9') || (ch == '.' && !is_float)
 			if ch >= '0' && ch <= '9'
-				l.pos = l.pos + 1
-				l.column = l.column + 1
+				l.pos++
+				l.column++
 			elif ch == '.' && @deref(@add(l.source, l.pos + 1)) >= '0' && @deref(@add(l.source, l.pos + 1)) <= '9'
 				is_float = true
-				l.pos = l.pos + 1
-				l.column = l.column + 1
+				l.pos++
+				l.column++
 			elif ch == '_'
-				l.pos = l.pos + 1
-				l.column = l.column + 1
+				l.pos++
+				l.column++
 			end
 		else
 			break
@@ -451,15 +467,15 @@ def lex_number(l ref(ast.Lexer)) ast.Token
 
 	if l.pos < l.len && (@deref(@add(l.source, l.pos)) == 'e' || @deref(@add(l.source, l.pos)) == 'E')
 		is_float = true
-		l.pos = l.pos + 1
-		l.column = l.column + 1
+		l.pos++
+		l.column++
 		if l.pos < l.len && (@deref(@add(l.source, l.pos)) == '+' || @deref(@add(l.source, l.pos)) == '-')
-			l.pos = l.pos + 1
-			l.column = l.column + 1
+			l.pos++
+			l.column++
 		end
 		for l.pos < l.len && @deref(@add(l.source, l.pos)) >= '0' && @deref(@add(l.source, l.pos)) <= '9'
-			l.pos = l.pos + 1
-			l.column = l.column + 1
+			l.pos++
+			l.column++
 		end
 	end
 
@@ -487,8 +503,8 @@ def lex_ident(l ref(ast.Lexer)) ast.Token
 	for l.pos < l.len
 		val ch u8 = @deref(@add(l.source, l.pos))
 		if ch == '_' || (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9')
-			l.pos = l.pos + 1
-			l.column = l.column + 1
+			l.pos++
+			l.column++
 		else
 			break
 		end
