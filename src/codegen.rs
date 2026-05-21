@@ -61,6 +61,10 @@ pub fn generate_c(
     if program.type_defs.iter().any(|td| td.alias.is_none()) {
         output.push('\n');
     }
+
+    let mut sorted_type_defs = program.type_defs.clone();
+    sort_type_defs_by_deps(&mut sorted_type_defs);
+
     let list_types = collect_list_types(program, info);
     if !list_types.is_empty() {
         for list_ty in &list_types {
@@ -69,7 +73,7 @@ pub fn generate_c(
         output.push('\n');
     }
 
-    for type_def in &program.type_defs {
+    for type_def in &sorted_type_defs {
         output.push_str(&render_type_def(type_def));
         output.push('\n');
     }
@@ -2785,6 +2789,92 @@ fn convert_format_string(
         index += 1;
     }
     Ok((output, markers))
+}
+
+fn collect_inline_type_deps(ty: &Type, names: &mut HashSet<String>) {
+    match ty {
+        Type::Ref(_) | Type::Mut(_) | Type::List(_) => {}
+        Type::Result(inner) => collect_inline_type_deps(inner, names),
+        Type::Named(name) => {
+            names.insert(name.clone());
+        }
+        Type::Applied(name, args) => {
+            names.insert(name.clone());
+            for arg in args {
+                collect_inline_type_deps(arg, names);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn sort_type_defs_by_deps(type_defs: &mut Vec<TypeDef>) {
+    let all_names: HashSet<String> = type_defs.iter().map(|td| td.name.clone()).collect();
+
+    let mut deps: Vec<(usize, Vec<String>)> = Vec::new();
+    for (i, td) in type_defs.iter().enumerate() {
+        let mut dep_names = HashSet::new();
+        for field in &td.fields {
+            collect_inline_type_deps(&field.ty, &mut dep_names);
+        }
+        for variant in &td.variants {
+            for payload in &variant.payload_types {
+                collect_inline_type_deps(payload, &mut dep_names);
+            }
+        }
+        let filtered: Vec<String> = dep_names
+            .into_iter()
+            .filter(|name| all_names.contains(name) && name != &td.name)
+            .collect();
+        deps.push((i, filtered));
+    }
+
+    let mut sorted_indices = Vec::new();
+    let mut visited = HashSet::new();
+    let mut in_stack = HashSet::new();
+
+    fn visit(
+        i: usize,
+        deps: &[(usize, Vec<String>)],
+        type_defs: &[TypeDef],
+        all_names: &HashSet<String>,
+        visited: &mut HashSet<usize>,
+        in_stack: &mut HashSet<usize>,
+        sorted: &mut Vec<usize>,
+    ) {
+        if !visited.insert(i) {
+            return;
+        }
+        in_stack.insert(i);
+        if let Some((_, dep_list)) = deps.get(i) {
+            for dep_name in dep_list {
+                if let Some(dep_idx) = type_defs.iter().position(|td| td.name == *dep_name) {
+                    if in_stack.contains(&dep_idx) {
+                        continue;
+                    }
+                    visit(dep_idx, deps, type_defs, all_names, visited, in_stack, sorted);
+                }
+            }
+        }
+        in_stack.remove(&i);
+        sorted.push(i);
+    }
+
+    for (i, _) in deps.iter().enumerate() {
+        if !visited.contains(&i) {
+            visit(i, &deps, type_defs, &all_names, &mut visited, &mut in_stack, &mut sorted_indices);
+        }
+    }
+
+    let mut sorted: Vec<TypeDef> = sorted_indices.iter().map(|&i| type_defs[i].clone()).collect();
+    sorted.extend(
+        type_defs
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| !sorted_indices.contains(i))
+            .map(|(_, td)| td.clone()),
+    );
+    *type_defs = sorted;
 }
 
 fn collect_list_types(program: &Program, info: &ProgramInfo) -> Vec<Type> {
