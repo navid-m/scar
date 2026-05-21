@@ -39,6 +39,8 @@ pub fn resolve_entry_program(entry: &Path) -> Result<Program, CompileError> {
         used_module_aliases: HashSet::new(),
     };
 
+    USED_MODULE_ALIASES.with(|u| u.borrow_mut().clear());
+
     let program = parse_program_file(&entry)?;
     let module_aliases = resolver.resolve_module_uses(&program.module_uses, &entry)?;
     let local_symbols = build_named_symbol_map(
@@ -92,6 +94,19 @@ pub fn resolve_entry_program(entry: &Path) -> Result<Program, CompileError> {
         .into_iter()
         .map(|test| rewrite_test_block(test, &local_functions, &local_symbols, &module_aliases))
         .collect::<Result<Vec<_>, _>>()?;
+
+    USED_MODULE_ALIASES.with(|u| {
+        let used = u.borrow();
+        for module_use in &program.module_uses {
+            if !used.contains(&module_use.name) {
+                return Err(CompileError::new(format!(
+                    "module `{}` imported but never used",
+                    module_use.path
+                )));
+            }
+        }
+        Ok(())
+    })?;
 
     instantiate_generic_functions(Program {
         module_uses: Vec::new(),
@@ -1485,6 +1500,7 @@ fn rewrite_named_type(
     }
     if let Some((alias, member)) = name.split_once('.') {
         if let Some(module) = module_aliases.get(alias) {
+            USED_MODULE_ALIASES.with(|u| u.borrow_mut().insert(alias.to_string()));
             if let Some(mapped) = module.named_types.get(member) {
                 return mapped.clone();
             }
@@ -3899,8 +3915,6 @@ mod tests {
 
     #[test]
     fn rejects_unused_module_import() {
-        use crate::{lexer::lex, parser::parse_program, sema::analyze};
-
         let temp_dir = create_temp_dir();
         let entry = temp_dir.join("main.scar");
         let module = temp_dir.join("unused_mod.scar");
@@ -3916,11 +3930,10 @@ mod tests {
         )
         .unwrap();
 
-        let program = resolve_entry_program(&entry).unwrap();
-        let error = analyze(&program).unwrap_err();
+        let error = resolve_entry_program(&entry).unwrap_err();
         assert_eq!(
             error.to_string(),
-            "module `unused_mod.scar` imported but never used"
+            "module `unused_mod` imported but never used"
         );
 
         fs::remove_dir_all(temp_dir).unwrap();

@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use crate::{
     CompileError,
     ast::{
-        BinaryOp, Expr, FieldDef, Function, InterfaceMethod, MatchArmKind, ModuleUse, Program, Stmt,
+        BinaryOp, Expr, FieldDef, Function, InterfaceMethod, MatchArmKind, Program, Stmt,
         TestBlock, Type, TypeDefKind, UnaryOp, UnionVariantDef,
     },
 };
@@ -150,7 +150,6 @@ pub fn analyze(program: &Program) -> Result<ProgramInfo, CompileError> {
         analyze_test_block(test, &functions, &types)?;
     }
     validate_interface_satisfaction(&interfaces, &types, &functions)?;
-    check_unused_module_uses(&program.module_uses, &program)?;
 
     Ok(ProgramInfo {
         functions,
@@ -175,27 +174,6 @@ fn sanitize_symbol_name(name: &str) -> String {
             }
         })
         .collect()
-}
-
-fn module_prefix_from_path(path: &str) -> String {
-    path.replace('/', "__")
-}
-
-fn check_unused_module_uses(module_uses: &[ModuleUse], program: &Program) -> Result<(), CompileError> {
-    for module_use in module_uses {
-        let prefix = module_prefix_from_path(&module_use.path);
-        let is_used = program.functions.iter().any(|f| f.name.contains(&format!("{}__", prefix)))
-            || program.type_defs.iter().any(|t| t.name.contains(&format!("{}__", prefix)))
-            || program.globals.iter().any(|g| g.name.contains(&format!("{}__", prefix)));
-
-        if !is_used {
-            return Err(CompileError::new(format!(
-                "module `{}` imported but never used",
-                module_use.path
-            )));
-        }
-    }
-    Ok(())
 }
 
 fn collect_types(program: &Program) -> Result<HashMap<String, TypeDefInfo>, CompileError> {
