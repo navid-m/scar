@@ -474,7 +474,12 @@ pub def re_matchp(handle ref(RegexHandle), text ref(u8), matchlength mut(ref(i64
     return false
 end
 
-pub def re_match_with[A: allocators.GeneralAllocator](ac A, pattern ref(u8), text ref(u8), matchlength mut(ref(i64))) i64|error
+pub def re_match_with[A: allocators.GeneralAllocator](
+    ac A,
+    pattern ref(u8),
+    text ref(u8),
+    matchlength mut(ref(i64))
+) i64|error
     guard matchlength != none else
         return error("null matchlength pointer")
     end
