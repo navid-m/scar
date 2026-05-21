@@ -1911,7 +1911,7 @@ fn infer_expr_type(
             "generic specialization must be resolved before semantic analysis",
         )),
         Expr::Cast { expr, ty } => {
-            let source_ty = infer_expr_type(expr, functions, types, scope, None)?;
+            let source_ty = infer_expr_type(expr, functions, types, scope, Some(ty))?;
             validate_type(ty, types)?;
             let resolved_source = resolve_aliases(&source_ty, types)?;
             let resolved_target = resolve_aliases(ty, types)?;

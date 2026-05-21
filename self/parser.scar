@@ -433,6 +433,7 @@ def parse_extern_function(p ref(ast.TokenList), is_pub bool) ast.Function
 
     match p.tokens[p.pos].kind
         ast.TokenKind.LParen(_) => advance(p)
+        _ => ()
     end
     consume_newlines(p)
 
@@ -456,11 +457,12 @@ def parse_extern_function(p ref(ast.TokenList), is_pub bool) ast.Function
             end
             match p.tokens[p.pos].kind
                 ast.TokenKind.RParen(_) => advance(p)
+                _ => ()
             end
         )
     end
 
-    val return_type ast.Type = @zeroed()
+    var return_type ast.Type = ast.Type.Void(0)
     if next_non_newline_kind(p) == 204
         return_type = ast.Type.Void(0)
     elif starts_type(p)
@@ -471,15 +473,16 @@ def parse_extern_function(p ref(ast.TokenList), is_pub bool) ast.Function
 
     match p.tokens[p.pos].kind
         ast.TokenKind.ColonColon(_) => advance(p)
+        _ => ()
     end
 
-    val extern_name ref(u8) = @zeroed()
+    var extern_name ref(u8) = @alloc(1)
     match p.tokens[p.pos].kind
         ast.TokenKind.Str(s) => (
             extern_name = s
             advance(p)
         )
-        _ => extern_name = @alloc(1)
+        _ => ()
     end
 
     expect_newline(p)
@@ -488,7 +491,7 @@ def parse_extern_function(p ref(ast.TokenList), is_pub bool) ast.Function
         name: name,
         params: params,
         return_type: return_type,
-        body: [],
+        body: ([] as list[ast.Stmt]),
         is_pub: is_pub,
         is_extern: true,
         extern_name: extern_name,
@@ -500,19 +503,19 @@ end
 def parse_test_block(p ref(ast.TokenList)) ast.TestBlock
     advance(p)
 
-    val name ref(u8) = @zeroed()
+    var name ref(u8) = @alloc(1)
     match p.tokens[p.pos].kind
         ast.TokenKind.Str(s) => (
             name = s
             advance(p)
         )
-        _ => name = @alloc(1)
+        _ => ()
     end
 
     expect_newline(p)
     skip_block(p)
 
-    return ast.TestBlock(name: name, body: [])
+    return ast.TestBlock(name: name, body: ([] as list[ast.Stmt]))
 end
 
 def skip_top_level_item(p ref(ast.TokenList))
