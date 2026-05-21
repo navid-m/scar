@@ -57,11 +57,8 @@ pub fn analyze(program: &Program) -> Result<ProgramInfo, CompileErrors> {
     for function in &program.functions {
         if functions.contains_key(&function.name) {
             return Err(CompileErrors::single(
-                CompileError::new(format!(
-                    "duplicate function definition `{}`",
-                    function.name
-                ))
-                .with_file_opt(function.file_path.clone()),
+                CompileError::new(format!("duplicate function definition `{}`", function.name))
+                    .with_file_opt(function.file_path.clone()),
             ));
         }
         if function.name == "main" && !function.is_pub {
@@ -85,14 +82,16 @@ pub fn analyze(program: &Program) -> Result<ProgramInfo, CompileErrors> {
                     .iter()
                     .map(|param| {
                         validate_type(&param.ty, &types).map_err(|e| {
-                            CompileErrors::single(CompileError::new(format!(
-                                "in function `{}`, parameter `{}`: {}",
-                                function.name,
-                                param.name,
-                                e.message()
-                            ))
-                            .with_location(param.line, param.column)
-                            .with_file_opt(function.file_path.clone()))
+                            CompileErrors::single(
+                                CompileError::new(format!(
+                                    "in function `{}`, parameter `{}`: {}",
+                                    function.name,
+                                    param.name,
+                                    e.message()
+                                ))
+                                .with_location(param.line, param.column)
+                                .with_file_opt(function.file_path.clone()),
+                            )
                         })?;
                         Ok(param.ty.clone())
                     })
@@ -1395,10 +1394,7 @@ fn analyze_stmt(
                             );
                         };
 
-                        let bare_variant = variant_name
-                            .rsplit('.')
-                            .next()
-                            .unwrap_or(variant_name);
+                        let bare_variant = variant_name.rsplit('.').next().unwrap_or(variant_name);
                         let payload_types = type_info
                             .variant_map
                             .get(bare_variant)
@@ -1456,8 +1452,9 @@ fn analyze_stmt(
                             .find(|variant| !seen_variants.contains(&variant.name))
                             .map(|variant| variant.name.clone())
                             .unwrap_or_else(|| "<unknown>".to_string());
+                        let display_name = demangle_function_name(name.as_str());
                         return Err(CompileError::new(format!(
-                            "`match` on union `{name}` is missing variant `{missing}`"
+                            "`match` on union `{display_name}` is missing variant `{missing}`"
                         ))
                         .with_location(*line, *column));
                     }
