@@ -36,7 +36,7 @@ type Buffer
 end
 
 def write_callback(ptr ref(u8), size usize, nmemb usize, userdata ref(void)) usize
-	var total_size usize = size * nmemb
+	val total_size usize = size * nmemb
 	var buffer = @bitcast(userdata, mut(ref(Buffer)))
 
 	if @deref(buffer).size + total_size + 1 as usize > @deref(buffer).capacity
@@ -92,7 +92,7 @@ pub def request[A: allocators.BumpAllocator](
 	curl_easy_setopt(curl, 20011, @bitcast(@addr(write_callback), ref(void))) 
 	curl_easy_setopt(curl, 10001, @bitcast(@addr(response_buffer), ref(void))) 
 
-	var res = curl_easy_perform(curl)
+	val res = curl_easy_perform(curl)
 	if res != 0
 		@free(response_buffer.data as mut(ref(void)))
 		curl_easy_cleanup(curl)
@@ -163,7 +163,7 @@ when posix
 	extern def htons(hostshort u16) u16 :: "htons"
 
 	pub def serve_http(port u16, handler (fn(ref(u8)) ref(u8))) void|error
-		var fd = socket(2, 1, 0) 
+		val fd = socket(2, 1, 0) 
 		if fd < 0
 			return error("failed to create socket")
 		end

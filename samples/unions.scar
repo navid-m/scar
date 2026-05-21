@@ -5,8 +5,7 @@ pub union SomeUnion
 end
 
 pub def main()
-	var u = SomeUnion.Token(123)
-	var v = SomeUnion.StringPair("a", "b")
+	val v = SomeUnion.StringPair("a", "b")
 
 	match v
 		Token (x) => (

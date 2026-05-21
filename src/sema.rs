@@ -774,7 +774,7 @@ fn mark_usage_and_mutation_expr(expr: &Expr, scope: &mut HashMap<String, LocalBi
                         }
                     }
                 }
-                "memcpy" | "memset" | "free" | "realloc" => {
+                "memcpy" | "memset" | "free" | "realloc" | "append" | "set" | "remove" => {
                     if let Some(Expr::Path(path)) = args.first() {
                         if path.len() == 1 {
                             if let Some(binding) = scope.get_mut(&path[0]) {
@@ -870,6 +870,8 @@ fn demangle_function_name(name: &str) -> String {
             return format!("/{path}.{suffix}");
         }
     }
+    let name = name.replace("____", "/");
+    let name = name.replace("__", ".");
     name.to_string()
 }
 
