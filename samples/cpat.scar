@@ -1,6 +1,6 @@
 pub def main()
     val x = 'a'
-    @print("{c}", {x})
+    @print("{c}\n", {x})
     match x
         'a' => (
             @puts("great")

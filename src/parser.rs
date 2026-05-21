@@ -1079,6 +1079,18 @@ impl Parser {
                     Vec::new()
                 };
                 (MatchArmKind::Variant(value), bindings)
+            } else if self.check_simple(&TokenKind::Char(0)) {
+                let value = match &self.current().kind {
+                    TokenKind::Char(v) => v.to_string(),
+                    _ => unreachable!(),
+                };
+                self.advance();
+                let bindings = if self.check_simple(&TokenKind::LParen) {
+                    self.parse_match_bindings()?
+                } else {
+                    Vec::new()
+                };
+                (MatchArmKind::Variant(value), bindings)
             } else if matches!(&self.current().kind, TokenKind::Float(_)) {
                 let mut value = match &self.current().kind {
                     TokenKind::Float(v) => v.to_string(),
