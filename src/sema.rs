@@ -548,6 +548,32 @@ fn substitute_interface_self(ty: &Type, interface_name: &str, type_name: &str) -
     }
 }
 
+fn is_ref_type(ty: &Type) -> bool {
+    matches!(ty, Type::Ref(_) | Type::Mut(_))
+}
+
+fn find_path_expr(expr: &Expr) -> Option<&[String]> {
+    match expr {
+        Expr::Path(path) => Some(path),
+        Expr::Cast { expr, .. } => find_path_expr(expr),
+        Expr::Try(inner) => find_path_expr(inner),
+        Expr::Unary { expr, .. } => find_path_expr(expr),
+        _ => None,
+    }
+}
+
+fn mark_ref_value_mutation(expr: &Expr, scope: &mut HashMap<String, LocalBinding>) {
+    if let Some(path) = find_path_expr(expr) {
+        if path.len() == 1 {
+            if let Some(binding) = scope.get_mut(&path[0]) {
+                if is_ref_type(&binding.ty) {
+                    binding.mutated = true;
+                }
+            }
+        }
+    }
+}
+
 fn mark_usage_and_mutation_stmt(stmt: &Stmt, scope: &mut HashMap<String, LocalBinding>) {
     match stmt {
         Stmt::VarDecl { init, .. } => {
@@ -575,6 +601,7 @@ fn mark_usage_and_mutation_stmt(stmt: &Stmt, scope: &mut HashMap<String, LocalBi
         }
         Stmt::Return { value, .. } => {
             if let Some(expr) = value {
+                mark_ref_value_mutation(expr, scope);
                 mark_usage_and_mutation_expr(expr, scope);
             }
         }
@@ -692,6 +719,9 @@ fn mark_usage_and_mutation_expr(expr: &Expr, scope: &mut HashMap<String, LocalBi
         Expr::Path(path) if path.len() == 1 => {
             if let Some(binding) = scope.get_mut(&path[0]) {
                 binding.used = true;
+                if is_ref_type(&binding.ty) {
+                    binding.mutated = true;
+                }
             }
         }
         Expr::Index { base, index } => {
@@ -713,7 +743,7 @@ fn mark_usage_and_mutation_expr(expr: &Expr, scope: &mut HashMap<String, LocalBi
                         if path.len() == 1 {
                             if let Some(binding) = scope.get_mut(&path[0]) {
                                 binding.used = true;
-                                if binding.mutable {
+                                if binding.mutable || is_ref_type(&binding.ty) {
                                     binding.mutated = true;
                                 }
                             }
@@ -743,12 +773,14 @@ fn mark_usage_and_mutation_expr(expr: &Expr, scope: &mut HashMap<String, LocalBi
         Expr::MethodCall { receiver, args, .. } => {
             mark_usage_and_mutation_expr(receiver, scope);
             for arg in args {
+                mark_ref_value_mutation(arg, scope);
                 mark_usage_and_mutation_expr(arg, scope);
             }
         }
         Expr::Call { callee, args } => {
             mark_usage_and_mutation_expr(callee, scope);
             for arg in args {
+                mark_ref_value_mutation(arg, scope);
                 mark_usage_and_mutation_expr(arg, scope);
             }
         }
