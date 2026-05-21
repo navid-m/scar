@@ -611,7 +611,7 @@ def append_escaped(buf ref(u8), buf_len mut(ref(usize)), src ref(u8)) bool
                 @deref(buf_len) = @deref(buf_len) - 1
             end
         end
-        i = i + 1
+        i++
     end
     return true
 end
@@ -693,7 +693,7 @@ pub def Json.stringify(j ref(Json), idx usize, buf ref(u8), buf_cap usize) ref(u
                         end
                         @deref(@add(buf, pos - 1)) = @deref(@add(text_val, i))
                         pos = pos - 1
-                        i = i + 1
+                        i++
                     end
                 else
                     if kind == JsonKind.Obj
@@ -728,7 +728,7 @@ pub def Json.stringify(j ref(Json), idx usize, buf ref(u8), buf_cap usize) ref(u
                                     end
                                     @deref(@add(buf, pos - 1)) = @deref(@add(child_name, i))
                                     pos = pos - 1
-                                    i = i + 1
+                                    i++
                                 end
                                 if pos < 2
                                     return error("buffer too small")
@@ -786,7 +786,7 @@ pub def Json.stringify(j ref(Json), idx usize, buf ref(u8), buf_cap usize) ref(u
     var i = pos
     for i < buf_cap - 1
         @deref(@add(buf, i)) = @deref(@add(buf, buf_cap - 1 - (i - pos)))
-        i = i + 1
+        i++
     end
     @deref(@add(buf, buf_cap - 1)) = 0
     return @add(buf, pos)
