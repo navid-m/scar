@@ -71,31 +71,17 @@ def alloc_node(j mut(ref(Json))) usize
 end
 
 def get_escape(c u8) u8
-    if c == '\"'
-        return '\"'
+    match c
+        '\"' => return '\"'
+        '\\' => return '\\'
+        '/'  => return '/'
+        'b'  => return '\b'
+        'f'  => return '\f'
+        'n'  => return '\n'
+        'r'  => return '\r'
+        't'  => return '\t'
+        _    => return 0
     end
-    if c == '\\'
-        return '\\'
-    end
-    if c == '/'
-        return '/'
-    end
-    if c == 'b'
-        return '\b'
-    end
-    if c == 'f'
-        return '\f'
-    end
-    if c == 'n'
-        return '\n'
-    end
-    if c == 'r'
-        return '\r'
-    end
-    if c == 't'
-        return '\t'
-    end
-    return 0
 end
 
 def parse_string(src ref(u8), pos usize, len usize) usize|error
