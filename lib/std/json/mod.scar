@@ -382,7 +382,7 @@ pub def Json.parse(src ref(u8), nodes mut(ref(JsonNode)), cap usize) Json|error
         return error("capacity must be greater than zero")
     end
     val len = str.len(src)
-    var p = skip_space(src, 0, len)
+    val p = skip_space(src, 0, len)
     if p >= len
         return error("empty input")
     end

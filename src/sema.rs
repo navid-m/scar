@@ -562,6 +562,25 @@ fn find_path_expr(expr: &Expr) -> Option<&[String]> {
     }
 }
 
+fn find_base_path(expr: &Expr) -> Option<&[String]> {
+    match expr {
+        Expr::Path(path) => Some(path),
+        Expr::FieldAccess { base, .. } => find_base_path(base),
+        Expr::Index { base, .. } => find_base_path(base),
+        Expr::BuiltinCall { name, args } if name == "addr" => {
+            if let Some(arg) = args.first() {
+                find_base_path(arg)
+            } else {
+                None
+            }
+        }
+        Expr::Cast { expr, .. } => find_base_path(expr),
+        Expr::Try(inner) => find_base_path(inner),
+        Expr::Unary { expr, .. } => find_base_path(expr),
+        _ => None,
+    }
+}
+
 fn mark_ref_value_mutation(expr: &Expr, scope: &mut HashMap<String, LocalBinding>) {
     if let Some(path) = find_path_expr(expr) {
         if path.len() == 1 {
@@ -701,14 +720,16 @@ fn mark_mutation_target(expr: &Expr, scope: &mut HashMap<String, LocalBinding>) 
             mark_usage_and_mutation_expr(index, scope);
         }
         Expr::BuiltinCall { name, args } if name == "deref" => {
-            if let Some(Expr::Path(path)) = args.first() {
-                if path.len() == 1 {
-                    if let Some(binding) = scope.get_mut(&path[0]) {
-                        binding.mutated = true;
+            if let Some(arg) = args.first() {
+                if let Some(path) = find_base_path(arg) {
+                    if path.len() == 1 {
+                        if let Some(binding) = scope.get_mut(&path[0]) {
+                            binding.mutated = true;
+                        }
                     }
                 }
+                mark_usage_and_mutation_expr(arg, scope);
             }
-            mark_usage_and_mutation_expr(&args[0], scope);
         }
         _ => {}
     }
@@ -739,12 +760,15 @@ fn mark_usage_and_mutation_expr(expr: &Expr, scope: &mut HashMap<String, LocalBi
         Expr::BuiltinCall { name, args } => {
             match name.as_str() {
                 "addr" => {
-                    if let Some(Expr::Path(path)) = args.first() {
-                        if path.len() == 1 {
-                            if let Some(binding) = scope.get_mut(&path[0]) {
-                                binding.used = true;
-                                if binding.mutable || is_ref_type(&binding.ty) {
-                                    binding.mutated = true;
+                    if let Some(arg) = args.first() {
+                        mark_usage_and_mutation_expr(arg, scope);
+                        if let Some(path) = find_base_path(arg) {
+                            if path.len() == 1 {
+                                if let Some(binding) = scope.get_mut(&path[0]) {
+                                    binding.used = true;
+                                    if binding.mutable || is_ref_type(&binding.ty) {
+                                        binding.mutated = true;
+                                    }
                                 }
                             }
                         }
