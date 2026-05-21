@@ -465,12 +465,14 @@ when posix
 		suffix ref(u8)
 	) ref(u8)|error
 		var quoted = shell_quote(path)?
-		val len_prefix usize = str.len(prefix)
-		val len_path usize = str.len(quoted)
-		val len_suffix usize = str.len(suffix)
-		var out ref(u8) =	heap_alloc(
-				len_prefix + len_path + len_suffix + 1 as usize
-			)?
+		val (
+			len_prefix usize = str.len(prefix)
+			len_path usize = str.len(quoted)
+			len_suffix usize = str.len(suffix)
+		)
+		var out ref(u8) = heap_alloc(
+			len_prefix + len_path + len_suffix + 1 as usize
+		)?
 
 		@memcpy(out, prefix, len_prefix)
 		@memcpy(@add(out, len_prefix), quoted, len_path)
