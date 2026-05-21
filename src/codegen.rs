@@ -223,7 +223,8 @@ fn collect_deref_locals_recursive(
 ) {
     for stmt in body {
         match stmt {
-            Stmt::VarDecl { name, init, .. } => {
+            Stmt::Defer { .. } => { /* handled in render_block */ }
+        Stmt::VarDecl { name, init, .. } => {
                 if is_deref_init(init) && matches!(locals.get(name), Some(Type::Named(_))) {
                     set.insert(name.clone());
                 }
@@ -272,17 +273,18 @@ fn render_function(
             }
         }
     }
-    for stmt in &function.body {
-        render_stmt(
-            output,
-            stmt,
-            function,
-            info,
-            1,
-            &mut next_temp_id,
-            &deref_locals,
-        )?;
-    }
+    let mut defer_stack = Vec::new();
+    render_block(
+        output,
+        &function.body,
+        function,
+        info,
+        1,
+        &mut next_temp_id,
+        &deref_locals,
+        &mut defer_stack,
+        0,
+    )?;
     output.push_str("__scar_return:\n");
     if matches!(function.return_type, Type::Void) {
         output.push_str("    return;\n");
@@ -483,7 +485,79 @@ fn render_signature(function: &Function, info: &ProgramInfo) -> String {
     format!("{prefix}{return_type} {symbol}({params})")
 }
 
-fn render_stmt(
+
+fn render_defers<'a>(
+    output: &mut String,
+    function: &Function,
+    info: &ProgramInfo,
+    level: usize,
+    next_temp_id: &mut usize,
+    deref_locals: &std::collections::HashSet<String>,
+    defer_stack: &mut Vec<Vec<&'a Vec<Stmt>>>,
+    loop_defer_level: usize,
+    from_level: usize,
+) -> Result<(), CompileError> {
+    let mut defers_to_run = Vec::new();
+    for scope_defers in defer_stack[from_level..].iter().rev() {
+        for defer_body in scope_defers.iter().rev() {
+            defers_to_run.push(*defer_body);
+        }
+    }
+    for defer_body in defers_to_run {
+        render_block(
+            output,
+            defer_body,
+            function,
+            info,
+            level,
+            next_temp_id,
+            deref_locals,
+            defer_stack,
+            loop_defer_level,
+        )?;
+    }
+    Ok(())
+}
+
+fn render_block<'a>(
+    output: &mut String,
+    body: &'a [Stmt],
+    function: &Function,
+    info: &ProgramInfo,
+    level: usize,
+    next_temp_id: &mut usize,
+    deref_locals: &std::collections::HashSet<String>,
+    defer_stack: &mut Vec<Vec<&'a Vec<Stmt>>>,
+    loop_defer_level: usize,
+) -> Result<(), CompileError> {
+    defer_stack.push(Vec::new());
+    for stmt in body {
+        if let Stmt::Defer { body: defer_body, .. } = stmt {
+            defer_stack.last_mut().unwrap().push(defer_body);
+        } else {
+            render_stmt(
+                defer_stack,
+                loop_defer_level,
+                output,
+                stmt,
+                function,
+                info,
+                level,
+                next_temp_id,
+                deref_locals,
+            )?;
+        }
+    }
+    let current_level = defer_stack.len() - 1;
+    render_defers(output, function, info, level, next_temp_id, deref_locals, defer_stack, loop_defer_level, current_level)?;
+    defer_stack.pop();
+    Ok(())
+}
+
+fn render_stmt<'a>(
+    defer_stack: &mut Vec<Vec<&'a Vec<Stmt>>>,
+    loop_defer_level: usize,
+
     output: &mut String,
     stmt: &Stmt,
     function: &Function,
@@ -492,15 +566,7 @@ fn render_stmt(
     next_temp_id: &mut usize,
     deref_locals: &std::collections::HashSet<String>,
 ) -> Result<(), CompileError> {
-    let result = render_stmt_inner(
-        output,
-        stmt,
-        function,
-        info,
-        level,
-        next_temp_id,
-        deref_locals,
-    );
+    let result = render_stmt_inner(defer_stack, loop_defer_level, output, stmt, function, info, level, next_temp_id, deref_locals);
     if let Some((line, column)) = stmt_location(stmt) {
         result.map_err(|error| error.with_location(line, column))
     } else {
@@ -508,7 +574,10 @@ fn render_stmt(
     }
 }
 
-fn render_stmt_inner(
+fn render_stmt_inner<'a>(
+    defer_stack: &mut Vec<Vec<&'a Vec<Stmt>>>,
+    loop_defer_level: usize,
+
     output: &mut String,
     stmt: &Stmt,
     function: &Function,
@@ -518,6 +587,7 @@ fn render_stmt_inner(
     deref_locals: &std::collections::HashSet<String>,
 ) -> Result<(), CompileError> {
     match stmt {
+        Stmt::Defer { .. } => { /* handled in render_block */ }
         Stmt::VarDecl {
             mutable,
             name,
@@ -569,7 +639,8 @@ fn render_stmt_inner(
                     ));
                     output.push_str(";\n");
                     indent(output, level + 1);
-                    output.push_str("goto __scar_return;\n");
+                    render_defers(output, function, info, level, next_temp_id, deref_locals, defer_stack, loop_defer_level, 0)?;
+            output.push_str("goto __scar_return;\n");
                 } else {
                     return Err(CompileError::new(
                         "`?` propagation requires a result-returning function during code generation",
@@ -659,7 +730,8 @@ fn render_stmt_inner(
                     ));
                     output.push_str(";\n");
                     indent(output, level + 1);
-                    output.push_str("goto __scar_return;\n");
+                    render_defers(output, function, info, level, next_temp_id, deref_locals, defer_stack, loop_defer_level, 0)?;
+            output.push_str("goto __scar_return;\n");
                 } else {
                     return Err(CompileError::new(
                         "`?` propagation requires a result-returning function during code generation",
@@ -774,6 +846,7 @@ fn render_stmt_inner(
                     indent(output, level);
                 }
             }
+            render_defers(output, function, info, level, next_temp_id, deref_locals, defer_stack, loop_defer_level, 0)?;
             output.push_str("goto __scar_return;\n");
         }
         Stmt::Return {
@@ -814,7 +887,8 @@ fn render_stmt_inner(
                     ));
                     output.push_str(";\n");
                     indent(output, level + 1);
-                    output.push_str("goto __scar_return;\n");
+                    render_defers(output, function, info, level, next_temp_id, deref_locals, defer_stack, loop_defer_level, 0)?;
+            output.push_str("goto __scar_return;\n");
                 } else {
                     return Err(CompileError::new(
                         "`?` propagation requires a result-returning function during code generation",
@@ -834,7 +908,8 @@ fn render_stmt_inner(
                 }
                 output.push_str(";\n");
                 indent(output, level);
-                output.push_str("goto __scar_return;\n");
+                render_defers(output, function, info, level, next_temp_id, deref_locals, defer_stack, loop_defer_level, 0)?;
+            output.push_str("goto __scar_return;\n");
                 return Ok(());
             }
             indent(output, level);
@@ -848,6 +923,7 @@ fn render_stmt_inner(
             )?);
             output.push_str(";\n");
             indent(output, level);
+            render_defers(output, function, info, level, next_temp_id, deref_locals, defer_stack, loop_defer_level, 0)?;
             output.push_str("goto __scar_return;\n");
         }
         Stmt::If {
@@ -861,15 +937,7 @@ fn render_stmt_inner(
             output.push_str(&render_expr(condition, function, info, deref_locals)?);
             output.push_str(") {\n");
             for stmt in then_body {
-                render_stmt(
-                    output,
-                    stmt,
-                    function,
-                    info,
-                    level + 1,
-                    next_temp_id,
-                    deref_locals,
-                )?;
+                render_stmt(defer_stack, loop_defer_level, output, stmt, function, info, level + 1, next_temp_id, deref_locals)?;
             }
             indent(output, level);
             output.push('}');
@@ -878,15 +946,7 @@ fn render_stmt_inner(
             } else {
                 output.push_str(" else {\n");
                 for stmt in else_body {
-                    render_stmt(
-                        output,
-                        stmt,
-                        function,
-                        info,
-                        level + 1,
-                        next_temp_id,
-                        deref_locals,
-                    )?;
+                    render_stmt(defer_stack, loop_defer_level, output, stmt, function, info, level + 1, next_temp_id, deref_locals)?;
                 }
                 indent(output, level);
                 output.push_str("}\n");
@@ -951,15 +1011,7 @@ fn render_stmt_inner(
                             }
                         }
                         for stmt in &arm.body {
-                            render_stmt(
-                                output,
-                                stmt,
-                                function,
-                                info,
-                                level + 2,
-                                next_temp_id,
-                                deref_locals,
-                            )?;
+                            render_stmt(defer_stack, loop_defer_level, output, stmt, function, info, level + 2, next_temp_id, deref_locals)?;
                         }
                         indent(output, level + 1);
                         output.push_str("}\n");
@@ -996,15 +1048,7 @@ fn render_stmt_inner(
                             ));
                             output.push_str(") {\n");
                             for stmt in &arm.body {
-                                render_stmt(
-                                    output,
-                                    stmt,
-                                    function,
-                                    info,
-                                    level + 2,
-                                    next_temp_id,
-                                    deref_locals,
-                                )?;
+                                render_stmt(defer_stack, loop_defer_level, output, stmt, function, info, level + 2, next_temp_id, deref_locals)?;
                             }
                             indent(output, level + 1);
                             output.push_str("}\n");
@@ -1057,15 +1101,7 @@ fn render_stmt_inner(
                                 }
                             }
                             for stmt in &arm.body {
-                                render_stmt(
-                                    output,
-                                    stmt,
-                                    function,
-                                    info,
-                                    level + 2,
-                                    next_temp_id,
-                                    deref_locals,
-                                )?;
+                                render_stmt(defer_stack, loop_defer_level, output, stmt, function, info, level + 2, next_temp_id, deref_locals)?;
                             }
                             indent(output, level + 1);
                             output.push_str("}\n");
@@ -1110,15 +1146,7 @@ fn render_stmt_inner(
                             output.push_str(") {\n");
                         }
                         for stmt in &arm.body {
-                            render_stmt(
-                                output,
-                                stmt,
-                                function,
-                                info,
-                                level + 2,
-                                next_temp_id,
-                                deref_locals,
-                            )?;
+                            render_stmt(defer_stack, loop_defer_level, output, stmt, function, info, level + 2, next_temp_id, deref_locals)?;
                         }
                         indent(output, level + 1);
                         output.push_str("}\n");
@@ -1167,7 +1195,8 @@ fn render_stmt_inner(
                     ));
                     output.push_str(";\n");
                     indent(output, level + 1);
-                    output.push_str("goto __scar_return;\n");
+                    render_defers(output, function, info, level, next_temp_id, deref_locals, defer_stack, loop_defer_level, 0)?;
+            output.push_str("goto __scar_return;\n");
                 } else {
                     return Err(CompileError::new(
                         "`?` propagation requires a result-returning function during code generation",
@@ -1218,15 +1247,7 @@ fn render_stmt_inner(
             output.push_str(&mangle_local_symbol(var_name));
             output.push_str(") {\n");
             for stmt in body {
-                render_stmt(
-                    output,
-                    stmt,
-                    function,
-                    info,
-                    level + 1,
-                    next_temp_id,
-                    deref_locals,
-                )?;
+                render_stmt(defer_stack, loop_defer_level, output, stmt, function, info, level + 1, next_temp_id, deref_locals)?;
             }
             indent(output, level);
             output.push_str("}\n");
@@ -1276,15 +1297,7 @@ fn render_stmt_inner(
             output.push_str(&index_name);
             output.push_str("];\n");
             for stmt in body {
-                render_stmt(
-                    output,
-                    stmt,
-                    function,
-                    info,
-                    level + 2,
-                    next_temp_id,
-                    deref_locals,
-                )?;
+                render_stmt(defer_stack, loop_defer_level, output, stmt, function, info, level + 2, next_temp_id, deref_locals)?;
             }
             indent(output, level + 1);
             output.push_str("}\n");
@@ -1327,15 +1340,7 @@ fn render_stmt_inner(
             output.push_str(&render_expr(increment, function, info, deref_locals)?);
             output.push_str(") {\n");
             for stmt in body {
-                render_stmt(
-                    output,
-                    stmt,
-                    function,
-                    info,
-                    level + 1,
-                    next_temp_id,
-                    deref_locals,
-                )?;
+                render_stmt(defer_stack, loop_defer_level, output, stmt, function, info, level + 1, next_temp_id, deref_locals)?;
             }
             indent(output, level);
             output.push_str("}\n");
@@ -1348,15 +1353,7 @@ fn render_stmt_inner(
             output.push_str(&render_expr(condition, function, info, deref_locals)?);
             output.push_str(") {\n");
             for stmt in body {
-                render_stmt(
-                    output,
-                    stmt,
-                    function,
-                    info,
-                    level + 1,
-                    next_temp_id,
-                    deref_locals,
-                )?;
+                render_stmt(defer_stack, loop_defer_level, output, stmt, function, info, level + 1, next_temp_id, deref_locals)?;
             }
             indent(output, level);
             output.push_str("}\n");
@@ -1365,25 +1362,19 @@ fn render_stmt_inner(
             indent(output, level);
             output.push_str("for (;;) {\n");
             for stmt in body {
-                render_stmt(
-                    output,
-                    stmt,
-                    function,
-                    info,
-                    level + 1,
-                    next_temp_id,
-                    deref_locals,
-                )?;
+                render_stmt(defer_stack, loop_defer_level, output, stmt, function, info, level + 1, next_temp_id, deref_locals)?;
             }
             indent(output, level);
             output.push_str("}\n");
         }
         Stmt::Continue { .. } => {
             indent(output, level);
+            render_defers(output, function, info, level, next_temp_id, deref_locals, defer_stack, loop_defer_level, loop_defer_level)?;
             output.push_str("continue;\n");
         }
         Stmt::Break { .. } => {
             indent(output, level);
+            render_defers(output, function, info, level, next_temp_id, deref_locals, defer_stack, loop_defer_level, loop_defer_level)?;
             output.push_str("break;\n");
         }
     }
@@ -1392,7 +1383,8 @@ fn render_stmt_inner(
 
 fn stmt_location(stmt: &Stmt) -> Option<(usize, usize)> {
     match stmt {
-        Stmt::VarDecl { line, column, .. }
+        Stmt::Defer { line, column, .. }
+        | Stmt::VarDecl { line, column, .. }
         | Stmt::Assign { line, column, .. }
         | Stmt::AddAssign { line, column, .. }
         | Stmt::MulAssign { line, column, .. }

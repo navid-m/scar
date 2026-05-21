@@ -746,6 +746,26 @@ fn analyze_stmt(
                     .with_location(*line, *column));
             }
         },
+        Stmt::Defer {
+            line: _,
+            column: _,
+            body,
+        } => {
+            let mut defer_scope = scope.clone();
+            for stmt in body {
+                analyze_stmt(
+                    stmt,
+                    function_name,
+                    expected_return,
+                    functions,
+                    types,
+                    &mut defer_scope,
+                    function_locals,
+                    in_loop,
+                    allow_try_panic,
+                )?;
+            }
+        }
         Stmt::If {
             line,
             column,

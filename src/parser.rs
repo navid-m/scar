@@ -824,6 +824,19 @@ impl Parser {
             });
         }
 
+        if self.check_simple(&TokenKind::Defer) {
+            self.advance();
+            self.expect_newline("expected a newline after defer")?;
+            let body = self.parse_block()?;
+            self.expect_simple(TokenKind::End)?;
+            self.consume_newlines();
+            return Ok(Stmt::Defer {
+                line,
+                column,
+                body,
+            });
+        }
+
         if self.check_simple(&TokenKind::If) {
             return self.parse_if_stmt();
         }
@@ -2359,6 +2372,7 @@ impl Parser {
             TokenKind::Str(_) => "a string",
             TokenKind::Fn => "`fn`",
             TokenKind::Link => "`link`",
+            TokenKind::Defer => "`defer`",
         }
     }
 }

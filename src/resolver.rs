@@ -1089,6 +1089,14 @@ fn rewrite_stmt(
         }),
         Stmt::Continue { line, column } => Ok(Stmt::Continue { line, column }),
         Stmt::Break { line, column } => Ok(Stmt::Break { line, column }),
+        Stmt::Defer { line, column, body } => Ok(Stmt::Defer {
+            line,
+            column,
+            body: body
+                .into_iter()
+                .map(|stmt| rewrite_stmt(stmt, local_functions, local_types, module_aliases))
+                .collect::<Result<Vec<_>, _>>()?,
+        }),
     }
 }
 
@@ -2207,6 +2215,16 @@ impl GenericInstantiator {
             },
             Stmt::Continue { line, column } => Stmt::Continue { line, column },
             Stmt::Break { line, column } => Stmt::Break { line, column },
+            Stmt::Defer { line, column, body } => Stmt::Defer {
+                line,
+                column,
+                body: {
+                    let mut nested = scope.clone();
+                    body.into_iter()
+                        .map(|stmt| self.rewrite_stmt_generics(stmt, &mut nested))
+                        .collect::<Result<Vec<_>, _>>()?
+                },
+            },
         })
     }
 
@@ -3122,6 +3140,14 @@ fn substitute_stmt(stmt: Stmt, substitutions: &HashMap<String, Type>) -> Stmt {
         },
         Stmt::Continue { line, column } => Stmt::Continue { line, column },
         Stmt::Break { line, column } => Stmt::Break { line, column },
+        Stmt::Defer { line, column, body } => Stmt::Defer {
+            line,
+            column,
+            body: body
+                .into_iter()
+                .map(|stmt| substitute_stmt(stmt, substitutions))
+                .collect(),
+        },
     }
 }
 

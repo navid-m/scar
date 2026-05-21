@@ -260,6 +260,11 @@ pub enum Stmt {
         column: usize,
         value: Option<Expr>,
     },
+    Defer {
+        line: usize,
+        column: usize,
+        body: Vec<Stmt>,
+    },
     If {
         line: usize,
         column: usize,
