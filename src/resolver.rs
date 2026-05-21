@@ -957,6 +957,11 @@ fn rewrite_stmt(
                 .map(|expr| rewrite_expr(expr, local_functions, local_types, module_aliases))
                 .transpose()?,
         }),
+        Stmt::Block(body) => Ok(Stmt::Block(
+            body.into_iter()
+                .map(|stmt| rewrite_stmt(stmt, local_functions, local_types, module_aliases))
+                .collect::<Result<Vec<_>, _>>()?,
+        )),
         Stmt::Expr { line, column, expr } => Ok(Stmt::Expr {
             line,
             column,
@@ -2106,6 +2111,11 @@ impl GenericInstantiator {
                         .collect::<Result<Vec<_>, CompileError>>()?,
                 }
             }
+            Stmt::Block(body) => Stmt::Block(
+                body.into_iter()
+                    .map(|stmt| self.rewrite_stmt_generics(stmt, scope))
+                    .collect::<Result<Vec<_>, _>>()?,
+            ),
             Stmt::Expr { line, column, expr } => Stmt::Expr {
                 line,
                 column,
@@ -3053,6 +3063,11 @@ fn substitute_stmt(stmt: Stmt, substitutions: &HashMap<String, Type>) -> Stmt {
                 })
                 .collect(),
         },
+        Stmt::Block(body) => Stmt::Block(
+            body.into_iter()
+                .map(|stmt| substitute_stmt(stmt, substitutions))
+                .collect(),
+        ),
         Stmt::Expr { line, column, expr } => Stmt::Expr {
             line,
             column,

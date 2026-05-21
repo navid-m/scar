@@ -790,6 +790,38 @@ impl Parser {
         if self.check_simple(&TokenKind::Var) || self.check_simple(&TokenKind::Val) {
             let mutable = self.check_simple(&TokenKind::Var);
             self.advance();
+
+            if self.check_simple(&TokenKind::LParen) {
+                self.advance();
+                self.consume_newlines();
+                let mut decls = Vec::new();
+                while !self.check_simple(&TokenKind::RParen) {
+                    let decl_line = self.current().line;
+                    let decl_column = self.current().column;
+                    let name = self.expect_ident()?;
+                    let declared_type = if self.check_simple(&TokenKind::Assign) {
+                        None
+                    } else {
+                        Some(self.parse_type()?)
+                    };
+                    self.expect_simple(TokenKind::Assign)?;
+                    let init = self.parse_expr()?;
+                    self.expect_stmt_terminator()?;
+                    self.consume_newlines();
+                    decls.push(Stmt::VarDecl {
+                        line: decl_line,
+                        column: decl_column,
+                        mutable,
+                        name,
+                        declared_type,
+                        init,
+                    });
+                }
+                self.advance();
+                self.expect_stmt_terminator()?;
+                return Ok(Stmt::Block(decls));
+            }
+
             let name = self.expect_ident()?;
             let declared_type = if self.check_simple(&TokenKind::Assign) {
                 None

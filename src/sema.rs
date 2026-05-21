@@ -1045,6 +1045,21 @@ fn analyze_stmt(
                 }
             }
         }
+        Stmt::Block(body) => {
+            for stmt in body {
+                analyze_stmt(
+                    stmt,
+                    function_name,
+                    expected_return,
+                    functions,
+                    types,
+                    scope,
+                    function_locals,
+                    in_loop,
+                    allow_try_panic,
+                )?;
+            }
+        }
         Stmt::Expr { line, column, expr } => {
             validate_try_usage(expr, expected_return, allow_try_panic)
                 .map_err(|error| error.with_location(*line, *column))?;

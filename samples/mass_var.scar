@@ -16,8 +16,8 @@ pub def main()
 
     var (
         z i32 = 20
-        a SomeType = @zeroed()
+        ab SomeType = @zeroed()
     )
 
-    @print("{d}\n{d}\n", {z, a.field})
+    @print("{d}\n{d}\n", {z, ab.field})
 end

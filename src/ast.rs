@@ -265,6 +265,7 @@ pub enum Stmt {
         column: usize,
         body: Vec<Stmt>,
     },
+    Block(Vec<Stmt>),
     If {
         line: usize,
         column: usize,

@@ -1159,6 +1159,19 @@ fn render_stmt_inner<'a>(
             indent(output, level);
             output.push_str("}\n");
         }
+        Stmt::Block(body) => {
+            for stmt in body {
+                render_stmt(
+                    defer_stack, loop_defer_level, output,
+                    stmt,
+                    function,
+                    info,
+                    level,
+                    next_temp_id,
+                    deref_locals,
+                )?;
+            }
+        }
         Stmt::Expr { expr, .. } => {
             if let Expr::Try(inner) = expr {
                 let result_ty = infer_codegen_expr_type(inner, function, info)?;
@@ -1383,6 +1396,7 @@ fn render_stmt_inner<'a>(
 
 fn stmt_location(stmt: &Stmt) -> Option<(usize, usize)> {
     match stmt {
+        Stmt::Block(body) => body.first().and_then(stmt_location),
         Stmt::Defer { line, column, .. }
         | Stmt::VarDecl { line, column, .. }
         | Stmt::Assign { line, column, .. }
