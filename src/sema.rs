@@ -62,10 +62,10 @@ pub fn analyze(program: &Program) -> Result<ProgramInfo, CompileError> {
             .with_file_opt(function.file_path.clone()));
         }
         if function.name == "main" && !function.is_pub {
-            return Err(CompileError::new(
-                "function `main` must be declared as `pub def main`",
-            )
-            .with_file_opt(function.file_path.clone()));
+            return Err(
+                CompileError::new("function `main` must be declared as `pub def main`")
+                    .with_file_opt(function.file_path.clone()),
+            );
         }
         validate_type(&function.return_type, &types).map_err(|e| {
             CompileError::new(format!("in function `{}`: {}", function.name, e.message()))
@@ -120,10 +120,15 @@ pub fn analyze(program: &Program) -> Result<ProgramInfo, CompileError> {
             &HashMap::new(),
             Some(&global.ty),
         )
-        .map_err(|e| e.with_location(global.line, global.column).with_file_opt(global.file_path.clone()))?;
+        .map_err(|e| {
+            e.with_location(global.line, global.column)
+                .with_file_opt(global.file_path.clone())
+        })?;
         if !matches!(global.init, Expr::BuiltinCall { ref name, .. } if name == "zeroed") {
-            expect_same_type(&global.ty, &actual, &types, "global initializer")
-                .map_err(|e| e.with_location(global.line, global.column).with_file_opt(global.file_path.clone()))?;
+            expect_same_type(&global.ty, &actual, &types, "global initializer").map_err(|e| {
+                e.with_location(global.line, global.column)
+                    .with_file_opt(global.file_path.clone())
+            })?;
         }
         globals.insert(global.name.clone(), (global.ty.clone(), global.mutable));
     }
@@ -260,8 +265,8 @@ fn collect_types(program: &Program) -> Result<HashMap<String, TypeDefInfo>, Comp
                                 )));
                             }
                             for payload_ty in &variant.payload_types {
-                                validate_type_with_known_names(payload_ty, &known_type_names).map_err(
-                                    |e| {
+                                validate_type_with_known_names(payload_ty, &known_type_names)
+                                    .map_err(|e| {
                                         CompileError::new(format!(
                                             "in type `{}`, variant `{}`: {}",
                                             type_def.name,
@@ -269,8 +274,7 @@ fn collect_types(program: &Program) -> Result<HashMap<String, TypeDefInfo>, Comp
                                             e.message()
                                         ))
                                         .with_location(type_def.line, type_def.column)
-                                    },
-                                )?;
+                                    })?;
                             }
                             variant_map.insert(variant.name.clone(), variant.payload_types.clone());
                         }
@@ -428,7 +432,11 @@ fn analyze_function_with_globals(
     check_unused_bindings(
         &scope,
         &function.name,
-        &function.params.iter().map(|p| p.name.clone()).collect::<Vec<_>>(),
+        &function
+            .params
+            .iter()
+            .map(|p| p.name.clone())
+            .collect::<Vec<_>>(),
     )?;
 
     locals.insert(function.name.clone(), function_locals);
@@ -634,7 +642,9 @@ fn mark_usage_and_mutation_stmt(stmt: &Stmt, scope: &mut HashMap<String, LocalBi
                 mark_usage_and_mutation_stmt(s, scope);
             }
         }
-        Stmt::While { condition, body, .. } => {
+        Stmt::While {
+            condition, body, ..
+        } => {
             mark_usage_and_mutation_expr(condition, scope);
             for s in body {
                 mark_usage_and_mutation_stmt(s, scope);
@@ -785,23 +795,46 @@ fn mark_usage_and_mutation_expr(expr: &Expr, scope: &mut HashMap<String, LocalBi
     }
 }
 
+fn demangle_function_name(name: &str) -> String {
+    if let Some(pos) = name.rfind("__") {
+        let prefix = &name[..pos];
+        let suffix = &name[pos + 2..];
+        if prefix.starts_with('_') && prefix.contains("__") {
+            let path = prefix.replace("___", "/");
+            let path = path.replace("__", "/");
+            let path = path.trim_start_matches('/');
+            if let Ok(cwd) = std::env::current_dir() {
+                let cwd_str = cwd.to_string_lossy();
+                if path.starts_with(&*cwd_str) {
+                    let relative = &path[cwd_str.len()..];
+                    let relative = relative.trim_start_matches('/');
+                    return format!("./{}.{suffix}", relative);
+                }
+            }
+            return format!("/{path}.{suffix}");
+        }
+    }
+    name.to_string()
+}
+
 fn check_unused_bindings(
     scope: &HashMap<String, LocalBinding>,
     function_name: &str,
     param_names: &[String],
 ) -> Result<(), CompileError> {
+    let display_name = demangle_function_name(function_name);
     for (name, binding) in scope {
         if param_names.iter().any(|p| p == name) {
             continue;
         }
         if !binding.used && !binding.mutable {
             return Err(CompileError::new(format!(
-                "binding `{name}` in function `{function_name}` is never used"
+                "binding `{name}` in function `{display_name}` is never used"
             )));
         }
         if binding.mutable && !binding.mutated {
             return Err(CompileError::new(format!(
-                "variable `{name}` in function `{function_name}` is declared as `var` but never mutated"
+                "variable `{name}` in function `{display_name}` is declared as `var` but never mutated"
             )));
         }
     }
@@ -1875,9 +1908,7 @@ fn infer_expr_type(
                 {
                     Ok(Type::Bool)
                 }
-                BinaryOp::Equal | BinaryOp::NotEqual
-                    if same_enum_type(&lhs_ty, &rhs_ty, types) =>
-                {
+                BinaryOp::Equal | BinaryOp::NotEqual if same_enum_type(&lhs_ty, &rhs_ty, types) => {
                     Ok(Type::Bool)
                 }
                 BinaryOp::LessThan
@@ -2388,7 +2419,8 @@ fn analyze_arithmetic_assignment(
         types,
     )?;
     if common_numeric_type(&target_ty, &value_ty) == Some(target_ty.clone())
-        || common_numeric_type(strip_mut(&target_ty), &value_ty) == Some(strip_mut(&target_ty).clone())
+        || common_numeric_type(strip_mut(&target_ty), &value_ty)
+            == Some(strip_mut(&target_ty).clone())
     {
         Ok(())
     } else {
@@ -3702,7 +3734,8 @@ mod tests {
 
     #[test]
     fn accepts_addr_of_mut_value_as_mutation() {
-        let source = "pub def main() void\n\tvar x = 42\n\tval p = @addr(x)\n\t@print(\"{p}\", {p})\nend\n";
+        let source =
+            "pub def main() void\n\tvar x = 42\n\tval p = @addr(x)\n\t@print(\"{p}\", {p})\nend\n";
         let program = parse_program(lex(source).unwrap()).unwrap();
 
         analyze(&program).unwrap();
