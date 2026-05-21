@@ -4,7 +4,7 @@ type SomeType
 end
 
 pub def main()
-    var (
+    val (
         x = 1
         y = 2
     )
@@ -14,7 +14,7 @@ pub def main()
     )
     @print("{d}\n{d}\n{d}\n{d}\n", {x, y, a, b})
 
-    var (
+    val (
         z i32 = 20
         ab SomeType = @zeroed()
     )

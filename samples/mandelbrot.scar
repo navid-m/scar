@@ -46,8 +46,10 @@ def mandelbrot_iter(c Complex, max_iter i32) i32
 end
 
 def render_mandelbrot(width i32, height i32, max_iter i32) void|error
-    var y = 0
     var ac = allocators.Arena.new(1024 as usize)?
+    defer
+        allocators.Arena.destroy(@addr(ac))
+    end
     for var iy = 0 .. height
         var line = ""
 
