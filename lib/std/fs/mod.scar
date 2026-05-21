@@ -158,8 +158,8 @@ pub def join[A: allocators.BumpAllocator](
 		return copy_string[A](ac, a)
 	end
 
-	var len_a usize = trimmed_len(a)
-	var len_b usize = str.len(b)
+	val len_a usize = trimmed_len(a)
+	val len_b usize = str.len(b)
 	var start_b usize = 0
 
 	if is_absolute(b)
@@ -178,7 +178,7 @@ pub def join[A: allocators.BumpAllocator](
 		return copy_bytes[A](ac, a, len_a)
 	end
 
-	var needs_sep bool = !is_sep(@deref(@add(a, len_a - 1 as usize)))
+	val needs_sep bool = !is_sep(@deref(@add(a, len_a - 1 as usize)))
 
 	var out_len usize =	len_a +	(len_b - start_b)
 
@@ -588,7 +588,7 @@ when posix
 			)
 		end
 
-		var size i64 = ftell(file)
+		val size i64 = ftell(file)
 		if size < 0
 			fclose(file)
 			return io_error[ref(u8)](
@@ -604,7 +604,7 @@ when posix
 		end
 
 		var out ref(void) = A.alloc(ac, size as usize + 1 as usize)?
-		var read_count usize = fread(out, 1 as usize, size as usize, file)
+		val read_count usize = fread(out, 1 as usize, size as usize, file)
 
 		fclose(file)
 
@@ -627,7 +627,7 @@ when posix
 		end
 
 		val len_data usize = str.len(data)
-		var wrote usize = fwrite(data as ref(void), 1 as usize, len_data, file)
+		val wrote usize = fwrite(data as ref(void), 1 as usize, len_data, file)
 
 		if fclose(file) != 0
 			return io_error[void](
@@ -889,7 +889,7 @@ when windows
 			)
 		end
 
-		var size i64 = read_i64(size_buf)
+		val size i64 = read_i64(size_buf)
 		@free(size_buf)
 
 		if size < 0 || size > 4294967295 as i64

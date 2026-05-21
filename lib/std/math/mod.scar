@@ -23,7 +23,7 @@ pub val F64_MAX f64 = 1.7976931348623157e+308
 pub val F64_MIN f64 = 5.0e-324
 
 pub def floor(x f64) f64
-	var as_int i64 = x as i64
+	val as_int i64 = x as i64
 	if x < 0 as f64 && x != (as_int as f64)
 		return (as_int - 1 as i64) as f64
 	end
@@ -31,7 +31,7 @@ pub def floor(x f64) f64
 end
 
 pub def ceil(x f64) f64
-	var as_int i64 = x as i64
+	val as_int i64 = x as i64
 	if x > 0 as f64 && x != (as_int as f64)
 		return (as_int + 1 as i64) as f64
 	end
@@ -39,8 +39,10 @@ pub def ceil(x f64) f64
 end
 
 pub def round(x f64) f64
-	var as_int i64 = x as i64
-	var frac f64 = x - (as_int as f64)
+	val (
+		as_int i64 = x as i64
+		frac f64 = x - (as_int as f64)
+	)
 	if frac >= 0.5 as f64
 		return (as_int + 1 as i64) as f64
 	end
@@ -109,8 +111,10 @@ pub def fmod(x f64, y f64) f64
 	if y == 0 as f64
 		return 0 as f64
 	end
-	var quotient f64 = x / y
-	var truncated f64 = (quotient as i64) as f64
+	val (
+		quotient f64 = x / y
+		truncated f64 = (quotient as i64) as f64
+	)
 	return x - (truncated * y)
 end
 
@@ -133,8 +137,8 @@ pub def log(x f64) f64
 	if x <= 0 as f64
 		return -1 as f64
 	end
-	var y f64 = (x - 1 as f64) / (x + 1 as f64)
-	var y2 f64 = y * y
+	val y f64 = (x - 1 as f64) / (x + 1 as f64)
+	val y2 f64 = y * y
 	var result f64 = 0 as f64
 	var term f64 = y
 	var n i64 = 1 as i64
@@ -355,8 +359,8 @@ pub def cbrt(x f64) f64
     if x == 0.0
         return 0.0
     end
-    var neg bool = x < 0.0
-    var a f64 = fabs(x)
+    val neg bool = x < 0.0
+    val a f64 = fabs(x)
     var guess f64 = a
     var i = 0
     for i < 20
@@ -370,8 +374,8 @@ pub def cbrt(x f64) f64
 end
 
 pub def hypot(x f64, y f64) f64
-    var ax f64 = fabs(x)
-    var ay f64 = fabs(y)
+    val ax f64 = fabs(x)
+    val ay f64 = fabs(y)
     if ax == 0.0
         return ay
     end
@@ -382,12 +386,12 @@ pub def hypot(x f64, y f64) f64
         var r f64 = ay / ax
         return ax * sqrt(1.0 + r * r)
     end
-    var r f64 = ax / ay
+    val r f64 = ax / ay
     return ay * sqrt(1.0 + r * r)
 end
 
 pub def copysign(x f64, y f64) f64
-    var ax f64 = fabs(x)
+    val ax f64 = fabs(x)
     if y < 0.0
         return -ax
     end
@@ -403,8 +407,8 @@ pub def cosh(x f64) f64
 end
 
 pub def tanh(x f64) f64
-    var ep f64 = exp(x)
-    var en f64 = exp(-x)
+    val ep f64 = exp(x)
+    val en f64 = exp(-x)
     return (ep - en) / (ep + en)
 end
 

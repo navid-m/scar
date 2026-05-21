@@ -31,7 +31,7 @@ def heap_copy(src ref(u8)) ref(u8)|error
 		return none
 	end
 
-	var len_src usize = str.len(src)
+	val len_src usize = str.len(src)
 	var out ref(u8) = heap_alloc(len_src + 1 as usize)?
 
 	if len_src > 0 as usize
@@ -146,7 +146,7 @@ when posix
 			return heap_copy("''")
 		end
 
-		var len_path usize = str.len(path)
+		val len_path usize = str.len(path)
 		var out ref(u8) = heap_alloc(len_path * 4 as usize + 3 as usize)?
 		var write usize = 0 as usize
 
@@ -250,7 +250,7 @@ when posix
 
 		var prefix ref(u8) = "s-"
 		var suffix ref(u8) = "-XXXXXX"
-		var len_temp_dir usize = str.len(temp_dir)
+		val len_temp_dir usize = str.len(temp_dir)
 		var needs_sep bool = true
 
 		if (
@@ -260,9 +260,9 @@ when posix
 			needs_sep = false
 		end
 
-		var len_label usize = str.len(label)
-		var len_prefix usize = str.len(prefix)
-		var len_suffix usize = str.len(suffix)
+		val len_label usize = str.len(label)
+		val len_prefix usize = str.len(prefix)
+		val len_suffix usize = str.len(suffix)
 		var total usize = len_temp_dir +
 			len_prefix +
 			len_label +
@@ -295,7 +295,7 @@ when posix
 
 		@deref(@add(out, cursor)) = 0 as u8
 
-		var fd i32 = mkstemp(out as mut(ref(u8)))
+		val fd i32 = mkstemp(out as mut(ref(u8)))
 		if fd < 0
 			@free(out)
 			return os_error[ref(u8)](
@@ -323,7 +323,7 @@ when posix
 			return os_error[i32]("command is null")
 		end
 
-		var status i32 = system(command)
+		val status i32 = system(command)
 		if status < 0
 			return os_error[i32](
 				last_errno_message("failed to execute command")
@@ -341,11 +341,13 @@ when posix
 			return os_error[ExecResult]("command is null")
 		end
 
-		val stdout_path = make_temp_file("stdout")?
-		val stderr_path = make_temp_file("stderr")?
-		val wrapped = build_capture_command(command, stdout_path, stderr_path)?
-		var status i32 = system(wrapped)
-
+		val (
+			stdout_path = make_temp_file("stdout")?
+			stderr_path = make_temp_file("stderr")?
+			wrapped = build_capture_command(command, stdout_path, stderr_path)?
+			status i32 = system(wrapped)
+		)
+		
 		@free(wrapped)
 
 		if status < 0
@@ -756,7 +758,7 @@ when windows
 			return os_error[i32]("command is null")
 		end
 
-		var status i32 = system(command)
+		val status i32 = system(command)
 		if status < 0
 			return os_error[i32]("failed to execute command")
 		end
@@ -781,7 +783,7 @@ when windows
 			stderr_path
 		)?
 
-		var status i32 = system(wrapped)
+		val status i32 = system(wrapped)
 		@free(wrapped)
 
 		if status < 0
@@ -940,7 +942,7 @@ test "exec_capture captures stdout and stderr"
 	var ac = allocators.Arena.new(16384 as usize)?
 
 	when windows
-		var result = exec_capture[_](
+		val result = exec_capture[_](
 			@addr(ac),
 			"echo hello& echo oops 1>&2& exit /B 3"
 		)?
@@ -950,7 +952,7 @@ test "exec_capture captures stdout and stderr"
 	end
 
 	when posix
-		var result = exec_capture[_](
+		val result = exec_capture[_](
 			@addr(ac),
 			"printf 'hello\\n'; printf 'oops\\n' 1>&2; exit 3"
 		)?

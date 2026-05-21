@@ -1,6 +1,5 @@
 val allocators = use("std/allocators")
 val time = use("std/time")
-val str = use("std/string")
 
 pub enum Level
 	Debug
