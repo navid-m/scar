@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::{
-    CompileError,
+    CompileError, CompileErrors,
     ast::{
         BinaryOp, Expr, FieldDef, Function, InterfaceMethod, MatchArmKind, Program, Stmt,
         TestBlock, Type, TypeDefKind, UnaryOp, UnionVariantDef,
@@ -48,30 +48,34 @@ struct LocalBinding {
     is_global: bool,
 }
 
-pub fn analyze(program: &Program) -> Result<ProgramInfo, CompileError> {
-    let interfaces = collect_interfaces(program)?;
-    let types = collect_types(program)?;
+pub fn analyze(program: &Program) -> Result<ProgramInfo, CompileErrors> {
+    let interfaces = collect_interfaces(program).map_err(CompileErrors::single)?;
+    let types = collect_types(program).map_err(CompileErrors::single)?;
     let mut functions = HashMap::new();
     let mut function_symbols = HashMap::new();
 
     for function in &program.functions {
         if functions.contains_key(&function.name) {
-            return Err(CompileError::new(format!(
-                "duplicate function definition `{}`",
-                function.name
-            ))
-            .with_file_opt(function.file_path.clone()));
+            return Err(CompileErrors::single(
+                CompileError::new(format!(
+                    "duplicate function definition `{}`",
+                    function.name
+                ))
+                .with_file_opt(function.file_path.clone()),
+            ));
         }
         if function.name == "main" && !function.is_pub {
-            return Err(
+            return Err(CompileErrors::single(
                 CompileError::new("function `main` must be declared as `pub def main`")
                     .with_file_opt(function.file_path.clone()),
-            );
+            ));
         }
         validate_type(&function.return_type, &types).map_err(|e| {
-            CompileError::new(format!("in function `{}`: {}", function.name, e.message()))
-                .with_location(function.line, function.column)
-                .with_file_opt(function.file_path.clone())
+            CompileErrors::single(
+                CompileError::new(format!("in function `{}`: {}", function.name, e.message()))
+                    .with_location(function.line, function.column)
+                    .with_file_opt(function.file_path.clone()),
+            )
         })?;
         functions.insert(
             function.name.clone(),
@@ -81,18 +85,18 @@ pub fn analyze(program: &Program) -> Result<ProgramInfo, CompileError> {
                     .iter()
                     .map(|param| {
                         validate_type(&param.ty, &types).map_err(|e| {
-                            CompileError::new(format!(
+                            CompileErrors::single(CompileError::new(format!(
                                 "in function `{}`, parameter `{}`: {}",
                                 function.name,
                                 param.name,
                                 e.message()
                             ))
                             .with_location(param.line, param.column)
-                            .with_file_opt(function.file_path.clone())
+                            .with_file_opt(function.file_path.clone()))
                         })?;
                         Ok(param.ty.clone())
                     })
-                    .collect::<Result<Vec<_>, CompileError>>()?,
+                    .collect::<Result<Vec<_>, CompileErrors>>()?,
                 return_type: function.return_type.clone(),
             },
         );
@@ -110,9 +114,11 @@ pub fn analyze(program: &Program) -> Result<ProgramInfo, CompileError> {
 
     for global in &program.globals {
         validate_type(&global.ty, &types).map_err(|e| {
-            CompileError::new(format!("in global `{}`: {}", global.name, e.message()))
-                .with_location(global.line, global.column)
-                .with_file_opt(global.file_path.clone())
+            CompileErrors::single(
+                CompileError::new(format!("in global `{}`: {}", global.name, e.message()))
+                    .with_location(global.line, global.column)
+                    .with_file_opt(global.file_path.clone()),
+            )
         })?;
         let actual = infer_expr_type(
             &global.init,
@@ -122,13 +128,17 @@ pub fn analyze(program: &Program) -> Result<ProgramInfo, CompileError> {
             Some(&global.ty),
         )
         .map_err(|e| {
-            e.with_location(global.line, global.column)
-                .with_file_opt(global.file_path.clone())
+            CompileErrors::single(
+                e.with_location(global.line, global.column)
+                    .with_file_opt(global.file_path.clone()),
+            )
         })?;
         if !matches!(global.init, Expr::BuiltinCall { ref name, .. } if name == "zeroed") {
             expect_same_type(&global.ty, &actual, &types, "global initializer").map_err(|e| {
-                e.with_location(global.line, global.column)
-                    .with_file_opt(global.file_path.clone())
+                CompileErrors::single(
+                    e.with_location(global.line, global.column)
+                        .with_file_opt(global.file_path.clone()),
+                )
             })?;
         }
         globals.insert(global.name.clone(), (global.ty.clone(), global.mutable));
@@ -150,13 +160,30 @@ pub fn analyze(program: &Program) -> Result<ProgramInfo, CompileError> {
         })
         .collect();
 
+    let mut all_errors = CompileErrors::new();
     for function in &program.functions {
-        analyze_function_with_globals(function, &functions, &types, &mut locals, &global_scope)?;
+        if let Err(errors) =
+            analyze_function_with_globals(function, &functions, &types, &mut locals, &global_scope)
+        {
+            all_errors.extend(errors);
+            if all_errors.is_full() {
+                return Err(all_errors);
+            }
+        }
     }
     for test in &program.tests {
-        analyze_test_block(test, &functions, &types)?;
+        if let Err(errors) = analyze_test_block(test, &functions, &types) {
+            all_errors.extend(errors);
+            if all_errors.is_full() {
+                return Err(all_errors);
+            }
+        }
     }
-    validate_interface_satisfaction(&interfaces, &types, &functions)?;
+    if !all_errors.is_empty() {
+        return Err(all_errors);
+    }
+    validate_interface_satisfaction(&interfaces, &types, &functions)
+        .map_err(CompileErrors::single)?;
 
     Ok(ProgramInfo {
         functions,
@@ -381,25 +408,27 @@ fn analyze_function_with_globals(
     types: &HashMap<String, TypeDefInfo>,
     locals: &mut HashMap<String, HashMap<String, Type>>,
     global_scope: &HashMap<String, LocalBinding>,
-) -> Result<(), CompileError> {
+) -> Result<(), CompileErrors> {
     let mut scope = global_scope.clone();
     let mut function_locals = HashMap::new();
 
     for param in &function.params {
         validate_type(&param.ty, types).map_err(|e| {
-            CompileError::new(format!(
-                "in function `{}`, parameter `{}`: {}",
-                function.name,
-                param.name,
-                e.message()
-            ))
-            .with_location(param.line, param.column)
+            CompileErrors::single(
+                CompileError::new(format!(
+                    "in function `{}`, parameter `{}`: {}",
+                    function.name,
+                    param.name,
+                    e.message()
+                ))
+                .with_location(param.line, param.column),
+            )
         })?;
         if scope.contains_key(&param.name) {
-            return Err(CompileError::new(format!(
+            return Err(CompileErrors::single(CompileError::new(format!(
                 "duplicate parameter `{}` in function `{}`",
                 param.name, function.name
-            )));
+            ))));
         }
         scope.insert(
             param.name.clone(),
@@ -413,8 +442,9 @@ fn analyze_function_with_globals(
         );
     }
 
+    let mut errors = CompileErrors::new();
     for stmt in &function.body {
-        analyze_stmt(
+        if let Err(e) = analyze_stmt(
             stmt,
             &function.name,
             &function.return_type,
@@ -424,15 +454,19 @@ fn analyze_function_with_globals(
             &mut function_locals,
             false,
             function.name == "main" || function.name.starts_with("__scar_test_case_"),
-        )
-        .map_err(|e| e.with_file_opt(function.file_path.clone()))?;
+        ) {
+            errors.push(e.with_file_opt(function.file_path.clone()));
+            if errors.is_full() {
+                return Err(errors);
+            }
+        }
     }
 
     for stmt in &function.body {
         mark_usage_and_mutation_stmt(stmt, &mut scope);
     }
 
-    check_unused_bindings(
+    if let Err(binding_errors) = check_unused_bindings(
         &scope,
         &function.name,
         &function
@@ -440,7 +474,18 @@ fn analyze_function_with_globals(
             .iter()
             .map(|p| p.name.clone())
             .collect::<Vec<_>>(),
-    )?;
+    ) {
+        for e in binding_errors.errors {
+            errors.push(e);
+            if errors.is_full() {
+                return Err(errors);
+            }
+        }
+    }
+
+    if !errors.is_empty() {
+        return Err(errors);
+    }
 
     locals.insert(function.name.clone(), function_locals);
     Ok(())
@@ -450,11 +495,12 @@ fn analyze_test_block(
     test: &TestBlock,
     functions: &HashMap<String, FunctionSig>,
     types: &HashMap<String, TypeDefInfo>,
-) -> Result<(), CompileError> {
+) -> Result<(), CompileErrors> {
     let mut scope = HashMap::new();
     let mut function_locals = HashMap::new();
+    let mut errors = CompileErrors::new();
     for stmt in &test.body {
-        analyze_stmt(
+        if let Err(e) = analyze_stmt(
             stmt,
             &format!("test `{}`", test.name),
             &Type::Void,
@@ -464,9 +510,18 @@ fn analyze_test_block(
             &mut function_locals,
             false,
             true,
-        )?;
+        ) {
+            errors.push(e);
+            if errors.is_full() {
+                return Err(errors);
+            }
+        }
     }
-    Ok(())
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors)
+    }
 }
 
 fn validate_interface_satisfaction(
@@ -918,8 +973,9 @@ fn check_unused_bindings(
     scope: &HashMap<String, LocalBinding>,
     function_name: &str,
     param_names: &[String],
-) -> Result<(), CompileError> {
+) -> Result<(), CompileErrors> {
     let display_name = demangle_function_name(function_name);
+    let mut errors = CompileErrors::new();
     for (name, binding) in scope {
         if param_names.iter().any(|p| p == name) {
             continue;
@@ -928,17 +984,27 @@ fn check_unused_bindings(
             continue;
         }
         if !binding.used && !binding.mutable {
-            return Err(CompileError::new(format!(
+            errors.push(CompileError::new(format!(
                 "binding `{name}` in function `{display_name}` is never used"
             )));
+            if errors.is_full() {
+                return Err(errors);
+            }
         }
         if binding.mutable && !binding.mutated {
-            return Err(CompileError::new(format!(
+            errors.push(CompileError::new(format!(
                 "variable `{name}` in function `{display_name}` is declared as `var` but never mutated"
             )));
+            if errors.is_full() {
+                return Err(errors);
+            }
         }
     }
-    Ok(())
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors)
+    }
 }
 
 fn analyze_stmt(

@@ -73,6 +73,61 @@ impl std::fmt::Display for CompileError {
 
 impl std::error::Error for CompileError {}
 
+#[derive(Debug)]
+pub struct CompileErrors {
+    pub errors: Vec<CompileError>,
+}
+
+impl std::fmt::Display for CompileErrors {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Some(error) = self.errors.first() {
+            write!(f, "{}", error.message())
+        } else {
+            write!(f, "unknown error")
+        }
+    }
+}
+
+impl CompileErrors {
+    const MAX: usize = 50;
+
+    pub fn new() -> Self {
+        CompileErrors {
+            errors: Vec::new(),
+        }
+    }
+
+    pub fn single(error: CompileError) -> Self {
+        CompileErrors {
+            errors: vec![error],
+        }
+    }
+
+    pub fn push(&mut self, error: CompileError) {
+        if self.errors.len() < Self::MAX {
+            self.errors.push(error);
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.errors.is_empty()
+    }
+
+    pub fn len(&self) -> usize {
+        self.errors.len()
+    }
+
+    pub fn is_full(&self) -> bool {
+        self.errors.len() >= Self::MAX
+    }
+
+    pub fn extend(&mut self, other: CompileErrors) {
+        for e in other.errors {
+            self.push(e);
+        }
+    }
+}
+
 fn main() -> ExitCode {
     let cli = match Cli::parse(env::args().skip(1)) {
         Ok(cli) => cli,
@@ -84,14 +139,16 @@ fn main() -> ExitCode {
 
     match run(&cli) {
         Ok(()) => ExitCode::SUCCESS,
-        Err(error) => {
-            eprintln!("{}", format_compile_error(&error, cli.default_error_path()));
+        Err(errors) => {
+            for error in &errors.errors {
+                eprintln!("{}", format_compile_error(error, None));
+            }
             ExitCode::FAILURE
         }
     }
 }
 
-fn run(cli: &Cli) -> Result<(), CompileError> {
+fn run(cli: &Cli) -> Result<(), CompileErrors> {
     match cli {
         Cli::Build(cli) => run_build(cli),
         Cli::Run(cli) => run_run_command(cli),
@@ -311,8 +368,8 @@ fn write_output(path: &Path, contents: &str) -> Result<(), CompileError> {
         .map_err(|error| CompileError::new(format!("failed to write {}: {error}", path.display())))
 }
 
-fn run_build(cli: &BuildCli) -> Result<(), CompileError> {
-    let program = resolve_entry_program(&cli.input)?;
+fn run_build(cli: &BuildCli) -> Result<(), CompileErrors> {
+    let program = resolve_entry_program(&cli.input).map_err(CompileErrors::single)?;
     let info = analyze(&program)?;
     emit_program(
         &program,
@@ -322,12 +379,14 @@ fn run_build(cli: &BuildCli) -> Result<(), CompileError> {
         cli.emit_c,
         cli.optimize,
     )
+    .map_err(CompileErrors::single)?;
+    Ok(())
 }
 
-fn run_run_command(cli: &RunCli) -> Result<(), CompileError> {
-    let program = resolve_entry_program(&cli.input)?;
+fn run_run_command(cli: &RunCli) -> Result<(), CompileErrors> {
+    let program = resolve_entry_program(&cli.input).map_err(CompileErrors::single)?;
     let info = analyze(&program)?;
-    let generated = generate_c(&program, &info, true)?;
+    let generated = generate_c(&program, &info, true).map_err(CompileErrors::single)?;
     let c_path = temporary_c_path(&cli.input);
     let binary_path = temporary_run_binary_path(&cli.input);
 
@@ -345,7 +404,7 @@ fn run_run_command(cli: &RunCli) -> Result<(), CompileError> {
 
     let _ = fs::remove_file(&c_path);
     let _ = fs::remove_file(&binary_path);
-    result
+    result.map_err(CompileErrors::single)
 }
 
 fn emit_program(
@@ -377,18 +436,18 @@ fn emit_program(
     Ok(())
 }
 
-fn run_test_command(cli: &TestCli) -> Result<(), CompileError> {
-    let files = collect_test_files(&cli.target)?;
+fn run_test_command(cli: &TestCli) -> Result<(), CompileErrors> {
+    let files = collect_test_files(&cli.target).map_err(CompileErrors::single)?;
     if files.is_empty() {
-        return Err(CompileError::new(format!(
+        return Err(CompileErrors::single(CompileError::new(format!(
             "no .scar files found at {}",
             cli.target.display()
-        )));
+        ))));
     }
     if cli.output.is_some() && files.len() > 1 {
-        return Err(CompileError::new(
+        return Err(CompileErrors::single(CompileError::new(
             "`scar test -o/--output` only supports a single input file",
-        ));
+        )));
     }
 
     let mut total_tests = 0usize;
@@ -415,8 +474,8 @@ fn run_test_command(cli: &TestCli) -> Result<(), CompileError> {
     Ok(())
 }
 
-fn run_tests_in_file(path: &Path, cli: &TestCli) -> Result<usize, CompileError> {
-    let program = resolve_entry_program(path)?;
+fn run_tests_in_file(path: &Path, cli: &TestCli) -> Result<usize, CompileErrors> {
+    let program = resolve_entry_program(path).map_err(CompileErrors::single)?;
     let test_count = program.tests.len();
     if test_count == 0 {
         println!("scar: {} (0 tests)", path.display());
@@ -425,14 +484,14 @@ fn run_tests_in_file(path: &Path, cli: &TestCli) -> Result<usize, CompileError> 
 
     let runner = build_test_program(&program);
     let info = analyze(&runner)?;
-    let generated = generate_c(&runner, &info, !cli.optimize)?;
+    let generated = generate_c(&runner, &info, !cli.optimize).map_err(CompileErrors::single)?;
 
     if cli.emit_c {
         let output = cli
             .output
             .clone()
             .unwrap_or_else(|| default_test_output_path(path));
-        write_output(&output, &generated)?;
+        write_output(&output, &generated).map_err(CompileErrors::single)?;
         println!("scar: emitted {} ({} tests)", output.display(), test_count);
         return Ok(test_count);
     }
@@ -455,7 +514,7 @@ fn run_tests_in_file(path: &Path, cli: &TestCli) -> Result<usize, CompileError> 
 
     let _ = fs::remove_file(&c_path);
     let _ = fs::remove_file(&binary_path);
-    result?;
+    result.map_err(CompileErrors::single)?;
 
     println!("scar: {} ({} tests)", path.display(), test_count);
     Ok(test_count)
