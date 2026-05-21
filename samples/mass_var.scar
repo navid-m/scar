@@ -1,0 +1,23 @@
+type SomeType
+    field i32
+    field2 i32
+end
+
+pub def main()
+    var (
+        x = 1
+        y = 2
+    )
+    val (
+        a = 3
+        b = 4
+    )
+    @print("{d}\n{d}\n{d}\n{d}\n", {x, y, a, b})
+
+    var (
+        z i32 = 20
+        a SomeType = @zeroed()
+    )
+
+    @print("{d}\n{d}\n", {z, a.field})
+end
