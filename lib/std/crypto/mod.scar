@@ -418,15 +418,13 @@ test "uuid_v4 format is valid"
 	var id ref(u8) = uuid_v4[_](@addr(ac))?
 
 	assert str.len(id) == 36 as usize
-
 	assert @deref(@add(id, 8))  == '-' as u8
 	assert @deref(@add(id, 13)) == '-' as u8
 	assert @deref(@add(id, 18)) == '-' as u8
 	assert @deref(@add(id, 23)) == '-' as u8
-
 	assert @deref(@add(id, 14)) == '4' as u8
 
-	var variant u8 = @deref(@add(id, 19))
+	val variant u8 = @deref(@add(id, 19))
 	assert variant == '8' as u8 || variant == '9' as u8 || variant == 'a' as u8 || variant == 'b' as u8
 
 	allocators.Arena.destroy(@addr(ac))

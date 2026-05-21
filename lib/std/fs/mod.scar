@@ -280,15 +280,15 @@ pub def extension[A: allocators.BumpAllocator](
 		return none
 	end
 
-	var nd usize = trimmed_len(path)
-	var start usize = basename_start(path, nd)
-	var dot isize = find_extension_dot(path, start, nd)
+	val nd usize = trimmed_len(path)
+	val start usize = basename_start(path, nd)
+	val dot isize = find_extension_dot(path, start, nd)
 
 	if dot < 0
 		return copy_string[A](ac, "")
 	end
 
-	var offset usize = dot as usize + 1 as usize
+	val offset usize = dot as usize + 1 as usize
 	return copy_bytes[A](ac, @add(path, offset), nd - offset)
 end
 
@@ -300,9 +300,9 @@ pub def strip_extension[A: allocators.BumpAllocator](
 		return none
 	end
 
-	var nd usize = trimmed_len(path)
-	var start usize = basename_start(path, nd)
-	var dot isize = find_extension_dot(path, start, nd)
+	val nd usize = trimmed_len(path)
+	val start usize = basename_start(path, nd)
+	val dot isize = find_extension_dot(path, start, nd)
 
 	if dot < 0
 		return copy_bytes[A](ac, path, nd)
