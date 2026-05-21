@@ -109,7 +109,7 @@ pub def fsort[T: math.Float, A: allocators.GeneralAllocator](l ref(list[T]), ac 
         return true
     end
 
-    var elem_size usize = @sizeof(T)
+    val elem_size usize = @sizeof(T)
     var bytes_per_elem i32 = 4
 
     if elem_size != 4
@@ -179,7 +179,7 @@ def float_to_sortable[T: math.Float](v T) u64
 end
 
 pub def sort_strings[A: allocators.GeneralAllocator](l ref(list[ref(u8)]), ac A) bool|error
-    var n usize = @len(l)
+    val n usize = @len(l)
     if n <= 1 as usize
         return true
     end
@@ -198,7 +198,7 @@ pub def sort_strings[A: allocators.GeneralAllocator](l ref(list[ref(u8)]), ac A)
         end
     end
 
-    var count_mem ref(void)|error = A.alloc(@addr(ac), 256 as usize * @sizeof(usize))
+    val count_mem ref(void)|error = A.alloc(@addr(ac), 256 as usize * @sizeof(usize))
     match count_mem
         error _ => ( return false )
         ok cm => (
@@ -267,7 +267,7 @@ pub def sort_strings[A: allocators.GeneralAllocator](l ref(list[ref(u8)]), ac A)
 end
 
 test "isort i32 list"
-    var ac = allocators.HeapAllocator()
+    val ac = allocators.HeapAllocator()
     var l list[i32] = [3, 1, 4, 1, 5, 9, 2, 6]
     match isort[i32, _](@addr(l), ac)
         error _ => ( assert false )
@@ -284,7 +284,7 @@ test "isort i32 list"
 end
 
 test "isort i32 with negatives"
-    var ac = allocators.HeapAllocator()
+    val ac = allocators.HeapAllocator()
     var l list[i32] = [5, (-3), 2, (-1), 4, 0, (-2), 3]
     match isort[i32, _](@addr(l), ac)
         error _ => ( assert false )
@@ -301,7 +301,7 @@ test "isort i32 with negatives"
 end
 
 test "isort u32 list"
-    var ac = allocators.HeapAllocator()
+    val ac = allocators.HeapAllocator()
     var l list[u32] = [100 as u32, 50 as u32, 200 as u32, 25 as u32, 150 as u32]
     match isort[u32, _](@addr(l), ac)
         error _ => ( assert false )
@@ -315,7 +315,7 @@ test "isort u32 list"
 end
 
 test "isort i64 list"
-    var ac = allocators.HeapAllocator()
+    val ac = allocators.HeapAllocator()
     var l list[i64] = [1000000 as i64, (-500000 as i64), 0 as i64, 999999 as i64, (-999999 as i64)]
     match isort[i64, _](@addr(l), ac)
         error _ => ( assert false )
@@ -329,7 +329,7 @@ test "isort i64 list"
 end
 
 test "isort i8 list"
-    var ac = allocators.HeapAllocator()
+    val ac = allocators.HeapAllocator()
     var l list[i8] = [5 as i8, (-3 as i8), 0 as i8, 2 as i8, (-1 as i8)]
     match isort[i8, _](@addr(l), ac)
         error _ => ( assert false )
@@ -343,7 +343,7 @@ test "isort i8 list"
 end
 
 test "fsort f64 list"
-    var ac = allocators.HeapAllocator()
+    val ac = allocators.HeapAllocator()
     var l list[f64] = [3.5, 1.2, 4.9, -2.1, 0.0, 2.5]
     match fsort[f64, _](@addr(l), ac)
         error _ => ( assert false )
@@ -359,7 +359,7 @@ test "fsort f64 list"
 end
 
 test "fsort f32 list"
-    var ac = allocators.HeapAllocator()
+    val ac = allocators.HeapAllocator()
     var l list[f32] = [3.5, 1.2, -0.5, 2.0]
     match fsort[f32, _](@addr(l), ac)
         error _ => ( assert false )
@@ -372,7 +372,7 @@ test "fsort f32 list"
 end
 
 test "sort strings list"
-    var ac = allocators.HeapAllocator()
+    val ac = allocators.HeapAllocator()
     var l list[ref(u8)] = ["banana", "apple", "cherry", "date"]
     match sort_strings[_](@addr(l), ac)
         error _ => ( assert false )
@@ -385,7 +385,7 @@ test "sort strings list"
 end
 
 test "sort strings different lengths"
-    var ac = allocators.HeapAllocator()
+    val ac = allocators.HeapAllocator()
     var l list[ref(u8)] = ["b", "aaa", "aa", "a"]
     match sort_strings[_](@addr(l), ac)
         error _ => ( assert false )

@@ -191,7 +191,7 @@ def map_rehash[K, V, A: allocators.GeneralAllocator](
     m  mut(ref(Map[K, V])),
     ac ref(A)
 ) bool
-    var new_cap usize = m.cap * 2 as usize
+    val new_cap usize = m.cap * 2 as usize
     var entry_size usize = @sizeof(MapEntry[K, V])
     var new_mem ref(void)|error = A.alloc(ac, new_cap * entry_size)
     match new_mem
@@ -498,7 +498,7 @@ def set_rehash[T, A: allocators.GeneralAllocator](
 ) bool
     var new_cap usize = s.cap * 2 as usize
     var entry_size usize = @sizeof(SetEntry[T])
-    var new_mem ref(void)|error = A.alloc(ac, new_cap * entry_size)
+    val new_mem ref(void)|error = A.alloc(ac, new_cap * entry_size)
     match new_mem
         ok p => (
             @memset(p, 0, new_cap * entry_size)

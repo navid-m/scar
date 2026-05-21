@@ -125,7 +125,7 @@ end
 test "alloc works"
     match Arena.new(1024 as usize)
         ok arena => (
-            var mem = Arena.alloc(@addr(arena), 500)
+            val mem = Arena.alloc(@addr(arena), 500)
             match mem
                 ok m => (
                     @puts("it worked")
@@ -144,7 +144,7 @@ end
 
 test "alloc with unwrap works"
     var arena = Arena.new(1024 as usize)?
-    var mem = Arena.alloc(@addr(arena), 500)?
+    Arena.alloc(@addr(arena), 500)?
     Arena.destroy(@addr(arena))
 end
 

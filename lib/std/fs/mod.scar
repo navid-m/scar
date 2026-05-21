@@ -217,8 +217,8 @@ pub def dirname[A: allocators.BumpAllocator](
 		return none
 	end
 
-	var nd usize = trimmed_len(path)
-	var root usize = root_len(path)
+	val nd usize = trimmed_len(path)
+	val root usize = root_len(path)
 
 	if nd == 0 as usize
 		return copy_string[A](ac, ".")
@@ -257,8 +257,8 @@ pub def basename[A: allocators.BumpAllocator](
 		return none
 	end
 
-	var nd usize = trimmed_len(path)
-	var root usize = root_len(path)
+	val nd usize = trimmed_len(path)
+	val root usize = root_len(path)
 
 	if nd == 0 as usize
 		return copy_string[A](ac, "")
@@ -268,7 +268,7 @@ pub def basename[A: allocators.BumpAllocator](
 		return copy_bytes[A](ac, path, root)
 	end
 
-	var start usize = basename_start(path, nd)
+	val start usize = basename_start(path, nd)
 	return copy_bytes[A](ac, @add(path, start), nd - start)
 end
 
@@ -1356,7 +1356,7 @@ when posix
 		create_dir_all(child_dir)?
 		write_text(file, "hello")?
 
-		var entries = read_dir[_](@addr(ac), root)?
+		val entries = read_dir[_](@addr(ac), root)?
 		var saw_dir bool = false
 		var saw_file bool = false
 		var count i32 = 0
