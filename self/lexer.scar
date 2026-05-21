@@ -395,8 +395,10 @@ def lex_escape(l ref(ast.Lexer)) u8
 end
 
 def lex_number(l ref(ast.Lexer)) ast.Token
-	val line usize = l.line
-	val column usize = l.column
+	val (
+		line usize   = l.line
+		column usize = l.column
+	)
 	
 	if @deref(@add(l.source, l.pos)) == '0' && (@deref(@add(l.source, l.pos + 1)) == 'x' || @deref(@add(l.source, l.pos + 1)) == 'X')
 		l.pos++
