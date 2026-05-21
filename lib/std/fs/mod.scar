@@ -1165,55 +1165,7 @@ when windows
 	end
 end
 
-when redox
-	pub def read_text[A: allocators.BumpAllocator](
-		ac ref(A),
-		path ref(u8)
-	) ref(u8)|error
-		return unsupported_fs[ref(u8)]()
-	end
-
-	pub def write_text(path ref(u8), data ref(u8)) void|error
-		return unsupported_fs[void]()
-	end
-
-	pub def read_dir[A: allocators.BumpAllocator](
-		ac ref(A),
-		path ref(u8)
-	) list[DirEntry]|error
-		return unsupported_fs[list[DirEntry]]()
-	end
-
-	pub def create_dir(path ref(u8)) void|error
-		return unsupported_fs[void]()
-	end
-
-	pub def create_dir_all(path ref(u8)) void|error
-		return unsupported_fs[void]()
-	end
-
-	pub def remove_dir(path ref(u8)) void|error
-		return unsupported_fs[void]()
-	end
-
-	pub def remove_dir_all(path ref(u8)) void|error
-		return unsupported_fs[void]()
-	end
-
-	pub def exists(path ref(u8)) bool
-		return false
-	end
-
-	pub def is_file(path ref(u8)) bool
-		return false
-	end
-
-	pub def is_dir(path ref(u8)) bool
-		return false
-	end
-end
-
-when plan9
+when redox | plan9
 	pub def read_text[A: allocators.BumpAllocator](
 		ac ref(A),
 		path ref(u8)
