@@ -1,5 +1,4 @@
 val allocators = use("std/allocators")
-val stdio      = use("std/stdio")
 
 pub val MAX_REGEXP_OBJECTS usize = 30
 pub val MAX_CHAR_CLASS_LEN usize = 40
