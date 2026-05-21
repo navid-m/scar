@@ -571,7 +571,14 @@ fn rewrite_global_var(
 fn module_prefix(module_path: &Path, root_dir: &Path) -> String {
     let relative = module_path
         .strip_prefix(root_dir)
-        .unwrap_or(module_path)
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(|_| {
+            env::current_dir()
+                .ok()
+                .and_then(|cwd| module_path.strip_prefix(&cwd).ok())
+                .map(|p| p.to_path_buf())
+                .unwrap_or_else(|| module_path.to_path_buf())
+        })
         .with_extension("");
     let mut segments = Vec::new();
     for component in relative.components() {

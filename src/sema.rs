@@ -851,28 +851,64 @@ fn mark_usage_and_mutation_expr(expr: &Expr, scope: &mut HashMap<String, LocalBi
     }
 }
 
+fn normalize_path(path: &str) -> String {
+    let mut result = String::with_capacity(path.len());
+    let mut prev_is_slash = false;
+    for ch in path.chars() {
+        if ch == '/' {
+            if prev_is_slash {
+                continue;
+            }
+            prev_is_slash = true;
+        } else {
+            prev_is_slash = false;
+        }
+        result.push(ch);
+    }
+    result
+}
+
+fn strip_generic_suffix(name: &str) -> String {
+    if let Some(pos) = name.find(".generic") {
+        name[..pos].to_string()
+    } else {
+        name.to_string()
+    }
+}
+
 fn demangle_function_name(name: &str) -> String {
-    if let Some(pos) = name.rfind("__") {
+    let result = if let Some(pos) = name.rfind("__") {
         let prefix = &name[..pos];
         let suffix = &name[pos + 2..];
         if prefix.starts_with('_') && prefix.contains("__") {
             let path = prefix.replace("___", "/");
             let path = path.replace("__", "/");
+            let path = normalize_path(&path);
             let path = path.trim_start_matches('/');
             if let Ok(cwd) = std::env::current_dir() {
                 let cwd_str = cwd.to_string_lossy();
                 if path.starts_with(&*cwd_str) {
                     let relative = &path[cwd_str.len()..];
+                    let relative = normalize_path(relative);
                     let relative = relative.trim_start_matches('/');
-                    return format!("./{}.{suffix}", relative);
+                    format!("./{}.{suffix}", relative)
+                } else {
+                    format!("/{path}.{suffix}")
                 }
+            } else {
+                format!("/{path}.{suffix}")
             }
-            return format!("/{path}.{suffix}");
+        } else {
+            let name = name.replace("____", "/");
+            let name = name.replace("__", ".");
+            name.to_string()
         }
-    }
-    let name = name.replace("____", "/");
-    let name = name.replace("__", ".");
-    name.to_string()
+    } else {
+        let name = name.replace("____", "/");
+        let name = name.replace("__", ".");
+        name.to_string()
+    };
+    strip_generic_suffix(&result)
 }
 
 fn check_unused_bindings(
