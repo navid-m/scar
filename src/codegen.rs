@@ -2442,28 +2442,6 @@ fn render_global_dims(ty: &Type) -> String {
     }
 }
 
-fn render_global_type(ty: &Type) -> String {
-    fn collect_dims(ty: &Type) -> (String, Vec<u64>) {
-        match ty {
-            Type::FixedArray(n, inner) => {
-                let (base, mut dims) = collect_dims(inner);
-                dims.push(*n);
-                (base, dims)
-            }
-            _ => (c_type(ty), Vec::new()),
-        }
-    }
-    let (base, mut dims) = collect_dims(ty);
-    dims.reverse();
-    let mut result = base;
-    for d in dims {
-        result.push_str(" [");
-        result.push_str(&d.to_string());
-        result.push(']');
-    }
-    result
-}
-
 fn render_global_init(
     expr: &Expr,
     expected_ty: &Type,
@@ -2471,7 +2449,7 @@ fn render_global_init(
     info: &ProgramInfo,
 ) -> Result<String, CompileError> {
     match (expr, expected_ty) {
-        (Expr::ListLiteral(values), Type::FixedArray(n, element_ty)) => {
+        (Expr::ListLiteral(values), Type::FixedArray(_, element_ty)) => {
             let rendered_values = values
                 .iter()
                 .map(|value| render_global_init(value, element_ty, function, info))
