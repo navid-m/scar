@@ -650,3 +650,75 @@ test "parses module use"
     assert str.eql(prog.module_uses[0].path, "std/string")
     assert @len(prog.functions) == 1
 end
+
+test "parses extern function"
+    val tokens list[ast.Token] = lxr.lex("extern def sleep(t u32) void :: \"sleep\"\n")
+    val prog ast.Program = parse_program(tokens)
+    assert @len(prog.functions) == 1
+    assert str.eql(prog.functions[0].extern_name, "sleep")
+    assert @len(prog.functions[0].params) == 1
+    assert str.eql(prog.functions[0].params[0].name, "t")
+end
+
+test "parses public extern function"
+    val tokens list[ast.Token] = lxr.lex("pub extern def sleep(t u32) void :: \"sleep\"\n")
+    val prog ast.Program = parse_program(tokens)
+    assert @len(prog.functions) == 1
+    assert prog.functions[0].is_pub
+    assert str.eql(prog.functions[0].extern_name, "sleep")
+end
+
+test "parses multiline function signature"
+    val tokens list[ast.Token] = lxr.lex("def add(\n\ta i32,\n\tb i32\n) i32\n\treturn a + b\nend\n")
+    val prog ast.Program = parse_program(tokens)
+    assert @len(prog.functions) == 1
+    assert str.eql(prog.functions[0].name, "add")
+    assert @len(prog.functions[0].params) == 2
+end
+
+test "parses extended numeric primitive types"
+    val tokens list[ast.Token] = lxr.lex("def numerics(a i64, b f64, c usize) bool\n\treturn 0 == 0\nend\n")
+    val prog ast.Program = parse_program(tokens)
+    assert @len(prog.functions) == 1
+    assert @len(prog.functions[0].params) == 3
+end
+
+test "parses mutable ref type parameter"
+    val tokens list[ast.Token] = lxr.lex("def concat(dest mut(ref(u8)), src ref(u8)) ref(u8)\n\treturn dest\nend\n")
+    val prog ast.Program = parse_program(tokens)
+    assert @len(prog.functions) == 1
+    assert @len(prog.functions[0].params) == 2
+    assert str.eql(prog.functions[0].params[0].name, "dest")
+    assert str.eql(prog.functions[0].params[1].name, "src")
+end
+
+test "parses function with no parameters"
+    val tokens list[ast.Token] = lxr.lex("pub def main() void\nend\n")
+    val prog ast.Program = parse_program(tokens)
+    assert @len(prog.functions) == 1
+    assert @len(prog.functions[0].params) == 0
+end
+
+test "parses multiple functions"
+    val tokens list[ast.Token] = lxr.lex("def foo() void\nend\n\ndef bar() void\nend\n")
+    val prog ast.Program = parse_program(tokens)
+    assert @len(prog.functions) == 2
+    assert str.eql(prog.functions[0].name, "foo")
+    assert str.eql(prog.functions[1].name, "bar")
+end
+
+test "parses extern with multiple parameters"
+    val tokens list[ast.Token] = lxr.lex("extern def strcmp(x ref(u8), y ref(u8)) i32 :: \"strcmp\"\n")
+    val prog ast.Program = parse_program(tokens)
+    assert @len(prog.functions) == 1
+    assert @len(prog.functions[0].params) == 2
+    assert str.eql(prog.functions[0].params[0].name, "x")
+    assert str.eql(prog.functions[0].params[1].name, "y")
+end
+
+test "parses private function"
+    val tokens list[ast.Token] = lxr.lex("def helper() void\nend\n")
+    val prog ast.Program = parse_program(tokens)
+    assert @len(prog.functions) == 1
+    assert !prog.functions[0].is_pub
+end

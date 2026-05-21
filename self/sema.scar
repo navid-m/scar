@@ -26,6 +26,11 @@ pub type VariantEntry
     payload_types list[ast.Type]
 end
 
+pub type UnionVariantDef
+    name ref(u8)
+    payload_types list[ast.Type]
+end
+
 pub type ProgramInfo
     functions list[FunctionEntry]
     function_symbols list[SymbolEntry]
@@ -130,7 +135,7 @@ def collect_types(program ref(ast.Program)) list[TypeEntry]
 end
 
 def collect_types_from_stmt(stmt ref(ast.Stmt), types ref(list[TypeEntry]))
-    match stmt
+    match @deref(stmt)
         ast.Stmt.VarDecl(vd) => (
             collect_type_from_expr(@addr(vd.init), types)
         )
@@ -199,17 +204,17 @@ def collect_types_from_stmt(stmt ref(ast.Stmt), types ref(list[TypeEntry]))
 end
 
 def collect_type_from_expr(expr ref(ast.Expr), types ref(list[TypeEntry]))
-    match expr
+    match @deref(expr)
         ast.Expr.Binary(b) => (
             collect_type_from_expr(b.lhs, types)
             collect_type_from_expr(b.rhs, types)
         )
         ast.Expr.Unary(u) => collect_type_from_expr(u.expr, types)
         ast.Expr.Call(c) => (
-            collect_type_from_expr(c.callee, types)
+            collect_type_from_expr(@deref(c).callee, types)
             var i usize = 0
-            for i < @len(c.args)
-                collect_type_from_expr(@addr(c.args[i]), types)
+            for i < @len(@deref(c).args)
+                collect_type_from_expr(@addr(@deref(c).args[i]), types)
                 i++
             end
         )
@@ -313,7 +318,7 @@ def analyze_function(fun ref(ast.Function), functions ref(list[FunctionEntry]), 
 end
 
 def analyze_stmt(stmt ref(ast.Stmt), bindings ref(list[BindingEntry]), functions ref(list[FunctionEntry]), types ref(list[TypeEntry]))
-    match stmt
+    match @deref(stmt)
         ast.Stmt.VarDecl(vd) => (
             val inferred ast.Type = infer_expr_type(@addr(vd.init), bindings, functions, types)
             @append(bindings, BindingEntry(
@@ -384,7 +389,7 @@ def analyze_stmt(stmt ref(ast.Stmt), bindings ref(list[BindingEntry]), functions
 end
 
 def analyze_expr(expr ref(ast.Expr), bindings ref(list[BindingEntry]), functions ref(list[FunctionEntry]), types ref(list[TypeEntry])) ast.Type
-    match expr
+    match @deref(expr)
         ast.Expr.IntLit(_) => return ast.Type.I32(0)
         ast.Expr.FloatLit(_) => return ast.Type.F32(0)
         ast.Expr.BoolLit(_) => return ast.Type.Bool(0)
@@ -470,7 +475,7 @@ def analyze_expr(expr ref(ast.Expr), bindings ref(list[BindingEntry]), functions
                 analyze_expr(@addr(mc.args[i]), bindings, functions, types)
                 i++
             end
-            match mc.method
+            match @deref(mc.method)
                 "len" => return ast.Type.Usize(0)
                 "capacity" => return ast.Type.I32(0)
                 "append" | "reserve" | "set" | "insert" | "remove" | "clear" => return ast.Type.Void(0)
@@ -518,7 +523,7 @@ def lookup_name(name ref(u8), bindings ref(list[BindingEntry]), functions ref(li
 end
 
 def infer_field_type(base_ty ref(ast.Type), field ref(u8), types ref(list[TypeEntry])) ast.Type
-    match base_ty
+    match @deref(base_ty)
         ast.Type.Named(name) => (
             var i usize = 0
             for i < @len(types)
@@ -622,7 +627,7 @@ def common_integer_type(a ref(ast.Type), b ref(ast.Type)) ast.Type
 end
 
 def is_float_type(ty ref(ast.Type)) bool
-    match ty
+    match @deref(ty)
         ast.Type.F32(_) => return true
         ast.Type.F64(_) => return true
         _ => return false
@@ -630,7 +635,7 @@ def is_float_type(ty ref(ast.Type)) bool
 end
 
 def is_integer_type(ty ref(ast.Type)) bool
-    match ty
+    match @deref(ty)
         ast.Type.I8(_) => return true
         ast.Type.I16(_) => return true
         ast.Type.I32(_) => return true
@@ -646,141 +651,141 @@ def is_integer_type(ty ref(ast.Type)) bool
 end
 
 def types_equal(a ref(ast.Type), b ref(ast.Type)) bool
-    match a
+    match @deref(a)
         ast.Type.Void(_) => (
-            match b
+            match @deref(b)
                 ast.Type.Void(_) => return true
                 _ => return false
             end
         )
         ast.Type.Bool(_) => (
-            match b
+            match @deref(b)
                 ast.Type.Bool(_) => return true
                 _ => return false
             end
         )
         ast.Type.I8(_) => (
-            match b
+            match @deref(b)
                 ast.Type.I8(_) => return true
                 _ => return false
             end
         )
         ast.Type.I16(_) => (
-            match b
+            match @deref(b)
                 ast.Type.I16(_) => return true
                 _ => return false
             end
         )
         ast.Type.I32(_) => (
-            match b
+            match @deref(b)
                 ast.Type.I32(_) => return true
                 _ => return false
             end
         )
         ast.Type.I64(_) => (
-            match b
+            match @deref(b)
                 ast.Type.I64(_) => return true
                 _ => return false
             end
         )
         ast.Type.Isize(_) => (
-            match b
+            match @deref(b)
                 ast.Type.Isize(_) => return true
                 _ => return false
             end
         )
         ast.Type.U8(_) => (
-            match b
+            match @deref(b)
                 ast.Type.U8(_) => return true
                 _ => return false
             end
         )
         ast.Type.U16(_) => (
-            match b
+            match @deref(b)
                 ast.Type.U16(_) => return true
                 _ => return false
             end
         )
         ast.Type.U32(_) => (
-            match b
+            match @deref(b)
                 ast.Type.U32(_) => return true
                 _ => return false
             end
         )
         ast.Type.U64(_) => (
-            match b
+            match @deref(b)
                 ast.Type.U64(_) => return true
                 _ => return false
             end
         )
         ast.Type.Usize(_) => (
-            match b
+            match @deref(b)
                 ast.Type.Usize(_) => return true
                 _ => return false
             end
         )
         ast.Type.F32(_) => (
-            match b
+            match @deref(b)
                 ast.Type.F32(_) => return true
                 _ => return false
             end
         )
         ast.Type.F64(_) => (
-            match b
+            match @deref(b)
                 ast.Type.F64(_) => return true
                 _ => return false
             end
         )
         ast.Type.Named(na) => (
-            match b
+            match @deref(b)
                 ast.Type.Named(nb) => return str.eql(na, nb)
                 _ => return false
             end
         )
         ast.Type.List(a_inner) => (
-            match b
+            match @deref(b)
                 ast.Type.List(b_inner) => return types_equal(a_inner, b_inner)
                 _ => return false
             end
         )
         ast.Type.Ref(a_inner) => (
-            match b
+            match @deref(b)
                 ast.Type.Ref(b_inner) => return types_equal(a_inner, b_inner)
                 _ => return false
             end
         )
         ast.Type.Mut(a_inner) => (
-            match b
+            match @deref(b)
                 ast.Type.Mut(b_inner) => return types_equal(a_inner, b_inner)
                 _ => return false
             end
         )
         ast.Type.Result(a_inner) => (
-            match b
+            match @deref(b)
                 ast.Type.Result(b_inner) => return types_equal(a_inner, b_inner)
                 _ => return false
             end
         )
         ast.Type.Infer(_) => (
-            match b
+            match @deref(b)
                 ast.Type.Infer(_) => return true
                 _ => return false
             end
         )
         ast.Type.Error(_) => (
-            match b
+            match @deref(b)
                 ast.Type.Error(_) => return true
                 _ => return false
             end
         )
         ast.Type.None(_) => (
-            match b
+            match @deref(b)
                 ast.Type.None(_) => return true
                 _ => return false
             end
         )
         ast.Type.Applied(na, ta) => (
-            match b
+            match @deref(b)
                 ast.Type.Applied(nb, tb) => (
                     if !str.eql(na, nb)
                         return false
@@ -801,7 +806,7 @@ def types_equal(a ref(ast.Type), b ref(ast.Type)) bool
             end
         )
         ast.Type.FnPtr(a_params, a_ret) => (
-            match b
+            match @deref(b)
                 ast.Type.FnPtr(b_params, b_ret) => (
                     if @len(a_params) != @len(b_params)
                         return false
