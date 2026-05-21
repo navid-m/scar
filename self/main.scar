@@ -1,0 +1,15 @@
+pub type SourceLocation
+	line usize
+	column usize
+	file ref(u8)
+end
+
+pub type CompileError
+	message ref(u8)
+	location SourceLocation
+	has_location bool
+end
+
+pub type CompileErrors
+	errors list[CompileError]
+end

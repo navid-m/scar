@@ -1,0 +1,338 @@
+pub enum BinaryOp
+	Add
+	Subtract
+	Multiply
+	Divide
+	Modulo
+	LogicalAnd
+	LogicalOr
+	BitAnd
+	BitOr
+	BitXor
+	ShiftLeft
+	ShiftRight
+	LessThan
+	LessEqual
+	GreaterThan
+	GreaterEqual
+	Equal
+	NotEqual
+end
+
+pub enum UnaryOp
+	Neg
+	LogicalNot
+	BitNot
+end
+
+pub union TokenKind
+	Keyword(u8)
+	Ident(ref(u8))
+	Int(u64)
+	Float(f64)
+	Char(u8)
+	Str(ref(u8))
+	LParen(u8)
+	RParen(u8)
+	LBrace(u8)
+	RBrace(u8)
+	LBracket(u8)
+	RBracket(u8)
+	Comma(u8)
+	Colon(u8)
+	ColonColon(u8)
+	Dot(u8)
+	DotDot(u8)
+	Assign(u8)
+	EqualEqual(u8)
+	BangEqual(u8)
+	Amp(u8)
+	AmpAmp(u8)
+	AmpEqual(u8)
+	Pipe(u8)
+	PipePipe(u8)
+	PipeEqual(u8)
+	Caret(u8)
+	CaretEqual(u8)
+	Bang(u8)
+	Tilde(u8)
+	Less(u8)
+	LessEqual(u8)
+	ShiftLeft(u8)
+	Greater(u8)
+	GreaterEqual(u8)
+	ShiftRight(u8)
+	Star(u8)
+	StarEqual(u8)
+	Slash(u8)
+	SlashEqual(u8)
+	Percent(u8)
+	Minus(u8)
+	MinusMinus(u8)
+	MinusEqual(u8)
+	Plus(u8)
+	PlusPlus(u8)
+	PlusEqual(u8)
+	FatArrow(u8)
+	Question(u8)
+	At(u8)
+	Newline(u8)
+	Eof(u8)
+end
+
+pub type Token
+	kind TokenKind
+	line usize
+	column usize
+end
+
+pub type TokenList
+	tokens list[Token]
+	pos usize
+end
+
+pub union Type
+	Void(u8)
+	Bool(u8)
+	I8(u8)
+	I16(u8)
+	I32(u8)
+	I64(u8)
+	Isize(u8)
+	U8(u8)
+	U16(u8)
+	U32(u8)
+	U64(u8)
+	Usize(u8)
+	F32(u8)
+	F64(u8)
+	Named(ref(u8))
+	Applied(ref(u8), list[Type])
+	Ref(ref(Type))
+	Mut(ref(Type))
+	List(ref(Type))
+	Result(ref(Type))
+	Infer(u8)
+	Error(u8)
+	None(u8)
+	FnPtr(list[Type], ref(Type))
+end
+
+pub type Function
+	name ref(u8)
+	params list[Param]
+	return_type Type
+	body list[Stmt]
+	is_pub bool
+	is_extern bool
+	extern_name ref(u8)
+	line usize
+	column usize
+end
+
+pub type Param
+	name ref(u8)
+	ty Type
+	line usize
+	column usize
+end
+
+pub type FieldDef
+	name ref(u8)
+	ty Type
+	line usize
+	column usize
+end
+
+pub type MatchArm
+	kind MatchArmKind
+	bindings list[ref(u8)]
+	body list[Stmt]
+end
+
+pub union MatchArmKind
+	VariantName(ref(u8))
+	Ok(u8)
+	Error(u8)
+	Wild(u8)
+end
+
+pub type FieldInit
+	name ref(u8)
+	value Expr
+end
+
+pub union Expr
+	IntLit(u64)
+	FloatLit(f64)
+	BoolLit(u8)
+	CharLit(u8)
+	StrLit(ref(u8))
+	Ident(ref(u8))
+	Path(list[ref(u8)])
+	Binary(ref(ExprBinary))
+	Unary(ref(ExprUnary))
+	Call(ref(ExprCall))
+	Index(ref(ExprIndex))
+	Field(ref(ExprField))
+	Cast(ref(ExprCast))
+	SizeOf(ref(Type))
+	BitCast(ref(ExprBitCast))
+	ListLit(list[Expr])
+	StructInit(ref(ExprStructInit))
+	MethodCall(ref(ExprMethodCall))
+	Specialize(ref(ExprSpecialize))
+	BuiltinCall(ref(ExprBuiltinCall))
+	Try(ref(Expr))
+	Pack(list[Expr])
+	None(u8)
+	ErrorLit(ref(u8))
+end
+
+pub type ExprBinary
+	lhs ref(Expr)
+	op BinaryOp
+	rhs ref(Expr)
+end
+
+pub type ExprUnary
+	op UnaryOp
+	expr ref(Expr)
+end
+
+pub type ExprCall
+	callee ref(Expr)
+	args list[Expr]
+end
+
+pub type ExprIndex
+	base ref(Expr)
+	index ref(Expr)
+end
+
+pub type ExprField
+	base ref(Expr)
+	field ref(u8)
+end
+
+pub type ExprCast
+	expr ref(Expr)
+	ty Type
+end
+
+pub type ExprBitCast
+	expr ref(Expr)
+	ty Type
+end
+
+pub type ExprStructInit
+	name ref(u8)
+	type_args list[Type]
+	fields list[FieldInit]
+end
+
+pub type ExprMethodCall
+	receiver ref(Expr)
+	method ref(u8)
+	args list[Expr]
+end
+
+pub type ExprSpecialize
+	callee ref(Expr)
+	type_args list[Type]
+end
+
+pub type ExprBuiltinCall
+	name ref(u8)
+	args list[Expr]
+end
+
+pub union Stmt
+	VarDecl(ref(StmtVarDecl))
+	Assign(ref(StmtAssign))
+	AddAssign(ref(StmtAssign))
+	SubAssign(ref(StmtAssign))
+	MulAssign(ref(StmtAssign))
+	DivAssign(ref(StmtAssign))
+	Return(ref(StmtReturn))
+	If(ref(StmtIf))
+	While(ref(StmtWhile))
+	ForRange(ref(StmtForRange))
+	Match(ref(StmtMatch))
+	ExprStmt(ref(Expr))
+	Block(list[Stmt])
+	Break(u8)
+	Continue(u8)
+	Increment(ref(Expr))
+	Decrement(ref(Expr))
+	Assert(ref(Expr))
+end
+
+pub type StmtVarDecl
+	mutable bool
+	name ref(u8)
+	declared_type Type
+	init Expr
+	line usize
+	column usize
+end
+
+pub type StmtAssign
+	target Expr
+	value Expr
+	line usize
+	column usize
+end
+
+pub type StmtReturn
+	value Expr
+	line usize
+	column usize
+end
+
+pub type StmtIf
+	condition Expr
+	then_body list[Stmt]
+	else_body list[Stmt]
+	line usize
+	column usize
+end
+
+pub type StmtWhile
+	condition Expr
+	body list[Stmt]
+	line usize
+	column usize
+end
+
+pub type StmtForRange
+	var_name ref(u8)
+	start Expr
+	End Expr
+	body list[Stmt]
+	line usize
+	column usize
+end
+
+pub type StmtMatch
+	expr Expr
+	arms list[MatchArm]
+	line usize
+	column usize
+end
+
+pub type TestBlock
+	name ref(u8)
+	body list[Stmt]
+end
+
+pub type ModuleUse
+	name ref(u8)
+	path ref(u8)
+end
+
+pub type Program
+	module_uses list[ModuleUse]
+	functions list[Function]
+	tests list[TestBlock]
+end
