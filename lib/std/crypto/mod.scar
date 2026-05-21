@@ -36,7 +36,7 @@ pub def constant_time_str_eql(x ref(u8), y ref(u8)) bool
 
 	val len_x usize = str.len(x)
 	val len_y usize = str.len(y)
-	val limit usize = len_x
+	var limit usize = len_x
 
 	if len_y > limit
 		limit = len_y
