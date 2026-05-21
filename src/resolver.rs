@@ -36,6 +36,7 @@ pub fn resolve_entry_program(entry: &Path) -> Result<Program, CompileError> {
         resolved_extern_headers: Vec::new(),
         resolved_link_flags: Vec::new(),
         visiting: Vec::new(),
+        used_module_aliases: HashSet::new(),
     };
 
     let program = parse_program_file(&entry)?;
@@ -147,6 +148,7 @@ struct Resolver {
     resolved_extern_headers: Vec<String>,
     resolved_link_flags: Vec<String>,
     visiting: Vec<PathBuf>,
+    used_module_aliases: HashSet<String>,
 }
 
 impl Resolver {
@@ -582,6 +584,7 @@ fn module_prefix(module_path: &Path, root_dir: &Path) -> String {
 
 thread_local! {
     static LOCAL_VARS: std::cell::RefCell<HashSet<String>> = std::cell::RefCell::new(HashSet::new());
+    static USED_MODULE_ALIASES: std::cell::RefCell<HashSet<String>> = std::cell::RefCell::new(HashSet::new());
 }
 
 fn collect_local_vars(params: &[Param], body: &[Stmt]) -> HashSet<String> {
@@ -1148,6 +1151,7 @@ fn rewrite_expr(
                 let is_local = LOCAL_VARS.with(|lv| lv.borrow().contains(&path[0]));
                 if !is_local {
                     if let Some(module) = module_aliases.get(&path[0]) {
+                        USED_MODULE_ALIASES.with(|u| u.borrow_mut().insert(path[0].clone()));
                         if let Some(func_name) = module.functions.get(&path[1]) {
                             return Ok(Expr::Path(vec![func_name.clone()]));
                         }
@@ -1182,6 +1186,7 @@ fn rewrite_expr(
                     let is_local = LOCAL_VARS.with(|lv| lv.borrow().contains(&path[0]));
                     if !is_local {
                         if let Some(module) = module_aliases.get(&path[0]) {
+                            USED_MODULE_ALIASES.with(|u| u.borrow_mut().insert(path[0].clone()));
                             if let Some(global_name) = module.globals.get(&field) {
                                 return Ok(Expr::Path(vec![global_name.clone()]));
                             }
@@ -1369,6 +1374,7 @@ fn rewrite_callee(
             return Ok(Expr::Path(rewritten));
         }
         if let Some(module) = module_aliases.get(&path[0]) {
+            USED_MODULE_ALIASES.with(|u| u.borrow_mut().insert(path[0].clone()));
             let member = path[1..].join(".");
             if let Some(ty_name) = module.named_types.get(&member) {
                 return Ok(Expr::Path(vec![ty_name.clone()]));
@@ -3889,5 +3895,34 @@ mod tests {
         ).unwrap();
 
         assert_eq!(resolved, Path::new("/project/src/some_file.scar"));
+    }
+
+    #[test]
+    fn rejects_unused_module_import() {
+        use crate::{lexer::lex, parser::parse_program, sema::analyze};
+
+        let temp_dir = create_temp_dir();
+        let entry = temp_dir.join("main.scar");
+        let module = temp_dir.join("unused_mod.scar");
+
+        fs::write(
+            &entry,
+            "val unused_mod = use(\"unused_mod\")\npub def main() void\n\t@puts(\"hello\")\nend\n",
+        )
+        .unwrap();
+        fs::write(
+            &module,
+            "pub def some_function() void\n\t@puts(\"from module\")\nend\n",
+        )
+        .unwrap();
+
+        let program = resolve_entry_program(&entry).unwrap();
+        let error = analyze(&program).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "module `unused_mod.scar` imported but never used"
+        );
+
+        fs::remove_dir_all(temp_dir).unwrap();
     }
 }

@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use crate::{
     CompileError,
     ast::{
-        BinaryOp, Expr, FieldDef, Function, InterfaceMethod, MatchArmKind, Program, Stmt,
+        BinaryOp, Expr, FieldDef, Function, InterfaceMethod, MatchArmKind, ModuleUse, Program, Stmt,
         TestBlock, Type, TypeDefKind, UnaryOp, UnionVariantDef,
     },
 };
@@ -43,6 +43,8 @@ pub struct ProgramInfo {
 struct LocalBinding {
     ty: Type,
     mutable: bool,
+    used: bool,
+    mutated: bool,
 }
 
 pub fn analyze(program: &Program) -> Result<ProgramInfo, CompileError> {
@@ -134,6 +136,8 @@ pub fn analyze(program: &Program) -> Result<ProgramInfo, CompileError> {
                 LocalBinding {
                     ty: ty.clone(),
                     mutable: *mutable,
+                    used: true,
+                    mutated: false,
                 },
             )
         })
@@ -146,6 +150,7 @@ pub fn analyze(program: &Program) -> Result<ProgramInfo, CompileError> {
         analyze_test_block(test, &functions, &types)?;
     }
     validate_interface_satisfaction(&interfaces, &types, &functions)?;
+    check_unused_module_uses(&program.module_uses, &program)?;
 
     Ok(ProgramInfo {
         functions,
@@ -170,6 +175,27 @@ fn sanitize_symbol_name(name: &str) -> String {
             }
         })
         .collect()
+}
+
+fn module_prefix_from_path(path: &str) -> String {
+    path.replace('/', "__")
+}
+
+fn check_unused_module_uses(module_uses: &[ModuleUse], program: &Program) -> Result<(), CompileError> {
+    for module_use in module_uses {
+        let prefix = module_prefix_from_path(&module_use.path);
+        let is_used = program.functions.iter().any(|f| f.name.contains(&format!("{}__", prefix)))
+            || program.type_defs.iter().any(|t| t.name.contains(&format!("{}__", prefix)))
+            || program.globals.iter().any(|g| g.name.contains(&format!("{}__", prefix)));
+
+        if !is_used {
+            return Err(CompileError::new(format!(
+                "module `{}` imported but never used",
+                module_use.path
+            )));
+        }
+    }
+    Ok(())
 }
 
 fn collect_types(program: &Program) -> Result<HashMap<String, TypeDefInfo>, CompileError> {
@@ -396,6 +422,8 @@ fn analyze_function_with_globals(
             LocalBinding {
                 ty: param.ty.clone(),
                 mutable: true,
+                used: false,
+                mutated: false,
             },
         );
     }
@@ -414,6 +442,16 @@ fn analyze_function_with_globals(
         )
         .map_err(|e| e.with_file_opt(function.file_path.clone()))?;
     }
+
+    for stmt in &function.body {
+        mark_usage_and_mutation_stmt(stmt, &mut scope);
+    }
+
+    check_unused_bindings(
+        &scope,
+        &function.name,
+        &function.params.iter().map(|p| p.name.clone()).collect::<Vec<_>>(),
+    )?;
 
     locals.insert(function.name.clone(), function_locals);
     Ok(())
@@ -524,6 +562,274 @@ fn substitute_interface_self(ty: &Type, interface_name: &str, type_name: &str) -
     }
 }
 
+fn mark_usage_and_mutation_stmt(stmt: &Stmt, scope: &mut HashMap<String, LocalBinding>) {
+    match stmt {
+        Stmt::VarDecl { init, .. } => {
+            mark_usage_and_mutation_expr(init, scope);
+        }
+        Stmt::Assign { target, value, .. } => {
+            mark_mutation_target(target, scope);
+            mark_usage_and_mutation_expr(value, scope);
+        }
+        Stmt::AddAssign { target, value, .. }
+        | Stmt::MulAssign { target, value, .. }
+        | Stmt::SubAssign { target, value, .. }
+        | Stmt::DivAssign { target, value, .. }
+        | Stmt::BitAndAssign { target, value, .. }
+        | Stmt::BitOrAssign { target, value, .. }
+        | Stmt::BitXorAssign { target, value, .. } => {
+            mark_mutation_target(target, scope);
+            mark_usage_and_mutation_expr(value, scope);
+        }
+        Stmt::Increment { target, .. } | Stmt::Decrement { target, .. } => {
+            mark_mutation_target(target, scope);
+        }
+        Stmt::Assert { condition, .. } => {
+            mark_usage_and_mutation_expr(condition, scope);
+        }
+        Stmt::Return { value, .. } => {
+            if let Some(expr) = value {
+                mark_usage_and_mutation_expr(expr, scope);
+            }
+        }
+        Stmt::Defer { body, .. } => {
+            for s in body {
+                mark_usage_and_mutation_stmt(s, scope);
+            }
+        }
+        Stmt::Block(body) => {
+            for s in body {
+                mark_usage_and_mutation_stmt(s, scope);
+            }
+        }
+        Stmt::If {
+            condition,
+            then_body,
+            else_body,
+            ..
+        } => {
+            mark_usage_and_mutation_expr(condition, scope);
+            for s in then_body {
+                mark_usage_and_mutation_stmt(s, scope);
+            }
+            for s in else_body {
+                mark_usage_and_mutation_stmt(s, scope);
+            }
+        }
+        Stmt::Match { expr, arms, .. } => {
+            mark_usage_and_mutation_expr(expr, scope);
+            for arm in arms {
+                for s in &arm.body {
+                    mark_usage_and_mutation_stmt(s, scope);
+                }
+            }
+        }
+        Stmt::Expr { expr, .. } => {
+            mark_usage_and_mutation_expr(expr, scope);
+        }
+        Stmt::ForRange {
+            start, end, body, ..
+        } => {
+            mark_usage_and_mutation_expr(start, scope);
+            mark_usage_and_mutation_expr(end, scope);
+            for s in body {
+                mark_usage_and_mutation_stmt(s, scope);
+            }
+        }
+        Stmt::ForEach { iterable, body, .. } => {
+            mark_usage_and_mutation_expr(iterable, scope);
+            for s in body {
+                mark_usage_and_mutation_stmt(s, scope);
+            }
+        }
+        Stmt::ForClassic {
+            init,
+            condition,
+            increment,
+            body,
+            ..
+        } => {
+            mark_usage_and_mutation_expr(init, scope);
+            mark_usage_and_mutation_expr(condition, scope);
+            mark_usage_and_mutation_expr(increment, scope);
+            for s in body {
+                mark_usage_and_mutation_stmt(s, scope);
+            }
+        }
+        Stmt::While { condition, body, .. } => {
+            mark_usage_and_mutation_expr(condition, scope);
+            for s in body {
+                mark_usage_and_mutation_stmt(s, scope);
+            }
+        }
+        Stmt::Loop { body, .. } => {
+            for s in body {
+                mark_usage_and_mutation_stmt(s, scope);
+            }
+        }
+        Stmt::Continue { .. } | Stmt::Break { .. } => {}
+    }
+}
+
+fn mark_mutation_target(expr: &Expr, scope: &mut HashMap<String, LocalBinding>) {
+    match expr {
+        Expr::Path(path) if path.len() == 1 => {
+            if let Some(binding) = scope.get_mut(&path[0]) {
+                binding.mutated = true;
+            }
+        }
+        Expr::FieldAccess { base, .. } => {
+            mark_mutation_target(base, scope);
+        }
+        Expr::Index { base, index, .. } => {
+            mark_mutation_target(base, scope);
+            mark_usage_and_mutation_expr(index, scope);
+        }
+        Expr::BuiltinCall { name, args } if name == "deref" => {
+            if let Some(Expr::Path(path)) = args.first() {
+                if path.len() == 1 {
+                    if let Some(binding) = scope.get_mut(&path[0]) {
+                        binding.mutated = true;
+                    }
+                }
+            }
+            mark_usage_and_mutation_expr(&args[0], scope);
+        }
+        _ => {}
+    }
+}
+
+fn mark_usage_and_mutation_expr(expr: &Expr, scope: &mut HashMap<String, LocalBinding>) {
+    match expr {
+        Expr::Path(path) if path.len() == 1 => {
+            if let Some(binding) = scope.get_mut(&path[0]) {
+                binding.used = true;
+            }
+        }
+        Expr::Index { base, index } => {
+            mark_usage_and_mutation_expr(base, scope);
+            mark_usage_and_mutation_expr(index, scope);
+        }
+        Expr::FieldAccess { base, .. } => {
+            mark_usage_and_mutation_expr(base, scope);
+        }
+        Expr::StructInit { fields, .. } => {
+            for field in fields {
+                mark_usage_and_mutation_expr(&field.value, scope);
+            }
+        }
+        Expr::BuiltinCall { name, args } => {
+            match name.as_str() {
+                "addr" => {
+                    if let Some(Expr::Path(path)) = args.first() {
+                        if path.len() == 1 {
+                            if let Some(binding) = scope.get_mut(&path[0]) {
+                                binding.used = true;
+                                if binding.mutable {
+                                    binding.mutated = true;
+                                }
+                            }
+                        }
+                    }
+                }
+                "memcpy" | "memset" | "free" | "realloc" => {
+                    if let Some(Expr::Path(path)) = args.first() {
+                        if path.len() == 1 {
+                            if let Some(binding) = scope.get_mut(&path[0]) {
+                                binding.used = true;
+                                binding.mutated = true;
+                            }
+                        }
+                    }
+                    for arg in &args[1..] {
+                        mark_usage_and_mutation_expr(arg, scope);
+                    }
+                    return;
+                }
+                _ => {}
+            }
+            for arg in args {
+                mark_usage_and_mutation_expr(arg, scope);
+            }
+        }
+        Expr::MethodCall { receiver, args, .. } => {
+            mark_usage_and_mutation_expr(receiver, scope);
+            for arg in args {
+                mark_usage_and_mutation_expr(arg, scope);
+            }
+        }
+        Expr::Call { callee, args } => {
+            mark_usage_and_mutation_expr(callee, scope);
+            for arg in args {
+                mark_usage_and_mutation_expr(arg, scope);
+            }
+        }
+        Expr::Specialize { callee, .. } => {
+            mark_usage_and_mutation_expr(callee, scope);
+        }
+        Expr::Cast { expr, .. } => {
+            mark_usage_and_mutation_expr(expr, scope);
+        }
+        Expr::Error { message } => {
+            mark_usage_and_mutation_expr(message, scope);
+        }
+        Expr::Try(inner) => {
+            mark_usage_and_mutation_expr(inner, scope);
+        }
+        Expr::Unary { expr, .. } => {
+            mark_usage_and_mutation_expr(expr, scope);
+        }
+        Expr::Pack(values) => {
+            for v in values {
+                mark_usage_and_mutation_expr(v, scope);
+            }
+        }
+        Expr::Binary { lhs, rhs, .. } => {
+            mark_usage_and_mutation_expr(lhs, scope);
+            mark_usage_and_mutation_expr(rhs, scope);
+        }
+        Expr::ListLiteral(values) => {
+            for v in values {
+                mark_usage_and_mutation_expr(v, scope);
+            }
+        }
+        Expr::SizeOf(_) => {}
+        Expr::BitCast { expr, .. } => {
+            mark_usage_and_mutation_expr(expr, scope);
+        }
+        Expr::Int(_)
+        | Expr::Char(_)
+        | Expr::Bool(_)
+        | Expr::Float(_)
+        | Expr::String(_)
+        | Expr::Path(_)
+        | Expr::None => {}
+    }
+}
+
+fn check_unused_bindings(
+    scope: &HashMap<String, LocalBinding>,
+    function_name: &str,
+    param_names: &[String],
+) -> Result<(), CompileError> {
+    for (name, binding) in scope {
+        if param_names.iter().any(|p| p == name) {
+            continue;
+        }
+        if !binding.used && !binding.mutable {
+            return Err(CompileError::new(format!(
+                "binding `{name}` in function `{function_name}` is never used"
+            )));
+        }
+        if binding.mutable && !binding.mutated {
+            return Err(CompileError::new(format!(
+                "variable `{name}` in function `{function_name}` is declared as `var` but never mutated"
+            )));
+        }
+    }
+    Ok(())
+}
+
 fn analyze_stmt(
     stmt: &Stmt,
     function_name: &str,
@@ -593,6 +899,8 @@ fn analyze_stmt(
                 LocalBinding {
                     ty: ty.clone(),
                     mutable: *mutable,
+                    used: false,
+                    mutated: false,
                 },
             );
             function_locals.insert(name.clone(), ty);
@@ -857,6 +1165,8 @@ fn analyze_stmt(
                                 LocalBinding {
                                     ty: binding_ty.clone(),
                                     mutable: true,
+                                    used: false,
+                                    mutated: false,
                                 },
                             );
                             function_locals.insert(binding.clone(), binding_ty);
@@ -951,6 +1261,8 @@ fn analyze_stmt(
                                     LocalBinding {
                                         ty: binding_ty.clone(),
                                         mutable: true,
+                                        used: false,
+                                        mutated: false,
                                     },
                                 );
                                 function_locals.insert(binding.clone(), binding_ty.clone());
@@ -1113,6 +1425,8 @@ fn analyze_stmt(
                 LocalBinding {
                     ty: var_ty.clone(),
                     mutable: true,
+                    used: false,
+                    mutated: false,
                 },
             );
             function_locals.insert(var_name.clone(), var_ty);
@@ -1157,6 +1471,8 @@ fn analyze_stmt(
                 LocalBinding {
                     ty: (**element_ty).clone(),
                     mutable: true,
+                    used: false,
+                    mutated: false,
                 },
             );
             function_locals.insert(var_name.clone(), (**element_ty).clone());
@@ -1197,6 +1513,8 @@ fn analyze_stmt(
                 LocalBinding {
                     ty: init_ty.clone(),
                     mutable: true,
+                    used: false,
+                    mutated: false,
                 },
             );
             function_locals.insert(var_name.clone(), init_ty.clone());
@@ -3324,7 +3642,7 @@ mod tests {
 
     #[test]
     fn accepts_unwrapped_mut_value_result_as_plain_initializer() {
-        let source = "type StringBuilder\n\tlen usize\nend\n\npub def build() mut(StringBuilder)|error\n\treturn StringBuilder(len: 0 as usize)\nend\n\npub def main() void\n\tvar sb StringBuilder = build()?\n\t@print(\"{d}\", {sb.len})\nend\n";
+        let source = "type StringBuilder\n\tlen usize\nend\n\npub def build() mut(StringBuilder)|error\n\treturn StringBuilder(len: 0 as usize)\nend\n\npub def main() void\n\tvar sb StringBuilder = build()?\n\tsb.len = 1 as usize\n\t@print(\"{d}\", {sb.len})\nend\n";
         let program = parse_program(lex(source).unwrap()).unwrap();
 
         analyze(&program).unwrap();
@@ -3370,5 +3688,53 @@ mod tests {
             error.to_string(),
             "`+` currently requires compatible numeric operands"
         );
+    }
+
+    #[test]
+    fn rejects_unused_binding() {
+        let source = "pub def main() void\n\tval x = 42\nend\n";
+        let program = parse_program(lex(source).unwrap()).unwrap();
+
+        let error = analyze(&program).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "binding `x` in function `main` is never used"
+        );
+    }
+
+    #[test]
+    fn rejects_var_never_mutated() {
+        let source = "pub def main() void\n\tvar x = 42\n\t@print(\"{d}\", {x})\nend\n";
+        let program = parse_program(lex(source).unwrap()).unwrap();
+
+        let error = analyze(&program).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "variable `x` in function `main` is declared as `var` but never mutated"
+        );
+    }
+
+    #[test]
+    fn accepts_var_that_is_mutated() {
+        let source = "pub def main() void\n\tvar x = 42\n\tx = 10\n\t@print(\"{d}\", {x})\nend\n";
+        let program = parse_program(lex(source).unwrap()).unwrap();
+
+        analyze(&program).unwrap();
+    }
+
+    #[test]
+    fn accepts_addr_of_mut_value_as_mutation() {
+        let source = "pub def main() void\n\tvar x = 42\n\tval p = @addr(x)\n\t@print(\"{p}\", {p})\nend\n";
+        let program = parse_program(lex(source).unwrap()).unwrap();
+
+        analyze(&program).unwrap();
+    }
+
+    #[test]
+    fn accepts_deref_mutation() {
+        let source = "pub def main() void\n\tvar x = 42\n\tval p = @addr(x)\n\t@deref(p) = 10\n\t@print(\"{d}\", {x})\nend\n";
+        let program = parse_program(lex(source).unwrap()).unwrap();
+
+        analyze(&program).unwrap();
     }
 }
