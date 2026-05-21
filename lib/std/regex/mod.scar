@@ -145,35 +145,19 @@ def matchcharclass(c u8, str ref(u8)) bool
 end
 
 def matchone(token ref(RegexToken), c u8) bool
-    val kind = @deref(@addr(@deref(token).kind))
-    if kind == TOKEN_DOT
-        return matchdot(c)
+    val kind = @deref(token).kind
+    match kind
+        TOKEN_DOT             => return matchdot(c)
+        TOKEN_CHAR_CLASS      => return matchcharclass(c, @deref(token).ccl)
+        TOKEN_INV_CHAR_CLASS  => return !matchcharclass(c, @deref(token).ccl)
+        TOKEN_DIGIT           => return matchdigit(c)
+        TOKEN_NOT_DIGIT       => return !matchdigit(c)
+        TOKEN_ALPHA           => return matchalphanum(c)
+        TOKEN_NOT_ALPHA       => return !matchalphanum(c)
+        TOKEN_WHITESPACE      => return matchwhitespace(c)
+        TOKEN_NOT_WHITESPACE  => return !matchwhitespace(c)
+        _                     => return @deref(token).ch == c
     end
-    if kind == TOKEN_CHAR_CLASS
-        return matchcharclass(c, @deref(token).ccl)
-    end
-    if kind == TOKEN_INV_CHAR_CLASS
-        return !matchcharclass(c, @deref(token).ccl)
-    end
-    if kind == TOKEN_DIGIT
-        return matchdigit(c)
-    end
-    if kind == TOKEN_NOT_DIGIT
-        return !matchdigit(c)
-    end
-    if kind == TOKEN_ALPHA
-        return matchalphanum(c)
-    end
-    if kind == TOKEN_NOT_ALPHA
-        return !matchalphanum(c)
-    end
-    if kind == TOKEN_WHITESPACE
-        return matchwhitespace(c)
-    end
-    if kind == TOKEN_NOT_WHITESPACE
-        return !matchwhitespace(c)
-    end
-    return @deref(token).ch == c
 end
 
 def matchquestion(token ref(RegexToken), pattern ref(RegexToken), text ref(u8), matchlength mut(ref(i64))) bool
