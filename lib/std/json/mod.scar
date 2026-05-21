@@ -184,7 +184,7 @@ def is_end_of_primitive(c u8) bool
 end
 
 def parse_value(src ref(u8), pos usize, len usize, j mut(ref(Json)), node_idx usize) usize|error
-    var p = skip_space(src, pos, len)
+    val p = skip_space(src, pos, len)
     if p >= len
         return error("unexpected end of input")
     end
