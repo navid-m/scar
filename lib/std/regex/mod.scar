@@ -526,55 +526,25 @@ pub def re_match(pattern ref(u8), text ref(u8), matchlength mut(ref(i64))) i64|e
 end
 
 def kind_name(kind u8) ref(u8)
-    if kind == TOKEN_UNUSED
-        return "UNUSED"
+    match kind
+        TOKEN_UNUSED          => return "UNUSED"
+        TOKEN_DOT             => return "DOT"
+        TOKEN_BEGIN           => return "BEGIN"
+        TOKEN_END             => return "END"
+        TOKEN_QUESTIONMARK    => return "QUESTIONMARK"
+        TOKEN_STAR            => return "STAR"
+        TOKEN_PLUS            => return "PLUS"
+        TOKEN_CHAR            => return "CHAR"
+        TOKEN_CHAR_CLASS      => return "CHAR_CLASS"
+        TOKEN_INV_CHAR_CLASS  => return "INV_CHAR_CLASS"
+        TOKEN_DIGIT           => return "DIGIT"
+        TOKEN_NOT_DIGIT       => return "NOT_DIGIT"
+        TOKEN_ALPHA           => return "ALPHA"
+        TOKEN_NOT_ALPHA       => return "NOT_ALPHA"
+        TOKEN_WHITESPACE      => return "WHITESPACE"
+        TOKEN_NOT_WHITESPACE  => return "NOT_WHITESPACE"
+        _                     => return "UNKNOWN"
     end
-    if kind == TOKEN_DOT
-        return "DOT"
-    end
-    if kind == TOKEN_BEGIN
-        return "BEGIN"
-    end
-    if kind == TOKEN_END
-        return "END"
-    end
-    if kind == TOKEN_QUESTIONMARK
-        return "QUESTIONMARK"
-    end
-    if kind == TOKEN_STAR
-        return "STAR"
-    end
-    if kind == TOKEN_PLUS
-        return "PLUS"
-    end
-    if kind == TOKEN_CHAR
-        return "CHAR"
-    end
-    if kind == TOKEN_CHAR_CLASS
-        return "CHAR_CLASS"
-    end
-    if kind == TOKEN_INV_CHAR_CLASS
-        return "INV_CHAR_CLASS"
-    end
-    if kind == TOKEN_DIGIT
-        return "DIGIT"
-    end
-    if kind == TOKEN_NOT_DIGIT
-        return "NOT_DIGIT"
-    end
-    if kind == TOKEN_ALPHA
-        return "ALPHA"
-    end
-    if kind == TOKEN_NOT_ALPHA
-        return "NOT_ALPHA"
-    end
-    if kind == TOKEN_WHITESPACE
-        return "WHITESPACE"
-    end
-    if kind == TOKEN_NOT_WHITESPACE
-        return "NOT_WHITESPACE"
-    end
-    return "UNKNOWN"
 end
 
 pub def re_print(handle ref(RegexHandle)) void

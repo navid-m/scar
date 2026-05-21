@@ -1158,11 +1158,16 @@ impl Parser {
     }
 
     fn parse_match_arm_body(&mut self) -> Result<Vec<Stmt>, CompileError> {
-        self.expect_simple(TokenKind::LParen)?;
-        self.consume_newlines();
-        let body = self.parse_block_until(&[TokenKind::RParen])?;
-        self.expect_simple(TokenKind::RParen)?;
-        Ok(body)
+        if self.check_simple(&TokenKind::LParen) {
+            self.advance();
+            self.consume_newlines();
+            let body = self.parse_block_until(&[TokenKind::RParen])?;
+            self.expect_simple(TokenKind::RParen)?;
+            Ok(body)
+        } else {
+            let stmt = self.parse_stmt()?;
+            Ok(vec![stmt])
+        }
     }
 
     fn parse_match_binding(&mut self) -> Result<Option<String>, CompileError> {

@@ -1102,7 +1102,11 @@ fn render_stmt_inner(
                             }
                             output.push_str(&temp_name);
                             output.push_str(" == ");
-                            output.push_str(variant_name);
+                            if variant_name.chars().next().is_some_and(|c| c.is_alphabetic() || c == '_') {
+                                output.push_str(&render_symbol_name(variant_name, function, info));
+                            } else {
+                                output.push_str(variant_name);
+                            }
                             output.push_str(") {\n");
                         }
                         for stmt in &arm.body {
