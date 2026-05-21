@@ -1,0 +1,16 @@
+pub def main()
+    val x = 'a'
+    @print("{c}", {x})
+    match x
+        'a' => (
+            @puts("great")
+        )
+        'b' => (
+            @puts("uh...")
+        )
+        _ => (
+            @puts("what.")
+        )
+    end
+end
+
