@@ -29,7 +29,7 @@ def root_len(path ref(u8)) usize
 		return 0 as usize
 	end
 
-	var len_path usize = str.len(path)
+	val len_path usize = str.len(path)
 	if len_path == 0 as usize
 		return 0 as usize
 	end
@@ -105,7 +105,7 @@ end
 
 def trimmed_len(path ref(u8)) usize
 	var out usize = str.len(path)
-	var root usize = root_len(path)
+	val root usize = root_len(path)
 
 	for out > root && is_sep(@deref(@add(path, out - 1 as usize)))
 		out--
@@ -316,7 +316,7 @@ pub def is_absolute(path ref(u8)) bool
 		return false
 	end
 
-	var len_path usize = str.len(path)
+	val len_path usize = str.len(path)
 	if len_path == 0 as usize
 		return false
 	end
@@ -467,7 +467,7 @@ when posix
 			return copy_literal("")
 		end
 
-		var len_path usize = str.len(path)
+		val len_path usize = str.len(path)
 		var out ref(u8) = heap_alloc(len_path * 4 as usize + 3 as usize)?
 		var write usize = 0
 
@@ -500,7 +500,7 @@ when posix
 	end
 
 	def copy_literal(text ref(u8)) ref(u8)|error
-		var len_text usize = str.len(text)
+		val len_text usize = str.len(text)
 		var out ref(u8) = heap_alloc(len_text + 1 as usize)?
 		@memcpy(out, text, len_text)
 		@deref(@add(out, len_text)) = 0 as u8
@@ -513,9 +513,9 @@ when posix
 		suffix ref(u8)
 	) ref(u8)|error
 		var quoted = shell_quote(path)?
-		var len_prefix usize = str.len(prefix)
-		var len_path usize = str.len(quoted)
-		var len_suffix usize = str.len(suffix)
+		val len_prefix usize = str.len(prefix)
+		val len_path usize = str.len(quoted)
+		val len_suffix usize = str.len(suffix)
 		var out ref(u8) =	heap_alloc(
 				len_prefix + len_path + len_suffix + 1 as usize
 			)?
@@ -626,7 +626,7 @@ when posix
 			)
 		end
 
-		var len_data usize = str.len(data)
+		val len_data usize = str.len(data)
 		var wrote usize = fwrite(data as ref(void), 1 as usize, len_data, file)
 
 		if fclose(file) != 0

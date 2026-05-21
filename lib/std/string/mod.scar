@@ -160,9 +160,9 @@ pub def trim_prefix[A: allocators.BumpAllocator](
 		return x
 	end
 
-	var len_prefix usize = len(prefix)
-	var len_x usize = len(x)
-	var new_len usize = len_x - len_prefix
+	val len_prefix usize = len(prefix)
+	val len_x usize = len(x)
+	val new_len usize = len_x - len_prefix
 	var out ref(void) = A.alloc(
 		@addr(ac),
 		new_len + 1 as usize
@@ -188,7 +188,7 @@ pub def upcase[A: allocators.BumpAllocator](
 		return none
 	end
 
-	var len_x usize = len(x)
+	val len_x usize = len(x)
 
 	var out ref(void) = A.alloc(
 		@addr(ac),
@@ -220,7 +220,7 @@ pub def downcase[A: allocators.BumpAllocator](
 		return none
 	end
 
-	var len_x usize = len(x)
+	val len_x usize = len(x)
 
 	var out ref(void) = A.alloc(
 		@addr(ac),
@@ -254,9 +254,9 @@ pub def trim_suffix[A: allocators.BumpAllocator](
 		return x
 	end
 
-	var len_x usize = len(x)
-	var len_suffix usize = len(suffix)
-	var new_len usize = len_x - len_suffix
+	val len_x usize = len(x)
+	val len_suffix usize = len(suffix)
+	val new_len usize = len_x - len_suffix
 	var out ref(void) = A.alloc(
 		@addr(ac),
 		new_len + 1 as usize
@@ -296,7 +296,7 @@ pub def duplicate[A: allocators.BumpAllocator](ac A, src ref(u8)) ref(u8)|error
     guard src != none else
         return none
     end
-    var l usize = len(src)
+    val l usize = len(src)
     var out ref(void) = A.alloc(@addr(ac), l + 1)?
     copy_n(out as mut(ref(u8)), src, l)
     return out as ref(u8)
@@ -343,7 +343,7 @@ pub def trim[A: allocators.BumpAllocator](
 		nd--
 	end
 
-	var new_len usize = nd - start
+	val new_len usize = nd - start
 
 	var out ref(void) = A.alloc(
 		@addr(ac),
@@ -365,7 +365,7 @@ pub def itoa[A: allocators.BumpAllocator](
 	ac A,
 	value i32
 ) ref(u8)|error
-	var negative bool = value < 0
+	val negative bool = value < 0
 	var n i32 = value
 
 	var buf ref(void) = A.alloc(

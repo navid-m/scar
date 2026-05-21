@@ -53,7 +53,7 @@ pub def format_timestamp[A: allocators.BumpAllocator](
 	ac ref(A),
 	ts i64
 ) ref(u8)|error
-	var secs i64 = ts / 1000000000 as i64
+	val secs i64 = ts / 1000000000 as i64
 	var year i64 = 1970 as i64
 	var days i64 = secs / 86400 as i64
 
@@ -62,7 +62,7 @@ pub def format_timestamp[A: allocators.BumpAllocator](
 		year++
 	end
 
-	var is_leap bool = is_leap_year(year as i32)
+	val is_leap bool = is_leap_year(year as i32)
 	var month i32 = 1
 	for month <= 12
 		if days < days_in_month(is_leap, month) as i64
@@ -72,12 +72,12 @@ pub def format_timestamp[A: allocators.BumpAllocator](
 		month++
 	end
 
-	var secs_of_day i64 = secs % 86400 as i64
-	var hour i32 = (secs_of_day / 3600 as i64) as i32
-	var min  i32 = ((secs_of_day % 3600 as i64) / 60 as i64) as i32
-	var sec  i32 = (secs_of_day % 60 as i64) as i32
-	var ms   i32 = ((ts % 1000000000 as i64) / 1000000 as i64) as i32
-	var day  i32 = (days + 1 as i64) as i32
+	val secs_of_day i64 = secs % 86400 as i64
+	val hour i32 = (secs_of_day / 3600 as i64) as i32
+	val min  i32 = ((secs_of_day % 3600 as i64) / 60 as i64) as i32
+	val sec  i32 = (secs_of_day % 60 as i64) as i32
+	val ms   i32 = ((ts % 1000000000 as i64) / 1000000 as i64) as i32
+	val day  i32 = (days + 1 as i64) as i32
 	var buf [24]u8 = @zeroed()
 	var b mut(ref(u8)) = @as_mut(@add(@bitcast(buf, ref(void)), 0))
 
@@ -134,16 +134,16 @@ def days_in_month(leap bool, month i32) i32
 end
 
 pub def DateTime.from_epoch(unix_secs i64) DateTime
-	var secs i64 = unix_secs
-
-	var s_per_min  i64 = 60 as i64
-	var s_per_hour i64 = 3600 as i64
-	var s_per_day  i64 = 86400 as i64
-
-	var sec  i32 = (secs % s_per_min) as i32
-	var min  i32 = ((secs % s_per_hour) / s_per_min) as i32
-	var hour i32 = ((secs % s_per_day) / s_per_hour) as i32
-
+	val (
+		secs i64 = unix_secs
+		s_per_min i64 = 60 as i64
+		s_per_hour i64 = 3600 as i64
+		s_per_day i64 = 86400 as i64
+		sec  i32 = (secs % s_per_min) as i32
+		min  i32 = ((secs % s_per_hour) / s_per_min) as i32
+		hour i32 = ((secs % s_per_day) / s_per_hour) as i32
+	)
+	
 	var days i64 = secs / s_per_day
 
 	var year i32 = 1970
@@ -174,7 +174,7 @@ pub def DateTime.from_epoch(unix_secs i64) DateTime
 		month++
 	end
 
-	var day i32 = (days + 1 as i64) as i32
+	val day i32 = (days + 1 as i64) as i32
 
 	return DateTime(
 		year:  year,
@@ -231,7 +231,7 @@ pub def DateTime.is_valid(dt ref(DateTime)) bool
 	if is_leap_year(dt.year)
 		leap = 1
 	end
-	var max_day i32 = DAYS_IN_MONTH[leap][dt.month - 1]
+	val max_day i32 = DAYS_IN_MONTH[leap][dt.month - 1]
 	return dt.day >= 1 && dt.day <= max_day
 end
 
@@ -388,15 +388,15 @@ when plan9
 end
 
 test "time functions work"
-	var start = clock_time()
+	val start = clock_time()
 	assert start > 0 as i64
 	sleep_ms(10 as u64)?
-	var elapsed = clock_time() - start
+	val elapsed = clock_time() - start
 	assert elapsed > 0 as i64
 end
 
 test "epoch returns reasonable value"
-	var t = epoch()
+	val t = epoch()
 	assert t > 1609459200 as i64  
 end
 
@@ -408,7 +408,7 @@ test "is_leap_year works"
 end
 
 test "DateTime.from_epoch works"
-	var dt = DateTime.from_epoch(1710502245 as i64)
+	val dt = DateTime.from_epoch(1710502245 as i64)
 	assert dt.year  == 2024
 	assert dt.month == 3
 	assert dt.day   == 15
@@ -441,7 +441,7 @@ test "DateTime.is_valid works"
 end
 
 test "epoch and from_epoch are consistent"
-	var t = epoch()
+	val t = epoch()
 	var dt = DateTime.from_epoch(t)
 	assert DateTime.is_valid(@addr(dt))
 	assert dt.year >= 2024
@@ -450,12 +450,12 @@ end
 test "format_timestamp works"
 	var ac = allocators.Arena.new(1024 as usize)?
 
-	var ts1 = 0 as i64
-	var formatted1 = format_timestamp[_](@addr(ac), ts1)?
+	val ts1 = 0 as i64
+	val formatted1 = format_timestamp[_](@addr(ac), ts1)?
 	assert str.len(formatted1) > 0 as usize
 
-	var ts2 = 1704067200000000000 as i64
-	var formatted2 = format_timestamp[_](@addr(ac), ts2)?
+	val ts2 = 1704067200000000000 as i64
+	format_timestamp[_](@addr(ac), ts2)?
 
 	allocators.Arena.destroy(@addr(ac))
 end

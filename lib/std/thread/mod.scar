@@ -106,8 +106,8 @@ when plan9
 end
 
 test "thread helpers work"
-	var first u64 = current_id()
-	var second u64 = current_id()
+	val first u64 = current_id()
+	val second u64 = current_id()
 
 	assert first == second
 	assert first != 0 as u64

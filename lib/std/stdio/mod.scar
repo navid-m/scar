@@ -18,7 +18,7 @@ end
 pub def read_key() u8
 	when posix
 		system("stty raw -echo")
-		var c = getchar()
+		val c = getchar()
 		system("stty -raw echo")
 		return c as u8
 	end
