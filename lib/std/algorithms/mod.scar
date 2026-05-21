@@ -3,12 +3,12 @@ val math = use("std/math")
 val str = use("std/string")
 
 pub def isort[T: math.Integer, A: allocators.GeneralAllocator](l ref(list[T]), ac A) bool|error
-    var n usize = @len(l)
+    val n usize = @len(l)
     if n <= 1 as usize
         return true
     end
 
-    var count_mem ref(void)|error = A.alloc(@addr(ac), 256 as usize * @sizeof(usize))
+    val count_mem ref(void)|error = A.alloc(@addr(ac), 256 as usize * @sizeof(usize))
     match count_mem
         error _ => ( return false )
         ok cm => (
@@ -104,7 +104,7 @@ pub def isort[T: math.Integer, A: allocators.GeneralAllocator](l ref(list[T]), a
 end
 
 pub def fsort[T: math.Float, A: allocators.GeneralAllocator](l ref(list[T]), ac A) bool|error
-    var n usize = @len(l)
+    val n usize = @len(l)
     if n <= 1 as usize
         return true
     end

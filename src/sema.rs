@@ -45,6 +45,7 @@ struct LocalBinding {
     mutable: bool,
     used: bool,
     mutated: bool,
+    is_global: bool,
 }
 
 pub fn analyze(program: &Program) -> Result<ProgramInfo, CompileError> {
@@ -143,6 +144,7 @@ pub fn analyze(program: &Program) -> Result<ProgramInfo, CompileError> {
                     mutable: *mutable,
                     used: true,
                     mutated: false,
+                    is_global: true,
                 },
             )
         })
@@ -406,6 +408,7 @@ fn analyze_function_with_globals(
                 mutable: true,
                 used: false,
                 mutated: false,
+                is_global: false,
             },
         );
     }
@@ -921,6 +924,9 @@ fn check_unused_bindings(
         if param_names.iter().any(|p| p == name) {
             continue;
         }
+        if binding.is_global {
+            continue;
+        }
         if !binding.used && !binding.mutable {
             return Err(CompileError::new(format!(
                 "binding `{name}` in function `{display_name}` is never used"
@@ -1006,6 +1012,7 @@ fn analyze_stmt(
                     mutable: *mutable,
                     used: false,
                     mutated: false,
+                    is_global: false,
                 },
             );
             function_locals.insert(name.clone(), ty);
@@ -1272,6 +1279,7 @@ fn analyze_stmt(
                                     mutable: true,
                                     used: false,
                                     mutated: false,
+                                    is_global: false,
                                 },
                             );
                             function_locals.insert(binding.clone(), binding_ty);
@@ -1368,6 +1376,7 @@ fn analyze_stmt(
                                         mutable: true,
                                         used: false,
                                         mutated: false,
+                                        is_global: false,
                                     },
                                 );
                                 function_locals.insert(binding.clone(), binding_ty.clone());
@@ -1532,6 +1541,7 @@ fn analyze_stmt(
                     mutable: true,
                     used: false,
                     mutated: false,
+                    is_global: false,
                 },
             );
             function_locals.insert(var_name.clone(), var_ty);
@@ -1578,6 +1588,7 @@ fn analyze_stmt(
                     mutable: true,
                     used: false,
                     mutated: false,
+                    is_global: false,
                 },
             );
             function_locals.insert(var_name.clone(), (**element_ty).clone());
@@ -1620,6 +1631,7 @@ fn analyze_stmt(
                     mutable: true,
                     used: false,
                     mutated: false,
+                    is_global: false,
                 },
             );
             function_locals.insert(var_name.clone(), init_ty.clone());
