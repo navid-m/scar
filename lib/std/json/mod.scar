@@ -59,14 +59,14 @@ def alloc_node(j mut(ref(Json))) usize
     val idx = j.count
     j.count++
     var node = @deref(@add(j.nodes, idx))
-    @deref(@addr(node.kind)) = JsonKind.Null
-    @deref(@addr(node.name)) = none
-    @deref(@addr(node.sibling)) = 0
-    @deref(@addr(node.child)) = 0
-    @deref(@addr(node.value)) = none
-    @deref(@addr(node.int_val)) = 0
-    @deref(@addr(node.real_val)) = 0.0
-    @deref(@addr(node.bool_val)) = false
+    node.kind     = JsonKind.Null
+    node.name     = none
+    node.sibling  = 0
+    node.child    = 0
+    node.value    = none
+    node.int_val  = 0
+    node.real_val = 0.0
+    node.bool_val = false
     return idx
 end
 
