@@ -53,7 +53,14 @@ pub def lex(source ref(u8)) list[ast.Token]
 				end
 			)
 			'@' => (
-				@append(l.tokens, ast.Token(kind: ast.TokenKind.At(0), line: l.line, column: l.column))
+				@append(
+					l.tokens,
+					ast.Token(
+						kind: ast.TokenKind.At(0),
+						line: l.line,
+						column: l.column
+					)
+				)
 				l.pos++
 				l.column++
 			)
