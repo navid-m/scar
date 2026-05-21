@@ -185,7 +185,7 @@ def matchstar(token ref(RegexToken), pattern ref(RegexToken), text ref(u8), matc
             break
         end
         cursor = @add(cursor, 1)
-        span = span + 1
+        span++
         @deref(matchlength) = @deref(matchlength) + 1
     end
 
@@ -211,7 +211,7 @@ def matchplus(token ref(RegexToken), pattern ref(RegexToken), text ref(u8), matc
             break
         end
         cursor = @add(cursor, 1)
-        span = span + 1
+        span++
         @deref(matchlength) = @deref(matchlength) + 1
     end
 
@@ -220,7 +220,7 @@ def matchplus(token ref(RegexToken), pattern ref(RegexToken), text ref(u8), matc
             return true
         end
         @deref(matchlength) = @deref(matchlength) - 1
-        span = span - 1
+        span--
     end
 
     return false
