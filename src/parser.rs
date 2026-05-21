@@ -1156,9 +1156,8 @@ impl Parser {
                 };
                 (MatchArmKind::Variant(value), bindings)
             } else {
-                let mut arm_parts = Vec::new();
-                arm_parts.push(self.expect_ident()?);
-                if self.check_simple(&TokenKind::Dot) {
+                let mut arm_parts = vec![self.expect_ident()?];
+                while self.check_simple(&TokenKind::Dot) {
                     self.advance();
                     arm_parts.push(self.expect_ident()?);
                 }

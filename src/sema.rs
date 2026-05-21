@@ -1395,30 +1395,16 @@ fn analyze_stmt(
                             );
                         };
 
-                        let payload_types = if type_info.kind == TypeDefKind::Enum {
-                            if let Some(full_name) =
-                                variant_name.strip_prefix(&format!("{}.", name))
-                            {
-                                type_info
-                                    .variant_map
-                                    .get(full_name)
-                                    .cloned()
-                                    .unwrap_or_default()
-                            } else {
-                                type_info
-                                    .variant_map
-                                    .get(variant_name)
-                                    .cloned()
-                                    .unwrap_or_default()
-                            }
-                        } else {
-                            type_info
-                                .variant_map
-                                .get(variant_name)
-                                .cloned()
-                                .unwrap_or_default()
-                        };
-                        if !seen_variants.insert(variant_name.clone()) {
+                        let bare_variant = variant_name
+                            .rsplit('.')
+                            .next()
+                            .unwrap_or(variant_name);
+                        let payload_types = type_info
+                            .variant_map
+                            .get(bare_variant)
+                            .cloned()
+                            .unwrap_or_default();
+                        if !seen_variants.insert(bare_variant.to_string()) {
                             return Err(CompileError::new(format!(
                                 "duplicate match arm for variant `{variant_name}`"
                             ))
@@ -1467,11 +1453,7 @@ fn analyze_stmt(
                         let missing = type_info
                             .variants
                             .iter()
-                            .find(|variant| {
-                                !seen_variants.contains(&variant.name)
-                                    && !seen_variants
-                                        .contains(&format!("{}.{}", name, variant.name))
-                            })
+                            .find(|variant| !seen_variants.contains(&variant.name))
                             .map(|variant| variant.name.clone())
                             .unwrap_or_else(|| "<unknown>".to_string());
                         return Err(CompileError::new(format!(

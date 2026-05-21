@@ -1187,7 +1187,8 @@ fn render_stmt_inner<'a>(
                                 ));
                             };
                             let bare_variant = variant_name
-                                .strip_prefix(&format!("{union_name}."))
+                                .rsplit('.')
+                                .next()
                                 .unwrap_or(variant_name);
                             indent(output, level + 1);
                             if index == 0 {
@@ -1226,8 +1227,12 @@ fn render_stmt_inner<'a>(
                                     "result-style match arms are not supported for union code generation",
                                 ));
                             };
+                            let bare_variant = variant_name
+                                .rsplit('.')
+                                .next()
+                                .unwrap_or(variant_name);
                             let payload_types =
-                                type_info.variant_map.get(variant_name).ok_or_else(|| {
+                                type_info.variant_map.get(bare_variant).ok_or_else(|| {
                                     CompileError::new(format!(
                                         "union `{union_name}` has no variant `{variant_name}`"
                                     ))
@@ -1240,7 +1245,7 @@ fn render_stmt_inner<'a>(
                             }
                             output.push_str(&temp_name);
                             output.push_str(".tag == ");
-                            output.push_str(&union_tag_symbol(&union_name, variant_name));
+                            output.push_str(&union_tag_symbol(&union_name, bare_variant));
                             output.push_str(") {\n");
                             for (binding, payload_ty, payload_index) in arm
                                 .bindings
@@ -1260,7 +1265,7 @@ fn render_stmt_inner<'a>(
                                     output.push_str(" = ");
                                     output.push_str(&temp_name);
                                     output.push_str(".data.");
-                                    output.push_str(variant_name);
+                                    output.push_str(bare_variant);
                                     output.push('.');
                                     output.push_str(&union_payload_field(payload_index));
                                     output.push_str(";\n");

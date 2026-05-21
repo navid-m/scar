@@ -2764,24 +2764,28 @@ impl GenericInstantiator {
                 .clone()
                 .map(|name| vec![(name, Type::Ref(Box::new(Type::U8)))])
                 .unwrap_or_default(),
-            (Some(Type::Named(union_name)), MatchArmKind::Variant(variant_name)) => self
-                .types
-                .get(union_name)
-                .filter(|type_def| type_def.kind == TypeDefKind::Union)
-                .and_then(|type_def| {
-                    type_def
-                        .variants
-                        .iter()
-                        .find(|variant| variant.name == *variant_name)
-                })
-                .map(|variant| {
-                    bindings
-                        .iter()
-                        .zip(variant.payload_types.iter())
-                        .filter_map(|(binding, ty)| binding.clone().map(|name| (name, ty.clone())))
-                        .collect()
-                })
-                .unwrap_or_default(),
+            (Some(Type::Named(union_name)), MatchArmKind::Variant(variant_name)) => {
+                let bare_variant = variant_name.rsplit('.').next().unwrap_or(variant_name);
+                self.types
+                    .get(union_name)
+                    .filter(|type_def| type_def.kind == TypeDefKind::Union)
+                    .and_then(|type_def| {
+                        type_def
+                            .variants
+                            .iter()
+                            .find(|variant| variant.name == bare_variant)
+                    })
+                    .map(|variant| {
+                        bindings
+                            .iter()
+                            .zip(variant.payload_types.iter())
+                            .filter_map(|(binding, ty)| {
+                                binding.clone().map(|name| (name, ty.clone()))
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default()
+            }
             _ => Vec::new(),
         }
     }
