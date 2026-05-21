@@ -382,7 +382,7 @@ when posix
 	extern def system(command ref(u8)) i32 :: "system"
 	extern def strerror(code i32) ref(u8) :: "strerror"
 
-	when linux
+	when linux | android
 		extern def __errno_location() mut(ref(i32)) :: "__errno_location"
 
 		def errno_ptr() mut(ref(i32))
@@ -390,55 +390,7 @@ when posix
 		end
 	end
 
-	when android
-		extern def __errno_location() mut(ref(i32)) :: "__errno_location"
-
-		def errno_ptr() mut(ref(i32))
-			return __errno_location()
-		end
-	end
-
-	when darwin
-		extern def __error() mut(ref(i32)) :: "__error"
-
-		def errno_ptr() mut(ref(i32))
-			return __error()
-		end
-	end
-
-	when ios
-		extern def __error() mut(ref(i32)) :: "__error"
-
-		def errno_ptr() mut(ref(i32))
-			return __error()
-		end
-	end
-
-	when freebsd
-		extern def __error() mut(ref(i32)) :: "__error"
-
-		def errno_ptr() mut(ref(i32))
-			return __error()
-		end
-	end
-
-	when openbsd
-		extern def __error() mut(ref(i32)) :: "__error"
-
-		def errno_ptr() mut(ref(i32))
-			return __error()
-		end
-	end
-
-	when netbsd
-		extern def __error() mut(ref(i32)) :: "__error"
-
-		def errno_ptr() mut(ref(i32))
-			return __error()
-		end
-	end
-
-	when dragonflybsd
+	when darwin | ios | freebsd | openbsd | netbsd | dragonflybsd
 		extern def __error() mut(ref(i32)) :: "__error"
 
 		def errno_ptr() mut(ref(i32))
