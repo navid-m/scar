@@ -228,30 +228,36 @@ def parse_type(p ref(ast.TokenList)) ast.Type
                 advance(p)
                 match p.tokens[p.pos].kind
                     ast.TokenKind.LParen(_) => advance(p)
+                    _ => ()
                 end
                 parse_type(p)
                 match p.tokens[p.pos].kind
                     ast.TokenKind.RParen(_) => advance(p)
+                    _ => ()
                 end
                 return ast.Type.Void(0)
             elif v == KW_REF
                 advance(p)
                 match p.tokens[p.pos].kind
                     ast.TokenKind.LParen(_) => advance(p)
+                    _ => ()
                 end
                 parse_type(p)
                 match p.tokens[p.pos].kind
                     ast.TokenKind.RParen(_) => advance(p)
+                    _ => ()
                 end
                 return ast.Type.Void(0)
             elif v == KW_LIST
                 advance(p)
                 match p.tokens[p.pos].kind
                     ast.TokenKind.LBracket(_) => advance(p)
+                    _ => ()
                 end
                 parse_type(p)
                 match p.tokens[p.pos].kind
                     ast.TokenKind.RBracket(_) => advance(p)
+                    _ => ()
                 end
                 return ast.Type.Void(0)
             end
@@ -273,6 +279,7 @@ def parse_type(p ref(ast.TokenList)) ast.Type
                     end
                     match p.tokens[p.pos].kind
                         ast.TokenKind.RBracket(_) => advance(p)
+                        _ => ()
                     end
                     return ast.Type.Applied(name, type_args)
                 )
@@ -330,14 +337,17 @@ def parse_module_use(p ref(ast.TokenList)) ast.ModuleUse
     val name ref(u8) = expect_ident(p)
     match p.tokens[p.pos].kind
         ast.TokenKind.Assign(_) => advance(p)
+        _ => ()
     end
     match p.tokens[p.pos].kind
         ast.TokenKind.Ident(_) => advance(p)
+        _ => ()
     end
     match p.tokens[p.pos].kind
         ast.TokenKind.LParen(_) => advance(p)
+        _ => ()
     end
-    val path ref(u8) = @zeroed()
+    var path ref(u8) = @zeroed()
     match p.tokens[p.pos].kind
         ast.TokenKind.Str(s) => (
             path = s
@@ -347,6 +357,7 @@ def parse_module_use(p ref(ast.TokenList)) ast.ModuleUse
     end
     match p.tokens[p.pos].kind
         ast.TokenKind.RParen(_) => advance(p)
+        _ => ()
     end
     expect_newline(p)
     return ast.ModuleUse(name: name, path: path)
@@ -361,6 +372,7 @@ def parse_function(p ref(ast.TokenList), is_pub bool) ast.Function
 
     match p.tokens[p.pos].kind
         ast.TokenKind.LParen(_) => advance(p)
+        _ => ()
     end
     consume_newlines(p)
 
@@ -384,11 +396,12 @@ def parse_function(p ref(ast.TokenList), is_pub bool) ast.Function
             end
             match p.tokens[p.pos].kind
                 ast.TokenKind.RParen(_) => advance(p)
+                _ => ()
             end
         )
     end
 
-    val return_type ast.Type = @zeroed()
+    var return_type ast.Type = @zeroed()
     if starts_type(p)
         return_type = parse_type(p)
     else
@@ -397,12 +410,12 @@ def parse_function(p ref(ast.TokenList), is_pub bool) ast.Function
 
     expect_newline(p)
     skip_block(p)
-
+  
     return ast.Function(
         name: name,
         params: params,
         return_type: return_type,
-        body: [],
+        body: [] as list[ast.Stmt],
         is_pub: is_pub,
         is_extern: false,
         extern_name: @alloc(1),

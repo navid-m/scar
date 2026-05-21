@@ -1190,6 +1190,26 @@ fn render_stmt_inner<'a>(
                                 .rsplit('.')
                                 .next()
                                 .unwrap_or(variant_name);
+                            if bare_variant == "_" {
+                                indent(output, level + 1);
+                                output.push_str("else {\n");
+                                for stmt in &arm.body {
+                                    render_stmt(
+                                        defer_stack,
+                                        loop_defer_level,
+                                        output,
+                                        stmt,
+                                        function,
+                                        info,
+                                        level + 2,
+                                        next_temp_id,
+                                        deref_locals,
+                                    )?;
+                                }
+                                indent(output, level + 1);
+                                output.push_str("}\n");
+                                continue;
+                            }
                             indent(output, level + 1);
                             if index == 0 {
                                 output.push_str("if (");
@@ -1231,6 +1251,26 @@ fn render_stmt_inner<'a>(
                                 .rsplit('.')
                                 .next()
                                 .unwrap_or(variant_name);
+                            if bare_variant == "_" {
+                                indent(output, level + 1);
+                                output.push_str("else {\n");
+                                for stmt in &arm.body {
+                                    render_stmt(
+                                        defer_stack,
+                                        loop_defer_level,
+                                        output,
+                                        stmt,
+                                        function,
+                                        info,
+                                        level + 2,
+                                        next_temp_id,
+                                        deref_locals,
+                                    )?;
+                                }
+                                indent(output, level + 1);
+                                output.push_str("}\n");
+                                continue;
+                            }
                             let payload_types =
                                 type_info.variant_map.get(bare_variant).ok_or_else(|| {
                                     CompileError::new(format!(

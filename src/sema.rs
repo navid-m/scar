@@ -1384,6 +1384,7 @@ fn analyze_stmt(
                         .with_location(*line, *column));
                     }
                     let mut seen_variants = HashSet::new();
+                    let mut has_wildcard = false;
                     for arm in arms {
                         let MatchArmKind::Variant(variant_name) = &arm.kind else {
                             return Err(
@@ -1395,6 +1396,26 @@ fn analyze_stmt(
                         };
 
                         let bare_variant = variant_name.rsplit('.').next().unwrap_or(variant_name);
+
+                        if bare_variant == "_" {
+                            has_wildcard = true;
+                            let mut nested = scope.clone();
+                            for stmt in &arm.body {
+                                analyze_stmt(
+                                    stmt,
+                                    function_name,
+                                    expected_return,
+                                    functions,
+                                    types,
+                                    &mut nested,
+                                    function_locals,
+                                    in_loop,
+                                    allow_try_panic,
+                                )?;
+                            }
+                            continue;
+                        }
+
                         let payload_types = type_info
                             .variant_map
                             .get(bare_variant)
@@ -1445,7 +1466,7 @@ fn analyze_stmt(
                         }
                     }
 
-                    if seen_variants.len() != type_info.variants.len() {
+                    if !has_wildcard && seen_variants.len() != type_info.variants.len() {
                         let missing = type_info
                             .variants
                             .iter()
