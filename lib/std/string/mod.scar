@@ -81,8 +81,8 @@ pub def rconcat[A: allocators.BumpAllocator](
 	a ref(u8),
 	b ref(u8)
 ) mut(ref(u8))|error
-	var len_a usize = len(a)
-	var len_b usize = len(b)
+	val len_a usize = len(a)
+	val len_b usize = len(b)
 
 	var out ref(void) = A.alloc(
 		@addr(ac),
