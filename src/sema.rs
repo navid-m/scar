@@ -976,6 +976,7 @@ fn analyze_stmt(
                             )
                             .with_location(*line, *column));
                         };
+                        let mut nested = scope.clone();
                         for stmt in &arm.body {
                             analyze_stmt(
                                 stmt,
@@ -983,7 +984,7 @@ fn analyze_stmt(
                                 expected_return,
                                 functions,
                                 types,
-                                &mut scope.clone(),
+                                &mut nested,
                                 function_locals,
                                 in_loop,
                                 allow_try_panic,
@@ -999,6 +1000,7 @@ fn analyze_stmt(
                             )
                             .with_location(*line, *column));
                         };
+                        let mut nested = scope.clone();
                         for stmt in &arm.body {
                             analyze_stmt(
                                 stmt,
@@ -1006,7 +1008,7 @@ fn analyze_stmt(
                                 expected_return,
                                 functions,
                                 types,
-                                &mut scope.clone(),
+                                &mut nested,
                                 function_locals,
                                 in_loop,
                                 allow_try_panic,
