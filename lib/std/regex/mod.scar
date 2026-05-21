@@ -110,7 +110,7 @@ def matchcharclass(c u8, str ref(u8)) bool
             return true
         end
         if current == '\\'
-            i = i + 1
+            i++
             val escaped = char_at(str, i)
             if matchmetachar(c, @add(str, i))
                 return true
@@ -132,7 +132,7 @@ def matchcharclass(c u8, str ref(u8)) bool
         end
 
         prev = consumed
-        i = i + 1
+        i++
     end
 
     return false
@@ -329,7 +329,7 @@ pub def re_compile_with[A: allocators.GeneralAllocator](ac ref(A), pattern ref(u
 
                 if char_at(pattern, i + 1) == '^'
                     @deref(token).kind = TOKEN_INV_CHAR_CLASS
-                    i = i + 1
+                    i++
                     guard char_at(pattern, i + 1) != 0 else
                         re_free_with[_](ac, handle)
                         return error("unterminated character class")
@@ -339,7 +339,7 @@ pub def re_compile_with[A: allocators.GeneralAllocator](ac ref(A), pattern ref(u
                 end
 
                 for
-                    i = i + 1
+                    i++
                     val cls_char = char_at(pattern, i)
                     guard cls_char != ']' && cls_char != 0 else
                         break
@@ -356,7 +356,7 @@ pub def re_compile_with[A: allocators.GeneralAllocator](ac ref(A), pattern ref(u
                         end
                         @deref(@add(ccl_buf, ccl_bufidx)) = cls_char
                         ccl_bufidx = ccl_bufidx + 1
-                        i = i + 1
+                        i++
                     else
                         guard ccl_bufidx < MAX_CHAR_CLASS_LEN else
                             re_free_with[_](ac, handle)
