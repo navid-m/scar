@@ -39,7 +39,7 @@ end
 def skip_space(src ref(u8), pos usize, len usize) usize
     var p = pos
     for p < len && is_space(@deref(@add(src, p)))
-        p = p + 1
+        p++
     end
     return p
 end
@@ -47,7 +47,7 @@ end
 def find_char(src ref(u8), pos usize, len usize, target u8) usize
     var p = pos
     for p < len && @deref(@add(src, p)) != target
-        p = p + 1
+        p++
     end
     return p
 end
@@ -139,41 +139,41 @@ end
 def parse_number(src ref(u8), pos usize, len usize) usize|error
     var p = pos
     if p < len && @deref(@add(src, p)) == '-'
-        p = p + 1
+        p++
     end
     if p >= len || !(@deref(@add(src, p)) >= '0' && @deref(@add(src, p)) <= '9')
         return error("invalid number")
     end
     if @deref(@add(src, p)) != '0'
         for p < len && @deref(@add(src, p)) >= '0' && @deref(@add(src, p)) <= '9'
-            p = p + 1
+            p++
         end
     else
-        p = p + 1
+        p++
         if p < len && @deref(@add(src, p)) >= '0' && @deref(@add(src, p)) <= '9'
             return error("leading zero in number")
         end
     end
     val is_real = p < len && @deref(@add(src, p)) == '.'
     if is_real
-        p = p + 1
+        p++
         if p >= len || !(@deref(@add(src, p)) >= '0' && @deref(@add(src, p)) <= '9')
             return error("invalid number: expected digit after decimal point")
         end
         for p < len && @deref(@add(src, p)) >= '0' && @deref(@add(src, p)) <= '9'
-            p = p + 1
+            p++
         end
     end
     if p < len && (@deref(@add(src, p)) == 'e' || @deref(@add(src, p)) == 'E')
-        p = p + 1
+        p++
         if p < len && (@deref(@add(src, p)) == '-' || @deref(@add(src, p)) == '+')
-            p = p + 1
+            p++
         end
         if p >= len || !(@deref(@add(src, p)) >= '0' && @deref(@add(src, p)) <= '9')
             return error("invalid number: expected digit in exponent")
         end
         for p < len && @deref(@add(src, p)) >= '0' && @deref(@add(src, p)) <= '9'
-            p = p + 1
+            p++
         end
     end
     return p
@@ -294,7 +294,7 @@ def parse_object(src ref(u8), pos usize, len usize, j mut(ref(Json)), node_idx u
             return error("unterminated object")
         end
         if @deref(@add(src, p)) == ','
-            p = p + 1
+            p++
             p = skip_space(src, p, len)
         end
         if p < len && @deref(@add(src, p)) == '}'
@@ -316,7 +316,7 @@ def parse_object(src ref(u8), pos usize, len usize, j mut(ref(Json)), node_idx u
         if p >= len || @deref(@add(src, p)) != ':'
             return error("expected ':' after object key")
         end
-        p = p + 1
+        p++
         p = skip_space(src, p, len)
         p = parse_value(src, p, len, j, child_idx)?
         if last_child == -1
@@ -347,7 +347,7 @@ def parse_array(src ref(u8), pos usize, len usize, j mut(ref(Json)), node_idx us
             return error("unterminated array")
         end
         if @deref(@add(src, p)) == ','
-            p = p + 1
+            p++
             p = skip_space(src, p, len)
         end
         if p < len && @deref(@add(src, p)) == ']'
