@@ -1705,16 +1705,16 @@ impl Parser {
             }
 
             if self.check_simple(&TokenKind::LParen) {
-                if let Expr::Path(path) = &expr {
-                    if path.len() == 1 && self.looks_like_struct_init() {
-                        expr = self.parse_struct_init(path[0].clone(), Vec::new())?;
+                if let Some(path) = expr.callee_path() {
+                    if self.looks_like_struct_init() {
+                        expr = self.parse_struct_init(path.join("."), Vec::new())?;
                         continue;
                     }
                 }
                 if let Expr::Specialize { callee, type_args } = &expr {
-                    if let Expr::Path(path) = callee.as_ref() {
-                        if path.len() == 1 && self.looks_like_struct_init() {
-                            expr = self.parse_struct_init(path[0].clone(), type_args.clone())?;
+                    if let Some(path) = callee.callee_path() {
+                        if self.looks_like_struct_init() {
+                            expr = self.parse_struct_init(path.join("."), type_args.clone())?;
                             continue;
                         }
                     }

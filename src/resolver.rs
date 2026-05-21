@@ -1242,7 +1242,7 @@ fn rewrite_expr(
             type_args,
             fields,
         } => Ok(Expr::StructInit {
-            name: local_types.get(&name).cloned().unwrap_or(name),
+            name: rewrite_named_type(name, local_types, module_aliases),
             type_args: type_args
                 .into_iter()
                 .map(|ty| rewrite_type(ty, local_types, module_aliases))

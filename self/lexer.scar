@@ -1,78 +1,9 @@
 val str = use("std/string")
+val ast = use("ast")
 
-pub union TokenKind
-	Keyword(u8)
-	Ident(ref(u8))
-	Int(u64)
-	Float(f64)
-	Char(u8)
-	Str(ref(u8))
-	LParen(u8)
-	RParen(u8)
-	LBrace(u8)
-	RBrace(u8)
-	LBracket(u8)
-	RBracket(u8)
-	Comma(u8)
-	Colon(u8)
-	ColonColon(u8)
-	Dot(u8)
-	DotDot(u8)
-	Assign(u8)
-	EqualEqual(u8)
-	BangEqual(u8)
-	Amp(u8)
-	AmpAmp(u8)
-	AmpEqual(u8)
-	Pipe(u8)
-	PipePipe(u8)
-	PipeEqual(u8)
-	Caret(u8)
-	CaretEqual(u8)
-	Bang(u8)
-	Tilde(u8)
-	Less(u8)
-	LessEqual(u8)
-	ShiftLeft(u8)
-	Greater(u8)
-	GreaterEqual(u8)
-	ShiftRight(u8)
-	Star(u8)
-	StarEqual(u8)
-	Slash(u8)
-	SlashEqual(u8)
-	Percent(u8)
-	Minus(u8)
-	MinusMinus(u8)
-	MinusEqual(u8)
-	Plus(u8)
-	PlusPlus(u8)
-	PlusEqual(u8)
-	FatArrow(u8)
-	Question(u8)
-	At(u8)
-	Newline(u8)
-	Eof(u8)
-end
-
-pub type Token
-	kind TokenKind
-	line usize
-	column usize
-end
-
-pub type Lexer
-	source ref(u8)
-	len usize
-	pos usize
-	line usize
-	column usize
-	tokens list[Token]
-end
-
-pub def lex(source ref(u8)) list[Token]
+pub def lex(source ref(u8)) list[ast.Token]
 	val len usize = str.len(source)
-	var l Lexer = Lexer(source: source, len: len, pos: 0, line: 1, column: 1, tokens: [Token(kind: TokenKind.Eof(0), line: 0, column: 0)])
+	var l ast.Lexer = ast.Lexer(source: source, len: len, pos: 0, line: 1, column: 1, tokens: [ast.Token(kind: ast.TokenKind.Eof(0), line: 0, column: 0)])
 	@clear(l.tokens)
 
 	for l.pos < l.len
@@ -89,7 +20,7 @@ pub def lex(source ref(u8)) list[Token]
 			)
 			'\r' => l.pos = l.pos + 1
 			'\n' => (
-				@append(l.tokens, Token(kind: TokenKind.Newline(0), line: l.line, column: l.column))
+				@append(l.tokens, ast.Token(kind: ast.TokenKind.Newline(0), line: l.line, column: l.column))
 				l.pos = l.pos + 1
 				l.line = l.line + 1
 				l.column = 1
@@ -106,22 +37,22 @@ pub def lex(source ref(u8)) list[Token]
 				end
 			)
 			'@' => (
-				@append(l.tokens, Token(kind: TokenKind.At(0), line: l.line, column: l.column))
+				@append(l.tokens, ast.Token(kind: ast.TokenKind.At(0), line: l.line, column: l.column))
 				l.pos = l.pos + 1
 				l.column = l.column + 1
 			)
 			'(' => (
-				@append(l.tokens, Token(kind: TokenKind.LParen(0), line: l.line, column: l.column))
+				@append(l.tokens, ast.Token(kind: ast.TokenKind.LParen(0), line: l.line, column: l.column))
 				l.pos = l.pos + 1
 				l.column = l.column + 1
 			)
 			')' => (
-				@append(l.tokens, Token(kind: TokenKind.RParen(0), line: l.line, column: l.column))
+				@append(l.tokens, ast.Token(kind: ast.TokenKind.RParen(0), line: l.line, column: l.column))
 				l.pos = l.pos + 1
 				l.column = l.column + 1
 			)
 			',' => (
-				@append(l.tokens, Token(kind: TokenKind.Comma(0), line: l.line, column: l.column))
+				@append(l.tokens, ast.Token(kind: ast.TokenKind.Comma(0), line: l.line, column: l.column))
 				l.pos = l.pos + 1
 				l.column = l.column + 1
 			)
@@ -131,9 +62,9 @@ pub def lex(source ref(u8)) list[Token]
 				if @deref(@add(l.source, l.pos)) == '.'
 					l.pos = l.pos + 1
 					l.column = l.column + 1
-					@append(l.tokens, Token(kind: TokenKind.DotDot(0), line: l.line, column: l.column))
+					@append(l.tokens, ast.Token(kind: ast.TokenKind.DotDot(0), line: l.line, column: l.column))
 				else
-					@append(l.tokens, Token(kind: TokenKind.Dot(0), line: l.line, column: l.column))
+					@append(l.tokens, ast.Token(kind: ast.TokenKind.Dot(0), line: l.line, column: l.column))
 				end
 			)
 			':' => (
@@ -142,9 +73,9 @@ pub def lex(source ref(u8)) list[Token]
 				if @deref(@add(l.source, l.pos)) == ':'
 					l.pos = l.pos + 1
 					l.column = l.column + 1
-					@append(l.tokens, Token(kind: TokenKind.ColonColon(0), line: l.line, column: l.column))
+					@append(l.tokens, ast.Token(kind: ast.TokenKind.ColonColon(0), line: l.line, column: l.column))
 				else
-					@append(l.tokens, Token(kind: TokenKind.Colon(0), line: l.line, column: l.column))
+					@append(l.tokens, ast.Token(kind: ast.TokenKind.Colon(0), line: l.line, column: l.column))
 				end
 			)
 			'=' => (
@@ -154,14 +85,14 @@ pub def lex(source ref(u8)) list[Token]
 					'=' => (
 						l.pos = l.pos + 1
 						l.column = l.column + 1
-						@append(l.tokens, Token(kind: TokenKind.EqualEqual(0), line: l.line, column: l.column))
+						@append(l.tokens, ast.Token(kind: ast.TokenKind.EqualEqual(0), line: l.line, column: l.column))
 					)
 					'>' => (
 						l.pos = l.pos + 1
 						l.column = l.column + 1
-						@append(l.tokens, Token(kind: TokenKind.FatArrow(0), line: l.line, column: l.column))
+						@append(l.tokens, ast.Token(kind: ast.TokenKind.FatArrow(0), line: l.line, column: l.column))
 					)
-					_ => @append(l.tokens, Token(kind: TokenKind.Assign(0), line: l.line, column: l.column))
+					_ => @append(l.tokens, ast.Token(kind: ast.TokenKind.Assign(0), line: l.line, column: l.column))
 				end
 			)
 			'!' => (
@@ -170,9 +101,9 @@ pub def lex(source ref(u8)) list[Token]
 				if @deref(@add(l.source, l.pos)) == '='
 					l.pos = l.pos + 1
 					l.column = l.column + 1
-					@append(l.tokens, Token(kind: TokenKind.BangEqual(0), line: l.line, column: l.column))
+					@append(l.tokens, ast.Token(kind: ast.TokenKind.BangEqual(0), line: l.line, column: l.column))
 				else
-					@append(l.tokens, Token(kind: TokenKind.Bang(0), line: l.line, column: l.column))
+					@append(l.tokens, ast.Token(kind: ast.TokenKind.Bang(0), line: l.line, column: l.column))
 				end
 			)
 			'<' => (
@@ -182,14 +113,14 @@ pub def lex(source ref(u8)) list[Token]
 					'<' => (
 						l.pos = l.pos + 1
 						l.column = l.column + 1
-						@append(l.tokens, Token(kind: TokenKind.ShiftLeft(0), line: l.line, column: l.column))
+						@append(l.tokens, ast.Token(kind: ast.TokenKind.ShiftLeft(0), line: l.line, column: l.column))
 					)
 					'=' => (
 						l.pos = l.pos + 1
 						l.column = l.column + 1
-						@append(l.tokens, Token(kind: TokenKind.LessEqual(0), line: l.line, column: l.column))
+						@append(l.tokens, ast.Token(kind: ast.TokenKind.LessEqual(0), line: l.line, column: l.column))
 					)
-					_ => @append(l.tokens, Token(kind: TokenKind.Less(0), line: l.line, column: l.column))
+					_ => @append(l.tokens, ast.Token(kind: ast.TokenKind.Less(0), line: l.line, column: l.column))
 				end
 			)
 			'>' => (
@@ -199,14 +130,14 @@ pub def lex(source ref(u8)) list[Token]
 					'>' => (
 						l.pos = l.pos + 1
 						l.column = l.column + 1
-						@append(l.tokens, Token(kind: TokenKind.ShiftRight(0), line: l.line, column: l.column))
+						@append(l.tokens, ast.Token(kind: ast.TokenKind.ShiftRight(0), line: l.line, column: l.column))
 					)
 					'=' => (
 						l.pos = l.pos + 1
 						l.column = l.column + 1
-						@append(l.tokens, Token(kind: TokenKind.GreaterEqual(0), line: l.line, column: l.column))
+						@append(l.tokens, ast.Token(kind: ast.TokenKind.GreaterEqual(0), line: l.line, column: l.column))
 					)
-					_ => @append(l.tokens, Token(kind: TokenKind.Greater(0), line: l.line, column: l.column))
+					_ => @append(l.tokens, ast.Token(kind: ast.TokenKind.Greater(0), line: l.line, column: l.column))
 				end
 			)
 			'*' => (
@@ -215,9 +146,9 @@ pub def lex(source ref(u8)) list[Token]
 				if @deref(@add(l.source, l.pos)) == '='
 					l.pos = l.pos + 1
 					l.column = l.column + 1
-					@append(l.tokens, Token(kind: TokenKind.StarEqual(0), line: l.line, column: l.column))
+					@append(l.tokens, ast.Token(kind: ast.TokenKind.StarEqual(0), line: l.line, column: l.column))
 				else
-					@append(l.tokens, Token(kind: TokenKind.Star(0), line: l.line, column: l.column))
+					@append(l.tokens, ast.Token(kind: ast.TokenKind.Star(0), line: l.line, column: l.column))
 				end
 			)
 			'/' => (
@@ -226,13 +157,13 @@ pub def lex(source ref(u8)) list[Token]
 				if @deref(@add(l.source, l.pos)) == '='
 					l.pos = l.pos + 1
 					l.column = l.column + 1
-					@append(l.tokens, Token(kind: TokenKind.SlashEqual(0), line: l.line, column: l.column))
+					@append(l.tokens, ast.Token(kind: ast.TokenKind.SlashEqual(0), line: l.line, column: l.column))
 				else
-					@append(l.tokens, Token(kind: TokenKind.Slash(0), line: l.line, column: l.column))
+					@append(l.tokens, ast.Token(kind: ast.TokenKind.Slash(0), line: l.line, column: l.column))
 				end
 			)
 			'%' => (
-				@append(l.tokens, Token(kind: TokenKind.Percent(0), line: l.line, column: l.column))
+				@append(l.tokens, ast.Token(kind: ast.TokenKind.Percent(0), line: l.line, column: l.column))
 				l.pos = l.pos + 1
 				l.column = l.column + 1
 			)
@@ -243,14 +174,14 @@ pub def lex(source ref(u8)) list[Token]
 					'+' => (
 						l.pos = l.pos + 1
 						l.column = l.column + 1
-						@append(l.tokens, Token(kind: TokenKind.PlusPlus(0), line: l.line, column: l.column))
+						@append(l.tokens, ast.Token(kind: ast.TokenKind.PlusPlus(0), line: l.line, column: l.column))
 					)
 					'=' => (
 						l.pos = l.pos + 1
 						l.column = l.column + 1
-						@append(l.tokens, Token(kind: TokenKind.PlusEqual(0), line: l.line, column: l.column))
+						@append(l.tokens, ast.Token(kind: ast.TokenKind.PlusEqual(0), line: l.line, column: l.column))
 					)
-					_ => @append(l.tokens, Token(kind: TokenKind.Plus(0), line: l.line, column: l.column))
+					_ => @append(l.tokens, ast.Token(kind: ast.TokenKind.Plus(0), line: l.line, column: l.column))
 				end
 			)
 			'-' => (
@@ -260,14 +191,14 @@ pub def lex(source ref(u8)) list[Token]
 					'-' => (
 						l.pos = l.pos + 1
 						l.column = l.column + 1
-						@append(l.tokens, Token(kind: TokenKind.MinusMinus(0), line: l.line, column: l.column))
+						@append(l.tokens, ast.Token(kind: ast.TokenKind.MinusMinus(0), line: l.line, column: l.column))
 					)
 					'=' => (
 						l.pos = l.pos + 1
 						l.column = l.column + 1
-						@append(l.tokens, Token(kind: TokenKind.MinusEqual(0), line: l.line, column: l.column))
+						@append(l.tokens, ast.Token(kind: ast.TokenKind.MinusEqual(0), line: l.line, column: l.column))
 					)
-					_ => @append(l.tokens, Token(kind: TokenKind.Minus(0), line: l.line, column: l.column))
+					_ => @append(l.tokens, ast.Token(kind: ast.TokenKind.Minus(0), line: l.line, column: l.column))
 				end
 			)
 			'&' => (
@@ -277,14 +208,14 @@ pub def lex(source ref(u8)) list[Token]
 					'&' => (
 						l.pos = l.pos + 1
 						l.column = l.column + 1
-						@append(l.tokens, Token(kind: TokenKind.AmpAmp(0), line: l.line, column: l.column))
+						@append(l.tokens, ast.Token(kind: ast.TokenKind.AmpAmp(0), line: l.line, column: l.column))
 					)
 					'=' => (
 						l.pos = l.pos + 1
 						l.column = l.column + 1
-						@append(l.tokens, Token(kind: TokenKind.AmpEqual(0), line: l.line, column: l.column))
+						@append(l.tokens, ast.Token(kind: ast.TokenKind.AmpEqual(0), line: l.line, column: l.column))
 					)
-					_ => @append(l.tokens, Token(kind: TokenKind.Amp(0), line: l.line, column: l.column))
+					_ => @append(l.tokens, ast.Token(kind: ast.TokenKind.Amp(0), line: l.line, column: l.column))
 				end
 			)
 			'|' => (
@@ -294,14 +225,14 @@ pub def lex(source ref(u8)) list[Token]
 					'|' => (
 						l.pos = l.pos + 1
 						l.column = l.column + 1
-						@append(l.tokens, Token(kind: TokenKind.PipePipe(0), line: l.line, column: l.column))
+						@append(l.tokens, ast.Token(kind: ast.TokenKind.PipePipe(0), line: l.line, column: l.column))
 					)
 					'=' => (
 						l.pos = l.pos + 1
 						l.column = l.column + 1
-						@append(l.tokens, Token(kind: TokenKind.PipeEqual(0), line: l.line, column: l.column))
+						@append(l.tokens, ast.Token(kind: ast.TokenKind.PipeEqual(0), line: l.line, column: l.column))
 					)
-					_ => @append(l.tokens, Token(kind: TokenKind.Pipe(0), line: l.line, column: l.column))
+					_ => @append(l.tokens, ast.Token(kind: ast.TokenKind.Pipe(0), line: l.line, column: l.column))
 				end
 			)
 			'^' => (
@@ -310,18 +241,18 @@ pub def lex(source ref(u8)) list[Token]
 				if @deref(@add(l.source, l.pos)) == '='
 					l.pos = l.pos + 1
 					l.column = l.column + 1
-					@append(l.tokens, Token(kind: TokenKind.CaretEqual(0), line: l.line, column: l.column))
+					@append(l.tokens, ast.Token(kind: ast.TokenKind.CaretEqual(0), line: l.line, column: l.column))
 				else
-					@append(l.tokens, Token(kind: TokenKind.Caret(0), line: l.line, column: l.column))
+					@append(l.tokens, ast.Token(kind: ast.TokenKind.Caret(0), line: l.line, column: l.column))
 				end
 			)
 			'~' => (
-				@append(l.tokens, Token(kind: TokenKind.Tilde(0), line: l.line, column: l.column))
+				@append(l.tokens, ast.Token(kind: ast.TokenKind.Tilde(0), line: l.line, column: l.column))
 				l.pos = l.pos + 1
 				l.column = l.column + 1
 			)
 			'?' => (
-				@append(l.tokens, Token(kind: TokenKind.Question(0), line: l.line, column: l.column))
+				@append(l.tokens, ast.Token(kind: ast.TokenKind.Question(0), line: l.line, column: l.column))
 				l.pos = l.pos + 1
 				l.column = l.column + 1
 			)
@@ -336,22 +267,22 @@ pub def lex(source ref(u8)) list[Token]
 				end
 			)
 			'[' => (
-				@append(l.tokens, Token(kind: TokenKind.LBracket(0), line: l.line, column: l.column))
+				@append(l.tokens, ast.Token(kind: ast.TokenKind.LBracket(0), line: l.line, column: l.column))
 				l.pos = l.pos + 1
 				l.column = l.column + 1
 			)
 			']' => (
-				@append(l.tokens, Token(kind: TokenKind.RBracket(0), line: l.line, column: l.column))
+				@append(l.tokens, ast.Token(kind: ast.TokenKind.RBracket(0), line: l.line, column: l.column))
 				l.pos = l.pos + 1
 				l.column = l.column + 1
 			)
 			'{' => (
-				@append(l.tokens, Token(kind: TokenKind.LBrace(0), line: l.line, column: l.column))
+				@append(l.tokens, ast.Token(kind: ast.TokenKind.LBrace(0), line: l.line, column: l.column))
 				l.pos = l.pos + 1
 				l.column = l.column + 1
 			)
 			'}' => (
-				@append(l.tokens, Token(kind: TokenKind.RBrace(0), line: l.line, column: l.column))
+				@append(l.tokens, ast.Token(kind: ast.TokenKind.RBrace(0), line: l.line, column: l.column))
 				l.pos = l.pos + 1
 				l.column = l.column + 1
 			)
@@ -378,11 +309,11 @@ pub def lex(source ref(u8)) list[Token]
 		end
 	end
 
-	@append(l.tokens, Token(kind: TokenKind.Eof(0), line: l.line, column: l.column))
+	@append(l.tokens, ast.Token(kind: ast.TokenKind.Eof(0), line: l.line, column: l.column))
 	return l.tokens
 end
 
-def lex_string_lit(l ref(Lexer)) Token
+def lex_string_lit(l ref(ast.Lexer)) ast.Token
 	val line usize = l.line
 	val column usize = l.column
 	var buf ref(u8) = @alloc(256)
@@ -394,14 +325,14 @@ def lex_string_lit(l ref(Lexer)) Token
 			l.pos = l.pos + 1
 			l.column = l.column + 1
 			@deref(@as_mut(@add(buf, buf_len))) = 0
-			return Token(kind: TokenKind.Str(buf), line: line, column: column)
+			return ast.Token(kind: ast.TokenKind.Str(buf), line: line, column: column)
 		elif ch == '\\'
 			l.pos = l.pos + 1
 			@deref(@as_mut(@add(buf, buf_len))) = lex_escape(l)
 			buf_len = buf_len + 1
 		elif ch == '\n'
 			l.pos = l.pos + 1
-			return Token(kind: TokenKind.Str(none), line: line, column: column)
+			return ast.Token(kind: ast.TokenKind.Str(none), line: line, column: column)
 		else
 			@deref(@as_mut(@add(buf, buf_len))) = ch
 			buf_len = buf_len + 1
@@ -410,10 +341,10 @@ def lex_string_lit(l ref(Lexer)) Token
 		end
 	end
 
-	return Token(kind: TokenKind.Str(none), line: line, column: column)
+	return ast.Token(kind: ast.TokenKind.Str(none), line: line, column: column)
 end
 
-def lex_char_lit(l ref(Lexer)) Token
+def lex_char_lit(l ref(ast.Lexer)) ast.Token
 	val line usize = l.line
 	val column usize = l.column
 	var ch u8 = @deref(@add(l.source, l.pos))
@@ -428,10 +359,10 @@ def lex_char_lit(l ref(Lexer)) Token
 		l.pos = l.pos + 1
 		l.column = l.column + 1
 	end
-	return Token(kind: TokenKind.Char(ch), line: line, column: column)
+	return ast.Token(kind: ast.TokenKind.Char(ch), line: line, column: column)
 end
 
-def lex_escape(l ref(Lexer)) u8
+def lex_escape(l ref(ast.Lexer)) u8
 	val ch u8 = @deref(@add(l.source, l.pos))
 	l.pos = l.pos + 1
 	l.column = l.column + 1
@@ -447,7 +378,7 @@ def lex_escape(l ref(Lexer)) u8
 	end
 end
 
-def lex_number(l ref(Lexer)) Token
+def lex_number(l ref(ast.Lexer)) ast.Token
 	val line usize = l.line
 	val column usize = l.column
 	
@@ -473,7 +404,7 @@ def lex_number(l ref(Lexer)) Token
 				break
 			end
 		end
-		return Token(kind: TokenKind.Int(value), line: line, column: column)
+		return ast.Token(kind: ast.TokenKind.Int(value), line: line, column: column)
 	end
 
 	if @deref(@add(l.source, l.pos)) == '0' && (@deref(@add(l.source, l.pos + 1)) == 'b' || @deref(@add(l.source, l.pos + 1)) == 'B')
@@ -493,7 +424,7 @@ def lex_number(l ref(Lexer)) Token
 			l.pos = l.pos + 1
 			l.column = l.column + 1
 		end
-		return Token(kind: TokenKind.Int(value), line: line, column: column)
+		return ast.Token(kind: ast.TokenKind.Int(value), line: line, column: column)
 	end
 
 	val start_pos usize = l.pos
@@ -533,7 +464,7 @@ def lex_number(l ref(Lexer)) Token
 	end
 
 	if is_float
-		return Token(kind: TokenKind.Float(0.0), line: line, column: column)
+		return ast.Token(kind: ast.TokenKind.Float(0.0), line: line, column: column)
 	end
 
 	var value u64 = 0
@@ -545,10 +476,10 @@ def lex_number(l ref(Lexer)) Token
 		end
 		i = i + 1
 	end
-	return Token(kind: TokenKind.Int(value), line: line, column: column)
+	return ast.Token(kind: ast.TokenKind.Int(value), line: line, column: column)
 end
 
-def lex_ident(l ref(Lexer)) Token
+def lex_ident(l ref(ast.Lexer)) ast.Token
 	val line usize = l.line
 	val column usize = l.column
 	val start usize = l.pos
@@ -571,152 +502,152 @@ def lex_ident(l ref(Lexer)) Token
 	match str.len(name)
 		2 => match @deref(@add(name, 0))
 			'a' => if str.eql(name, "as")
-				return Token(kind: TokenKind.Keyword(32), line: line, column: column)
+				return ast.Token(kind: ast.TokenKind.Keyword(32), line: line, column: column)
 			end
 			'i' => if str.eql(name, "if")
-				return Token(kind: TokenKind.Keyword(7), line: line, column: column)
+				return ast.Token(kind: ast.TokenKind.Keyword(7), line: line, column: column)
 			elif str.eql(name, "in")
-				return Token(kind: TokenKind.Keyword(33), line: line, column: column)
+				return ast.Token(kind: ast.TokenKind.Keyword(33), line: line, column: column)
 			elif str.eql(name, "i8")
-				return Token(kind: TokenKind.Keyword(17), line: line, column: column)
+				return ast.Token(kind: ast.TokenKind.Keyword(17), line: line, column: column)
 			end
 			'u' => if str.eql(name, "u8")
-				return Token(kind: TokenKind.Keyword(22), line: line, column: column)
+				return ast.Token(kind: ast.TokenKind.Keyword(22), line: line, column: column)
 			end
 		end
 		3 => match @deref(@add(name, 0))
 			'd' => if str.eql(name, "def")
-				return Token(kind: TokenKind.Keyword(2), line: line, column: column)
+				return ast.Token(kind: ast.TokenKind.Keyword(2), line: line, column: column)
 			end
 			'e' => if str.eql(name, "end")
-				return Token(kind: TokenKind.Keyword(3), line: line, column: column)
+				return ast.Token(kind: ast.TokenKind.Keyword(3), line: line, column: column)
 			end
 			'f' => if str.eql(name, "f32")
-				return Token(kind: TokenKind.Keyword(27), line: line, column: column)
+				return ast.Token(kind: ast.TokenKind.Keyword(27), line: line, column: column)
 			elif str.eql(name, "f64")
-				return Token(kind: TokenKind.Keyword(28), line: line, column: column)
+				return ast.Token(kind: ast.TokenKind.Keyword(28), line: line, column: column)
 			elif str.eql(name, "for")
-				return Token(kind: TokenKind.Keyword(10), line: line, column: column)
+				return ast.Token(kind: ast.TokenKind.Keyword(10), line: line, column: column)
 			end
 			'i' => if str.eql(name, "i16")
-				return Token(kind: TokenKind.Keyword(18), line: line, column: column)
+				return ast.Token(kind: ast.TokenKind.Keyword(18), line: line, column: column)
 			elif str.eql(name, "i32")
-				return Token(kind: TokenKind.Keyword(19), line: line, column: column)
+				return ast.Token(kind: ast.TokenKind.Keyword(19), line: line, column: column)
 			elif str.eql(name, "i64")
-				return Token(kind: TokenKind.Keyword(20), line: line, column: column)
+				return ast.Token(kind: ast.TokenKind.Keyword(20), line: line, column: column)
 			end
 			'm' => if str.eql(name, "mut")
-				return Token(kind: TokenKind.Keyword(29), line: line, column: column)
+				return ast.Token(kind: ast.TokenKind.Keyword(29), line: line, column: column)
 			end
 			'r' => if str.eql(name, "ref")
-				return Token(kind: TokenKind.Keyword(30), line: line, column: column)
+				return ast.Token(kind: ast.TokenKind.Keyword(30), line: line, column: column)
 			end
 			'u' => if str.eql(name, "u16")
-				return Token(kind: TokenKind.Keyword(23), line: line, column: column)
+				return ast.Token(kind: ast.TokenKind.Keyword(23), line: line, column: column)
 			elif str.eql(name, "u32")
-				return Token(kind: TokenKind.Keyword(24), line: line, column: column)
+				return ast.Token(kind: ast.TokenKind.Keyword(24), line: line, column: column)
 			elif str.eql(name, "u64")
-				return Token(kind: TokenKind.Keyword(25), line: line, column: column)
+				return ast.Token(kind: ast.TokenKind.Keyword(25), line: line, column: column)
 			end
 			'p' => if str.eql(name, "pub")
-				return Token(kind: TokenKind.Keyword(1), line: line, column: column)
+				return ast.Token(kind: ast.TokenKind.Keyword(1), line: line, column: column)
 			end
 			'v' => if str.eql(name, "val")
-				return Token(kind: TokenKind.Keyword(5), line: line, column: column)
+				return ast.Token(kind: ast.TokenKind.Keyword(5), line: line, column: column)
 			elif str.eql(name, "var")
-				return Token(kind: TokenKind.Keyword(4), line: line, column: column)
+				return ast.Token(kind: ast.TokenKind.Keyword(4), line: line, column: column)
 			end
 		end
 		4 => match @deref(@add(name, 0))
 			'b' => if str.eql(name, "bool")
-				return Token(kind: TokenKind.Keyword(16), line: line, column: column)
+				return ast.Token(kind: ast.TokenKind.Keyword(16), line: line, column: column)
 			end
 			'e' => if str.eql(name, "else")
-				return Token(kind: TokenKind.Keyword(8), line: line, column: column)
+				return ast.Token(kind: ast.TokenKind.Keyword(8), line: line, column: column)
 			elif str.eql(name, "elif")
-				return Token(kind: TokenKind.Keyword(9), line: line, column: column)
+				return ast.Token(kind: ast.TokenKind.Keyword(9), line: line, column: column)
 			elif str.eql(name, "enum")
-				return Token(kind: TokenKind.Keyword(41), line: line, column: column)
+				return ast.Token(kind: ast.TokenKind.Keyword(41), line: line, column: column)
 			end
 			'l' => if str.eql(name, "link")
-				return Token(kind: TokenKind.Keyword(46), line: line, column: column)
+				return ast.Token(kind: ast.TokenKind.Keyword(46), line: line, column: column)
 			elif str.eql(name, "list")
-				return Token(kind: TokenKind.Keyword(31), line: line, column: column)
+				return ast.Token(kind: ast.TokenKind.Keyword(31), line: line, column: column)
 			end
 			'n' => if str.eql(name, "none")
-				return Token(kind: TokenKind.Keyword(38), line: line, column: column)
+				return ast.Token(kind: ast.TokenKind.Keyword(38), line: line, column: column)
 			end
 			't' => if str.eql(name, "test")
-				return Token(kind: TokenKind.Keyword(35), line: line, column: column)
+				return ast.Token(kind: ast.TokenKind.Keyword(35), line: line, column: column)
 			elif str.eql(name, "true")
-				return Token(kind: TokenKind.Keyword(36), line: line, column: column)
+				return ast.Token(kind: ast.TokenKind.Keyword(36), line: line, column: column)
 			elif str.eql(name, "type")
-				return Token(kind: TokenKind.Keyword(39), line: line, column: column)
+				return ast.Token(kind: ast.TokenKind.Keyword(39), line: line, column: column)
 			end
 			'v' => if str.eql(name, "void")
-				return Token(kind: TokenKind.Keyword(15), line: line, column: column)
+				return ast.Token(kind: ast.TokenKind.Keyword(15), line: line, column: column)
 			end
 			'w' => if str.eql(name, "when")
-				return Token(kind: TokenKind.Keyword(45), line: line, column: column)
+				return ast.Token(kind: ast.TokenKind.Keyword(45), line: line, column: column)
 			end
 		end
 		5 => match @deref(@add(name, 0))
 			'b' => if str.eql(name, "break")
-				return Token(kind: TokenKind.Keyword(13), line: line, column: column)
+				return ast.Token(kind: ast.TokenKind.Keyword(13), line: line, column: column)
 			end
 			'd' => if str.eql(name, "defer")
-				return Token(kind: TokenKind.Keyword(44), line: line, column: column)
+				return ast.Token(kind: ast.TokenKind.Keyword(44), line: line, column: column)
 			end
 			'f' => if str.eql(name, "false")
-				return Token(kind: TokenKind.Keyword(37), line: line, column: column)
+				return ast.Token(kind: ast.TokenKind.Keyword(37), line: line, column: column)
 			end
 			'g' => if str.eql(name, "guard")
-				return Token(kind: TokenKind.Keyword(47), line: line, column: column)
+				return ast.Token(kind: ast.TokenKind.Keyword(47), line: line, column: column)
 			end
 			'i' => if str.eql(name, "isize")
-				return Token(kind: TokenKind.Keyword(21), line: line, column: column)
+				return ast.Token(kind: ast.TokenKind.Keyword(21), line: line, column: column)
 			end
 			'm' => if str.eql(name, "match")
-				return Token(kind: TokenKind.Keyword(12), line: line, column: column)
+				return ast.Token(kind: ast.TokenKind.Keyword(12), line: line, column: column)
 			end
 			'u' => if str.eql(name, "union")
-				return Token(kind: TokenKind.Keyword(40), line: line, column: column)
+				return ast.Token(kind: ast.TokenKind.Keyword(40), line: line, column: column)
 			elif str.eql(name, "usize")
-				return Token(kind: TokenKind.Keyword(26), line: line, column: column)
+				return ast.Token(kind: ast.TokenKind.Keyword(26), line: line, column: column)
 			end
 			'w' => if str.eql(name, "while")
-				return Token(kind: TokenKind.Keyword(11), line: line, column: column)
+				return ast.Token(kind: ast.TokenKind.Keyword(11), line: line, column: column)
 			end
 		end
 		6 => match @deref(@add(name, 0))
 			'e' => if str.eql(name, "extern")
-				return Token(kind: TokenKind.Keyword(34), line: line, column: column)
+				return ast.Token(kind: ast.TokenKind.Keyword(34), line: line, column: column)
 			end
 			'r' => if str.eql(name, "return")
-				return Token(kind: TokenKind.Keyword(6), line: line, column: column)
+				return ast.Token(kind: ast.TokenKind.Keyword(6), line: line, column: column)
 			end
 		end
 		7 => match @deref(@add(name, 0))
 			't' => if str.eql(name, "typeset")
-				return Token(kind: TokenKind.Keyword(43), line: line, column: column)
+				return ast.Token(kind: ast.TokenKind.Keyword(43), line: line, column: column)
 			end
 		end
 		8 => match @deref(@add(name, 0))
 			'c' => if str.eql(name, "continue")
-				return Token(kind: TokenKind.Keyword(14), line: line, column: column)
+				return ast.Token(kind: ast.TokenKind.Keyword(14), line: line, column: column)
 			end
 		end
 		9 => match @deref(@add(name, 0))
 			'i' => if str.eql(name, "interface")
-				return Token(kind: TokenKind.Keyword(42), line: line, column: column)
+				return ast.Token(kind: ast.TokenKind.Keyword(42), line: line, column: column)
 			end
 		end
 	end
 
-	return Token(kind: TokenKind.Ident(name), line: line, column: column)
+	return ast.Token(kind: ast.TokenKind.Ident(name), line: line, column: column)
 end
 
-pub def token_kind_name(kind TokenKind) ref(u8)
+pub def token_kind_name(kind ast.TokenKind) ref(u8)
 	match kind
 		Keyword(_) => return "keyword"
 		Ident(_) => return "ident"
@@ -774,14 +705,14 @@ pub def token_kind_name(kind TokenKind) ref(u8)
 end
 
 test "identifies simple identifier"
-	val tokens list[Token] = lex("hello")
+	val tokens list[ast.Token] = lex("hello")
 	assert @len(tokens) == 2
 	assert str.eql(token_kind_name(tokens[0].kind), "ident")
 	assert str.eql(token_kind_name(tokens[1].kind), "eof")
 end
 
 test "identifies keywords"
-	val tokens list[Token] = lex("pub def end")
+	val tokens list[ast.Token] = lex("pub def end")
 	assert @len(tokens) == 4
 	assert str.eql(token_kind_name(tokens[0].kind), "keyword")
 	assert str.eql(token_kind_name(tokens[1].kind), "keyword")
@@ -790,45 +721,45 @@ test "identifies keywords"
 end
 
 test "string literal"
-	val tokens list[Token] = lex("\"hello world\"")
+	val tokens list[ast.Token] = lex("\"hello world\"")
 	assert @len(tokens) == 2
 	assert str.eql(token_kind_name(tokens[0].kind), "string")
 	assert str.eql(token_kind_name(tokens[1].kind), "eof")
 end
 
 test "integer literal"
-	val tokens list[Token] = lex("42")
+	val tokens list[ast.Token] = lex("42")
 	assert @len(tokens) == 2
 	assert str.eql(token_kind_name(tokens[0].kind), "int")
 	assert str.eql(token_kind_name(tokens[1].kind), "eof")
 end
 
 test "comment skipping"
-	val tokens list[Token] = lex("# this is a comment\nident")
+	val tokens list[ast.Token] = lex("# this is a comment\nident")
 	assert @len(tokens) == 2
 	assert str.eql(token_kind_name(tokens[0].kind), "ident")
 	assert str.eql(token_kind_name(tokens[1].kind), "eof")
 end
 
 test "single zero"
-	val tokens list[Token] = lex("0")
+	val tokens list[ast.Token] = lex("0")
 	assert @len(tokens) == 2
 end
 
 test "hex prefix only"
-	val tokens list[Token] = lex("0x")
+	val tokens list[ast.Token] = lex("0x")
 	assert @len(tokens) == 2
 end
 
 test "hex number"
-	val tokens list[Token] = lex("0xFF")
+	val tokens list[ast.Token] = lex("0xFF")
 	assert @len(tokens) == 2
 	assert str.eql(token_kind_name(tokens[0].kind), "int")
 	assert str.eql(token_kind_name(tokens[1].kind), "eof")
 end
 
 test "operators"
-	val tokens list[Token] = lex("+ - * / == != <= >=")
+	val tokens list[ast.Token] = lex("+ - * / == != <= >=")
 	assert @len(tokens) == 9
 	assert str.eql(token_kind_name(tokens[0].kind), "+")
 	assert str.eql(token_kind_name(tokens[1].kind), "-")
@@ -842,7 +773,7 @@ test "operators"
 end
 
 test "brackets and parens"
-	val tokens list[Token] = lex("(){}[]")
+	val tokens list[ast.Token] = lex("(){}[]")
 	assert @len(tokens) == 7
 	assert str.eql(token_kind_name(tokens[0].kind), "(")
 	assert str.eql(token_kind_name(tokens[1].kind), ")")

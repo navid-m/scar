@@ -1,30 +1,3 @@
-pub enum BinaryOp
-	Add
-	Subtract
-	Multiply
-	Divide
-	Modulo
-	LogicalAnd
-	LogicalOr
-	BitAnd
-	BitOr
-	BitXor
-	ShiftLeft
-	ShiftRight
-	LessThan
-	LessEqual
-	GreaterThan
-	GreaterEqual
-	Equal
-	NotEqual
-end
-
-pub enum UnaryOp
-	Neg
-	LogicalNot
-	BitNot
-end
-
 pub union TokenKind
 	Keyword(u8)
 	Ident(ref(u8))
@@ -84,6 +57,42 @@ pub type Token
 	kind TokenKind
 	line usize
 	column usize
+end
+
+pub type Lexer
+	source ref(u8)
+	len usize
+	pos usize
+	line usize
+	column usize
+	tokens list[Token]
+end
+
+pub enum BinaryOp
+	Add
+	Subtract
+	Multiply
+	Divide
+	Modulo
+	LogicalAnd
+	LogicalOr
+	BitAnd
+	BitOr
+	BitXor
+	ShiftLeft
+	ShiftRight
+	LessThan
+	LessEqual
+	GreaterThan
+	GreaterEqual
+	Equal
+	NotEqual
+end
+
+pub enum UnaryOp
+	Neg
+	LogicalNot
+	BitNot
 end
 
 pub type TokenList
