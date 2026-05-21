@@ -290,17 +290,17 @@ pub def re_compile_with[A: allocators.GeneralAllocator](ac ref(A), pattern ref(u
     end
 
     val handle_mem = A.alloc(ac, @sizeof(RegexHandle))?
-    val handle = @bitcast(handle_mem, ref(RegexHandle))
+    val handle     = @bitcast(handle_mem, ref(RegexHandle))
 
     val tokens_mem = A.alloc(ac, MAX_REGEXP_OBJECTS * @sizeof(RegexToken))?
-    val tokens = @bitcast(tokens_mem, ref(RegexToken))
+    val tokens     = @bitcast(tokens_mem, ref(RegexToken))
     @memset(tokens_mem, 0, MAX_REGEXP_OBJECTS * @sizeof(RegexToken))
 
     val ccl_mem = A.alloc(ac, MAX_CHAR_CLASS_LEN)?
     val ccl_buf = @bitcast(ccl_mem, ref(u8))
     @memset(ccl_mem, 0, MAX_CHAR_CLASS_LEN)
 
-    @deref(handle).tokens = tokens
+    @deref(handle).tokens  = tokens
     @deref(handle).ccl_buf = ccl_buf
 
     var ccl_bufidx usize = 1
@@ -309,135 +309,108 @@ pub def re_compile_with[A: allocators.GeneralAllocator](ac ref(A), pattern ref(u
 
     for
         val c = char_at(pattern, i)
-        if c == 0 || j + 1 >= MAX_REGEXP_OBJECTS
+        guard c != 0 && j + 1 < MAX_REGEXP_OBJECTS else
             break
         end
 
         val token = token_ptr(tokens, j)
 
-        if c == '^'
-            @deref(token).kind = TOKEN_BEGIN
-        else
-            if c == '$'
-                @deref(token).kind = TOKEN_END
-            else
-                if c == '.'
-                    @deref(token).kind = TOKEN_DOT
+        match c
+            '^'  => ( @deref(token).kind = TOKEN_BEGIN )
+            '$'  => ( @deref(token).kind = TOKEN_END   )
+            '.'  => ( @deref(token).kind = TOKEN_DOT   )
+            '*'  => ( @deref(token).kind = TOKEN_STAR  )
+            '+'  => ( @deref(token).kind = TOKEN_PLUS  )
+            '?'  => ( @deref(token).kind = TOKEN_QUESTIONMARK )
+            '\\' => (
+                val next = char_at(pattern, i + 1)
+
+                guard next != 0 else
+                    re_free_with[_](ac, handle)
+                    return error("incomplete escape sequence")
+                end
+
+                i++
+                val escaped = char_at(pattern, i)
+
+                match escaped
+                    'd' => ( @deref(token).kind = TOKEN_DIGIT         )
+                    'D' => ( @deref(token).kind = TOKEN_NOT_DIGIT     )
+                    'w' => ( @deref(token).kind = TOKEN_ALPHA         )
+                    'W' => ( @deref(token).kind = TOKEN_NOT_ALPHA     )
+                    's' => ( @deref(token).kind = TOKEN_WHITESPACE    )
+                    'S' => ( @deref(token).kind = TOKEN_NOT_WHITESPACE)
+                    _   => (
+                        @deref(token).kind = TOKEN_CHAR
+                        @deref(token).ch   = escaped
+                    )
+                end
+            )
+            '[' => (
+                val buf_begin = ccl_bufidx
+
+                if char_at(pattern, i + 1) == '^'
+                    @deref(token).kind = TOKEN_INV_CHAR_CLASS
+                    i = i + 1
+                    guard char_at(pattern, i + 1) != 0 else
+                        re_free_with[_](ac, handle)
+                        return error("unterminated character class")
+                    end
                 else
-                    if c == '*'
-                        @deref(token).kind = TOKEN_STAR
+                    @deref(token).kind = TOKEN_CHAR_CLASS
+                end
+
+                for
+                    i = i + 1
+                    val cls_char = char_at(pattern, i)
+                    guard cls_char != ']' && cls_char != 0 else
+                        break
+                    end
+
+                    if cls_char == '\\'
+                        guard ccl_bufidx < MAX_CHAR_CLASS_LEN - 1 else
+                            re_free_with[_](ac, handle)
+                            return error("character class too long")
+                        end
+                        guard char_at(pattern, i + 1) != 0 else
+                            re_free_with[_](ac, handle)
+                            return error("incomplete escape in character class")
+                        end
+                        @deref(@add(ccl_buf, ccl_bufidx)) = cls_char
+                        ccl_bufidx = ccl_bufidx + 1
+                        i = i + 1
                     else
-                        if c == '+'
-                            @deref(token).kind = TOKEN_PLUS
-                        else
-                            if c == '?'
-                                @deref(token).kind = TOKEN_QUESTIONMARK
-                            else
-                                if c == '\\'
-                                    val next = char_at(pattern, i + 1)
-                                    if next == 0
-                                        re_free_with[_](ac, handle)
-                                        return error("incomplete escape sequence")
-                                    end
-                                    i = i + 1
-                                    val escaped = char_at(pattern, i)
-                                    if escaped == 'd'
-                                        @deref(token).kind = TOKEN_DIGIT
-                                    else
-                                        if escaped == 'D'
-                                            @deref(token).kind = TOKEN_NOT_DIGIT
-                                        else
-                                            if escaped == 'w'
-                                                @deref(token).kind = TOKEN_ALPHA
-                                            else
-                                                if escaped == 'W'
-                                                    @deref(token).kind = TOKEN_NOT_ALPHA
-                                                else
-                                                    if escaped == 's'
-                                                        @deref(token).kind = TOKEN_WHITESPACE
-                                                    else
-                                                        if escaped == 'S'
-                                                            @deref(token).kind = TOKEN_NOT_WHITESPACE
-                                                        else
-                                                            @deref(token).kind = TOKEN_CHAR
-                                                            @deref(token).ch = escaped
-                                                        end
-                                                    end
-                                                end
-                                            end
-                                        end
-                                    end
-                                else
-                                    if c == '['
-                                        val buf_begin = ccl_bufidx
-
-                                        if char_at(pattern, i + 1) == '^'
-                                            @deref(token).kind = TOKEN_INV_CHAR_CLASS
-                                            i = i + 1
-                                            if char_at(pattern, i + 1) == 0
-                                                re_free_with[_](ac, handle)
-                                                return error("unterminated character class")
-                                            end
-                                        else
-                                            @deref(token).kind = TOKEN_CHAR_CLASS
-                                        end
-
-                                        for
-                                            i = i + 1
-                                            val cls_char = char_at(pattern, i)
-                                            if cls_char == ']' || cls_char == 0
-                                                break
-                                            end
-
-                                            if cls_char == '\\'
-                                                if ccl_bufidx >= MAX_CHAR_CLASS_LEN - 1
-                                                    re_free_with[_](ac, handle)
-                                                    return error("character class too long")
-                                                end
-                                                if char_at(pattern, i + 1) == 0
-                                                    re_free_with[_](ac, handle)
-                                                    return error("incomplete escape in character class")
-                                                end
-                                                @deref(@add(ccl_buf, ccl_bufidx)) = cls_char
-                                                ccl_bufidx = ccl_bufidx + 1
-                                                i = i + 1
-                                            else
-                                                if ccl_bufidx >= MAX_CHAR_CLASS_LEN
-                                                    re_free_with[_](ac, handle)
-                                                    return error("character class too long")
-                                                end
-                                            end
-
-                                            if ccl_bufidx >= MAX_CHAR_CLASS_LEN
-                                                re_free_with[_](ac, handle)
-                                                return error("character class too long")
-                                            end
-
-                                            @deref(@add(ccl_buf, ccl_bufidx)) = char_at(pattern, i)
-                                            ccl_bufidx = ccl_bufidx + 1
-                                        end
-
-                                        if ccl_bufidx >= MAX_CHAR_CLASS_LEN
-                                            re_free_with[_](ac, handle)
-                                            return error("character class too long")
-                                        end
-
-                                        @deref(@add(ccl_buf, ccl_bufidx)) = 0
-                                        ccl_bufidx = ccl_bufidx + 1
-                                        @deref(token).ccl = @add(ccl_buf, buf_begin)
-                                    else
-                                        @deref(token).kind = TOKEN_CHAR
-                                        @deref(token).ch = c
-                                    end
-                                end
-                            end
+                        guard ccl_bufidx < MAX_CHAR_CLASS_LEN else
+                            re_free_with[_](ac, handle)
+                            return error("character class too long")
                         end
                     end
+
+                    guard ccl_bufidx < MAX_CHAR_CLASS_LEN else
+                        re_free_with[_](ac, handle)
+                        return error("character class too long")
+                    end
+
+                    @deref(@add(ccl_buf, ccl_bufidx)) = char_at(pattern, i)
+                    ccl_bufidx = ccl_bufidx + 1
                 end
-            end
+
+                guard ccl_bufidx < MAX_CHAR_CLASS_LEN else
+                    re_free_with[_](ac, handle)
+                    return error("character class too long")
+                end
+
+                @deref(@add(ccl_buf, ccl_bufidx)) = 0
+                ccl_bufidx = ccl_bufidx + 1
+                @deref(token).ccl = @add(ccl_buf, buf_begin)
+            )
+            _ => (
+                @deref(token).kind = TOKEN_CHAR
+                @deref(token).ch   = c
+            )
         end
 
-        if char_at(pattern, i) == 0
+        guard char_at(pattern, i) != 0 else
             re_free_with[_](ac, handle)
             return error("unexpected end of pattern")
         end
