@@ -57,7 +57,7 @@ def alloc_node(j mut(ref(Json))) usize
         return 0
     end
     val idx = j.count
-    j.count = j.count + 1
+    j.count++
     var node = @deref(@add(j.nodes, idx))
     @deref(@addr(node.kind)) = JsonKind.Null
     @deref(@addr(node.name)) = none
