@@ -1112,82 +1112,20 @@ impl Parser {
         let mut arms = Vec::new();
         self.consume_newlines();
         while !self.check_simple(&TokenKind::End) && !self.is_eof() {
-            let (kind, bindings) = if self.check_simple(&TokenKind::Int(0)) {
-                let value = match &self.current().kind {
-                    TokenKind::Int(v) => v.to_string(),
-                    _ => unreachable!(),
-                };
+            let mut patterns = vec![self.parse_match_pattern()?];
+            while self.check_simple(&TokenKind::Pipe) {
                 self.advance();
-                let bindings = if self.check_simple(&TokenKind::LParen) {
-                    self.parse_match_bindings()?
-                } else {
-                    Vec::new()
-                };
-                (MatchArmKind::Variant(value), bindings)
-            } else if self.check_simple(&TokenKind::Char(0)) {
-                let value = match &self.current().kind {
-                    TokenKind::Char(v) => v.to_string(),
-                    _ => unreachable!(),
-                };
-                self.advance();
-                let bindings = if self.check_simple(&TokenKind::LParen) {
-                    self.parse_match_bindings()?
-                } else {
-                    Vec::new()
-                };
-                (MatchArmKind::Variant(value), bindings)
-            } else if matches!(&self.current().kind, TokenKind::Float(_)) {
-                let mut value = match &self.current().kind {
-                    TokenKind::Float(v) => v.to_string(),
-                    _ => unreachable!(),
-                };
-                self.advance();
-                if self.check_simple(&TokenKind::Ident("f32".to_string())) {
-                    value.push_str("f32");
-                    self.advance();
-                } else if self.check_simple(&TokenKind::Ident("f64".to_string())) {
-                    value.push_str("f64");
-                    self.advance();
-                }
-                let bindings = if self.check_simple(&TokenKind::LParen) {
-                    self.parse_match_bindings()?
-                } else {
-                    Vec::new()
-                };
-                (MatchArmKind::Variant(value), bindings)
-            } else {
-                let mut arm_parts = vec![self.expect_ident()?];
-                while self.check_simple(&TokenKind::Dot) {
-                    self.advance();
-                    arm_parts.push(self.expect_ident()?);
-                }
-                if arm_parts.len() == 1
-                    && arm_parts[0] == "ok"
-                    && !self.check_simple(&TokenKind::LParen)
-                {
-                    (MatchArmKind::Ok, vec![self.parse_match_binding()?])
-                } else if arm_parts.len() == 1
-                    && arm_parts[0] == "error"
-                    && !self.check_simple(&TokenKind::LParen)
-                {
-                    (MatchArmKind::Error, vec![self.parse_match_binding()?])
-                } else {
-                    let bindings = if self.check_simple(&TokenKind::LParen) {
-                        self.parse_match_bindings()?
-                    } else {
-                        Vec::new()
-                    };
-                    let variant_name = arm_parts.join(".");
-                    (MatchArmKind::Variant(variant_name), bindings)
-                }
-            };
+                patterns.push(self.parse_match_pattern()?);
+            }
             self.expect_simple(TokenKind::FatArrow)?;
             let body = self.parse_match_arm_body()?;
-            arms.push(MatchArm {
-                kind,
-                bindings,
-                body,
-            });
+            for (kind, bindings) in patterns {
+                arms.push(MatchArm {
+                    kind,
+                    bindings,
+                    body: body.clone(),
+                });
+            }
             self.consume_newlines();
         }
 
@@ -1201,7 +1139,80 @@ impl Parser {
         })
     }
 
+    fn parse_match_pattern(&mut self) -> Result<(MatchArmKind, Vec<Option<String>>), CompileError> {
+        if self.check_simple(&TokenKind::Int(0)) {
+            let value = match &self.current().kind {
+                TokenKind::Int(v) => v.to_string(),
+                _ => unreachable!(),
+            };
+            self.advance();
+            let bindings = if self.check_simple(&TokenKind::LParen) {
+                self.parse_match_bindings()?
+            } else {
+                Vec::new()
+            };
+            Ok((MatchArmKind::Variant(value), bindings))
+        } else if self.check_simple(&TokenKind::Char(0)) {
+            let value = match &self.current().kind {
+                TokenKind::Char(v) => v.to_string(),
+                _ => unreachable!(),
+            };
+            self.advance();
+            let bindings = if self.check_simple(&TokenKind::LParen) {
+                self.parse_match_bindings()?
+            } else {
+                Vec::new()
+            };
+            Ok((MatchArmKind::Variant(value), bindings))
+        } else if matches!(&self.current().kind, TokenKind::Float(_)) {
+            let mut value = match &self.current().kind {
+                TokenKind::Float(v) => v.to_string(),
+                _ => unreachable!(),
+            };
+            self.advance();
+            if self.check_simple(&TokenKind::Ident("f32".to_string())) {
+                value.push_str("f32");
+                self.advance();
+            } else if self.check_simple(&TokenKind::Ident("f64".to_string())) {
+                value.push_str("f64");
+                self.advance();
+            }
+            let bindings = if self.check_simple(&TokenKind::LParen) {
+                self.parse_match_bindings()?
+            } else {
+                Vec::new()
+            };
+            Ok((MatchArmKind::Variant(value), bindings))
+        } else {
+            let mut arm_parts = vec![self.expect_ident()?];
+            while self.check_simple(&TokenKind::Dot) {
+                self.advance();
+                arm_parts.push(self.expect_ident()?);
+            }
+            if arm_parts.len() == 1
+                && arm_parts[0] == "ok"
+                && !self.check_simple(&TokenKind::LParen)
+            {
+                Ok((MatchArmKind::Ok, vec![self.parse_match_binding()?]))
+            } else if arm_parts.len() == 1
+                && arm_parts[0] == "error"
+                && !self.check_simple(&TokenKind::LParen)
+            {
+                Ok((MatchArmKind::Error, vec![self.parse_match_binding()?]))
+            } else {
+                let bindings = if self.check_simple(&TokenKind::LParen) {
+                    self.parse_match_bindings()?
+                } else {
+                    Vec::new()
+                };
+                let variant_name = arm_parts.join(".");
+                Ok((MatchArmKind::Variant(variant_name), bindings))
+            }
+        }
+    }
+
     fn parse_match_arm_body(&mut self) -> Result<Vec<Stmt>, CompileError> {
+        self.consume_newlines();
         if self.check_simple(&TokenKind::LParen) {
             self.advance();
             self.consume_newlines();
@@ -3219,6 +3230,25 @@ mod tests {
                 assert!(matches!(body[0], Stmt::Break { .. }));
             }
             other => panic!("expected loop, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_multi_pattern_match_arms() {
+        let source = "pub def classify(op i32) i32\n\tmatch op\n\t\t1 | 2 | 3 =>\n\t\t\treturn 1\n\t\t4 | 5 =>\n\t\t\treturn 2\n\t\t_ =>\n\t\t\treturn 0\n\tend\nend\n";
+        let program = parse_program(lex(source).unwrap()).unwrap();
+
+        match &program.functions[0].body[0] {
+            Stmt::Match { arms, .. } => {
+                assert_eq!(arms.len(), 6);
+                assert!(matches!(&arms[0].kind, crate::ast::MatchArmKind::Variant(v) if v == "1"));
+                assert!(matches!(&arms[1].kind, crate::ast::MatchArmKind::Variant(v) if v == "2"));
+                assert!(matches!(&arms[2].kind, crate::ast::MatchArmKind::Variant(v) if v == "3"));
+                assert!(matches!(&arms[3].kind, crate::ast::MatchArmKind::Variant(v) if v == "4"));
+                assert!(matches!(&arms[4].kind, crate::ast::MatchArmKind::Variant(v) if v == "5"));
+                assert!(matches!(&arms[5].kind, crate::ast::MatchArmKind::Variant(v) if v == "_"));
+            }
+            other => panic!("expected match statement, got {other:?}"),
         }
     }
 }
