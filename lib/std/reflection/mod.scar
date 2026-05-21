@@ -1,0 +1,181 @@
+pub enum Platform
+	Windows
+	Linux
+	Darwin
+	NetBSD
+	DragonflyBSD
+	FreeBSD
+	OpenBSD
+	Android
+	Haiku
+	Redox
+	Plan9
+	Unknown
+end
+
+val str = use("std/string")
+val allocators = use("std/allocators")
+
+when posix
+	extern def uname(buf mut(ref(void))) i32 :: "uname"
+end
+
+when windows
+	extern def GetVersionExA(info mut(ref(void))) i32 :: "GetVersionExA"
+end
+
+pub def get_current_platform[A: allocators.BumpAllocator](
+	ac ref(A)
+) Platform|error
+	when windows
+		var osvi ref(u8) = A.alloc(ac, 128 as usize)? as ref(u8)
+		@memset(osvi as mut(ref(void)), 0, 128)
+		@deref(@as_mut(osvi)) = 128 as u8
+		if GetVersionExA(osvi as mut(ref(void))) == 0
+			return Platform.Unknown
+		end
+		return Platform.Windows
+	end
+
+	when posix
+		var buf ref(u8) = A.alloc(ac, 4096 as usize)? as ref(u8)
+		@memset(buf as mut(ref(void)), 0, 4096)
+		val r = uname(buf as mut(ref(void)))
+		if r == 0
+			if str.eql(buf, "Linux")
+				return Platform.Linux
+			end
+			if str.eql(buf, "Darwin")
+				return Platform.Darwin
+			end
+			if str.eql(buf, "FreeBSD")
+				return Platform.FreeBSD
+			end
+			if str.eql(buf, "OpenBSD")
+				return Platform.OpenBSD
+			end
+			if str.eql(buf, "NetBSD")
+				return Platform.NetBSD
+			end
+			if str.eql(buf, "DragonFly")
+				return Platform.DragonflyBSD
+			end
+			if str.eql(buf, "Android")
+				return Platform.Android
+			end
+			if str.eql(buf, "Haiku")
+				return Platform.Haiku
+			end
+		end
+	end
+
+	return Platform.Unknown
+end
+
+pub def current_platform_name[A: allocators.BumpAllocator](
+	ac ref(A)
+) ref(u8)
+	val p = get_current_platform[A](ac)
+	match p
+		Platform.Windows      => ( return "windows" )
+		Platform.Linux        => ( return "linux" )
+		Platform.Darwin       => ( return "darwin" )
+		Platform.NetBSD       => ( return "netbsd" )
+		Platform.DragonflyBSD => ( return "dragonflybsd" )
+		Platform.FreeBSD      => ( return "freebsd" )
+		Platform.OpenBSD      => ( return "openbsd" )
+		Platform.Android      => ( return "android" )
+		Platform.Haiku        => ( return "haiku" )
+		Platform.Redox        => ( return "redox" )
+		Platform.Plan9        => ( return "plan9" )
+	end
+	return "unknown"
+end
+
+when posix
+	extern def readlink(path ref(u8), buf mut(ref(u8)), bufsiz usize) isize :: "readlink"
+end
+
+when darwin
+	extern def _NSGetExecutablePath(buf mut(ref(u8)), bufsize mut(ref(u32))) i32 :: "_NSGetExecutablePath"
+	extern def realpath(path ref(u8), resolved mut(ref(u8))) ref(u8) :: "realpath"
+end
+
+when windows
+	extern def GetModuleFileNameA(module ref(void), buf mut(ref(u8)), size u32) u32 :: "GetModuleFileNameA"
+end
+
+pub def get_exe_path[A: allocators.BumpAllocator](
+	ac ref(A)
+) ref(u8)|error
+	var buf ref(u8) = A.alloc(ac, 4096 as usize)? as ref(u8)
+
+	when darwin
+		var size u32 = 4096 as u32
+		val r = _NSGetExecutablePath(buf, @as_mut(@addr(size)))
+		if r == 0
+			var resolved ref(u8) = A.alloc(ac, 4096 as usize)? as ref(u8)
+			val canon = realpath(buf, resolved)
+			if canon != none
+				return resolved
+			end
+			return buf
+		end
+	end
+
+	when linux
+		val n = readlink("/proc/self/exe", buf, 4096)
+		if n > 0
+			@deref(@as_mut(@add(buf, n as usize))) = 0 as u8
+			return buf
+		end
+	end
+
+	when freebsd
+		val n = readlink("/proc/curproc/file", buf, 4096)
+		if n > 0
+			@deref(@as_mut(@add(buf, n as usize))) = 0 as u8
+			return buf
+		end
+	end
+
+	when netbsd
+		val n = readlink("/proc/curproc/exe", buf, 4096)
+		if n > 0
+			@deref(@as_mut(@add(buf, n as usize))) = 0 as u8
+			return buf
+		end
+	end
+
+	when windows
+		if GetModuleFileNameA(none, buf, 4096 as u32) != 0
+			return buf
+		end
+	end
+
+	return error("could not determine executable path")
+end
+
+test "current_platform_name matches current platform"
+	var ac = allocators.Arena.new(4096 as usize)?
+
+	val platform = get_current_platform[_](@addr(ac))
+	val name = current_platform_name[_](@addr(ac))
+
+	match platform
+		Platform.Windows => assert str.eql(name, "windows")
+		Platform.Linux => assert str.eql(name, "linux")
+		Platform.Darwin =>	assert str.eql(name, "darwin")
+		Platform.NetBSD =>	assert str.eql(name, "netbsd")
+		Platform.DragonflyBSD => assert str.eql(name, "dragonflybsd")
+		Platform.FreeBSD => assert str.eql(name, "freebsd")
+		Platform.OpenBSD =>	assert str.eql(name, "openbsd")
+		Platform.Android =>	assert str.eql(name, "android")
+		Platform.Haiku => assert str.eql(name, "haiku")
+		Platform.Redox => assert str.eql(name, "redox")
+		Platform.Plan9 => assert str.eql(name, "plan9")
+		Platform.Unknown => assert str.eql(name, "unknown")
+	end
+
+	allocators.Arena.destroy(@addr(ac))
+end
