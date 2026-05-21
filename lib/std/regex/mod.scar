@@ -71,7 +71,12 @@ def matchalphanum(c u8) bool
 end
 
 def matchrange(c u8, str ref(u8)) bool
-    return c != '-' && char_at(str, 0) != 0 && char_at(str, 0) != '-' && char_at(str, 1) == '-' && char_at(str, 2) != 0 && c >= char_at(str, 0) && c <= char_at(str, 2)
+    return c != '-' && char_at(str, 0) != 0 
+        && char_at(str, 0) != '-' 
+        && char_at(str, 1) == '-' 
+        && char_at(str, 2) != 0 
+        && c >= char_at(str, 0) 
+        && c <= char_at(str, 2)
 end
 
 def matchdot(c u8) bool
@@ -83,26 +88,15 @@ def ismetachar(c u8) bool
 end
 
 def matchmetachar(c u8, str ref(u8)) bool
-    val meta = char_at(str, 0)
-    if meta == 'd'
-        return matchdigit(c)
+    match char_at(str, 0)
+        'd' => return matchdigit(c)
+        'D' => return !matchdigit(c)
+        'w' => return matchalphanum(c)
+        'W' => return !matchalphanum(c)
+        's' => return matchwhitespace(c)
+        'S' => return !matchwhitespace(c)
+        _   => return c == char_at(str, 0)
     end
-    if meta == 'D'
-        return !matchdigit(c)
-    end
-    if meta == 'w'
-        return matchalphanum(c)
-    end
-    if meta == 'W'
-        return !matchalphanum(c)
-    end
-    if meta == 's'
-        return matchwhitespace(c)
-    end
-    if meta == 'S'
-        return !matchwhitespace(c)
-    end
-    return c == meta
 end
 
 def matchcharclass(c u8, str ref(u8)) bool

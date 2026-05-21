@@ -1390,7 +1390,8 @@ impl Parser {
 
     fn parse_logical_or(&mut self) -> Result<Expr, CompileError> {
         let mut expr = self.parse_logical_and()?;
-        while self.check_simple(&TokenKind::PipePipe) {
+        while self.next_non_newline_kind(self.pos).is_some_and(|k| matches!(k, TokenKind::PipePipe)) {
+            self.consume_newlines();
             self.advance();
             self.consume_newlines();
             let rhs = self.parse_logical_and()?;
@@ -1405,7 +1406,8 @@ impl Parser {
 
     fn parse_logical_and(&mut self) -> Result<Expr, CompileError> {
         let mut expr = self.parse_bitwise_or()?;
-        while self.check_simple(&TokenKind::AmpAmp) {
+        while self.next_non_newline_kind(self.pos).is_some_and(|k| matches!(k, TokenKind::AmpAmp)) {
+            self.consume_newlines();
             self.advance();
             self.consume_newlines();
             let rhs = self.parse_bitwise_or()?;
@@ -1420,7 +1422,8 @@ impl Parser {
 
     fn parse_bitwise_or(&mut self) -> Result<Expr, CompileError> {
         let mut expr = self.parse_bitwise_xor()?;
-        while self.check_simple(&TokenKind::Pipe) {
+        while self.next_non_newline_kind(self.pos).is_some_and(|k| matches!(k, TokenKind::Pipe)) {
+            self.consume_newlines();
             self.advance();
             self.consume_newlines();
             let rhs = self.parse_bitwise_xor()?;
@@ -1435,7 +1438,8 @@ impl Parser {
 
     fn parse_bitwise_xor(&mut self) -> Result<Expr, CompileError> {
         let mut expr = self.parse_bitwise_and()?;
-        while self.check_simple(&TokenKind::Caret) {
+        while self.next_non_newline_kind(self.pos).is_some_and(|k| matches!(k, TokenKind::Caret)) {
+            self.consume_newlines();
             self.advance();
             self.consume_newlines();
             let rhs = self.parse_bitwise_and()?;
@@ -1450,7 +1454,8 @@ impl Parser {
 
     fn parse_bitwise_and(&mut self) -> Result<Expr, CompileError> {
         let mut expr = self.parse_equality()?;
-        while self.check_simple(&TokenKind::Amp) {
+        while self.next_non_newline_kind(self.pos).is_some_and(|k| matches!(k, TokenKind::Amp)) {
+            self.consume_newlines();
             self.advance();
             self.consume_newlines();
             let rhs = self.parse_equality()?;
@@ -1465,8 +1470,9 @@ impl Parser {
 
     fn parse_equality(&mut self) -> Result<Expr, CompileError> {
         let mut expr = self.parse_comparison()?;
-        while self.check_simple(&TokenKind::EqualEqual) || self.check_simple(&TokenKind::BangEqual)
+        while self.next_non_newline_kind(self.pos).is_some_and(|k| matches!(k, TokenKind::EqualEqual | TokenKind::BangEqual))
         {
+            self.consume_newlines();
             let op = if self.check_simple(&TokenKind::EqualEqual) {
                 BinaryOp::Equal
             } else {
@@ -1487,20 +1493,17 @@ impl Parser {
     fn parse_comparison(&mut self) -> Result<Expr, CompileError> {
         let mut expr = self.parse_shift()?;
         loop {
-            let op = if self.check_simple(&TokenKind::Less) {
-                Some(BinaryOp::LessThan)
-            } else if self.check_simple(&TokenKind::LessEqual) {
-                Some(BinaryOp::LessEqual)
-            } else if self.check_simple(&TokenKind::Greater) {
-                Some(BinaryOp::GreaterThan)
-            } else if self.check_simple(&TokenKind::GreaterEqual) {
-                Some(BinaryOp::GreaterEqual)
-            } else {
-                None
+            let op = match self.next_non_newline_kind(self.pos) {
+                Some(TokenKind::Less) => Some(BinaryOp::LessThan),
+                Some(TokenKind::LessEqual) => Some(BinaryOp::LessEqual),
+                Some(TokenKind::Greater) => Some(BinaryOp::GreaterThan),
+                Some(TokenKind::GreaterEqual) => Some(BinaryOp::GreaterEqual),
+                _ => None,
             };
             let Some(op) = op else {
                 break;
             };
+            self.consume_newlines();
             self.advance();
             self.consume_newlines();
             let rhs = self.parse_shift()?;
