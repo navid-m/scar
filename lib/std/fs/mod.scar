@@ -300,10 +300,12 @@ pub def strip_extension[A: allocators.BumpAllocator](
 		return none
 	end
 
-	val nd usize = trimmed_len(path)
-	val start usize = basename_start(path, nd)
-	val dot isize = find_extension_dot(path, start, nd)
-
+	val (
+		nd usize = trimmed_len(path)
+		start usize = basename_start(path, nd)
+		dot isize = find_extension_dot(path, start, nd)
+	)
+	
 	if dot < 0
 		return copy_bytes[A](ac, path, nd)
 	end
@@ -372,15 +374,14 @@ when posix
 	) usize :: "fwrite"
 	extern def mkdir(path ref(u8), mode i32) i32 :: "mkdir"
 	extern def rmdir(path ref(u8)) i32 :: "rmdir"
-	extern def popen(command ref(u8), mode ref(u8)) ref(void) :: "popen"
-	extern def pclose(pipe ref(void)) i32 :: "pclose"
-	extern def fgets(
-		buffer mut(ref(u8)),
-		size i32,
-		stream ref(void)
-	) ref(u8) :: "fgets"
-	extern def system(command ref(u8)) i32 :: "system"
+	extern def opendir(path ref(u8)) ref(void) :: "opendir"
+	extern def readdir(dir ref(void)) ref(void) :: "readdir"
+	extern def closedir(dir ref(void)) i32 :: "closedir"
+	extern def stat(path ref(u8), buf ref(void)) i32 :: "stat"
+	extern def access(path ref(u8), mode i32) i32 :: "access"
+	extern def unlink(path ref(u8)) i32 :: "unlink"
 	extern def strerror(code i32) ref(u8) :: "strerror"
+	extern def system(command ref(u8)) i32 :: "system"
 
 	when linux | android
 		extern def __errno_location() mut(ref(i32)) :: "__errno_location"
@@ -414,107 +415,36 @@ when posix
 		return mem
 	end
 
-	def shell_quote(path ref(u8)) ref(u8)|error
-		guard path != none else
-			return copy_literal("")
+	def stat_mode_offset() usize
+		when darwin | ios
+			return 4
 		end
-
-		val len_path usize = str.len(path)
-		var out ref(u8) = heap_alloc(len_path * 4 as usize + 3 as usize)?
-		var write usize = 0
-
-		@deref(out) = '\'' as u8
-		write++
-
-		for var i = 0 .. len_path as i32
-			var ch u8 = @deref(@add(path, i))
-
-			if ch == '\'' as u8
-				@deref(@add(out, write)) = '\'' as u8
-				write++
-				@deref(@add(out, write)) = '\\' as u8
-				write++
-				@deref(@add(out, write)) = '\'' as u8
-				write++
-				@deref(@add(out, write)) = '\'' as u8
-				write++
-			else
-				@deref(@add(out, write)) = ch
-				write++
-			end
+		when freebsd | openbsd | netbsd | dragonflybsd
+			return 4
 		end
-
-		@deref(@add(out, write)) = '\'' as u8
-		write++
-		@deref(@add(out, write)) = 0 as u8
-
-		return out
+		return 24
 	end
 
-	def copy_literal(text ref(u8)) ref(u8)|error
-		val len_text usize = str.len(text)
-		var out ref(u8) = heap_alloc(len_text + 1 as usize)?
-		@memcpy(out, text, len_text)
-		@deref(@add(out, len_text)) = 0 as u8
-		return out
-	end
-
-	def build_command(
-		prefix ref(u8),
-		path ref(u8),
-		suffix ref(u8)
-	) ref(u8)|error
-		var quoted = shell_quote(path)?
-		val (
-			len_prefix usize = str.len(prefix)
-			len_path usize = str.len(quoted)
-			len_suffix usize = str.len(suffix)
-		)
-		var out ref(u8) = heap_alloc(
-			len_prefix + len_path + len_suffix + 1 as usize
-		)?
-
-		@memcpy(out, prefix, len_prefix)
-		@memcpy(@add(out, len_prefix), quoted, len_path)
-		@memcpy(
-			@add(out, len_prefix + len_path),
-			suffix,
-			len_suffix
-		)
-		@deref(@add(out, len_prefix + len_path + len_suffix)) = 0 as u8
-
-		@free(quoted)
-		return out
-	end
-
-	def run_shell_bool(
-		prefix ref(u8),
-		path ref(u8),
-		suffix ref(u8)
-	) bool
-		match build_command(prefix, path, suffix)
-			ok command => (
-				val status = system(command)
-				@free(command)
-				return status == 0
-			)
-			error _ => (
-				return false
-			)
+	def dirent_type_offset() usize
+		when darwin | ios | freebsd | openbsd | netbsd | dragonflybsd
+			return 20
 		end
+		return 18
 	end
 
-	def trim_line_end(line mut(ref(u8))) void
-		var len_line usize = str.len(line)
-
-		for len_line > 0 as usize
-			var ch u8 = @deref(@add(line, len_line - 1 as usize))
-			if ch != '\n' && ch != '\r'
-				break
-			end
-			len_line--
-			@deref(@add(line, len_line)) = 0 as u8
+	def dirent_name_offset() usize
+		when darwin | ios | freebsd | openbsd | netbsd | dragonflybsd
+			return 21
 		end
+		return 19
+	end
+
+	def dirent_type(entry ref(void)) u8
+		return @deref(@add(entry, dirent_type_offset()) as ref(u8))
+	end
+
+	def dirent_name(entry ref(void)) ref(u8)
+		return @add(entry, dirent_name_offset()) as ref(u8)
 	end
 
 	def allocate_line[A: allocators.BumpAllocator](
@@ -600,41 +530,26 @@ when posix
 		ac ref(A),
 		path ref(u8)
 	) list[DirEntry]|error
-		var command = build_command(
-				"ls -1Ap ",
-				path,
-				" 2>/dev/null"
-			)?
-		var pipe = popen(command, "r")
-		@free(command)
-
-		if pipe == none
+		var dir = opendir(path)
+		if dir == none
 			return io_error[list[DirEntry]](
 				last_errno_message("failed to read directory")
 			)
 		end
 
 		var entries list[DirEntry] = []
-		var buffer mut(ref(u8)) = @as_mut(heap_alloc(4096 as usize)?)
+		var entry ref(void) = readdir(dir)
 
-		for fgets(buffer, 4096, pipe) != none
-			trim_line_end(buffer)
+		for entry != none
+			var name ref(u8) = dirent_name(entry)
 
-			if str.len(buffer) == 0 as usize
+			if str.eql(name, ".") || str.eql(name, "..")
+				entry = readdir(dir)
 				continue
 			end
 
-			var kind_dir bool = false
-			var entry_name ref(u8) = buffer
-			var len_name usize = str.len(buffer)
-
-			if len_name > 0 as usize && @deref(@add(buffer, len_name - 1 as usize)) == '/' as u8
-				kind_dir = true
-				@deref(@add(buffer, len_name - 1 as usize)) = 0 as u8
-				entry_name = buffer
-			end
-
-			var name_copy = allocate_line[A](ac, entry_name)?
+			var kind_dir bool = dirent_type(entry) == 4
+			var name_copy = allocate_line[A](ac, name)?
 			var full_path = join[A](ac, path, name_copy)?
 
 			@append(
@@ -646,11 +561,11 @@ when posix
 					is_dir: kind_dir
 				)
 			)
+
+			entry = readdir(dir)
 		end
 
-		@free(buffer)
-
-		if pclose(pipe) != 0
+		if closedir(dir) != 0
 			return io_error[list[DirEntry]]("failed to read directory")
 		end
 
@@ -666,17 +581,46 @@ when posix
 	end
 
 	pub def create_dir_all(path ref(u8)) void|error
-		var command = build_command(
-				"mkdir -p ",
-				path,
-				""
-			)?
-		val status = system(command)
-		@free(command)
-
-		if status != 0
+		guard path != none && str.len(path) > 0 as usize else
 			return io_error[void]("failed to create directory")
 		end
+
+		if access(path, 0) == 0
+			return
+		end
+
+		val len_path usize = str.len(path)
+		var copy ref(u8) = heap_alloc(len_path + 1 as usize)?
+		@memcpy(copy as ref(void), path as ref(void), len_path + 1 as usize)
+		var i usize = root_len(copy)
+
+		for i < len_path
+			if is_sep(@deref(@add(copy, i)))
+				@deref(@as_mut(@add(copy, i))) = 0 as u8
+
+				if access(copy, 0) != 0
+					if mkdir(copy, 511) != 0
+						var saved u8 = '/'
+						@free(copy)
+						return io_error[void](
+							last_errno_message("failed to create directory")
+						)
+					end
+				end
+
+				@deref(@as_mut(@add(copy, i))) = '/' as u8
+			end
+			i++
+		end
+
+		if mkdir(copy, 511) != 0
+			@free(copy)
+			return io_error[void](
+				last_errno_message("failed to create directory")
+			)
+		end
+
+		@free(copy)
 	end
 
 	pub def remove_dir(path ref(u8)) void|error
@@ -688,41 +632,107 @@ when posix
 	end
 
 	pub def remove_dir_all(path ref(u8)) void|error
-		var command = build_command(
-				"rm -rf ",
-				path,
-				""
-			)?
-		val status = system(command)
-		@free(command)
-
-		if status != 0
-			return io_error[void]("failed to remove directory tree")
+		if path == none || access(path, 0) != 0
+			return
 		end
+
+		var dir = opendir(path)
+		if dir == none
+			return io_error[void](
+				last_errno_message("failed to remove directory tree")
+			)
+		end
+
+		var entry ref(void) = readdir(dir)
+		val len_path usize = str.len(path)
+
+		for entry != none
+			var name ref(u8) = dirent_name(entry)
+
+			if str.eql(name, ".") || str.eql(name, "..")
+				entry = readdir(dir)
+				continue
+			end
+
+			var len_name usize = str.len(name)
+			var full ref(u8) = heap_alloc(len_path + 1 as usize + len_name + 1 as usize)?
+			@memcpy(full as ref(void), path as ref(void), len_path)
+			@deref(@as_mut(@add(full, len_path))) = '/' as u8
+			@memcpy(
+				@add(full, len_path + 1 as usize) as ref(void),
+				name as ref(void),
+				len_name + 1 as usize
+			)
+
+			if dirent_type(entry) == 4 || dirent_type(entry) == 0
+				remove_dir_all(full)?
+			else
+				if unlink(full) != 0
+					@free(full)
+					closedir(dir)
+					return io_error[void](
+						last_errno_message("failed to remove directory tree")
+					)
+				end
+			end
+
+			@free(full)
+			entry = readdir(dir)
+		end
+
+		closedir(dir)
+		remove_dir(path)?
 	end
 
 	pub def exists(path ref(u8)) bool
-		return run_shell_bool(
-			"test -e ",
-			path,
-			" >/dev/null 2>&1"
-		)
+		guard path != none else
+			return false
+		end
+		return access(path, 0) == 0
 	end
 
 	pub def is_file(path ref(u8)) bool
-		return run_shell_bool(
-			"test -f ",
-			path,
-			" >/dev/null 2>&1"
-		)
+		guard path != none else
+			return false
+		end
+
+		match heap_alloc(144 as usize)
+			ok raw_buf => (
+				if stat(path, raw_buf as ref(void)) != 0
+					@free(raw_buf)
+					return false
+				end
+
+				val mode u32 = @deref(@add(raw_buf, stat_mode_offset()) as ref(u32))
+				@free(raw_buf)
+				return (mode & 61440) == 32768
+			)
+			error _ => (
+				return false
+			)
+		end
 	end
 
 	pub def is_dir(path ref(u8)) bool
-		return run_shell_bool(
-			"test -d ",
-			path,
-			" >/dev/null 2>&1"
-		)
+		guard path != none else
+			return false
+		end
+
+		match heap_alloc(144 as usize)
+			ok raw_buf => (
+				if stat(path, raw_buf as ref(void)) != 0
+					@free(raw_buf)
+					return false
+				end
+
+				val mode u32 = @deref(@add(raw_buf, stat_mode_offset()) as ref(u32))
+				@free(raw_buf)
+				return (mode & 61440) == 16384
+			)
+			error _ => (
+				return false
+			)
+		end
 	end
 end
 
