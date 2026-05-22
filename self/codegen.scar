@@ -18,7 +18,7 @@ val KW_F32     u8 = 27
 val KW_F64     u8 = 28
 
 pub def generate_c(program ref(ast.Program), info ref(sema.ProgramInfo)) ref(u8)
-    var output ref(u8) = @alloc(4096)
+    var output ref(u8) = @alloc(1048576)
     var output_len usize = 0
 
     append_str(@addr(output), @addr(output_len), "#include <inttypes.h>\n")
@@ -704,12 +704,13 @@ end
 def c_type_named(ty ref(ast.Type), name ref(u8)) ref(u8)
     val base ref(u8) = c_type(ty)
     val base_len usize = str.len(base)
-    val name_len usize = str.len(name)
-    var result ref(u8) = @alloc(base_len + 1 + name_len + 1)
+    val mangled ref(u8) = mangle_local_symbol(name)
+    val mangled_len usize = str.len(mangled)
+    var result ref(u8) = @alloc(base_len + 1 + mangled_len + 1)
     @memcpy(result, base, base_len)
     @deref(@as_mut(@add(result, base_len))) = ' '
-    @memcpy(@add(result, base_len + 1), mangle_local_symbol(name), name_len)
-    @deref(@as_mut(@add(result, base_len + 1 + name_len))) = 0
+    @memcpy(@add(result, base_len + 1), mangled, mangled_len)
+    @deref(@as_mut(@add(result, base_len + 1 + mangled_len))) = 0
     return result
 end
 
@@ -795,6 +796,8 @@ def is_aggregate_type(ty ref(ast.Type)) bool
     match @deref(ty)
         ast.Type.Named(_) => return true
         ast.Type.Applied(_, _) => return true
+        ast.Type.List(_) => return true
+        ast.Type.Result(_) => return true
         _ => return false
     end
 end
@@ -810,36 +813,25 @@ end
 def append_str(output ref(ref(u8)), output_len ref(usize), s ref(u8))
     val slen usize = str.len(s)
     val current_len usize = @deref(output_len)
-    val needed usize = current_len + slen + 1
-    val old_capacity usize = needed
-    val old_ptr ref(u8) = @deref(output)
-
-    if needed > old_capacity
-        val new_ptr ref(u8) = @alloc(needed * 2)
-        @memcpy(new_ptr, old_ptr, current_len)
-        @deref(output) = new_ptr
-    end
-
     @memcpy(@add(@deref(output), current_len), s, slen)
     @deref(output_len) = current_len + slen
 end
 
 def append_u64(output ref(ref(u8)), output_len ref(usize), v u64)
     var buf ref(u8) = @alloc(32)
-    var i usize = 31
     var value u64 = v
-    @deref(@as_mut(@add(buf, 31))) = 0
+    var i usize = 31
+    @deref(@as_mut(@add(buf, i))) = 0
     if value == 0
-        @deref(@as_mut(@add(buf, 30))) = '0'
-        i = 30
+        i--
+        @deref(@as_mut(@add(buf, i))) = '0'
     else
         for value > 0
+            i--
             val digit u8 = (value % 10) as u8 + '0'
             @deref(@as_mut(@add(buf, i))) = digit
-            i--
             value /= 10
         end
-        i++
     end
     append_str(output, output_len, @add(buf, i))
 end

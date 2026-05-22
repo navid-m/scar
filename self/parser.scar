@@ -1024,6 +1024,30 @@ def parse_primary(p ref(ast.TokenList)) ast.Expr
             end
             return expr
         )
+        ast.TokenKind.LBrace(_) => (
+            advance(p)
+            var elems list[ast.Expr] = []
+            consume_newlines(p)
+            for !is_eof(p)
+                match p.tokens[p.pos].kind
+                    ast.TokenKind.RBrace(_) => break
+                    _ => ()
+                end
+                @append(elems, parse_expr(p))
+                match p.tokens[p.pos].kind
+                    ast.TokenKind.Comma(_) => (
+                        advance(p)
+                        consume_newlines(p)
+                    )
+                    _ => break
+                end
+            end
+            match p.tokens[p.pos].kind
+                ast.TokenKind.RBrace(_) => advance(p)
+                _ => ()
+            end
+            return ast.Expr.Pack(elems)
+        )
         ast.TokenKind.Ident(name) => (
             advance(p)
             var segments list[ref(u8)] = [name]
