@@ -712,13 +712,17 @@ fn render_stmt_inner<'a>(
             mutable,
             name,
             init,
+            declared_type,
             ..
         } => {
-            let ty = info
-                .scope_overrides
-                .borrow()
-                .get(name)
-                .cloned()
+            let ty = declared_type
+                .clone()
+                .or_else(|| {
+                    info.scope_overrides
+                        .borrow()
+                        .get(name)
+                        .cloned()
+                })
                 .or_else(|| {
                     info.locals
                         .get(&function.name)
