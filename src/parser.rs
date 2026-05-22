@@ -1166,7 +1166,14 @@ impl Parser {
             Ok((MatchArmKind::Variant(value), bindings))
         } else if self.check_simple(&TokenKind::Str(String::new())) {
             let value = match &self.current().kind {
-                TokenKind::Str(s) => s.clone(),
+                TokenKind::Str(s) => {
+                    let bytes = s.as_bytes();
+                    if bytes.is_empty() {
+                        "0".to_string()
+                    } else {
+                        format!("{}", bytes[0])
+                    }
+                }
                 _ => unreachable!(),
             };
             self.advance();

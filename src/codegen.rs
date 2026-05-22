@@ -2388,7 +2388,13 @@ fn render_builtin_call(
                 Ok(format!("(&{})", rendered))
             } else {
                 let ty = infer_codegen_expr_type(&args[0], function, info)?;
-                Ok(format!("(&({}){{{}}})", c_type(&ty), rendered))
+                let c_ty = c_type(&ty);
+                let prefix = format!("(({}){{", c_ty);
+                if rendered.starts_with(&prefix) {
+                    Ok(format!("(&{})", rendered))
+                } else {
+                    Ok(format!("(&({}){{{}}})", c_ty, rendered))
+                }
             }
         }
         "call" => {
