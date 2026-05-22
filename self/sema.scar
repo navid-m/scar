@@ -1,5 +1,13 @@
 val str = use("std/string")
 val ast = use("ast")
+val lxr = use("lexer")
+val prs = use("parser")
+
+pub def parse_and_analyze(source ref(u8)) ProgramInfo
+    val tokens list[ast.Token] = lxr.lex(source)
+    val prog ast.Program = prs.parse_program(tokens)
+    return analyze(@addr(prog))
+end
 
 pub type FunctionSig
     params list[ast.Type]
@@ -825,5 +833,146 @@ def types_equal(a ref(ast.Type), b ref(ast.Type)) bool
         )
     end
     return false
+end
+
+test "analyzes pub function"
+    val info ProgramInfo = parse_and_analyze("pub def main() void\nend\n")
+    assert @len(info.functions) == 1
+    assert str.eql(info.functions[0].name, "main")
+end
+
+test "analyzes namespaced function"
+    val info ProgramInfo = parse_and_analyze("pub def Arena.new(cap usize) Arena\n\treturn Arena(cap: cap)\nend\n")
+    assert @len(info.functions) == 1
+    assert str.eql(info.functions[0].name, "Arena.new")
+end
+
+test "analyzes extern function"
+    val info ProgramInfo = parse_and_analyze("extern def sleep(t u32) void :: \"sleep\"\n")
+    assert @len(info.functions) == 1
+    assert str.eql(info.functions[0].name, "sleep")
+end
+
+test "analyzes function parameters"
+    val info ProgramInfo = parse_and_analyze("def add(a i32, b i32) i32\n\treturn a + b\nend\n")
+    assert @len(info.functions) == 1
+    assert @len(info.functions[0].sig.params) == 2
+end
+
+test "analyzes string literals as ref(u8)"
+    val info ProgramInfo = parse_and_analyze("pub def main() void\n\tval message ref(u8) = \"hello\"\nend\n")
+    assert @len(info.functions) == 1
+end
+
+test "analyzes type alias"
+    val info ProgramInfo = parse_and_analyze("type Count = i32\npub def main() void\n\tval count Count = 1\nend\n")
+    assert @len(info.types) == 1
+end
+
+test "analyzes bitwise and shift operators"
+    val info ProgramInfo = parse_and_analyze("type Pair\n\tleft i32\n\tright i32\nend\npub def main() void\n\tvar mask i32 = (1 << 3) | (2 & 7) ^ (8 >> 1)\n\tmask &= 15\n\tmask |= 1\n\tmask ^= 2\n\tval product = (6 * 7) % 5\n\tval pair = Pair(mask, product)\nend\n")
+    assert @len(info.functions) == 1
+end
+
+test "analyzes multiply assignment"
+    val info ProgramInfo = parse_and_analyze("pub def main() void\n\tvar value i32 = 3\n\tvalue *= 2\nend\n")
+    assert @len(info.functions) == 1
+end
+
+test "analyzes numeric widening"
+    val info ProgramInfo = parse_and_analyze("pub def main() void\n\tval wide i64 = 1\n\tval sum i64 = wide + 2\n\tval small f32 = 3 as f32\n\tval big f64 = 4 as f64\nend\n")
+    assert @len(info.functions) == 1
+end
+
+test "analyzes bool return type from comparisons"
+    val info ProgramInfo = parse_and_analyze("pub def same(x i32, y i32) bool\n\treturn x == y\nend\n")
+    assert @len(info.functions) == 1
+    val fn_entry = info.functions[0]
+    val ret_ty = fn_entry.sig.return_type
+    match @deref(@addr(ret_ty))
+        ast.Type.Bool(_) => assert true
+        _ => assert false
+    end
+end
+
+test "analyzes mutable ref u8 types"
+    val info ProgramInfo = parse_and_analyze("extern def strcat(dest mut(ref(u8)), src ref(u8)) ref(u8) :: \"strcat\"\npub def main() void\nend\n")
+    assert @len(info.functions) == 1
+end
+
+test "analyzes memcpy and pointer intrinsics"
+    val info ProgramInfo = parse_and_analyze("pub def main() void\n\tvar buffer mut(ref(u8)) = @alloc(16)\n\t@memcpy(buffer, \"hi\", 2 as usize)\n\tval next = @add(buffer, 1 as usize)\nend\n")
+    assert @len(info.functions) == 1
+end
+
+test "analyzes if statement"
+    val info ProgramInfo = parse_and_analyze("pub def main() void\n\tvar x i32 = 0\n\tif x == 0\n\t\tx = 1\n\tend\nend\n")
+    assert @len(info.functions) == 1
+end
+
+test "analyzes while loop"
+    val info ProgramInfo = parse_and_analyze("pub def main() void\n\tvar i i32 = 0\n\twhile i < 10\n\t\ti = i + 1\n\tend\nend\n")
+    assert @len(info.functions) == 1
+end
+
+test "analyzes for range loop"
+    val info ProgramInfo = parse_and_analyze("pub def main() void\n\tvar sum i32 = 0\n\tfor i in 0 to 10\n\t\tsum = sum + i\n\tend\nend\n")
+    assert @len(info.functions) == 1
+end
+
+test "analyzes match on result type"
+    val info ProgramInfo = parse_and_analyze("pub def main() void\n\tvar result i32|error = 0 as i32\n\tmatch result\n\t\tok(v) => ()\n\t\terror(e) => ()\n\tend\nend\n")
+    assert @len(info.functions) == 1
+end
+
+test "analyzes struct initialization"
+    val info ProgramInfo = parse_and_analyze("type Point\n\tx i32\n\ty i32\nend\npub def main() void\n\tval p = Point(x: 1, y: 2)\nend\n")
+    assert @len(info.functions) == 1
+    assert @len(info.types) == 1
+end
+
+test "analyzes field access"
+    val info ProgramInfo = parse_and_analyze("type Point\n\tx i32\n\ty i32\nend\npub def main() void\n\tval p = Point(x: 1, y: 2)\n\tval x_val = p.x\nend\n")
+    assert @len(info.functions) == 1
+end
+
+test "analyzes method call"
+    val info ProgramInfo = parse_and_analyze("type StringBuilder\n\tlen usize\nend\n\npub def StringBuilder.append(sb mut(ref(StringBuilder)), n usize) void\n\tsb.len = n\nend\n\npub def main() void\n\tvar sb StringBuilder = StringBuilder(len: 0 as usize)\nend\n")
+    assert @len(info.functions) == 2
+end
+
+test "analyzes list literal"
+    val info ProgramInfo = parse_and_analyze("pub def main() void\n\tval nums list[i32] = [1, 2, 3]\nend\n")
+    assert @len(info.functions) == 1
+end
+
+test "analyzes list indexing"
+    val info ProgramInfo = parse_and_analyze("pub def main() void\n\tval nums list[i32] = [1, 2, 3]\n\tval first = nums[0]\nend\n")
+    assert @len(info.functions) == 1
+end
+
+test "analyzes builtin addr"
+    val info ProgramInfo = parse_and_analyze("pub def main() void\n\tvar x i32 = 42\n\tval p = @addr(x)\nend\n")
+    assert @len(info.functions) == 1
+end
+
+test "analyzes builtin deref"
+    val info ProgramInfo = parse_and_analyze("pub def main() void\n\tvar x i32 = 42\n\tval p = @addr(x)\n\t@deref(p) = 10\nend\n")
+    assert @len(info.functions) == 1
+end
+
+test "analyzes builtin len"
+    val info ProgramInfo = parse_and_analyze("pub def main() void\n\tval nums list[i32] = [1, 2, 3]\n\tval l usize = @len(nums)\nend\n")
+    assert @len(info.functions) == 1
+end
+
+test "analyzes multiple functions"
+    val info ProgramInfo = parse_and_analyze("pub def foo() i32\n\treturn 1\nend\n\npub def bar() i32\n\treturn 2\nend\n\npub def main() void\nend\n")
+    assert @len(info.functions) == 3
+end
+
+test "function symbol mangling"
+    val info ProgramInfo = parse_and_analyze("pub def main() void\nend\n")
+    assert @len(info.function_symbols) == 1
 end
 
