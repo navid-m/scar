@@ -1,0 +1,11 @@
+type SomeType
+    x i32
+    y i32
+    z i32
+end
+
+pub def main()
+    val x = SomeType(x: 1, y: 2, z: 3)
+    @print("{d}", {x.x})
+end
+
