@@ -10,6 +10,9 @@ val cgen = use("codegen")
 val rslv = use("resolver")
 
 pub def compile(source_path ref(u8), output_path ref(u8)) i32|error
+    guard source_path != none && !str.eql(source_path, "") else
+        return error("scar: source path was empty")
+    end
     var arena = allocators.Arena.new(131072 as usize)?
     defer
         allocators.Arena.destroy(@addr(arena))
@@ -53,6 +56,34 @@ pub def compile(source_path ref(u8), output_path ref(u8)) i32|error
     return 0
 end
 
+pub def emit(source_path ref(u8), output_path ref(u8)) i32|error
+    var arena = allocators.Arena.new(131072 as usize)?
+    defer
+        allocators.Arena.destroy(@addr(arena))
+    end
+
+    val source = fs.read_text[_](@addr(arena), source_path)?
+    if source == none
+        return error("scar: cannot read file")
+    end
+
+    val (
+        tokens list[ast.Token] = lxr.lex(source)
+        prog ast.Program       = prs.parse_program(tokens)
+        resolved ast.Program   = rslv.resolve(@addr(prog))
+        info sema.ProgramInfo  = sema.analyze(@addr(resolved))
+        c_code ref(u8)         = cgen.generate_c(@addr(resolved), @addr(info))
+    )
+    
+    if output_path == none
+        @puts(c_code)
+    else
+        fs.write_text(output_path, c_code)?
+    end
+
+    return 0
+end
+
 def append_str(buf ref(list[u8]), s ref(u8))
     val slen usize = str.len(s)
     var i usize = 0
@@ -64,24 +95,73 @@ end
 
 pub def main() void
     val args list[ref(u8)] = @args()
-    if @len(args) < 2
-        @puts("usage: scar-compile <source.scar> [output]")
+    
+    var emit_mode bool = false
+    var emit_output_path ref(u8) = none
+    var source_path ref(u8) = none
+    var binary_output_path ref(u8) = none
+    var i usize = 1
+    
+    for i < @len(args)
+        val arg ref(u8) = args[i]
+        if str.eql(arg, "--emit")
+            emit_mode = true
+        elif str.eql(arg, "-o")
+            if i + 1 >= @len(args)
+                @puts("usage: scar-compile [--emit [-o <output.c>]] <source.scar> [output]")
+                return
+            end
+            if emit_mode
+                emit_output_path = args[i + 1]
+            else
+                binary_output_path = args[i + 1]
+            end
+            i++
+        else
+            if source_path == none
+                source_path = arg
+            elif !emit_mode && binary_output_path == none
+                binary_output_path = arg
+            else
+                @puts("usage: scar-compile [--emit [-o <output.c>]] <source.scar> [output]")
+                return
+            end
+        end
+        i++
+    end
+    
+    if source_path == none
+        @puts("usage: scar-compile [--emit [-o <output.c>]] <source.scar> [output]")
         return
     end
-    val source_path ref(u8) = args[1]
-    var output_path ref(u8) = "./a.out"
-    if @len(args) >= 3
-        output_path = args[2]
+    
+    if !emit_mode && binary_output_path == none
+        binary_output_path = "./a.out"
     end
-    match compile(source_path, output_path)
-        ok rc => (
-            if rc != 0
-                os.exit(rc)
-            end
-        )
-        error msg => (
-            @puts(msg)
-            os.exit(1)
-        )
+    
+    if emit_mode
+        match emit(source_path, emit_output_path)
+            ok rc => (
+                if rc != 0
+                    os.exit(rc)
+                end
+            )
+            error msg => (
+                @puts(msg)
+                os.exit(1)
+            )
+        end
+    else
+        match compile(source_path, binary_output_path)
+            ok rc => (
+                if rc != 0
+                    os.exit(rc)
+                end
+            )
+            error msg => (
+                @puts(msg)
+                os.exit(1)
+            )
+        end
     end
 end
