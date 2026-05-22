@@ -2389,11 +2389,17 @@ fn render_builtin_call(
             } else {
                 let ty = infer_codegen_expr_type(&args[0], function, info)?;
                 let c_ty = c_type(&ty);
-                let prefix = format!("(({}){{", c_ty);
-                if rendered.starts_with(&prefix) {
+                let is_compound_literal = rendered
+                    .trim_start_matches('(')
+                    .starts_with(&format!("{}){{", c_ty));
+                if is_compound_literal {
                     Ok(format!("(&{})", rendered))
                 } else {
-                    Ok(format!("(&({}){{{}}})", c_ty, rendered))
+                    let temp_id = next_codegen_temp_id();
+                    Ok(format!(
+                        "({{ {} __scar_addr_{} = {}; &__scar_addr_{}; }})",
+                        c_ty, temp_id, rendered, temp_id
+                    ))
                 }
             }
         }
