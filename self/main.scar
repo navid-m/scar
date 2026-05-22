@@ -19,7 +19,7 @@ pub def compile(source_path ref(u8), output_path ref(u8)) i32|error
     guard source_path != none && !str.eql(source_path, "") else
         return error("scar: source path was empty")
     end
-    var arena = allocators.Arena.new(131072 as usize)?
+    var arena = allocators.Arena.new(2097152 as usize)?
     defer
         allocators.Arena.destroy(@addr(arena))
     end
@@ -30,11 +30,11 @@ pub def compile(source_path ref(u8), output_path ref(u8)) i32|error
     end
 
     val (
-        tokens list[ast.Token] = lxr.lex(source)
-        prog ast.Program       = prs.parse_program(tokens)
+        tokens list[ast.Token] = lxr.lex(source, @addr(arena))
+        prog ast.Program       = prs.parse_program(tokens, @addr(arena))
         resolved ast.Program   = rslv.resolve(@addr(prog))
-        info sema.ProgramInfo  = sema.analyze(@addr(resolved))
-        c_code ref(u8)         = cgen.generate_c(@addr(resolved), @addr(info))
+        info sema.ProgramInfo  = sema.analyze(@addr(resolved), @addr(arena))
+        c_code ref(u8)         = cgen.generate_c(@addr(resolved), @addr(info), @addr(arena))
         c_path ref(u8)         = "/tmp/scar-compile.c"
     )
     
@@ -63,7 +63,7 @@ pub def compile(source_path ref(u8), output_path ref(u8)) i32|error
 end
 
 pub def emit(source_path ref(u8), output_path ref(u8)) i32|error
-    var arena = allocators.Arena.new(131072 as usize)?
+    var arena = allocators.Arena.new(2097152 as usize)?
     defer
         allocators.Arena.destroy(@addr(arena))
     end
@@ -74,11 +74,11 @@ pub def emit(source_path ref(u8), output_path ref(u8)) i32|error
     end
 
     val (
-        tokens list[ast.Token] = lxr.lex(source)
-        prog ast.Program       = prs.parse_program(tokens)
+        tokens list[ast.Token] = lxr.lex(source, @addr(arena))
+        prog ast.Program       = prs.parse_program(tokens, @addr(arena))
         resolved ast.Program   = rslv.resolve(@addr(prog))
-        info sema.ProgramInfo  = sema.analyze(@addr(resolved))
-        c_code ref(u8)         = cgen.generate_c(@addr(resolved), @addr(info))
+        info sema.ProgramInfo  = sema.analyze(@addr(resolved), @addr(arena))
+        c_code ref(u8)         = cgen.generate_c(@addr(resolved), @addr(info), @addr(arena))
     )
     
     if output_path == none

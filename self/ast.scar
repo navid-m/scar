@@ -278,8 +278,8 @@ pub union Stmt
 end
 
 pub type StmtVarDecl
-	mutable bool
 	name ref(u8)
+	mutable bool
 	declared_type Type
 	init Expr
 	line usize

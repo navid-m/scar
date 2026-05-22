@@ -61,8 +61,8 @@ def resolve_stmt(stmt ref(ast.Stmt)) ast.Stmt
             var resolved_init ast.Expr = resolve_expr(@addr(vd.init))
             var resolved_decl_type ast.Type = resolve_type(@addr(vd.declared_type))
             return ast.Stmt.VarDecl(@addr(ast.StmtVarDecl(
-                mutable: vd.mutable,
                 name: vd.name,
+                mutable: vd.mutable,
                 declared_type: resolved_decl_type,
                 init: resolved_init,
                 line: vd.line,

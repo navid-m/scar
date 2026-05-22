@@ -1,6 +1,7 @@
 val str = use("std/string")
 val ast = use("ast")
 val sema = use("sema")
+val allocators = use("std/allocators")
 
 val KW_VOID    u8 = 15
 val KW_BOOL    u8 = 16
@@ -17,8 +18,13 @@ val KW_USIZE   u8 = 26
 val KW_F32     u8 = 27
 val KW_F64     u8 = 28
 
-pub def generate_c(program ref(ast.Program), info ref(sema.ProgramInfo)) ref(u8)
-    var output ref(u8) = @alloc(1048576)
+pub def generate_c(program ref(ast.Program), info ref(sema.ProgramInfo), arena ref(allocators.Arena)) ref(u8)
+    val output_res = allocators.Arena.alloc(arena, 1048576)
+    var output ref(u8) = none
+    match output_res
+        ok m => output = m as ref(u8)
+        error _ => return none
+    end
     var output_len usize = 0
 
     append_str(@addr(output), @addr(output_len), "#include <inttypes.h>\n")
@@ -42,7 +48,7 @@ pub def generate_c(program ref(ast.Program), info ref(sema.ProgramInfo)) ref(u8)
             i++
             continue
         end
-        render_signature(fn_ref, info, @addr(output), @addr(output_len))
+        render_signature(fn_ref, info, arena, @addr(output), @addr(output_len))
         append_str(@addr(output), @addr(output_len), ";\n")
         i++
     end
@@ -55,7 +61,7 @@ pub def generate_c(program ref(ast.Program), info ref(sema.ProgramInfo)) ref(u8)
             i++
             continue
         end
-        render_function(fn_ref, info, @addr(output), @addr(output_len))
+        render_function(fn_ref, info, arena, @addr(output), @addr(output_len))
         append_str(@addr(output), @addr(output_len), "\n")
         i++
     end
@@ -63,7 +69,7 @@ pub def generate_c(program ref(ast.Program), info ref(sema.ProgramInfo)) ref(u8)
     i = 0
     for i < @len(program.functions)
         if str.eql(program.functions[i].name, "main") && !program.functions[i].is_extern
-            render_entrypoint(@addr(program.functions[i]), info, @addr(output), @addr(output_len))
+            render_entrypoint(@addr(program.functions[i]), info, arena, @addr(output), @addr(output_len))
             break
         end
         i++
@@ -97,20 +103,20 @@ def append_runtime_prelude(output ref(ref(u8)), output_len ref(usize))
     append_str(output, output_len, "}\n\n")
 end
 
-def render_function(fun ref(ast.Function), info ref(sema.ProgramInfo), output ref(ref(u8)), output_len ref(usize))
-    render_signature(fun, info, output, output_len)
+def render_function(fun ref(ast.Function), info ref(sema.ProgramInfo), arena ref(allocators.Arena), output ref(ref(u8)), output_len ref(usize))
+    render_signature(fun, info, arena, output, output_len)
     append_str(output, output_len, " {\n")
 
     if !is_void_type(@addr(fun.return_type))
         indent(output, output_len, 1)
-        append_str(output, output_len, c_type(@addr(fun.return_type)))
+        append_str(output, output_len, c_type(@addr(fun.return_type), arena))
         append_str(output, output_len, " __scar_return_value;\n")
     end
 
     var next_temp_id usize = 0
     var i usize = 0
     for i < @len(fun.body)
-        render_stmt(@addr(fun.body[i]), fun, info, 1, @addr(next_temp_id), output, output_len)
+        render_stmt(@addr(fun.body[i]), fun, info, 1, @addr(next_temp_id), arena, output, output_len)
         i++
     end
 
@@ -123,9 +129,9 @@ def render_function(fun ref(ast.Function), info ref(sema.ProgramInfo), output re
     append_str(output, output_len, "}\n")
 end
 
-def render_signature(fun ref(ast.Function), info ref(sema.ProgramInfo), output ref(ref(u8)), output_len ref(usize))
-    val return_type ref(u8) = c_type(@addr(fun.return_type))
-    val symbol ref(u8) = lookup_symbol(fun.name, info)
+def render_signature(fun ref(ast.Function), info ref(sema.ProgramInfo), arena ref(allocators.Arena), output ref(ref(u8)), output_len ref(usize))
+    val return_type ref(u8) = c_type(@addr(fun.return_type), arena)
+    val symbol ref(u8) = lookup_symbol(fun.name, info, arena)
 
     if fun.is_extern
         append_str(output, output_len, "extern ")
@@ -143,16 +149,16 @@ def render_signature(fun ref(ast.Function), info ref(sema.ProgramInfo), output r
             if i > 0
                 append_str(output, output_len, ", ")
             end
-            append_str(output, output_len, c_type(@addr(fun.params[i].ty)))
+            append_str(output, output_len, c_type(@addr(fun.params[i].ty), arena))
             append_str(output, output_len, " ")
-            append_str(output, output_len, mangle_local_symbol(fun.params[i].name))
+            append_str(output, output_len, mangle_local_symbol(fun.params[i].name, arena))
             i++
         end
     end
     append_str(output, output_len, ")")
 end
 
-def render_stmt(stmt ref(ast.Stmt), fun ref(ast.Function), info ref(sema.ProgramInfo), level usize, next_temp_id ref(usize), output ref(ref(u8)), output_len ref(usize))
+def render_stmt(stmt ref(ast.Stmt), fun ref(ast.Function), info ref(sema.ProgramInfo), level usize, next_temp_id ref(usize), arena ref(allocators.Arena), output ref(ref(u8)), output_len ref(usize))
     match @deref(stmt)
         ast.Stmt.VarDecl(vd) => (
             val ty ref(ast.Type) = lookup_local_type(vd.name, fun, info)
@@ -160,16 +166,16 @@ def render_stmt(stmt ref(ast.Stmt), fun ref(ast.Function), info ref(sema.Program
             if !vd.mutable && !is_aggregate_type(ty)
                 append_str(output, output_len, "const ")
             end
-            append_str(output, output_len, c_type_named(ty, vd.name))
+            append_str(output, output_len, c_type_named(ty, vd.name, arena))
             append_str(output, output_len, " = ")
-            append_expr(@addr(vd.init), fun, info, output, output_len)
+            append_expr(@addr(vd.init), fun, info, arena, output, output_len)
             append_str(output, output_len, ";\n")
         )
         ast.Stmt.Assign(a) => (
             indent(output, output_len, level)
-            append_expr(@addr(a.target), fun, info, output, output_len)
+            append_expr(@addr(a.target), fun, info, arena, output, output_len)
             append_str(output, output_len, " = ")
-            append_expr(@addr(a.value), fun, info, output, output_len)
+            append_expr(@addr(a.value), fun, info, arena, output, output_len)
             append_str(output, output_len, ";\n")
         )
         ast.Stmt.Return(r) => (
@@ -184,11 +190,11 @@ def render_stmt(stmt ref(ast.Stmt), fun ref(ast.Function), info ref(sema.Program
         ast.Stmt.If(if_stmt) => (
             indent(output, output_len, level)
             append_str(output, output_len, "if (")
-            append_expr(@addr(if_stmt.condition), fun, info, output, output_len)
+            append_expr(@addr(if_stmt.condition), fun, info, arena, output, output_len)
             append_str(output, output_len, ") {\n")
             var k usize = 0
             for k < @len(if_stmt.then_body)
-                render_stmt(@addr(if_stmt.then_body[k]), fun, info, level + 1, next_temp_id, output, output_len)
+                render_stmt(@addr(if_stmt.then_body[k]), fun, info, level + 1, next_temp_id, arena, output, output_len)
                 k++
             end
             indent(output, output_len, level)
@@ -197,7 +203,7 @@ def render_stmt(stmt ref(ast.Stmt), fun ref(ast.Function), info ref(sema.Program
                 append_str(output, output_len, " else {\n")
                 k = 0
                 for k < @len(if_stmt.else_body)
-                    render_stmt(@addr(if_stmt.else_body[k]), fun, info, level + 1, next_temp_id, output, output_len)
+                    render_stmt(@addr(if_stmt.else_body[k]), fun, info, level + 1, next_temp_id, arena, output, output_len)
                     k++
                 end
                 indent(output, output_len, level)
@@ -209,11 +215,11 @@ def render_stmt(stmt ref(ast.Stmt), fun ref(ast.Function), info ref(sema.Program
         ast.Stmt.While(w) => (
             indent(output, output_len, level)
             append_str(output, output_len, "while (")
-            append_expr(@addr(w.condition), fun, info, output, output_len)
+            append_expr(@addr(w.condition), fun, info, arena, output, output_len)
             append_str(output, output_len, ") {\n")
             var k usize = 0
             for k < @len(w.body)
-                render_stmt(@addr(w.body[k]), fun, info, level + 1, next_temp_id, output, output_len)
+                render_stmt(@addr(w.body[k]), fun, info, level + 1, next_temp_id, arena, output, output_len)
                 k++
             end
             indent(output, output_len, level)
@@ -223,21 +229,21 @@ def render_stmt(stmt ref(ast.Stmt), fun ref(ast.Function), info ref(sema.Program
             val var_ty ref(ast.Type) = lookup_local_type(fr.var_name, fun, info)
             indent(output, output_len, level)
             append_str(output, output_len, "for (")
-            append_str(output, output_len, c_type(var_ty))
+            append_str(output, output_len, c_type(var_ty, arena))
             append_str(output, output_len, " ")
-            append_str(output, output_len, mangle_local_symbol(fr.var_name))
+            append_str(output, output_len, mangle_local_symbol(fr.var_name, arena))
             append_str(output, output_len, " = ")
-            append_expr(@addr(fr.start), fun, info, output, output_len)
+            append_expr(@addr(fr.start), fun, info, arena, output, output_len)
             append_str(output, output_len, "; ")
-            append_str(output, output_len, mangle_local_symbol(fr.var_name))
+            append_str(output, output_len, mangle_local_symbol(fr.var_name, arena))
             append_str(output, output_len, " < ")
-            append_expr(@addr(fr.End), fun, info, output, output_len)
+            append_expr(@addr(fr.End), fun, info, arena, output, output_len)
             append_str(output, output_len, "; ++")
-            append_str(output, output_len, mangle_local_symbol(fr.var_name))
+            append_str(output, output_len, mangle_local_symbol(fr.var_name, arena))
             append_str(output, output_len, ") {\n")
             var k usize = 0
             for k < @len(fr.body)
-                render_stmt(@addr(fr.body[k]), fun, info, level + 1, next_temp_id, output, output_len)
+                render_stmt(@addr(fr.body[k]), fun, info, level + 1, next_temp_id, arena, output, output_len)
                 k++
             end
             indent(output, output_len, level)
@@ -256,7 +262,7 @@ def render_stmt(stmt ref(ast.Stmt), fun ref(ast.Function), info ref(sema.Program
             append_str(output, output_len, "int32_t ")
             append_str(output, output_len, temp_name)
             append_str(output, output_len, " = ")
-            append_expr(@addr(m.expr), fun, info, output, output_len)
+            append_expr(@addr(m.expr), fun, info, arena, output, output_len)
             append_str(output, output_len, ";\n")
 
             var k usize = 0
@@ -285,7 +291,7 @@ def render_stmt(stmt ref(ast.Stmt), fun ref(ast.Function), info ref(sema.Program
                                 append_str(output, output_len, ".data.")
                                 append_str(output, output_len, vname)
                                 append_str(output, output_len, "._")
-                                append_usize(output, output_len, l)
+                                append_usize(output, output_len, l, arena)
                                 append_str(output, output_len, ";\n")
                             end
                             l++
@@ -296,7 +302,7 @@ def render_stmt(stmt ref(ast.Stmt), fun ref(ast.Function), info ref(sema.Program
 
                 var l usize = 0
                 for l < @len(m.arms[k].body)
-                    render_stmt(@addr(m.arms[k].body[l]), fun, info, level + 2, next_temp_id, output, output_len)
+                    render_stmt(@addr(m.arms[k].body[l]), fun, info, level + 2, next_temp_id, arena, output, output_len)
                     l++
                 end
                 indent(output, output_len, level + 1)
@@ -308,23 +314,23 @@ def render_stmt(stmt ref(ast.Stmt), fun ref(ast.Function), info ref(sema.Program
         )
         ast.Stmt.ExprStmt(e) => (
             indent(output, output_len, level)
-            append_expr(e, fun, info, output, output_len)
+            append_expr(e, fun, info, arena, output, output_len)
             append_str(output, output_len, ";\n")
         )
         ast.Stmt.Increment(e) => (
             indent(output, output_len, level)
-            append_expr(e, fun, info, output, output_len)
+            append_expr(e, fun, info, arena, output, output_len)
             append_str(output, output_len, "++;\n")
         )
         ast.Stmt.Decrement(e) => (
             indent(output, output_len, level)
-            append_expr(e, fun, info, output, output_len)
-            append_str(output, output_len, ";\n")
+            append_expr(e, fun, info, arena, output, output_len)
+            append_str(output, output_len, "--;\n")
         )
         ast.Stmt.Assert(e) => (
             indent(output, output_len, level)
             append_str(output, output_len, "if (!(")
-            append_expr(e, fun, info, output, output_len)
+            append_expr(e, fun, info, arena, output, output_len)
             append_str(output, output_len, ")) {\n")
             indent(output, output_len, level + 1)
             append_str(output, output_len, "scar_runtime_panic(\"assertion failed\");\n")
@@ -334,7 +340,7 @@ def render_stmt(stmt ref(ast.Stmt), fun ref(ast.Function), info ref(sema.Program
         ast.Stmt.Block(body) => (
             var k usize = 0
             for k < @len(body)
-                render_stmt(@addr(body[k]), fun, info, level, next_temp_id, output, output_len)
+                render_stmt(@addr(body[k]), fun, info, level, next_temp_id, arena, output, output_len)
                 k++
             end
         )
@@ -342,10 +348,57 @@ def render_stmt(stmt ref(ast.Stmt), fun ref(ast.Function), info ref(sema.Program
     end
 end
 
-def append_expr(expr ref(ast.Expr), fun ref(ast.Function), info ref(sema.ProgramInfo), output ref(ref(u8)), output_len ref(usize))
+def translate_format_string(fmt ref(u8), arena ref(allocators.Arena)) ref(u8)
+    val flen usize = str.len(fmt)
+    val res_res = allocators.Arena.alloc(arena, flen * 2 + 1)
+    var res ref(u8) = none
+    match res_res
+        ok m => res = m as ref(u8)
+        error _ => return fmt
+    end
+    var i usize = 0
+    var j usize = 0
+    for i < flen
+        val ch u8 = @deref(@add(fmt, i))
+        if ch == '{'
+            if @deref(@add(fmt, i + 1)) == '}'
+                @deref(@as_mut(@add(res, j))) = '%'
+                @deref(@as_mut(@add(res, j + 1))) = 'd'
+                j = j + 2
+                i = i + 2
+                continue
+            elif @deref(@add(fmt, i + 1)) == 'c' && @deref(@add(fmt, i + 2)) == '}'
+                @deref(@as_mut(@add(res, j))) = '%'
+                @deref(@as_mut(@add(res, j + 1))) = 'c'
+                j = j + 2
+                i = i + 3
+                continue
+            elif @deref(@add(fmt, i + 1)) == 's' && @deref(@add(fmt, i + 2)) == '}'
+                @deref(@as_mut(@add(res, j))) = '%'
+                @deref(@as_mut(@add(res, j + 1))) = 's'
+                j = j + 2
+                i = i + 3
+                continue
+            elif @deref(@add(fmt, i + 1)) == 'u' && @deref(@add(fmt, i + 2)) == '}'
+                @deref(@as_mut(@add(res, j))) = '%'
+                @deref(@as_mut(@add(res, j + 1))) = 'u'
+                j = j + 2
+                i = i + 3
+                continue
+            end
+        end
+        @deref(@as_mut(@add(res, j))) = ch
+        j = j + 1
+        i = i + 1
+    end
+    @deref(@as_mut(@add(res, j))) = 0
+    return res
+end
+
+def append_expr(expr ref(ast.Expr), fun ref(ast.Function), info ref(sema.ProgramInfo), arena ref(allocators.Arena), output ref(ref(u8)), output_len ref(usize))
     match @deref(expr)
-        ast.Expr.IntLit(v) => append_u64(output, output_len, v)
-        ast.Expr.FloatLit(v) => append_f64(output, output_len, v)
+        ast.Expr.IntLit(v) => append_u64(output, output_len, v, arena)
+        ast.Expr.FloatLit(v) => append_f64(output, output_len, v, arena)
         ast.Expr.BoolLit(v) => (
             if v
                 append_str(output, output_len, "1")
@@ -353,17 +406,17 @@ def append_expr(expr ref(ast.Expr), fun ref(ast.Function), info ref(sema.Program
                 append_str(output, output_len, "0")
             end
         )
-        ast.Expr.CharLit(v) => append_u64(output, output_len, v as u64)
+        ast.Expr.CharLit(v) => append_u64(output, output_len, v as u64, arena)
         ast.Expr.StrLit(s) => (
             append_str(output, output_len, "\"")
             append_str(output, output_len, s)
             append_str(output, output_len, "\"")
         )
         ast.Expr.None(_) => append_str(output, output_len, "NULL")
-        ast.Expr.Ident(name) => append_str(output, output_len, mangle_local_symbol(name))
+        ast.Expr.Ident(name) => append_str(output, output_len, mangle_local_symbol(name, arena))
         ast.Expr.Path(segments) => (
             if @len(segments) == 1
-                append_str(output, output_len, mangle_local_symbol(segments[0]))
+                append_str(output, output_len, mangle_local_symbol(segments[0], arena))
             else
                 var i usize = 0
                 for i < @len(segments)
@@ -377,75 +430,75 @@ def append_expr(expr ref(ast.Expr), fun ref(ast.Function), info ref(sema.Program
         )
         ast.Expr.Binary(b) => (
             append_str(output, output_len, "(")
-            append_expr(b.lhs, fun, info, output, output_len)
+            append_expr(b.lhs, fun, info, arena, output, output_len)
             append_str(output, output_len, " ")
             append_str(output, output_len, binary_op_str(b.op))
             append_str(output, output_len, " ")
-            append_expr(b.rhs, fun, info, output, output_len)
+            append_expr(b.rhs, fun, info, arena, output, output_len)
             append_str(output, output_len, ")")
         )
         ast.Expr.Unary(u) => (
             match u.op
                 ast.UnaryOp.Neg => (
                     append_str(output, output_len, "(-")
-                    append_expr(u.expr, fun, info, output, output_len)
+                    append_expr(u.expr, fun, info, arena, output, output_len)
                     append_str(output, output_len, ")")
                 )
                 ast.UnaryOp.LogicalNot => (
                     append_str(output, output_len, "(!")
-                    append_expr(u.expr, fun, info, output, output_len)
+                    append_expr(u.expr, fun, info, arena, output, output_len)
                     append_str(output, output_len, ")")
                 )
                 ast.UnaryOp.BitNot => (
                     append_str(output, output_len, "(~")
-                    append_expr(u.expr, fun, info, output, output_len)
+                    append_expr(u.expr, fun, info, arena, output, output_len)
                     append_str(output, output_len, ")")
                 )
             end
         )
         ast.Expr.Call(c) => (
-            append_expr(c.callee, fun, info, output, output_len)
+            append_expr(c.callee, fun, info, arena, output, output_len)
             append_str(output, output_len, "(")
             var i usize = 0
             for i < @len(c.args)
                 if i > 0
                     append_str(output, output_len, ", ")
                 end
-                append_expr(@addr(c.args[i]), fun, info, output, output_len)
+                append_expr(@addr(c.args[i]), fun, info, arena, output, output_len)
                 i++
             end
             append_str(output, output_len, ")")
         )
         ast.Expr.Index(idx) => (
             append_str(output, output_len, "(")
-            append_expr(idx.base, fun, info, output, output_len)
+            append_expr(idx.base, fun, info, arena, output, output_len)
             append_str(output, output_len, ".data[")
-            append_expr(idx.index, fun, info, output, output_len)
+            append_expr(idx.index, fun, info, arena, output, output_len)
             append_str(output, output_len, "])")
         )
         ast.Expr.Field(f) => (
             append_str(output, output_len, "(")
-            append_expr(f.base, fun, info, output, output_len)
+            append_expr(f.base, fun, info, arena, output, output_len)
             append_str(output, output_len, ").")
             append_str(output, output_len, f.field)
         )
         ast.Expr.Cast(c) => (
             append_str(output, output_len, "((")
-            append_str(output, output_len, c_type(@addr(c.ty)))
+            append_str(output, output_len, c_type(@addr(c.ty), arena))
             append_str(output, output_len, ")(")
-            append_expr(c.expr, fun, info, output, output_len)
+            append_expr(c.expr, fun, info, arena, output, output_len)
             append_str(output, output_len, "))")
         )
         ast.Expr.BitCast(bc) => (
             append_str(output, output_len, "((")
-            append_str(output, output_len, c_type(@addr(bc.ty)))
+            append_str(output, output_len, c_type(@addr(bc.ty), arena))
             append_str(output, output_len, ")(")
-            append_expr(bc.expr, fun, info, output, output_len)
+            append_expr(bc.expr, fun, info, arena, output, output_len)
             append_str(output, output_len, "))")
         )
         ast.Expr.SizeOf(ty) => (
             append_str(output, output_len, "((size_t)sizeof(")
-            append_str(output, output_len, c_type(ty))
+            append_str(output, output_len, c_type(ty, arena))
             append_str(output, output_len, "))")
         )
         ast.Expr.ListLit(elems) => (
@@ -458,7 +511,7 @@ def append_expr(expr ref(ast.Expr), fun ref(ast.Function), info ref(sema.Program
                     if i > 0
                         append_str(output, output_len, ", ")
                     end
-                    append_expr(@addr(elems[i]), fun, info, output, output_len)
+                    append_expr(@addr(elems[i]), fun, info, arena, output, output_len)
                     i++
                 end
                 append_str(output, output_len, "}")
@@ -476,7 +529,7 @@ def append_expr(expr ref(ast.Expr), fun ref(ast.Function), info ref(sema.Program
                 append_str(output, output_len, ".")
                 append_str(output, output_len, si.fields[i].name)
                 append_str(output, output_len, " = ")
-                append_expr(@addr(si.fields[i].value), fun, info, output, output_len)
+                append_expr(@addr(si.fields[i].value), fun, info, arena, output, output_len)
                 i++
             end
             append_str(output, output_len, " }")
@@ -486,21 +539,21 @@ def append_expr(expr ref(ast.Expr), fun ref(ast.Function), info ref(sema.Program
             append_str(output, output_len, "list_")
             append_str(output, output_len, mc.method)
             append_str(output, output_len, "(")
-            append_expr(mc.receiver, fun, info, output, output_len)
+            append_expr(mc.receiver, fun, info, arena, output, output_len)
             var i usize = 0
             for i < @len(mc.args)
                 append_str(output, output_len, ", ")
-                append_expr(@addr(mc.args[i]), fun, info, output, output_len)
+                append_expr(@addr(mc.args[i]), fun, info, arena, output, output_len)
                 i++
             end
             append_str(output, output_len, ")")
         )
         ast.Expr.BuiltinCall(bc) => (
-            append_builtin_call(bc, fun, info, output, output_len)
+            append_builtin_call(bc, fun, info, arena, output, output_len)
         )
         ast.Expr.Try(inner) => (
             append_str(output, output_len, "(")
-            append_expr(inner, fun, info, output, output_len)
+            append_expr(inner, fun, info, arena, output, output_len)
             append_str(output, output_len, ".ok)")
         )
         ast.Expr.Pack(elems) => (
@@ -509,7 +562,7 @@ def append_expr(expr ref(ast.Expr), fun ref(ast.Function), info ref(sema.Program
                 if i > 0
                     append_str(output, output_len, ", ")
                 end
-                append_expr(@addr(elems[i]), fun, info, output, output_len)
+                append_expr(@addr(elems[i]), fun, info, arena, output, output_len)
                 i++
             end
         )
@@ -517,15 +570,15 @@ def append_expr(expr ref(ast.Expr), fun ref(ast.Function), info ref(sema.Program
             append_str(output, output_len, msg)
         )
         ast.Expr.Specialize(sp) => (
-            append_expr(sp.callee, fun, info, output, output_len)
+            append_expr(sp.callee, fun, info, arena, output, output_len)
         )
     end
 end
 
-def append_builtin_call(bc ref(ast.ExprBuiltinCall), fun ref(ast.Function), info ref(sema.ProgramInfo), output ref(ref(u8)), output_len ref(usize))
+def append_builtin_call(bc ref(ast.ExprBuiltinCall), fun ref(ast.Function), info ref(sema.ProgramInfo), arena ref(allocators.Arena), output ref(ref(u8)), output_len ref(usize))
     if str.eql(bc.name, "puts")
         append_str(output, output_len, "puts(")
-        append_expr(@addr(bc.args[0]), fun, info, output, output_len)
+        append_expr(@addr(bc.args[0]), fun, info, arena, output, output_len)
         append_str(output, output_len, ")")
     elif str.eql(bc.name, "flush")
         append_str(output, output_len, "fflush(stdout)")
@@ -533,107 +586,114 @@ def append_builtin_call(bc ref(ast.ExprBuiltinCall), fun ref(ast.Function), info
         append_str(output, output_len, "({ list_ref_u8 __scar_args = list_ref_u8_new(); list_ref_u8_ensure_capacity(&__scar_args, scar__argc); memcpy(__scar_args.data, scar__argv, sizeof(const char *) * (size_t)scar__argc); __scar_args.len = scar__argc; __scar_args; })")
     elif str.eql(bc.name, "print")
         append_str(output, output_len, "printf(")
-        append_expr(@addr(bc.args[0]), fun, info, output, output_len)
+        match bc.args[0]
+            ast.Expr.StrLit(s) => (
+                append_str(output, output_len, "\"")
+                append_str(output, output_len, translate_format_string(s, arena))
+                append_str(output, output_len, "\"")
+            )
+            _ => append_expr(@addr(bc.args[0]), fun, info, arena, output, output_len)
+        end
         var i usize = 1
         for i < @len(bc.args)
             append_str(output, output_len, ", ")
-            append_expr(@addr(bc.args[i]), fun, info, output, output_len)
+            append_expr(@addr(bc.args[i]), fun, info, arena, output, output_len)
             i++
         end
         append_str(output, output_len, ")")
     elif str.eql(bc.name, "alloc")
         append_str(output, output_len, "scar_runtime_alloc(")
-        append_expr(@addr(bc.args[0]), fun, info, output, output_len)
+        append_expr(@addr(bc.args[0]), fun, info, arena, output, output_len)
         append_str(output, output_len, ")")
     elif str.eql(bc.name, "realloc")
         append_str(output, output_len, "scar_runtime_realloc(")
-        append_expr(@addr(bc.args[0]), fun, info, output, output_len)
+        append_expr(@addr(bc.args[0]), fun, info, arena, output, output_len)
         append_str(output, output_len, ", ")
-        append_expr(@addr(bc.args[1]), fun, info, output, output_len)
+        append_expr(@addr(bc.args[1]), fun, info, arena, output, output_len)
         append_str(output, output_len, ")")
     elif str.eql(bc.name, "free")
         append_str(output, output_len, "scar_runtime_free(")
-        append_expr(@addr(bc.args[0]), fun, info, output, output_len)
+        append_expr(@addr(bc.args[0]), fun, info, arena, output, output_len)
         append_str(output, output_len, ")")
     elif str.eql(bc.name, "addr")
         append_str(output, output_len, "(&")
-        append_expr(@addr(bc.args[0]), fun, info, output, output_len)
+        append_expr(@addr(bc.args[0]), fun, info, arena, output, output_len)
         append_str(output, output_len, ")")
     elif str.eql(bc.name, "deref")
         append_str(output, output_len, "(*")
-        append_expr(@addr(bc.args[0]), fun, info, output, output_len)
+        append_expr(@addr(bc.args[0]), fun, info, arena, output, output_len)
         append_str(output, output_len, ")")
     elif str.eql(bc.name, "memcpy")
         append_str(output, output_len, "memcpy(")
-        append_expr(@addr(bc.args[0]), fun, info, output, output_len)
+        append_expr(@addr(bc.args[0]), fun, info, arena, output, output_len)
         append_str(output, output_len, ", ")
-        append_expr(@addr(bc.args[1]), fun, info, output, output_len)
+        append_expr(@addr(bc.args[1]), fun, info, arena, output, output_len)
         append_str(output, output_len, ", ")
-        append_expr(@addr(bc.args[2]), fun, info, output, output_len)
+        append_expr(@addr(bc.args[2]), fun, info, arena, output, output_len)
         append_str(output, output_len, ")")
     elif str.eql(bc.name, "memset")
         append_str(output, output_len, "memset(")
-        append_expr(@addr(bc.args[0]), fun, info, output, output_len)
+        append_expr(@addr(bc.args[0]), fun, info, arena, output, output_len)
         append_str(output, output_len, ", ")
-        append_expr(@addr(bc.args[1]), fun, info, output, output_len)
+        append_expr(@addr(bc.args[1]), fun, info, arena, output, output_len)
         append_str(output, output_len, ", ")
-        append_expr(@addr(bc.args[2]), fun, info, output, output_len)
+        append_expr(@addr(bc.args[2]), fun, info, arena, output, output_len)
         append_str(output, output_len, ")")
     elif str.eql(bc.name, "zeroed")
         append_str(output, output_len, "{0}")
     elif str.eql(bc.name, "neg")
         append_str(output, output_len, "(-")
-        append_expr(@addr(bc.args[0]), fun, info, output, output_len)
+        append_expr(@addr(bc.args[0]), fun, info, arena, output, output_len)
         append_str(output, output_len, ")")
     elif str.eql(bc.name, "shl")
         append_str(output, output_len, "(")
-        append_expr(@addr(bc.args[0]), fun, info, output, output_len)
+        append_expr(@addr(bc.args[0]), fun, info, arena, output, output_len)
         append_str(output, output_len, " << ")
-        append_expr(@addr(bc.args[1]), fun, info, output, output_len)
+        append_expr(@addr(bc.args[1]), fun, info, arena, output, output_len)
         append_str(output, output_len, ")")
     elif str.eql(bc.name, "shr")
         append_str(output, output_len, "(")
-        append_expr(@addr(bc.args[0]), fun, info, output, output_len)
+        append_expr(@addr(bc.args[0]), fun, info, arena, output, output_len)
         append_str(output, output_len, " >> ")
-        append_expr(@addr(bc.args[1]), fun, info, output, output_len)
+        append_expr(@addr(bc.args[1]), fun, info, arena, output, output_len)
         append_str(output, output_len, ")")
     elif str.eql(bc.name, "as_mut")
-        append_expr(@addr(bc.args[0]), fun, info, output, output_len)
+        append_expr(@addr(bc.args[0]), fun, info, arena, output, output_len)
     elif str.eql(bc.name, "add")
         append_str(output, output_len, "(")
-        append_expr(@addr(bc.args[0]), fun, info, output, output_len)
+        append_expr(@addr(bc.args[0]), fun, info, arena, output, output_len)
         append_str(output, output_len, " + ")
-        append_expr(@addr(bc.args[1]), fun, info, output, output_len)
+        append_expr(@addr(bc.args[1]), fun, info, arena, output, output_len)
         append_str(output, output_len, ")")
     elif str.eql(bc.name, "call")
-        append_expr(@addr(bc.args[0]), fun, info, output, output_len)
+        append_expr(@addr(bc.args[0]), fun, info, arena, output, output_len)
         append_str(output, output_len, "(")
         var i usize = 1
         for i < @len(bc.args)
             if i > 1
                 append_str(output, output_len, ", ")
             end
-            append_expr(@addr(bc.args[i]), fun, info, output, output_len)
+            append_expr(@addr(bc.args[i]), fun, info, arena, output, output_len)
             i++
         end
         append_str(output, output_len, ")")
     elif str.eql(bc.name, "len")
         if @len(bc.args) > 0
-            append_expr(@addr(bc.args[0]), fun, info, output, output_len)
+            append_expr(@addr(bc.args[0]), fun, info, arena, output, output_len)
             append_str(output, output_len, ".len")
         else
             append_str(output, output_len, "0")
         end
     elif str.eql(bc.name, "append")
         if @len(bc.args) > 0
-            append_expr(@addr(bc.args[0]), fun, info, output, output_len)
+            append_expr(@addr(bc.args[0]), fun, info, arena, output, output_len)
             append_str(output, output_len, ".append(")
             var i usize = 1
             for i < @len(bc.args)
                 if i > 1
                     append_str(output, output_len, ", ")
                 end
-                append_expr(@addr(bc.args[i]), fun, info, output, output_len)
+                append_expr(@addr(bc.args[i]), fun, info, arena, output, output_len)
                 i++
             end
             append_str(output, output_len, ")")
@@ -643,8 +703,8 @@ def append_builtin_call(bc ref(ast.ExprBuiltinCall), fun ref(ast.Function), info
     end
 end
 
-def render_entrypoint(fun ref(ast.Function), info ref(sema.ProgramInfo), output ref(ref(u8)), output_len ref(usize))
-    val symbol ref(u8) = lookup_symbol(fun.name, info)
+def render_entrypoint(fun ref(ast.Function), info ref(sema.ProgramInfo), arena ref(allocators.Arena), output ref(ref(u8)), output_len ref(usize))
+    val symbol ref(u8) = lookup_symbol(fun.name, info, arena)
     append_str(output, output_len, "int main(void) {\n")
     append_str(output, output_len, "    ")
     append_str(output, output_len, symbol)
@@ -653,7 +713,7 @@ def render_entrypoint(fun ref(ast.Function), info ref(sema.ProgramInfo), output 
     append_str(output, output_len, "}\n")
 end
 
-def c_type(ty ref(ast.Type)) ref(u8)
+def c_type(ty ref(ast.Type), arena ref(allocators.Arena)) ref(u8)
     match @deref(ty)
         ast.Type.Void(_) => return "void"
         ast.Type.Bool(_) => return "int32_t"
@@ -670,9 +730,14 @@ def c_type(ty ref(ast.Type)) ref(u8)
         ast.Type.F32(_) => return "float"
         ast.Type.F64(_) => return "double"
         ast.Type.Ref(inner) => (
-            val inner_type ref(u8) = c_type(inner)
+            val inner_type ref(u8) = c_type(inner, arena)
             val inner_len usize = str.len(inner_type)
-            var result ref(u8) = @alloc(inner_len + 3)
+            val result_res = allocators.Arena.alloc(arena, inner_len + 3)
+            var result ref(u8) = none
+            match result_res
+                ok m => result = m as ref(u8)
+                error _ => return "void *"
+            end
             @memcpy(result, inner_type, inner_len)
             @deref(@as_mut(@add(result, inner_len))) = ' '
             @deref(@as_mut(@add(result, inner_len + 1))) = '*'
@@ -680,9 +745,14 @@ def c_type(ty ref(ast.Type)) ref(u8)
             return result
         )
         ast.Type.Mut(inner) => (
-            val inner_type ref(u8) = c_type(inner)
+            val inner_type ref(u8) = c_type(inner, arena)
             val inner_len usize = str.len(inner_type)
-            var result ref(u8) = @alloc(inner_len + 3)
+            val result_res = allocators.Arena.alloc(arena, inner_len + 3)
+            var result ref(u8) = none
+            match result_res
+                ok m => result = m as ref(u8)
+                error _ => return "void *"
+            end
             @memcpy(result, inner_type, inner_len)
             @deref(@as_mut(@add(result, inner_len))) = ' '
             @deref(@as_mut(@add(result, inner_len + 1))) = '*'
@@ -701,12 +771,17 @@ def c_type(ty ref(ast.Type)) ref(u8)
     return "void"
 end
 
-def c_type_named(ty ref(ast.Type), name ref(u8)) ref(u8)
-    val base ref(u8) = c_type(ty)
+def c_type_named(ty ref(ast.Type), name ref(u8), arena ref(allocators.Arena)) ref(u8)
+    val base ref(u8) = c_type(ty, arena)
     val base_len usize = str.len(base)
-    val mangled ref(u8) = mangle_local_symbol(name)
+    val mangled ref(u8) = mangle_local_symbol(name, arena)
     val mangled_len usize = str.len(mangled)
-    var result ref(u8) = @alloc(base_len + 1 + mangled_len + 1)
+    val result_res = allocators.Arena.alloc(arena, base_len + 1 + mangled_len + 1)
+    var result ref(u8) = none
+    match result_res
+        ok m => result = m as ref(u8)
+        error _ => return "void error"
+    end
     @memcpy(result, base, base_len)
     @deref(@as_mut(@add(result, base_len))) = ' '
     @memcpy(@add(result, base_len + 1), mangled, mangled_len)
@@ -714,18 +789,38 @@ def c_type_named(ty ref(ast.Type), name ref(u8)) ref(u8)
     return result
 end
 
-def mangle_local_symbol(name ref(u8)) ref(u8)
+def mangle_local_symbol(name ref(u8), arena ref(allocators.Arena)) ref(u8)
+    if name == none
+        return "loc__"
+    end
     val prefix ref(u8) = "loc__"
     val plen usize = str.len(prefix)
     val nlen usize = str.len(name)
-    var result ref(u8) = @alloc(plen + nlen + 1)
+    if nlen == 0
+        return "loc__"
+    end
+    val result_res = allocators.Arena.alloc(arena, plen + nlen + 1)
+    var result ref(u8) = none
+    match result_res
+        ok m => result = m as ref(u8)
+        error _ => return "loc__error"
+    end
     @memcpy(result, prefix, plen)
-    @memcpy(@add(result, plen), name, nlen)
+    var i usize = 0
+    for i < nlen
+        val ch u8 = @deref(@add(name, i))
+        if (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '_'
+            @deref(@as_mut(@add(result, plen + i))) = ch
+        else
+            @deref(@as_mut(@add(result, plen + i))) = '_'
+        end
+        i++
+    end
     @deref(@as_mut(@add(result, plen + nlen))) = 0
     return result
 end
 
-def lookup_symbol(name ref(u8), info ref(sema.ProgramInfo)) ref(u8)
+def lookup_symbol(name ref(u8), info ref(sema.ProgramInfo), arena ref(allocators.Arena)) ref(u8)
     var i usize = 0
     for i < @len(info.function_symbols)
         if str.eql(info.function_symbols[i].name, name)
@@ -733,7 +828,7 @@ def lookup_symbol(name ref(u8), info ref(sema.ProgramInfo)) ref(u8)
         end
         i++
     end
-    return mangle_local_symbol(name)
+    return mangle_local_symbol(name, arena)
 end
 
 def lookup_local_type(name ref(u8), fun ref(ast.Function), info ref(sema.ProgramInfo)) ref(ast.Type)
@@ -817,8 +912,13 @@ def append_str(output ref(ref(u8)), output_len ref(usize), s ref(u8))
     @deref(output_len) = current_len + slen
 end
 
-def append_u64(output ref(ref(u8)), output_len ref(usize), v u64)
-    var buf ref(u8) = @alloc(32)
+def append_u64(output ref(ref(u8)), output_len ref(usize), v u64, arena ref(allocators.Arena))
+    var buf_res = allocators.Arena.alloc(arena, 32)
+    var buf ref(u8) = none
+    match buf_res
+        ok m => buf = m as ref(u8)
+        error _ => return
+    end
     var value u64 = v
     var i usize = 31
     @deref(@as_mut(@add(buf, i))) = 0
@@ -836,11 +936,11 @@ def append_u64(output ref(ref(u8)), output_len ref(usize), v u64)
     append_str(output, output_len, @add(buf, i))
 end
 
-def append_usize(output ref(ref(u8)), output_len ref(usize), v usize)
-    append_u64(output, output_len, v as u64)
+def append_usize(output ref(ref(u8)), output_len ref(usize), v usize, arena ref(allocators.Arena))
+    append_u64(output, output_len, v as u64, arena)
 end
 
-def append_f64(output ref(ref(u8)), output_len ref(usize), v f64)
+def append_f64(output ref(ref(u8)), output_len ref(usize), v f64, arena ref(allocators.Arena))
     append_str(output, output_len, "0.0")
 end
 

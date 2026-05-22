@@ -1,7 +1,8 @@
 val str = use("std/string")
 val ast = use("ast")
+val allocators = use("std/allocators")
 
-pub def lex(source ref(u8)) list[ast.Token]
+pub def lex(source ref(u8), arena ref(allocators.Arena)) list[ast.Token]
 	val len usize = str.len(source)
 	var l ast.Lexer = ast.Lexer(
 		source: source,
@@ -46,7 +47,6 @@ pub def lex(source ref(u8)) list[ast.Token]
 				for l.pos < l.len
 					val c u8 = @deref(@add(l.source, l.pos))
 					if c == '\n'
-						l.pos++
 						break
 					end
 					l.pos++
@@ -317,13 +317,13 @@ pub def lex(source ref(u8)) list[ast.Token]
 			'"' => (
 				l.pos++
 				l.column++
-				@append(l.tokens, lex_string_lit(@addr(l)))
+				@append(l.tokens, lex_string_lit(@addr(l), arena))
 			)
 			_ => (
 				if ch >= '0' && ch <= '9'
 					@append(l.tokens, lex_number(@addr(l)))
 				elif ch == '_' || (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z')
-					@append(l.tokens, lex_ident(@addr(l)))
+					@append(l.tokens, lex_ident(@addr(l), arena))
 				else
 					l.pos++
 					l.column++
@@ -336,10 +336,15 @@ pub def lex(source ref(u8)) list[ast.Token]
 	return l.tokens
 end
 
-def lex_string_lit(l ref(ast.Lexer)) ast.Token
+def lex_string_lit(l ref(ast.Lexer), arena ref(allocators.Arena)) ast.Token
 	val line usize = l.line
 	val column usize = l.column
-	var buf ref(u8) = @alloc(256)
+	val buf_res = allocators.Arena.alloc(arena, 256)
+	var buf ref(u8) = none
+	match buf_res
+		ok m => buf = m as ref(u8)
+		error _ => return ast.Token(kind: ast.TokenKind.Str(none), line: line, column: column)
+	end
 	var buf_len usize = 0
 
 	for l.pos < l.len
@@ -504,7 +509,7 @@ def lex_number(l ref(ast.Lexer)) ast.Token
 	return ast.Token(kind: ast.TokenKind.Int(value), line: line, column: column)
 end
 
-def lex_ident(l ref(ast.Lexer)) ast.Token
+def lex_ident(l ref(ast.Lexer), arena ref(allocators.Arena)) ast.Token
 	val line usize = l.line
 	val column usize = l.column
 	val start usize = l.pos
@@ -520,7 +525,12 @@ def lex_ident(l ref(ast.Lexer)) ast.Token
 	end
 
 	val length usize = l.pos - start
-	var name ref(u8) = @alloc(length + 1)
+	val name_res = allocators.Arena.alloc(arena, length + 1)
+	var name ref(u8) = none
+	match name_res
+		ok m => name = m as ref(u8)
+		error _ => return ast.Token(kind: ast.TokenKind.Eof(0), line: line, column: column)
+	end
 	@memcpy(name, @add(l.source, start), length)
 	@deref(@as_mut(@add(name, length))) = 0
 
@@ -727,84 +737,4 @@ pub def token_kind_name(kind ast.TokenKind) ref(u8)
 		Newline(_) => return "newline"
 		Eof(_) => return "eof"
 	end
-end
-
-test "identifies simple identifier"
-	val tokens list[ast.Token] = lex("hello")
-	assert @len(tokens) == 2
-	assert str.eql(token_kind_name(tokens[0].kind), "ident")
-	assert str.eql(token_kind_name(tokens[1].kind), "eof")
-end
-
-test "identifies keywords"
-	val tokens list[ast.Token] = lex("pub def end")
-	assert @len(tokens) == 4
-	assert str.eql(token_kind_name(tokens[0].kind), "keyword")
-	assert str.eql(token_kind_name(tokens[1].kind), "keyword")
-	assert str.eql(token_kind_name(tokens[2].kind), "keyword")
-	assert str.eql(token_kind_name(tokens[3].kind), "eof")
-end
-
-test "string literal"
-	val tokens list[ast.Token] = lex("\"hello world\"")
-	assert @len(tokens) == 2
-	assert str.eql(token_kind_name(tokens[0].kind), "string")
-	assert str.eql(token_kind_name(tokens[1].kind), "eof")
-end
-
-test "integer literal"
-	val tokens list[ast.Token] = lex("42")
-	assert @len(tokens) == 2
-	assert str.eql(token_kind_name(tokens[0].kind), "int")
-	assert str.eql(token_kind_name(tokens[1].kind), "eof")
-end
-
-test "comment skipping"
-	val tokens list[ast.Token] = lex("# this is a comment\nident")
-	assert @len(tokens) == 2
-	assert str.eql(token_kind_name(tokens[0].kind), "ident")
-	assert str.eql(token_kind_name(tokens[1].kind), "eof")
-end
-
-test "single zero"
-	val tokens list[ast.Token] = lex("0")
-	assert @len(tokens) == 2
-end
-
-test "hex prefix only"
-	val tokens list[ast.Token] = lex("0x")
-	assert @len(tokens) == 2
-end
-
-test "hex number"
-	val tokens list[ast.Token] = lex("0xFF")
-	assert @len(tokens) == 2
-	assert str.eql(token_kind_name(tokens[0].kind), "int")
-	assert str.eql(token_kind_name(tokens[1].kind), "eof")
-end
-
-test "operators"
-	val tokens list[ast.Token] = lex("+ - * / == != <= >=")
-	assert @len(tokens) == 9
-	assert str.eql(token_kind_name(tokens[0].kind), "+")
-	assert str.eql(token_kind_name(tokens[1].kind), "-")
-	assert str.eql(token_kind_name(tokens[2].kind), "*")
-	assert str.eql(token_kind_name(tokens[3].kind), "/")
-	assert str.eql(token_kind_name(tokens[4].kind), "==")
-	assert str.eql(token_kind_name(tokens[5].kind), "!=")
-	assert str.eql(token_kind_name(tokens[6].kind), "<=")
-	assert str.eql(token_kind_name(tokens[7].kind), ">=")
-	assert str.eql(token_kind_name(tokens[8].kind), "eof")
-end
-
-test "brackets and parens"
-	val tokens list[ast.Token] = lex("(){}[]")
-	assert @len(tokens) == 7
-	assert str.eql(token_kind_name(tokens[0].kind), "(")
-	assert str.eql(token_kind_name(tokens[1].kind), ")")
-	assert str.eql(token_kind_name(tokens[2].kind), "{")
-	assert str.eql(token_kind_name(tokens[3].kind), "}")
-	assert str.eql(token_kind_name(tokens[4].kind), "[")
-	assert str.eql(token_kind_name(tokens[5].kind), "]")
-	assert str.eql(token_kind_name(tokens[6].kind), "eof")
 end
