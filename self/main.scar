@@ -9,6 +9,13 @@ val sema = use("sema")
 val cgen = use("codegen")
 val rslv = use("resolver")
 
+val usage_message ref(u8) = \\ usage:
+                            \\   scar [-emit [-o <output.c>]] <source.scar> [output]
+                            \\
+                            \\ -emit       Emit the generated IR
+                            \\ -o          Choose output file for generated IR
+                            \\ [output]    The output file for the generated exectutable
+    
 pub def compile(source_path ref(u8), output_path ref(u8)) i32|error
     guard source_path != none && !str.eql(source_path, "") else
         return error("scar: source path was empty")
@@ -108,7 +115,7 @@ pub def main() void
             emit_mode = true
         elif str.eql(arg, "-o")
             if i + 1 >= @len(args)
-                @puts("usage: scar [-emit [-o <output.c>]] <source.scar> [output]")
+                @puts(usage_message)
                 return
             end
             if emit_mode
@@ -123,7 +130,7 @@ pub def main() void
             elif !emit_mode && binary_output_path == none
                 binary_output_path = arg
             else
-                @puts("usage: scar-compile [--emit [-o <output.c>]] <source.scar> [output]")
+                @puts(usage_message)
                 return
             end
         end
@@ -131,7 +138,7 @@ pub def main() void
     end
     
     if source_path == none
-        @puts("usage: scar-compile [--emit [-o <output.c>]] <source.scar> [output]")
+        @puts(usage_message)
         return
     end
     
