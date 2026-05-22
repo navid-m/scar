@@ -105,31 +105,25 @@ def append_str(buf ref(list[u8]), s ref(u8))
 end
 
 pub def main() void
-    @puts("ok1")
-    val args list[ref(u8)] = @args()
-    
-    var emit_mode bool = false
-    var emit_output_path ref(u8) = none
-    var source_path ref(u8) = none
-    var binary_output_path ref(u8) = none
-    var i usize = 1
-    @puts("ok2")
+    val args list[ref(u8)] = @args()  
+    var (
+        emit_mode bool             = false
+        emit_output_path ref(u8)   = none
+        source_path ref(u8)        = none
+        binary_output_path ref(u8) = none
+        i usize                    = 1
+    )
     for i < @len(args)
-        @puts("about to do it...")
         val arg ref(u8) = args[i]
-        @puts("ok3")
         if str.eql(arg, "-emit")
             emit_mode = true
         elif str.eql(arg, "-o")
             if i + 1 >= @len(args)
-                @puts(usage_message)
                 return
             end
             if emit_mode
-                @puts("ok3")
                 emit_output_path = args[i + 1]
             else
-                @puts("ok4")
                 binary_output_path = args[i + 1]
             end
             i++
@@ -168,7 +162,6 @@ pub def main() void
             )
         end
     else
-        @puts("doing compile...")
         match compile(source_path, binary_output_path)
             ok rc => (
                 if rc != 0
