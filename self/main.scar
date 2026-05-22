@@ -104,7 +104,7 @@ pub def main() void
     
     for i < @len(args)
         val arg ref(u8) = args[i]
-        if str.eql(arg, "--emit")
+        if str.eql(arg, "-emit")
             emit_mode = true
         elif str.eql(arg, "-o")
             if i + 1 >= @len(args)
