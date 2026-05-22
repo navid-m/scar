@@ -1,0 +1,5 @@
+pub def main()
+    val x u8 = 'a'
+    @print("{c}", {x})
+end
+
