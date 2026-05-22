@@ -340,8 +340,28 @@ pub type ModuleUse
 	path ref(u8)
 end
 
+pub enum TypeDefKind
+	Struct
+	Union
+	Enum
+end
+
+pub type VariantDef
+	name ref(u8)
+	payload_types list[Type]
+end
+
+pub type TypeDef
+	name ref(u8)
+	kind TypeDefKind
+	fields list[FieldDef]
+	variants list[VariantDef]
+	is_pub bool
+end
+
 pub type Program
 	module_uses list[ModuleUse]
 	functions list[Function]
+	type_defs list[TypeDef]
 	tests list[TestBlock]
 end

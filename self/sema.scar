@@ -127,9 +127,48 @@ pub def analyze(program ref(ast.Program)) ProgramInfo
     )
 end
 
+def type_def_kind_to_sema_kind(kind ast.TypeDefKind) TypeDefKind
+    match kind
+        ast.TypeDefKind.Struct => return TypeDefKind.Struct
+        ast.TypeDefKind.Union => return TypeDefKind.Union
+        ast.TypeDefKind.Enum => return TypeDefKind.Union
+    end
+    return TypeDefKind.Struct
+end
+
 def collect_types(program ref(ast.Program)) list[TypeEntry]
     var types list[TypeEntry] = []
     var i usize = 0
+    for i < @len(program.type_defs)
+        val td_ref ref(ast.TypeDef) = @addr(program.type_defs[i])
+        val kind TypeDefKind = type_def_kind_to_sema_kind(td_ref.kind)
+        var field_map list[FieldEntry] = []
+        var j usize = 0
+        for j < @len(td_ref.fields)
+            val field_ref ref(ast.FieldDef) = @addr(td_ref.fields[j])
+            @append(field_map, FieldEntry(name: field_ref.name, ty: field_ref.ty))
+            j++
+        end
+        var variant_map list[VariantEntry] = []
+        var k usize = 0
+        for k < @len(td_ref.variants)
+            val var_ref ref(ast.VariantDef) = @addr(td_ref.variants[k])
+            @append(variant_map, VariantEntry(name: var_ref.name, payload_types: var_ref.payload_types))
+            k++
+        end
+        val type_info TypeDefInfo = TypeDefInfo(
+            kind: kind,
+            fields: td_ref.fields,
+            field_map: field_map,
+            variants: ([] as list[UnionVariantDef]),
+            variant_map: variant_map,
+            alias: ast.Type.Void(0),
+            has_alias: false
+        )
+        @append(types, TypeEntry(name: td_ref.name, info: type_info))
+        i++
+    end
+    i = 0
     for i < @len(program.functions)
         val fn_ref ref(ast.Function) = @addr(program.functions[i])
         var j usize = 0
@@ -923,6 +962,9 @@ end
 test "analyzes struct initialization"
     val info ProgramInfo = parse_and_analyze("type Point\n\tx i32\n\ty i32\nend\npub def main() void\n\tval p = Point(x: 1, y: 2)\nend\n")
     assert @len(info.functions) == 1
+    val length usize = @len(info.types)
+    @print("LEN: {d}\n", {length})
+    @flush()
     assert @len(info.types) == 1
 end
 

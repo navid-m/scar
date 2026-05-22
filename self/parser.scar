@@ -557,10 +557,122 @@ def skip_top_level_item(p ref(ast.TokenList))
     end
 end
 
+def parse_type_def(p ref(ast.TokenList), is_pub_val bool) ast.TypeDef
+    advance(p)
+    val name ref(u8) = expect_ident(p)
+    consume_newlines(p)
+    var fields list[ast.FieldDef] = []
+    for !is_keyword(p, KW_END) && !is_eof(p)
+        val field_name ref(u8) = expect_ident(p)
+        val field_type ast.Type = parse_type(p)
+        expect_newline(p)
+        consume_newlines(p)
+        val field_def ast.FieldDef = ast.FieldDef(
+            name: field_name,
+            ty: field_type,
+            line: 0,
+            column: 0
+        )
+        @append(fields, field_def)
+    end
+    if !is_eof(p)
+        advance(p)
+    end
+    consume_newlines(p)
+    return ast.TypeDef(
+        name: name,
+        kind: ast.TypeDefKind.Struct,
+        fields: fields,
+        variants: ([] as list[ast.VariantDef]),
+        is_pub: is_pub_val
+    )
+end
+
+def parse_union_def(p ref(ast.TokenList), is_pub_val bool) ast.TypeDef
+    advance(p)
+    val name ref(u8) = expect_ident(p)
+    consume_newlines(p)
+    var variants list[ast.VariantDef] = []
+    for !is_keyword(p, KW_END) && !is_eof(p)
+        val variant_name ref(u8) = expect_ident(p)
+        var payload_types list[ast.Type] = []
+        match p.tokens[p.pos].kind
+            ast.TokenKind.LParen(_) => (
+                advance(p)
+                consume_newlines(p)
+                if !is_keyword(p, KW_END) && !is_eof(p)
+                    for
+                        @append(payload_types, parse_type(p))
+                        match p.tokens[p.pos].kind
+                            ast.TokenKind.Comma(_) => (
+                                advance(p)
+                                consume_newlines(p)
+                            )
+                            _ => break
+                        end
+                    end
+                end
+                match p.tokens[p.pos].kind
+                    ast.TokenKind.RParen(_) => advance(p)
+                    _ => ()
+                end
+            )
+            _ => ()
+        end
+        expect_newline(p)
+        consume_newlines(p)
+        val variant_def ast.VariantDef = ast.VariantDef(
+            name: variant_name,
+            payload_types: payload_types
+        )
+        @append(variants, variant_def)
+    end
+    if !is_eof(p)
+        advance(p)
+    end
+    consume_newlines(p)
+    return ast.TypeDef(
+        name: name,
+        kind: ast.TypeDefKind.Union,
+        fields: ([] as list[ast.FieldDef]),
+        variants: variants,
+        is_pub: is_pub_val
+    )
+end
+
+def parse_enum_def(p ref(ast.TokenList), is_pub_val bool) ast.TypeDef
+    advance(p)
+    val name ref(u8) = expect_ident(p)
+    consume_newlines(p)
+    var variants list[ast.VariantDef] = []
+    for !is_keyword(p, KW_END) && !is_eof(p)
+        val variant_name ref(u8) = expect_ident(p)
+        expect_newline(p)
+        consume_newlines(p)
+        val variant_def ast.VariantDef = ast.VariantDef(
+            name: variant_name,
+            payload_types: ([] as list[ast.Type])
+        )
+        @append(variants, variant_def)
+    end
+    if !is_eof(p)
+        advance(p)
+    end
+    consume_newlines(p)
+    return ast.TypeDef(
+        name: name,
+        kind: ast.TypeDefKind.Enum,
+        fields: ([] as list[ast.FieldDef]),
+        variants: variants,
+        is_pub: is_pub_val
+    )
+end
+
 pub def parse_program(tokens list[ast.Token]) ast.Program
     var p ast.TokenList = ast.TokenList(tokens: tokens, pos: 0)
     var module_uses list[ast.ModuleUse] = []
     var functions list[ast.Function] = []
+    var type_defs list[ast.TypeDef] = []
     var tests list[ast.TestBlock] = []
 
     consume_newlines(@addr(p))
@@ -580,6 +692,15 @@ pub def parse_program(tokens list[ast.Token]) ast.Program
         elif is_keyword(@addr(p), KW_PUB) && next_is_keyword(@addr(p), KW_DEF)
             advance(@addr(p))
             @append(functions, parse_function(@addr(p), true))
+        elif is_keyword(@addr(p), KW_PUB) && next_is_keyword(@addr(p), KW_TYPE)
+            advance(@addr(p))
+            @append(type_defs, parse_type_def(@addr(p), true))
+        elif is_keyword(@addr(p), KW_PUB) && next_is_keyword(@addr(p), KW_UNION)
+            advance(@addr(p))
+            @append(type_defs, parse_union_def(@addr(p), true))
+        elif is_keyword(@addr(p), KW_PUB) && next_is_keyword(@addr(p), KW_ENUM)
+            advance(@addr(p))
+            @append(type_defs, parse_enum_def(@addr(p), true))
         elif is_keyword(@addr(p), KW_PUB)
             advance(@addr(p))
             skip_top_level_item(@addr(p))
@@ -590,6 +711,12 @@ pub def parse_program(tokens list[ast.Token]) ast.Program
             else
                 skip_to_newline(@addr(p))
             end
+        elif is_keyword(@addr(p), KW_TYPE)
+            @append(type_defs, parse_type_def(@addr(p), false))
+        elif is_keyword(@addr(p), KW_UNION)
+            @append(type_defs, parse_union_def(@addr(p), false))
+        elif is_keyword(@addr(p), KW_ENUM)
+            @append(type_defs, parse_enum_def(@addr(p), false))
         elif is_keyword(@addr(p), KW_TEST)
             @append(tests, parse_test_block(@addr(p)))
         elif is_keyword(@addr(p), KW_VAL) && is_module_use(@addr(p))
@@ -605,6 +732,7 @@ pub def parse_program(tokens list[ast.Token]) ast.Program
     return ast.Program(
         module_uses: module_uses,
         functions: functions,
+        type_defs: type_defs,
         tests: tests
     )
 end
