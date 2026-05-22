@@ -1206,27 +1206,41 @@ fn rewrite_expr(
             if let Expr::Path(ref path) = *base {
                 if path.len() == 1 {
                     let is_local = LOCAL_VARS.with(|lv| lv.borrow().contains(&path[0]));
+                    eprintln!("[DEBUG resolver FieldAccess] path[0]={:?} field={:?} is_local={}", path[0], field, is_local);
                     if !is_local {
                         if let Some(module) = module_aliases.get(&path[0]) {
+                            eprintln!("[DEBUG resolver FieldAccess] found module alias {:?}, globals={:?} functions={:?} named_types={:?}", path[0], module.globals.keys().collect::<Vec<_>>(), module.functions.keys().collect::<Vec<_>>(), module.named_types.keys().collect::<Vec<_>>());
                             USED_MODULE_ALIASES.with(|u| u.borrow_mut().insert(path[0].clone()));
                             if let Some(global_name) = module.globals.get(&field) {
+                                eprintln!("[DEBUG resolver FieldAccess] -> global {}", global_name);
                                 return Ok(Expr::Path(vec![global_name.clone()]));
                             }
                             if let Some(func_name) = module.functions.get(&field) {
+                                eprintln!("[DEBUG resolver FieldAccess] -> function {}", func_name);
                                 return Ok(Expr::Path(vec![func_name.clone()]));
                             }
+                            if let Some(type_name) = module.named_types.get(&field) {
+                                eprintln!("[DEBUG resolver FieldAccess] -> named type {}", type_name);
+                                return Ok(Expr::Path(vec![type_name.clone()]));
+                            }
+                            eprintln!("[DEBUG resolver FieldAccess] module alias had no global/function/type for field {:?}", field);
+                        } else {
+                            eprintln!("[DEBUG resolver FieldAccess] no module alias for {:?}", path[0]);
                         }
                     }
                     let qualified = format!("{}.{}", path[0], field);
+                    eprintln!("[DEBUG resolver FieldAccess] checking local_types qualified={:?} local_types_keys={:?}", qualified, local_types.keys().collect::<Vec<_>>());
                     if local_types.contains_key(&qualified) {
                         let type_mapped = local_types
                             .get(&path[0])
                             .cloned()
                             .unwrap_or_else(|| path[0].clone());
+                        eprintln!("[DEBUG resolver FieldAccess] -> local type {}.{}", type_mapped, field);
                         return Ok(Expr::Path(vec![type_mapped, field]));
                     }
                 }
             }
+            eprintln!("[DEBUG resolver FieldAccess] falling through to recursive rewrite");
             Ok(Expr::FieldAccess {
                 base: Box::new(rewrite_expr(
                     *base,
