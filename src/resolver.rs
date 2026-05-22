@@ -301,13 +301,12 @@ impl Resolver {
 
 fn parse_program_file(path: &Path) -> Result<Program, CompileError> {
     let source = fs::read_to_string(path).map_err(|error| {
-        CompileError::new(format!("failed to read {}: {error}", path.display()))
-            .with_file(path)
+        CompileError::new(format!("failed to read {}: {error}", path.display())).with_file(path)
     })?;
-    let tokens = lex(&source)
-        .map_err(|error| CompileError::new(format!("in {}: {error}", path.display())).with_file(path))?;
-    let mut program = parse_program(tokens)
-        .map_err(|error| error.with_file(path))?;
+    let tokens = lex(&source).map_err(|error| {
+        CompileError::new(format!("in {}: {error}", path.display())).with_file(path)
+    })?;
+    let mut program = parse_program(tokens).map_err(|error| error.with_file(path))?;
     for f in &mut program.functions {
         f.file_path = Some(path.to_path_buf());
     }
@@ -359,10 +358,10 @@ fn resolve_module_use_path(
     fn check_path(base: &Path) -> Result<Option<PathBuf>, CompileError> {
         let mod_path = base.join("mod.scar");
         let file_path = base.with_extension("scar");
-        
+
         let mod_exists = mod_path.exists();
         let file_exists = file_path.exists();
-        
+
         if mod_exists && file_exists {
             return Err(CompileError::new(format!(
                 "ambiguous module resolution: both {} and {} exist",
@@ -370,7 +369,7 @@ fn resolve_module_use_path(
                 file_path.display()
             )));
         }
-        
+
         if mod_exists {
             Ok(Some(mod_path))
         } else if file_exists {
@@ -393,14 +392,14 @@ fn resolve_module_use_path(
                 return Ok(path);
             }
         }
-        
+
         if let Some(local_std_root) = local_std_root {
             return Ok(local_std_root.join(rest).with_extension("scar"));
         } else if let Some(home_std_root) = home_std_root {
             return Ok(home_std_root.join(rest).with_extension("scar"));
         }
     }
-    
+
     let base = current_dir.join(module_path);
     if let Some(path) = check_path(&base)? {
         Ok(path)
@@ -620,7 +619,11 @@ fn collect_local_vars(params: &[Param], body: &[Stmt]) -> HashSet<String> {
                 Stmt::VarDecl { name, .. } => {
                     vars.insert(name.clone());
                 }
-                Stmt::If { then_body, else_body, .. } => {
+                Stmt::If {
+                    then_body,
+                    else_body,
+                    ..
+                } => {
                     collect(then_body, vars);
                     collect(else_body, vars);
                 }
@@ -1169,6 +1172,17 @@ fn rewrite_expr(
             if let Some(mapped) = local_functions.get(&full_path) {
                 return Ok(Expr::Path(vec![mapped.clone()]));
             }
+            if path.len() == 3 {
+                let is_local = LOCAL_VARS.with(|lv| lv.borrow().contains(&path[0]));
+                if !is_local {
+                    if let Some(module) = module_aliases.get(&path[0]) {
+                        USED_MODULE_ALIASES.with(|u| u.borrow_mut().insert(path[0].clone()));
+                        if let Some(type_name) = module.named_types.get(&path[1]) {
+                            return Ok(Expr::Path(vec![type_name.clone(), path[2].clone()]));
+                        }
+                    }
+                }
+            }
             if path.len() == 2 {
                 let is_local = LOCAL_VARS.with(|lv| lv.borrow().contains(&path[0]));
                 if !is_local {
@@ -1206,48 +1220,53 @@ fn rewrite_expr(
             if let Expr::Path(ref path) = *base {
                 if path.len() == 1 {
                     let is_local = LOCAL_VARS.with(|lv| lv.borrow().contains(&path[0]));
-                    eprintln!("[DEBUG resolver FieldAccess] path[0]={:?} field={:?} is_local={}", path[0], field, is_local);
                     if !is_local {
                         if let Some(module) = module_aliases.get(&path[0]) {
-                            eprintln!("[DEBUG resolver FieldAccess] found module alias {:?}, globals={:?} functions={:?} named_types={:?}", path[0], module.globals.keys().collect::<Vec<_>>(), module.functions.keys().collect::<Vec<_>>(), module.named_types.keys().collect::<Vec<_>>());
                             USED_MODULE_ALIASES.with(|u| u.borrow_mut().insert(path[0].clone()));
                             if let Some(global_name) = module.globals.get(&field) {
-                                eprintln!("[DEBUG resolver FieldAccess] -> global {}", global_name);
                                 return Ok(Expr::Path(vec![global_name.clone()]));
                             }
                             if let Some(func_name) = module.functions.get(&field) {
-                                eprintln!("[DEBUG resolver FieldAccess] -> function {}", func_name);
                                 return Ok(Expr::Path(vec![func_name.clone()]));
                             }
                             if let Some(type_name) = module.named_types.get(&field) {
-                                eprintln!("[DEBUG resolver FieldAccess] -> named type {}", type_name);
                                 return Ok(Expr::Path(vec![type_name.clone()]));
                             }
-                            eprintln!("[DEBUG resolver FieldAccess] module alias had no global/function/type for field {:?}", field);
-                        } else {
-                            eprintln!("[DEBUG resolver FieldAccess] no module alias for {:?}", path[0]);
                         }
-                    }
-                    let qualified = format!("{}.{}", path[0], field);
-                    eprintln!("[DEBUG resolver FieldAccess] checking local_types qualified={:?} local_types_keys={:?}", qualified, local_types.keys().collect::<Vec<_>>());
-                    if local_types.contains_key(&qualified) {
-                        let type_mapped = local_types
-                            .get(&path[0])
-                            .cloned()
-                            .unwrap_or_else(|| path[0].clone());
-                        eprintln!("[DEBUG resolver FieldAccess] -> local type {}.{}", type_mapped, field);
-                        return Ok(Expr::Path(vec![type_mapped, field]));
                     }
                 }
             }
-            eprintln!("[DEBUG resolver FieldAccess] falling through to recursive rewrite");
+            let rewritten_base = rewrite_expr(
+                *base,
+                local_functions,
+                local_types,
+                module_aliases,
+            )?;
+            if let Expr::Path(ref path) = rewritten_base {
+                if path.len() == 1 {
+                    let qualified = format!("{}.{}", path[0], field);
+                    if let Some(mapped) = local_types.get(&qualified) {
+                        return Ok(Expr::Path(vec![mapped.clone()]));
+                    }
+                    if local_types.contains_key(&qualified) {
+                        return Ok(Expr::Path(vec![path[0].clone(), field]));
+                    }
+                    for (key, value) in local_types {
+                        if *value == path[0] {
+                            let unmapped_qualified = format!("{}.{}", key, field);
+                            if let Some(mapped) = local_types.get(&unmapped_qualified) {
+                                return Ok(Expr::Path(vec![mapped.clone()]));
+                            }
+                            break;
+                        }
+                    }
+                    if path[0].contains("__") {
+                        return Ok(Expr::Path(vec![path[0].clone(), field.clone()]));
+                    }
+                }
+            }
             Ok(Expr::FieldAccess {
-                base: Box::new(rewrite_expr(
-                    *base,
-                    local_functions,
-                    local_types,
-                    module_aliases,
-                )?),
+                base: Box::new(rewritten_base),
                 field,
             })
         }
@@ -2905,7 +2924,9 @@ impl GenericInstantiator {
         }
         if let Type::Named(typeset_name) = constraint {
             if let Some(members) = self.type_sets.get(typeset_name) {
-                return members.iter().any(|member| member == type_arg || *member == unwrapped);
+                return members
+                    .iter()
+                    .any(|member| member == type_arg || *member == unwrapped);
             }
         }
         match (constraint, &unwrapped) {
@@ -3909,7 +3930,8 @@ mod tests {
             "std/string",
             Some(Path::new("/project/lib/std")),
             Some(Path::new("/home/test/.scar/lib/std")),
-        ).unwrap();
+        )
+        .unwrap();
 
         assert_eq!(resolved, Path::new("/project/lib/std/string.scar"));
     }
@@ -3921,7 +3943,8 @@ mod tests {
             "std/string",
             None,
             Some(Path::new("/home/test/.scar/lib/std")),
-        ).unwrap();
+        )
+        .unwrap();
 
         assert_eq!(resolved, Path::new("/home/test/.scar/lib/std/string.scar"));
     }
@@ -3933,7 +3956,8 @@ mod tests {
             "some_file",
             Some(Path::new("/project/lib/std")),
             Some(Path::new("/home/test/.scar/lib/std")),
-        ).unwrap();
+        )
+        .unwrap();
 
         assert_eq!(resolved, Path::new("/project/src/some_file.scar"));
     }
