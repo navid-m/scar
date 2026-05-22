@@ -714,15 +714,24 @@ fn render_stmt_inner<'a>(
             ..
         } => {
             let ty = info
-                .locals
-                .get(&function.name)
-                .and_then(|locals| locals.get(name))
+                .scope_overrides
+                .borrow()
+                .get(name)
+                .cloned()
+                .or_else(|| {
+                    info.locals
+                        .get(&function.name)
+                        .and_then(|locals| locals.get(name))
+                        .cloned()
+                })
                 .ok_or_else(|| {
                     CompileError::new(format!(
                         "missing inferred type for local `{name}` in `{}`",
                         function.name
                     ))
                 })?;
+            info.scope_overrides.borrow_mut().insert(name.clone(), ty.clone());
+            let ty_ref = &ty;
             if let Expr::Try(inner) = init {
                 let result_ty = infer_codegen_expr_type(inner, function, info)?;
                 let Type::Result(_) = resolve_codegen_aliases(&result_ty, info)? else {
@@ -778,8 +787,8 @@ fn render_stmt_inner<'a>(
                 indent(output, level);
                 output.push_str("}\n");
                 indent(output, level);
-                let c_ty_str = c_type_named(ty, &mangle_local_symbol(name));
-                let is_aggregate = matches!(ty, Type::Named(_));
+                let c_ty_str = c_type_named(ty_ref, &mangle_local_symbol(name));
+                let is_aggregate = matches!(ty_ref, Type::Named(_));
                 if !mutable && !c_ty_str.starts_with("const ") && !is_aggregate {
                     output.push_str("const ");
                 }
@@ -790,13 +799,13 @@ fn render_stmt_inner<'a>(
                 return Ok(());
             }
             if let Expr::BuiltinCall { name: bname, args } = init {
-                if bname == "deref" && args.len() == 1 && matches!(ty, Type::Named(_)) {
+                if bname == "deref" && args.len() == 1 && matches!(ty_ref, Type::Named(_)) {
                     let inner_expr = &args[0];
                     indent(output, level);
                     if !*mutable {
                         output.push_str("const ");
                     }
-                    output.push_str(&c_type(ty));
+                    output.push_str(&c_type(ty_ref));
                     output.push_str(" *");
                     output.push_str(&mangle_local_symbol(name));
                     output.push_str(" = ");
@@ -806,8 +815,8 @@ fn render_stmt_inner<'a>(
                 }
             }
             indent(output, level);
-            let c_ty_str = c_type_named(ty, &mangle_local_symbol(name));
-            let is_aggregate = matches!(ty, Type::Named(_));
+            let c_ty_str = c_type_named(ty_ref, &mangle_local_symbol(name));
+            let is_aggregate = matches!(ty_ref, Type::Named(_));
             if !mutable && !c_ty_str.starts_with("const ") && !is_aggregate {
                 output.push_str("const ");
             }
@@ -817,7 +826,7 @@ fn render_stmt_inner<'a>(
                 init,
                 function,
                 info,
-                Some(ty),
+                Some(ty_ref),
                 deref_locals,
             )?);
             output.push_str(";\n");
@@ -1294,6 +1303,7 @@ fn render_stmt_inner<'a>(
                                 .rsplit('.')
                                 .next()
                                 .unwrap_or(variant_name);
+                            eprintln!("[CODEGEN] union match: union_name={}, variant_name={}, bare_variant={}, arm.bindings={:?}", union_name, variant_name, bare_variant, arm.bindings);
                             if bare_variant == "_" {
                                 indent(output, level + 1);
                                 output.push_str("else {\n");
@@ -1320,6 +1330,7 @@ fn render_stmt_inner<'a>(
                                         "union `{union_name}` has no variant `{variant_name}`"
                                     ))
                                 })?;
+                            eprintln!("[CODEGEN] union match payload_types for {}.{}: {:?}", union_name, bare_variant, payload_types);
                             indent(output, level + 1);
                             if index == 0 {
                                 output.push_str("if (");
@@ -2644,33 +2655,26 @@ fn infer_codegen_expr_type(
             infer_index_type(&infer_codegen_expr_type(base, function, info)?)
         }
         Expr::Path(path) => match path.as_slice() {
-            [name] => info
-                .scope_overrides
-                .borrow()
-                .get(name)
-                .cloned()
-                .or_else(|| {
-                    info.locals
-                        .get(&function.name)
-                        .and_then(|locals| locals.get(name))
-                        .cloned()
-                })
-                .or_else(|| {
-                    function
-                        .params
-                        .iter()
-                        .find(|param| param.name == *name)
-                        .map(|param| param.ty.clone())
-                })
-                .or_else(|| {
-                    info.functions.get(name).map(|sig| {
-                        Type::FnPtr(sig.params.clone(), Box::new(sig.return_type.clone()))
+            [name] => {
+                let override_ty = info.scope_overrides.borrow().get(name).cloned();
+                let local_ty = info.locals.get(&function.name).and_then(|locals| locals.get(name)).cloned();
+                let param_ty = function.params.iter().find(|param| param.name == *name).map(|param| param.ty.clone());
+                if name == "p" || name == "vd" {
+                    eprintln!("[CODEGEN] Path lookup for '{}': override={:?}, local={:?}, param={:?}", name, override_ty, local_ty, param_ty);
+                }
+                override_ty
+                    .or(local_ty)
+                    .or(param_ty)
+                    .or_else(|| {
+                        info.functions.get(name).map(|sig| {
+                            Type::FnPtr(sig.params.clone(), Box::new(sig.return_type.clone()))
+                        })
                     })
-                })
-                .or_else(|| info.globals.get(name).map(|(ty, _)| ty.clone()))
-                .ok_or_else(|| {
-                    CompileError::new(format!("unknown expression `{name}` in code generation"))
-                }),
+                    .or_else(|| info.globals.get(name).map(|(ty, _)| ty.clone()))
+                    .ok_or_else(|| {
+                        CompileError::new(format!("unknown expression `{name}` in code generation"))
+                    })
+            }
             [type_name, variant_name] => {
                 if let Some(type_info) = info.types.get(type_name) {
                     if type_info.kind == TypeDefKind::Enum
@@ -2692,14 +2696,19 @@ fn infer_codegen_expr_type(
         Expr::FieldAccess { base, field } => {
             let base_ty = infer_codegen_expr_type(base, function, info)?;
             match deref_refs(&base_ty) {
-                Type::Named(name) => info
-                    .types
-                    .get(name)
-                    .and_then(|type_info| type_info.field_map.get(field))
-                    .cloned()
-                    .ok_or_else(|| {
+                Type::Named(name) => {
+                    let result = info
+                        .types
+                        .get(name)
+                        .and_then(|type_info| type_info.field_map.get(field))
+                        .cloned();
+                    if result.is_none() {
+                        eprintln!("[CODEGEN] infer_codegen_expr_type FieldAccess: type `{name}` has no field `{field}`, base_ty={:?}, base_expr={:?}", base_ty, base);
+                    }
+                    result.ok_or_else(|| {
                         CompileError::new(format!("type `{name}` has no field `{field}`"))
-                    }),
+                    })
+                }
                 other => Err(CompileError::new(format!(
                     "field access requires a named type during code generation, got {}",
                     describe_type(other)
