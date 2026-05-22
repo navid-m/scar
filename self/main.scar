@@ -9,8 +9,6 @@ val sema = use("sema")
 val cgen = use("codegen")
 val rslv = use("resolver")
 
-extern def exit(code i32) void :: "exit"
-
 pub def compile(source_path ref(u8), output_path ref(u8)) i32|error
     var arena = allocators.Arena.new(131072 as usize)?
     defer
@@ -78,12 +76,12 @@ pub def main() void
     match compile(source_path, output_path)
         ok rc => (
             if rc != 0
-                exit(rc)
+                os.exit(rc)
             end
         )
         error msg => (
             @puts(msg)
-            exit(1)
+            os.exit(1)
         )
     end
 end

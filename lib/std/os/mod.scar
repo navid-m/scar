@@ -3,6 +3,7 @@ val fs = use("std/fs")
 val str = use("std/string")
 
 extern def remove(path ref(u8)) i32 :: "remove"
+pub extern def exit(code u32) void :: "exit"
 
 pub type ExecResult
 	exit_code i32
