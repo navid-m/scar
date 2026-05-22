@@ -825,6 +825,9 @@ when windows
 	end
 
 	pub def remove_file(path ref(u8)) void|error
+		guard (path != none) else
+			return io_error[void]("got null path")
+		end
 		clear_last_error()
 		if DeleteFileA(path) == 0
 			return io_error[void](
