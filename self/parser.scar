@@ -167,7 +167,19 @@ def skip_to_newline(p ref(ast.TokenList))
 end
 
 def needs_end_kw(kw_id u8) bool
-    return kw_id == KW_IF || kw_id == KW_FOR || kw_id == KW_MATCH || kw_id == KW_WHEN || kw_id == KW_DEFER || kw_id == KW_GUARD || kw_id == KW_TYPE || kw_id == KW_ENUM || kw_id == KW_UNION || kw_id == KW_IFACE || kw_id == KW_TSET || kw_id == KW_DEF || kw_id == KW_TEST
+    return kw_id == KW_IF 
+        || kw_id == KW_FOR 
+        || kw_id == KW_MATCH 
+        || kw_id == KW_WHEN 
+        || kw_id == KW_DEFER 
+        || kw_id == KW_GUARD 
+        || kw_id == KW_TYPE 
+        || kw_id == KW_ENUM 
+        || kw_id == KW_UNION 
+        || kw_id == KW_IFACE 
+        || kw_id == KW_TSET 
+        || kw_id == KW_DEF 
+        || kw_id == KW_TEST
 end
 
 def skip_block(p ref(ast.TokenList))
@@ -194,7 +206,11 @@ end
 
 def starts_type(tokens_val ref(ast.TokenList)) bool
     match tokens_val.tokens[tokens_val.pos].kind
-        ast.TokenKind.Keyword(v) => return v == KW_VOID || v == KW_BOOL || v == KW_I8 || v == KW_I16 || v == KW_I32 || v == KW_I64 || v == KW_ISIZE || v == KW_U8 || v == KW_U16 || v == KW_U32 || v == KW_U64 || v == KW_USIZE || v == KW_F32 || v == KW_F64 || v == KW_MUT || v == KW_REF || v == KW_LIST
+        ast.TokenKind.Keyword(v) => return v == KW_VOID 
+            || v == KW_BOOL || v == KW_I8 || v == KW_I16 
+            || v == KW_I32 || v == KW_I64 || v == KW_ISIZE || v == KW_U8 || v == KW_U16 || v == KW_U32 
+            || v == KW_U64 || v == KW_USIZE || v == KW_F32 || v == KW_F64 || v == KW_MUT 
+            || v == KW_REF || v == KW_LIST
         ast.TokenKind.Ident(_) => return true
         ast.TokenKind.LParen(_) => return true
         ast.TokenKind.LBracket(_) => return true
