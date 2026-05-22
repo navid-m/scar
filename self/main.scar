@@ -108,7 +108,7 @@ pub def main() void
             emit_mode = true
         elif str.eql(arg, "-o")
             if i + 1 >= @len(args)
-                @puts("usage: scar-compile [-emit [-o <output.c>]] <source.scar> [output]")
+                @puts("usage: scar [-emit [-o <output.c>]] <source.scar> [output]")
                 return
             end
             if emit_mode
