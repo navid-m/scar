@@ -182,7 +182,7 @@ def render_stmt(stmt ref(ast.Stmt), fun ref(ast.Function), info ref(sema.Program
             indent(output, output_len, level)
             if !is_void_type(@addr(fun.return_type))
                 append_str(output, output_len, "__scar_return_value = ")
-                append_expr(@addr(r.value), fun, info, output, output_len)
+                append_expr(@addr(r.value), fun, info, arena, output, output_len)
                 append_str(output, output_len, ";\n")
             end
             append_str(output, output_len, "    goto __scar_return;\n")
