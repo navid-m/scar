@@ -22,13 +22,15 @@ pub def compile(source_path ref(u8), output_path ref(u8)) i32|error
         return error("scar: cannot read file")
     end
 
-    val tokens list[ast.Token] = lxr.lex(source)
-    val prog ast.Program = prs.parse_program(tokens)
-    val resolved ast.Program = rslv.resolve(@addr(prog))
-    val info sema.ProgramInfo = sema.analyze(@addr(resolved))
-    val c_code ref(u8) = cgen.generate_c(@addr(resolved), @addr(info))
-
-    val c_path ref(u8) = "/tmp/scar-compile.c"
+    val (
+        tokens list[ast.Token] = lxr.lex(source)
+        prog ast.Program       = prs.parse_program(tokens)
+        resolved ast.Program   = rslv.resolve(@addr(prog))
+        info sema.ProgramInfo  = sema.analyze(@addr(resolved))
+        c_code ref(u8)         = cgen.generate_c(@addr(resolved), @addr(info))
+        c_path ref(u8)         = "/tmp/scar-compile.c"
+    )
+    
     fs.write_text(c_path, c_code)?
 
     val cmd_buf list[u8] = []
@@ -38,9 +40,12 @@ pub def compile(source_path ref(u8), output_path ref(u8)) i32|error
     append_str(@addr(cmd_buf), output_path)
     append_str(@addr(cmd_buf), " 2>/dev/null")
     @append(cmd_buf, 0)
-    val cmd_str ref(u8) = @addr(cmd_buf[0])
 
-    val rc i32 = os.exec(cmd_str)?
+    val (
+        cmd_str ref(u8) = @addr(cmd_buf[0])
+        rc i32          = os.exec(cmd_str)?
+    )
+    
     if rc != 0
         fs.remove_file(c_path)
         return error("scar: tcc failed to link")
