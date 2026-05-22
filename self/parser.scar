@@ -49,6 +49,7 @@ val KW_DEFER  u8 = 44
 val KW_WHEN   u8 = 45
 val KW_LINK   u8 = 46
 val KW_GUARD  u8 = 47
+val KW_ASSIGN u8 = 48
 
 def is_keyword(p ref(ast.TokenList), id u8) bool
     match p.tokens[p.pos].kind
@@ -326,6 +327,744 @@ def parse_dotted_name(p ref(ast.TokenList)) ref(u8)
     end
 end
 
+def parse_block_until(p ref(ast.TokenList), end_kw bool) list[ast.Stmt]
+    var body list[ast.Stmt] = []
+    consume_newlines(p)
+    for !is_eof(p)
+        if end_kw && is_keyword(p, KW_END)
+            break
+        end
+        @append(body, parse_stmt(p))
+        consume_newlines(p)
+    end
+    return body
+end
+
+def parse_block(p ref(ast.TokenList)) list[ast.Stmt]
+    return parse_block_until(p, true)
+end
+
+def parse_stmt(p ref(ast.TokenList)) ast.Stmt
+    consume_newlines(p)
+
+    if is_keyword(p, KW_VAL) || is_keyword(p, KW_VAR)
+        val mutable bool = is_keyword(p, KW_VAR)
+        advance(p)
+        val line usize = p.tokens[p.pos].line
+        val column usize = p.tokens[p.pos].column
+        val name ref(u8) = expect_ident(p)
+        var declared_type ast.Type = ast.Type.Void(0)
+        match p.tokens[p.pos].kind
+            ast.TokenKind.Assign(_) => ()
+            _ => (
+                if starts_type(p)
+                    declared_type = parse_type(p)
+                end
+            )
+        end
+        match p.tokens[p.pos].kind
+            ast.TokenKind.Assign(_) => advance(p)
+            _ => ()
+        end
+        val init ast.Expr = parse_expr(p)
+        return ast.Stmt.VarDecl(@addr(ast.StmtVarDecl(
+            mutable: mutable,
+            name: name,
+            declared_type: declared_type,
+            init: init,
+            line: line,
+            column: column
+        )))
+    end
+
+    if is_keyword(p, KW_RETURN)
+        val line usize = p.tokens[p.pos].line
+        val column usize = p.tokens[p.pos].column
+        advance(p)
+        var value ast.Expr = ast.Expr.None(0)
+        match p.tokens[p.pos].kind
+            ast.TokenKind.Newline(_) => ()
+            ast.TokenKind.Eof(_) => ()
+            _ => value = parse_expr(p)
+        end
+        return ast.Stmt.Return(@addr(ast.StmtReturn(
+            value: value,
+            line: line,
+            column: column
+        )))
+    end
+
+    if is_keyword(p, KW_IF)
+        return parse_if_stmt(p)
+    end
+
+    if is_keyword(p, KW_FOR)
+        return parse_for_stmt(p)
+    end
+
+    if is_keyword(p, KW_WHILE)
+        return parse_while_stmt(p)
+    end
+
+    if is_keyword(p, KW_MATCH)
+        return parse_match_stmt(p)
+    end
+
+    if is_keyword(p, KW_BREAK)
+        advance(p)
+        return ast.Stmt.Break(0)
+    end
+
+    if is_keyword(p, KW_CONT)
+        advance(p)
+        return ast.Stmt.Continue(0)
+    end
+
+    if is_keyword(p, KW_DEFER)
+        advance(p)
+        expect_newline(p)
+        val body list[ast.Stmt] = parse_block(p)
+        if !is_eof(p) && is_keyword(p, KW_END)
+            advance(p)
+        end
+        return ast.Stmt.Block(body)
+    end
+
+    val line usize = p.tokens[p.pos].line
+    val column usize = p.tokens[p.pos].column
+    val expr ast.Expr = parse_expr(p)
+
+    match p.tokens[p.pos].kind
+        ast.TokenKind.Assign(_) => (
+            advance(p)
+            val value ast.Expr = parse_expr(p)
+            return ast.Stmt.Assign(@addr(ast.StmtAssign(
+                target: expr,
+                value: value,
+                line: line,
+                column: column
+            )))
+        )
+        ast.TokenKind.PlusPlus(_) => (
+            advance(p)
+            return ast.Stmt.Increment(@addr(expr))
+        )
+        ast.TokenKind.MinusMinus(_) => (
+            advance(p)
+            return ast.Stmt.Decrement(@addr(expr))
+        )
+        ast.TokenKind.Newline(_) => return ast.Stmt.ExprStmt(@addr(expr))
+        ast.TokenKind.Eof(_) => return ast.Stmt.ExprStmt(@addr(expr))
+        _ => return ast.Stmt.ExprStmt(@addr(expr))
+    end
+end
+
+def parse_if_stmt(p ref(ast.TokenList)) ast.Stmt
+    advance(p)
+    val line usize = p.tokens[p.pos].line
+    val column usize = p.tokens[p.pos].column
+    val condition ast.Expr = parse_expr(p)
+    expect_newline(p)
+    val then_body list[ast.Stmt] = parse_block_until(p, false)
+
+    var else_body list[ast.Stmt] = []
+    if is_keyword(p, KW_ELSE)
+        advance(p)
+        expect_newline(p)
+        else_body = parse_block_until(p, false)
+    elif is_keyword(p, KW_ELIF)
+        var elif_arms list[ast.Stmt] = []
+        var elif_bodies list[list[ast.Stmt]] = []
+        var elif_conds list[ast.Expr] = []
+        for is_keyword(p, KW_ELIF)
+            advance(p)
+            val elif_cond ast.Expr = parse_expr(p)
+            expect_newline(p)
+            val elif_then list[ast.Stmt] = parse_block_until(p, false)
+            @append(elif_conds, elif_cond)
+            @append(elif_bodies, elif_then)
+        end
+        if is_keyword(p, KW_ELSE)
+            advance(p)
+            expect_newline(p)
+            else_body = parse_block_until(p, false)
+        end
+        var k usize = @len(elif_conds)
+        for k > 0
+            k--
+            val ec ast.Expr = elif_conds[k]
+            val eb list[ast.Stmt] = elif_bodies[k]
+            val wrapped ast.Stmt = ast.Stmt.If(@addr(ast.StmtIf(
+                condition: ec,
+                then_body: eb,
+                else_body: else_body,
+                line: 0,
+                column: 0
+            )))
+            else_body = [wrapped]
+        end
+    end
+
+    if !is_eof(p) && is_keyword(p, KW_END)
+        advance(p)
+    end
+
+    return ast.Stmt.If(@addr(ast.StmtIf(
+        condition: condition,
+        then_body: then_body,
+        else_body: else_body,
+        line: line,
+        column: column
+    )))
+end
+
+def parse_for_stmt(p ref(ast.TokenList)) ast.Stmt
+    advance(p)
+    val line usize = p.tokens[p.pos].line
+    val column usize = p.tokens[p.pos].column
+
+    if is_keyword(p, KW_VAR)
+        advance(p)
+        val var_name ref(u8) = expect_ident(p)
+        match p.tokens[p.pos].kind
+            ast.TokenKind.Assign(_) => (
+                advance(p)
+                val start ast.Expr = parse_expr(p)
+                match p.tokens[p.pos].kind
+                    ast.TokenKind.DotDot(_) => (
+                        advance(p)
+                        val end_expr ast.Expr = parse_expr(p)
+                        expect_newline(p)
+                        val body list[ast.Stmt] = parse_block(p)
+                        if !is_eof(p) && is_keyword(p, KW_END)
+                            advance(p)
+                        end
+                        return ast.Stmt.ForRange(@addr(ast.StmtForRange(
+                            var_name: var_name,
+                            start: start,
+                            End: end_expr,
+                            body: body,
+                            line: line,
+                            column: column
+                        )))
+                    )
+                    _ => ()
+                end
+            )
+            _ => ()
+        end
+    end
+
+    val condition ast.Expr = parse_expr(p)
+    expect_newline(p)
+    val body list[ast.Stmt] = parse_block(p)
+    if !is_eof(p) && is_keyword(p, KW_END)
+        advance(p)
+    end
+    return ast.Stmt.While(@addr(ast.StmtWhile(
+        condition: condition,
+        body: body,
+        line: line,
+        column: column
+    )))
+end
+
+def parse_while_stmt(p ref(ast.TokenList)) ast.Stmt
+    advance(p)
+    val line usize = p.tokens[p.pos].line
+    val column usize = p.tokens[p.pos].column
+    val condition ast.Expr = parse_expr(p)
+    expect_newline(p)
+    val body list[ast.Stmt] = parse_block(p)
+    if !is_eof(p) && is_keyword(p, KW_END)
+        advance(p)
+    end
+    return ast.Stmt.While(@addr(ast.StmtWhile(
+        condition: condition,
+        body: body,
+        line: line,
+        column: column
+    )))
+end
+
+def parse_match_stmt(p ref(ast.TokenList)) ast.Stmt
+    advance(p)
+    val line usize = p.tokens[p.pos].line
+    val column usize = p.tokens[p.pos].column
+    val expr ast.Expr = parse_expr(p)
+    expect_newline(p)
+    var arms list[ast.MatchArm] = []
+    consume_newlines(p)
+    for !is_eof(p) && !is_keyword(p, KW_END)
+        val kind ast.MatchArmKind = parse_match_arm_kind(p)
+        var bindings list[ref(u8)] = []
+        match p.tokens[p.pos].kind
+            ast.TokenKind.LParen(_) => (
+                advance(p)
+                for !is_eof(p)
+                    match p.tokens[p.pos].kind
+                        ast.TokenKind.RParen(_) => (
+                            advance(p)
+                            break
+                        )
+                        ast.TokenKind.Ident(name) => (
+                            advance(p)
+                            @append(bindings, name)
+                        )
+                        _ => advance(p)
+                    end
+                    match p.tokens[p.pos].kind
+                        ast.TokenKind.Comma(_) => advance(p)
+                        _ => ()
+                    end
+                end
+            )
+            _ => ()
+        end
+        match p.tokens[p.pos].kind
+            ast.TokenKind.FatArrow(_) => advance(p)
+            _ => ()
+        end
+        consume_newlines(p)
+        var arm_body list[ast.Stmt] = []
+        match p.tokens[p.pos].kind
+            ast.TokenKind.LParen(_) => (
+                advance(p)
+                arm_body = parse_block_until(p, false)
+                match p.tokens[p.pos].kind
+                    ast.TokenKind.RParen(_) => advance(p)
+                    _ => ()
+                end
+            )
+            _ => @append(arm_body, parse_stmt(p))
+        end
+        @append(arms, ast.MatchArm(
+            kind: kind,
+            bindings: bindings,
+            body: arm_body
+        ))
+        consume_newlines(p)
+    end
+    if !is_eof(p) && is_keyword(p, KW_END)
+        advance(p)
+    end
+    return ast.Stmt.Match(@addr(ast.StmtMatch(
+        expr: expr,
+        arms: arms,
+        line: line,
+        column: column
+    )))
+end
+
+def parse_match_arm_kind(p ref(ast.TokenList)) ast.MatchArmKind
+    match p.tokens[p.pos].kind
+        ast.TokenKind.Ident(name) => (
+            if str.eql(name, "ok")
+                advance(p)
+                return ast.MatchArmKind.Ok(0)
+            elif str.eql(name, "error")
+                advance(p)
+                return ast.MatchArmKind.Error(0)
+            else
+                advance(p)
+                match p.tokens[p.pos].kind
+                    ast.TokenKind.Dot(_) => (
+                        advance(p)
+                        val second ref(u8) = expect_ident(p)
+                        val len1 usize = str.len(name)
+                        val len2 usize = str.len(second)
+                        var combined ref(u8) = @alloc(len1 + 1 + len2 + 1)
+                        @memcpy(combined, name, len1)
+                        @deref(@as_mut(@add(combined, len1))) = 46
+                        @memcpy(@add(combined, len1 + 1), second, len2)
+                        @deref(@as_mut(@add(combined, len1 + 1 + len2))) = 0
+                        return ast.MatchArmKind.VariantName(combined)
+                    )
+                    _ => return ast.MatchArmKind.VariantName(name)
+                end
+            end
+        )
+        ast.TokenKind.Int(v) => (
+            var buf list[u8] = []
+            format_u64_for_str(v, @addr(buf))
+            @append(buf, 0)
+            advance(p)
+            return ast.MatchArmKind.VariantName(@addr(buf[0]))
+        )
+        _ => (
+            advance(p)
+            return ast.MatchArmKind.Wild(0)
+        )
+    end
+end
+
+def format_u64_for_str(v u64, buf ref(list[u8]))
+    var value u64 = v
+    if value == 0
+        @append(buf, '0')
+        return
+    end
+    var digits list[u8] = []
+    for value > 0
+        @append(digits, ((value % 10) as u8) + '0')
+        value = value / 10
+    end
+    var k usize = @len(digits)
+    for k > 0
+        k--
+        @append(buf, digits[k])
+    end
+end
+
+def parse_expr(p ref(ast.TokenList)) ast.Expr
+    parse_expr_or(p, 0)
+end
+
+def parse_expr_or(p ref(ast.TokenList), min_prec usize) ast.Expr
+    var left ast.Expr = parse_expr_and(p, min_prec)
+    for
+        val op_opt usize = binary_op_precedence_or()
+        if op_opt == 0 || op_opt < min_prec
+            break
+        end
+        advance(p)
+        val right ast.Expr = parse_expr_and(p, op_opt + 1)
+        left = ast.Expr.Binary(@addr(ast.ExprBinary(
+            lhs: @addr(left),
+            op: token_to_binary_op(p.tokens[p.pos - 1].kind),
+            rhs: @addr(right)
+        )))
+    end
+    return left
+end
+
+def parse_expr_and(p ref(ast.TokenList), min_prec usize) ast.Expr
+    var left ast.Expr = parse_expr_comparison(p, min_prec)
+    for
+        val op_opt usize = binary_op_precedence_and()
+        if op_opt == 0 || op_opt < min_prec
+            break
+        end
+        advance(p)
+        val right ast.Expr = parse_expr_comparison(p, op_opt + 1)
+        left = ast.Expr.Binary(@addr(ast.ExprBinary(
+            lhs: @addr(left),
+            op: token_to_binary_op(p.tokens[p.pos - 1].kind),
+            rhs: @addr(right)
+        )))
+    end
+    return left
+end
+
+def parse_expr_comparison(p ref(ast.TokenList), min_prec usize) ast.Expr
+    var left ast.Expr = parse_expr_additive(p, min_prec)
+    for
+        val op_opt usize = binary_op_precedence_comparison()
+        if op_opt == 0 || op_opt < min_prec
+            break
+        end
+        advance(p)
+        val right ast.Expr = parse_expr_additive(p, op_opt + 1)
+        left = ast.Expr.Binary(@addr(ast.ExprBinary(
+            lhs: @addr(left),
+            op: token_to_binary_op(p.tokens[p.pos - 1].kind),
+            rhs: @addr(right)
+        )))
+    end
+    return left
+end
+
+def parse_expr_additive(p ref(ast.TokenList), min_prec usize) ast.Expr
+    var left ast.Expr = parse_expr_multiplicative(p, min_prec)
+    for
+        val op_opt usize = binary_op_precedence_additive()
+        if op_opt == 0 || op_opt < min_prec
+            break
+        end
+        advance(p)
+        val right ast.Expr = parse_expr_multiplicative(p, op_opt + 1)
+        left = ast.Expr.Binary(@addr(ast.ExprBinary(
+            lhs: @addr(left),
+            op: token_to_binary_op(p.tokens[p.pos - 1].kind),
+            rhs: @addr(right)
+        )))
+    end
+    return left
+end
+
+def parse_expr_multiplicative(p ref(ast.TokenList), min_prec usize) ast.Expr
+    var left ast.Expr = parse_expr_postfix(p)
+    for
+        val op_opt usize = binary_op_precedence_multiplicative()
+        if op_opt == 0 || op_opt < min_prec
+            break
+        end
+        advance(p)
+        val right ast.Expr = parse_expr_postfix(p)
+        left = ast.Expr.Binary(@addr(ast.ExprBinary(
+            lhs: @addr(left),
+            op: token_to_binary_op(p.tokens[p.pos - 1].kind),
+            rhs: @addr(right)
+        )))
+    end
+    return left
+end
+
+def parse_expr_postfix(p ref(ast.TokenList)) ast.Expr
+    var expr ast.Expr = parse_primary(p)
+    for
+        match p.tokens[p.pos].kind
+            ast.TokenKind.LParen(_) => (
+                advance(p)
+                var args list[ast.Expr] = []
+                consume_newlines(p)
+                for !is_eof(p)
+                    match p.tokens[p.pos].kind
+                        ast.TokenKind.RParen(_) => break
+                        _ => ()
+                    end
+                    @append(args, parse_expr(p))
+                    match p.tokens[p.pos].kind
+                        ast.TokenKind.Comma(_) => (
+                            advance(p)
+                            consume_newlines(p)
+                        )
+                        _ => break
+                    end
+                end
+                match p.tokens[p.pos].kind
+                    ast.TokenKind.RParen(_) => advance(p)
+                    _ => ()
+                end
+                expr = ast.Expr.Call(@addr(ast.ExprCall(
+                    callee: @addr(expr),
+                    args: args
+                )))
+            )
+            ast.TokenKind.Dot(_) => (
+                advance(p)
+                val field ref(u8) = expect_ident(p)
+                match p.tokens[p.pos].kind
+                    ast.TokenKind.LParen(_) => (
+                        advance(p)
+                        var args list[ast.Expr] = []
+                        consume_newlines(p)
+                        for !is_eof(p)
+                            match p.tokens[p.pos].kind
+                                ast.TokenKind.RParen(_) => break
+                                _ => ()
+                            end
+                            @append(args, parse_expr(p))
+                            match p.tokens[p.pos].kind
+                                ast.TokenKind.Comma(_) => (
+                                    advance(p)
+                                    consume_newlines(p)
+                                )
+                                _ => break
+                            end
+                        end
+                        match p.tokens[p.pos].kind
+                            ast.TokenKind.RParen(_) => advance(p)
+                            _ => ()
+                        end
+                        expr = ast.Expr.MethodCall(@addr(ast.ExprMethodCall(
+                            receiver: @addr(expr),
+                            method: field,
+                            args: args
+                        )))
+                    )
+                    _ => expr = ast.Expr.Field(@addr(ast.ExprField(
+                        base: @addr(expr),
+                        field: field
+                    )))
+                end
+            )
+            ast.TokenKind.LBracket(_) => (
+                advance(p)
+                val index ast.Expr = parse_expr(p)
+                match p.tokens[p.pos].kind
+                    ast.TokenKind.RBracket(_) => advance(p)
+                    _ => ()
+                end
+                expr = ast.Expr.Index(@addr(ast.ExprIndex(
+                    base: @addr(expr),
+                    index: @addr(index)
+                )))
+            )
+            _ => break
+        end
+    end
+    return expr
+end
+
+def parse_primary(p ref(ast.TokenList)) ast.Expr
+    match p.tokens[p.pos].kind
+        ast.TokenKind.Int(v) => (
+            advance(p)
+            return ast.Expr.IntLit(v)
+        )
+        ast.TokenKind.Float(v) => (
+            advance(p)
+            return ast.Expr.FloatLit(v)
+        )
+        ast.TokenKind.Char(v) => (
+            advance(p)
+            return ast.Expr.CharLit(v)
+        )
+        ast.TokenKind.Str(s) => (
+            advance(p)
+            return ast.Expr.StrLit(s)
+        )
+        ast.TokenKind.Keyword(v) => (
+            if v == KW_TRUE
+                advance(p)
+                return ast.Expr.BoolLit(1)
+            elif v == KW_FALSE
+                advance(p)
+                return ast.Expr.BoolLit(0)
+            elif v == KW_NONE
+                advance(p)
+                return ast.Expr.None(0)
+            end
+            advance(p)
+            return ast.Expr.None(0)
+        )
+        ast.TokenKind.At(_) => (
+            advance(p)
+            val name ref(u8) = expect_ident(p)
+            var args list[ast.Expr] = []
+            match p.tokens[p.pos].kind
+                ast.TokenKind.LParen(_) => (
+                    advance(p)
+                    consume_newlines(p)
+                    for !is_eof(p)
+                        match p.tokens[p.pos].kind
+                            ast.TokenKind.RParen(_) => break
+                            _ => ()
+                        end
+                        @append(args, parse_expr(p))
+                        match p.tokens[p.pos].kind
+                            ast.TokenKind.Comma(_) => (
+                                advance(p)
+                                consume_newlines(p)
+                            )
+                            _ => break
+                        end
+                    end
+                    match p.tokens[p.pos].kind
+                        ast.TokenKind.RParen(_) => advance(p)
+                        _ => ()
+                    end
+                )
+                _ => ()
+            end
+            return ast.Expr.BuiltinCall(@addr(ast.ExprBuiltinCall(
+                name: name,
+                args: args
+            )))
+        )
+        ast.TokenKind.Bang(_) => (
+            advance(p)
+            val expr ast.Expr = parse_expr_postfix(p)
+            return ast.Expr.Unary(@addr(ast.ExprUnary(
+                op: ast.UnaryOp.LogicalNot,
+                expr: @addr(expr)
+            )))
+        )
+        ast.TokenKind.Minus(_) => (
+            advance(p)
+            val expr ast.Expr = parse_expr_postfix(p)
+            return ast.Expr.Unary(@addr(ast.ExprUnary(
+                op: ast.UnaryOp.Neg,
+                expr: @addr(expr)
+            )))
+        )
+        ast.TokenKind.Tilde(_) => (
+            advance(p)
+            val expr ast.Expr = parse_expr_postfix(p)
+            return ast.Expr.Unary(@addr(ast.ExprUnary(
+                op: ast.UnaryOp.BitNot,
+                expr: @addr(expr)
+            )))
+        )
+        ast.TokenKind.LParen(_) => (
+            advance(p)
+            val expr ast.Expr = parse_expr(p)
+            match p.tokens[p.pos].kind
+                ast.TokenKind.RParen(_) => advance(p)
+                _ => ()
+            end
+            return expr
+        )
+        ast.TokenKind.Ident(name) => (
+            advance(p)
+            var segments list[ref(u8)] = [name]
+            for
+                match p.tokens[p.pos].kind
+                    ast.TokenKind.Dot(_) => ()
+                    _ => break
+                end
+                advance(p)
+                val next ref(u8) = expect_ident(p)
+                @append(segments, next)
+            end
+            if @len(segments) == 1
+                return ast.Expr.Ident(name)
+            else
+                return ast.Expr.Path(segments)
+            end
+        )
+        _ => (
+            advance(p)
+            return ast.Expr.None(0)
+        )
+    end
+end
+
+def binary_op_precedence_or() usize
+    return 1
+end
+
+def binary_op_precedence_and() usize
+    return 2
+end
+
+def binary_op_precedence_comparison() usize
+    return 5
+end
+
+def binary_op_precedence_additive() usize
+    return 6
+end
+
+def binary_op_precedence_multiplicative() usize
+    return 7
+end
+
+def token_to_binary_op(kind ast.TokenKind) ast.BinaryOp
+    match kind
+        ast.TokenKind.Plus(_) => return ast.BinaryOp.Add
+        ast.TokenKind.Minus(_) => return ast.BinaryOp.Subtract
+        ast.TokenKind.Star(_) => return ast.BinaryOp.Multiply
+        ast.TokenKind.Slash(_) => return ast.BinaryOp.Divide
+        ast.TokenKind.Percent(_) => return ast.BinaryOp.Modulo
+        ast.TokenKind.AmpAmp(_) => return ast.BinaryOp.LogicalAnd
+        ast.TokenKind.PipePipe(_) => return ast.BinaryOp.LogicalOr
+        ast.TokenKind.Amp(_) => return ast.BinaryOp.BitAnd
+        ast.TokenKind.Pipe(_) => return ast.BinaryOp.BitOr
+        ast.TokenKind.Caret(_) => return ast.BinaryOp.BitXor
+        ast.TokenKind.ShiftLeft(_) => return ast.BinaryOp.ShiftLeft
+        ast.TokenKind.ShiftRight(_) => return ast.BinaryOp.ShiftRight
+        ast.TokenKind.Less(_) => return ast.BinaryOp.LessThan
+        ast.TokenKind.LessEqual(_) => return ast.BinaryOp.LessEqual
+        ast.TokenKind.Greater(_) => return ast.BinaryOp.GreaterThan
+        ast.TokenKind.GreaterEqual(_) => return ast.BinaryOp.GreaterEqual
+        ast.TokenKind.EqualEqual(_) => return ast.BinaryOp.Equal
+        ast.TokenKind.BangEqual(_) => return ast.BinaryOp.NotEqual
+        _ => return ast.BinaryOp.Add
+    end
+end
+
 def is_module_use(p ref(ast.TokenList)) bool
     var i usize = p.pos + 1
     for i < @len(p.tokens)
@@ -425,13 +1164,16 @@ def parse_function(p ref(ast.TokenList), is_pub bool) ast.Function
     end
 
     expect_newline(p)
-    skip_block(p)
+    val body list[ast.Stmt] = parse_block(p)
+    if !is_eof(p)
+        advance(p)
+    end
   
     return ast.Function(
         name: name,
         params: params,
         return_type: return_type,
-        body: [] as list[ast.Stmt],
+        body: body,
         is_pub: is_pub,
         is_extern: false,
         extern_name: @alloc(1),
@@ -529,9 +1271,12 @@ def parse_test_block(p ref(ast.TokenList)) ast.TestBlock
     end
 
     expect_newline(p)
-    skip_block(p)
+    val body list[ast.Stmt] = parse_block(p)
+    if !is_eof(p)
+        advance(p)
+    end
 
-    return ast.TestBlock(name: name, body: ([] as list[ast.Stmt]))
+    return ast.TestBlock(name: name, body: body)
 end
 
 def skip_top_level_item(p ref(ast.TokenList))
