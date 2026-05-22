@@ -2550,7 +2550,7 @@ fn analyze_builtin(
             }
         }
         _ => Err(CompileError::new(format!(
-            "unsupported builtin intrinsic `@{name}`"
+            "unsupported builtin intrinsic `@{name}` (known builtins: puts, print, flush, args, neg, shl, shr, memcpy, memset, zeroed, addr, deref, call, as_mut, add, alloc, realloc, free, len, append, capacity, reserve, set, insert, remove, clear)"
         ))),
     }
 }

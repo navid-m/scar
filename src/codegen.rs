@@ -2456,7 +2456,7 @@ fn render_builtin_call(
             render_expr(&args[0], function, info, deref_locals)?
         )),
         _ => Err(CompileError::new(format!(
-            "unsupported builtin intrinsic `@{name}` during code generation"
+            "unsupported builtin intrinsic `@{name}` during code generation (known builtins: puts, print, flush, args, neg, shl, shr, memcpy, memset, zeroed, addr, deref, call, as_mut, add, alloc, realloc, free, len, append, capacity, reserve, set, insert, remove, clear)"
         ))),
     }
 }
@@ -2953,7 +2953,7 @@ fn infer_builtin_type(
     info: &ProgramInfo,
 ) -> Result<Type, CompileError> {
     match name {
-        "append" | "capacity" | "reserve" | "set" | "insert" | "remove" | "clear" => {
+        "append" | "capacity" | "reserve" | "set" | "insert" | "remove" | "clear" | "len" => {
             if args.is_empty() {
                 return Err(CompileError::new(format!(
                     "@{name} expects a list receiver as its first argument",
@@ -2962,8 +2962,8 @@ fn infer_builtin_type(
             let receiver_ty = infer_codegen_expr_type(&args[0], function, info)?;
             let element_ty = list_element_type(&receiver_ty)?;
             match name {
-                "capacity" => Ok(Type::I32),
                 "len" => Ok(Type::Usize),
+                "capacity" => Ok(Type::I32),
                 "remove" => Ok(element_ty.clone()),
                 _ => Ok(Type::Void),
             }
@@ -3013,7 +3013,7 @@ fn infer_builtin_type(
             ))),
         },
         _ => Err(CompileError::new(format!(
-            "unsupported builtin intrinsic `@{name}` during code generation"
+            "unsupported builtin intrinsic `@{name}` during type inference in code generation (known builtins: puts, print, flush, free, memcpy, memset, zeroed, args, neg, shl, shr, add, alloc, realloc, addr, call, as_mut, deref, len, append, capacity, reserve, set, insert, remove, clear)"
         ))),
     }
 }

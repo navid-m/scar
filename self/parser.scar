@@ -723,6 +723,10 @@ end
 def parse_expr_or(p ref(ast.TokenList), min_prec usize) ast.Expr
     var left ast.Expr = parse_expr_and(p, min_prec)
     for
+        match p.tokens[p.pos].kind
+            ast.TokenKind.PipePipe(_) => ()
+            _ => break
+        end
         val op_opt usize = binary_op_precedence_or()
         if op_opt == 0 || op_opt < min_prec
             break
@@ -741,6 +745,10 @@ end
 def parse_expr_and(p ref(ast.TokenList), min_prec usize) ast.Expr
     var left ast.Expr = parse_expr_comparison(p, min_prec)
     for
+        match p.tokens[p.pos].kind
+            ast.TokenKind.AmpAmp(_) => ()
+            _ => break
+        end
         val op_opt usize = binary_op_precedence_and()
         if op_opt == 0 || op_opt < min_prec
             break
@@ -759,6 +767,15 @@ end
 def parse_expr_comparison(p ref(ast.TokenList), min_prec usize) ast.Expr
     var left ast.Expr = parse_expr_additive(p, min_prec)
     for
+        match p.tokens[p.pos].kind
+            ast.TokenKind.Less(_) => ()
+            ast.TokenKind.LessEqual(_) => ()
+            ast.TokenKind.Greater(_) => ()
+            ast.TokenKind.GreaterEqual(_) => ()
+            ast.TokenKind.EqualEqual(_) => ()
+            ast.TokenKind.BangEqual(_) => ()
+            _ => break
+        end
         val op_opt usize = binary_op_precedence_comparison()
         if op_opt == 0 || op_opt < min_prec
             break
@@ -777,6 +794,11 @@ end
 def parse_expr_additive(p ref(ast.TokenList), min_prec usize) ast.Expr
     var left ast.Expr = parse_expr_multiplicative(p, min_prec)
     for
+        match p.tokens[p.pos].kind
+            ast.TokenKind.Plus(_) => ()
+            ast.TokenKind.Minus(_) => ()
+            _ => break
+        end
         val op_opt usize = binary_op_precedence_additive()
         if op_opt == 0 || op_opt < min_prec
             break
@@ -795,6 +817,12 @@ end
 def parse_expr_multiplicative(p ref(ast.TokenList), min_prec usize) ast.Expr
     var left ast.Expr = parse_expr_postfix(p)
     for
+        match p.tokens[p.pos].kind
+            ast.TokenKind.Star(_) => ()
+            ast.TokenKind.Slash(_) => ()
+            ast.TokenKind.Percent(_) => ()
+            _ => break
+        end
         val op_opt usize = binary_op_precedence_multiplicative()
         if op_opt == 0 || op_opt < min_prec
             break
