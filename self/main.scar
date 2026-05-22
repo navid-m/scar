@@ -173,9 +173,14 @@ pub def main() void
             end
             @append(out_buf, 0)
             binary_output_path = @addr(out_buf[0])
-            fs.create_dir_all("./scar-out")
+            match fs.create_dir_all("./scar-out")
+                ok _ => ()
+                error msg => (
+                    @puts(msg)
+                    os.exit(1)
+                )
+            end
         end
-        
         match compile(source_path, binary_output_path)
             ok rc => (
                 if rc != 0

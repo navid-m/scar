@@ -528,6 +528,93 @@ fn render_defers<'a>(
     Ok(())
 }
 
+fn render_if_chain<'a>(
+    defer_stack: &mut Vec<Vec<&'a Vec<Stmt>>>,
+    loop_defer_level: usize,
+    output: &mut String,
+    condition: &Expr,
+    then_body: &[Stmt],
+    else_body: &[Stmt],
+    function: &Function,
+    info: &ProgramInfo,
+    level: usize,
+    next_temp_id: &mut usize,
+    deref_locals: &std::collections::HashSet<String>,
+    is_first: bool,
+) -> Result<(), CompileError> {
+    if is_first {
+        indent(output, level);
+        output.push_str("if (");
+    } else {
+        output.push_str(" else if (");
+    }
+    output.push_str(&render_expr(condition, function, info, deref_locals)?);
+    output.push_str(") {\n");
+    for stmt in then_body {
+        render_stmt(
+            defer_stack,
+            loop_defer_level,
+            output,
+            stmt,
+            function,
+            info,
+            level + 1,
+            next_temp_id,
+            deref_locals,
+        )?;
+    }
+    indent(output, level);
+    output.push('}');
+
+    if else_body.is_empty() {
+        output.push('\n');
+        return Ok(());
+    }
+
+    if else_body.len() == 1 {
+        if let Stmt::If {
+            condition: next_cond,
+            then_body: next_then,
+            else_body: next_else,
+            ..
+        } = &else_body[0]
+        {
+            return render_if_chain(
+                defer_stack,
+                loop_defer_level,
+                output,
+                next_cond,
+                next_then,
+                next_else,
+                function,
+                info,
+                level,
+                next_temp_id,
+                deref_locals,
+                false,
+            );
+        }
+    }
+
+    output.push_str(" else {\n");
+    for stmt in else_body {
+        render_stmt(
+            defer_stack,
+            loop_defer_level,
+            output,
+            stmt,
+            function,
+            info,
+            level + 1,
+            next_temp_id,
+            deref_locals,
+        )?;
+    }
+    indent(output, level);
+    output.push_str("}\n");
+    Ok(())
+}
+
 fn render_block<'a>(
     output: &mut String,
     body: &'a [Stmt],
@@ -1024,81 +1111,20 @@ fn render_stmt_inner<'a>(
             else_body,
             ..
         } => {
-            indent(output, level);
-            output.push_str("if (");
-            output.push_str(&render_expr(condition, function, info, deref_locals)?);
-            output.push_str(") {\n");
-            for stmt in then_body {
-                render_stmt(
-                    defer_stack,
-                    loop_defer_level,
-                    output,
-                    stmt,
-                    function,
-                    info,
-                    level + 1,
-                    next_temp_id,
-                    deref_locals,
-                )?;
-            }
-            indent(output, level);
-            output.push('}');
-            if else_body.is_empty() {
-                output.push('\n');
-            } else {
-                let elif_count = else_body
-                    .iter()
-                    .take_while(|s| matches!(s, Stmt::If { .. }))
-                    .count();
-                let (elif_stmts, final_else_stmts) = else_body.split_at(elif_count);
-
-                for stmt in elif_stmts {
-                    if let Stmt::If {
-                        condition: elif_cond,
-                        then_body: elif_then,
-                        ..
-                    } = stmt
-                    {
-                        output.push_str(" else if (");
-                        output.push_str(&render_expr(elif_cond, function, info, deref_locals)?);
-                        output.push_str(") {\n");
-                        for stmt in elif_then {
-                            render_stmt(
-                                defer_stack,
-                                loop_defer_level,
-                                output,
-                                stmt,
-                                function,
-                                info,
-                                level + 1,
-                                next_temp_id,
-                                deref_locals,
-                            )?;
-                        }
-                        indent(output, level);
-                        output.push_str("}\n");
-                    }
-                }
-
-                if !final_else_stmts.is_empty() {
-                    output.push_str(" else {\n");
-                    for stmt in final_else_stmts {
-                        render_stmt(
-                            defer_stack,
-                            loop_defer_level,
-                            output,
-                            stmt,
-                            function,
-                            info,
-                            level + 1,
-                            next_temp_id,
-                            deref_locals,
-                        )?;
-                    }
-                    indent(output, level);
-                    output.push_str("}\n");
-                }
-            }
+            render_if_chain(
+                defer_stack,
+                loop_defer_level,
+                output,
+                condition,
+                then_body,
+                else_body,
+                function,
+                info,
+                level,
+                next_temp_id,
+                deref_locals,
+                true,
+            )?;
         }
         Stmt::Match { expr, arms, .. } => {
             let matched_ty = infer_codegen_expr_type(expr, function, info)?;

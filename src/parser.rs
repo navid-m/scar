@@ -1039,35 +1039,15 @@ impl Parser {
         let then_body =
             self.parse_block_until(&[TokenKind::Else, TokenKind::Elif, TokenKind::End])?;
 
-        let mut all_else_body = Vec::new();
-
-        while self.check_simple(&TokenKind::Elif) {
-            self.advance();
-            let elif_condition = self.parse_expr()?;
-            self.expect_newline("expected a newline after elif condition")?;
-            let elif_then =
-                self.parse_block_until(&[TokenKind::Else, TokenKind::Elif, TokenKind::End])?;
-
-            all_else_body.push(Stmt::If {
-                line: self.current().line,
-                column: self.current().column,
-                condition: elif_condition,
-                then_body: elif_then,
-                else_body: Vec::new(),
-            });
-        }
-
-        let final_else_body = if self.check_simple(&TokenKind::Else) {
+        let else_body = if self.check_simple(&TokenKind::Elif) {
+            vec![self.parse_elif_chain()?]
+        } else if self.check_simple(&TokenKind::Else) {
             self.advance();
             self.expect_newline("expected a newline after else")?;
             self.parse_block()?
         } else {
             Vec::new()
         };
-
-        for stmt in final_else_body {
-            all_else_body.push(stmt);
-        }
 
         self.expect_simple(TokenKind::End)?;
         self.consume_newlines();
@@ -1076,7 +1056,35 @@ impl Parser {
             column,
             condition,
             then_body,
-            else_body: all_else_body,
+            else_body,
+        })
+    }
+
+    fn parse_elif_chain(&mut self) -> Result<Stmt, CompileError> {
+        let line = self.current().line;
+        let column = self.current().column;
+        self.expect_simple(TokenKind::Elif)?;
+        let condition = self.parse_expr()?;
+        self.expect_newline("expected a newline after elif condition")?;
+        let then_body =
+            self.parse_block_until(&[TokenKind::Else, TokenKind::Elif, TokenKind::End])?;
+
+        let else_body = if self.check_simple(&TokenKind::Elif) {
+            vec![self.parse_elif_chain()?]
+        } else if self.check_simple(&TokenKind::Else) {
+            self.advance();
+            self.expect_newline("expected a newline after else")?;
+            self.parse_block()?
+        } else {
+            Vec::new()
+        };
+
+        Ok(Stmt::If {
+            line,
+            column,
+            condition,
+            then_body,
+            else_body,
         })
     }
 
