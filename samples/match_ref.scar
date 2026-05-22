@@ -1,0 +1,16 @@
+val stmt_mod = use("./stmt_mod")
+
+pub def resolve_stmt(stmt ref(stmt_mod.Stmt)) stmt_mod.Stmt
+    match @deref(stmt)
+        stmt_mod.Stmt.VarDecl(vd) => (
+            val n ref(u8) = vd.name
+            return stmt_mod.Stmt.VarDecl(vd)
+        )
+        stmt_mod.Stmt.ExprStmt(e) => return stmt_mod.Stmt.ExprStmt(e)
+    end
+    return stmt_mod.Stmt.ExprStmt(stmt_mod.make_expr())
+end
+
+pub def main()
+    @print("{d}", {0})
+end

@@ -1,0 +1,20 @@
+pub type StmtVarDecl
+    name ref(u8)
+    mutable bool
+end
+
+pub type Expr
+    value i32
+end
+
+pub union Stmt
+    VarDecl(ref(StmtVarDecl))
+    ExprStmt(ref(Expr))
+end
+
+pub def make_expr() ref(Expr)
+    return none
+end
+
+pub def main()
+end
