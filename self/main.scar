@@ -137,7 +137,7 @@ pub def main() void
         @puts(usage_message)
         return
     end
-    
+
     if emit_mode
         match emit(source_path, emit_output_path)
             ok rc => (
@@ -181,7 +181,7 @@ pub def main() void
                 end
             )
             error msg => (
-                @puts(msg)
+                @print("scar: error: {s}", {msg})
                 os.exit(1)
             )
         end
