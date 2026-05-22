@@ -81,9 +81,8 @@ pub def emit(source_path ref(u8), output_path ref(u8)) i32|error
         c_code ref(u8)         = cgen.generate_c(@addr(resolved), @addr(info))
     )
     
-    @puts(c_code)
-    
     if output_path == none
+        @puts(c_code)
         return 0
     else
         fs.write_text(output_path, c_code)?
