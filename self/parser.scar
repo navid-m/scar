@@ -887,36 +887,158 @@ def parse_expr_multiplicative(p ref(ast.TokenList), arena ref(allocators.Arena),
     return left
 end
 
+def looks_like_struct_init(p ref(ast.TokenList)) bool
+    var i usize = p.pos + 1
+    for i < @len(p.tokens)
+        match p.tokens[i].kind
+            ast.TokenKind.Newline(_) => i++
+            _ => break
+        end
+    end
+    if i >= @len(p.tokens)
+        return false
+    end
+    match p.tokens[i].kind
+        ast.TokenKind.Ident(_) => ()
+        _ => return false
+    end
+    i++
+    for i < @len(p.tokens)
+        match p.tokens[i].kind
+            ast.TokenKind.Newline(_) => i++
+            _ => break
+        end
+    end
+    if i >= @len(p.tokens)
+        return false
+    end
+    match p.tokens[i].kind
+        ast.TokenKind.Colon(_) => return true
+        _ => return false
+    end
+end
+
+def get_struct_name(expr ast.Expr, arena ref(allocators.Arena)) ref(u8)
+    match expr
+        ast.Expr.Ident(name) => return name
+        ast.Expr.Path(segments) => (
+            if @len(segments) == 0
+                return ""
+            end
+            var total_len usize = 0
+            var i usize = 0
+            for i < @len(segments)
+                if i > 0
+                    total_len++
+                end
+                total_len = total_len + str.len(segments[i])
+                i++
+            end
+            val res = allocators.Arena.alloc(arena, total_len + 1)
+            match res
+                ok m => (
+                    var dest ref(u8) = m as ref(u8)
+                    var offset usize = 0
+                    i = 0
+                    for i < @len(segments)
+                        if i > 0
+                            @deref(@as_mut(@add(dest, offset))) = '.'
+                            offset++
+                        end
+                        val segment_len usize = str.len(segments[i])
+                        @memcpy(@add(dest, offset), segments[i], segment_len)
+                        offset = offset + segment_len
+                        i++
+                    end
+                    @deref(@as_mut(@add(dest, offset))) = 0
+                    return dest
+                )
+                error _ => return ""
+            end
+        )
+        _ => return ""
+    end
+end
+
+def parse_struct_init(p ref(ast.TokenList), arena ref(allocators.Arena), name ref(u8)) ast.Expr
+    advance(p)
+    consume_newlines(p)
+    var fields list[ast.FieldInit] = []
+    for !is_eof(p)
+        match p.tokens[p.pos].kind
+            ast.TokenKind.RParen(_) => break
+            _ => ()
+        end
+        val field_name ref(u8) = expect_ident(p, arena)
+        match p.tokens[p.pos].kind
+            ast.TokenKind.Colon(_) => advance(p)
+            _ => ()
+        end
+        consume_newlines(p)
+        val value ast.Expr = parse_expr(p, arena)
+        @append(fields, ast.FieldInit(name: field_name, value: value))
+        match p.tokens[p.pos].kind
+            ast.TokenKind.Comma(_) => (
+                advance(p)
+                consume_newlines(p)
+            )
+            _ => break
+        end
+    end
+    match p.tokens[p.pos].kind
+        ast.TokenKind.RParen(_) => advance(p)
+        _ => ()
+    end
+    val res = allocators.Arena.alloc(arena, @sizeof(ast.ExprStructInit) as usize)
+    match res
+        ok m => (
+            var struct_init ref(ast.ExprStructInit) = @bitcast(m, ref(ast.ExprStructInit))
+            @deref(struct_init) = ast.ExprStructInit(
+                name: name,
+                type_args: [] as list[ast.Type],
+                fields: fields
+            )
+            return ast.Expr.StructInit(struct_init)
+        )
+        error _ => return ast.Expr.None(0)
+    end
+end
+
 def parse_expr_postfix(p ref(ast.TokenList), arena ref(allocators.Arena)) ast.Expr
     var expr ast.Expr = parse_primary(p, arena)
     for
         match p.tokens[p.pos].kind
             ast.TokenKind.LParen(_) => (
-                advance(p)
-                var args list[ast.Expr] = []
-                consume_newlines(p)
-                for !is_eof(p)
+                val struct_name ref(u8) = get_struct_name(expr, arena)
+                if str.len(struct_name) > 0 && looks_like_struct_init(p)
+                    expr = parse_struct_init(p, arena, struct_name)
+                else
+                    advance(p)
+                    var args list[ast.Expr] = []
+                    consume_newlines(p)
+                    for !is_eof(p)
+                        match p.tokens[p.pos].kind
+                            ast.TokenKind.RParen(_) => break
+                            _ => ()
+                        end
+                        @append(args, parse_expr(p, arena))
+                        match p.tokens[p.pos].kind
+                            ast.TokenKind.Comma(_) => (
+                                advance(p)
+                                consume_newlines(p)
+                            )
+                            _ => break
+                        end
+                    end
                     match p.tokens[p.pos].kind
-                        ast.TokenKind.RParen(_) => break
+                        ast.TokenKind.RParen(_) => advance(p)
                         _ => ()
                     end
-                    @append(args, parse_expr(p, arena))
-                    match p.tokens[p.pos].kind
-                        ast.TokenKind.Comma(_) => (
-                            advance(p)
-                            consume_newlines(p)
-                        )
-                        _ => break
-                    end
+                    expr = ast.Expr.Call(@addr(ast.ExprCall(
+                        callee: @addr(expr),
+                        args: args
+                    )))
                 end
-                match p.tokens[p.pos].kind
-                    ast.TokenKind.RParen(_) => advance(p)
-                    _ => ()
-                end
-                expr = ast.Expr.Call(@addr(ast.ExprCall(
-                    callee: @addr(expr),
-                    args: args
-                )))
             )
             ast.TokenKind.Dot(_) => (
                 advance(p)
