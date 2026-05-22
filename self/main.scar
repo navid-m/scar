@@ -1,4 +1,7 @@
 val str = use("std/string")
+val fs = use("std/fs")
+val os = use("std/os")
+val allocators = use("std/allocators")
 val ast = use("ast")
 val lxr = use("lexer")
 val prs = use("parser")
@@ -6,52 +9,18 @@ val sema = use("sema")
 val cgen = use("codegen")
 val rslv = use("resolver")
 
-extern def fopen(path ref(u8), mode ref(u8)) mut(ref(u8)) :: "fopen"
-extern def fclose(file mut(ref(u8))) i32 :: "fclose"
-extern def fread(buf mut(ref(u8)), size usize, count usize, file mut(ref(u8))) usize :: "fread"
-extern def fseek(file mut(ref(u8)), offset i64, whence i32) i32 :: "fseek"
-extern def ftell(file mut(ref(u8))) i64 :: "ftell"
-extern def fwrite(buf ref(u8), size usize, count usize, file mut(ref(u8))) usize :: "fwrite"
 extern def remove(path ref(u8)) i32 :: "remove"
-extern def system(cmd ref(u8)) i32 :: "system"
-extern def printf(fmt ref(u8)) i32 :: "printf"
-extern def strlen(s ref(u8)) usize :: "strlen"
 extern def exit(code i32) void :: "exit"
 
-def read_file(path ref(u8)) ref(u8)
-    val f mut(ref(u8)) = fopen(path, "rb")
-    if @deref(f) == 0
-        return @alloc(1)
+pub def compile(source_path ref(u8), output_path ref(u8)) i32|error
+    var arena = allocators.Arena.new(131072 as usize)?
+    defer
+        allocators.Arena.destroy(@addr(arena))
     end
-    fseek(f, 0, 0)
-    val file_len i64 = ftell(f)
-    fseek(f, 0, 0)
-    val buf mut(ref(u8)) = @alloc(file_len as usize + 1)
-    fread(buf, 1, file_len as usize, f)
-    @deref(@as_mut(@add(buf, file_len as usize))) = 0
-    fclose(f)
-    return buf
-end
 
-def write_file(path ref(u8), content ref(u8)) i32
-    val f mut(ref(u8)) = fopen(path, "w")
-    if @deref(f) == 0
-        return 1
-    end
-    val len usize = strlen(content)
-    val written usize = fwrite(content, 1, len, f)
-    fclose(f)
-    if written != len
-        return 1
-    end
-    return 0
-end
-
-pub def compile(source_path ref(u8), output_path ref(u8)) i32
-    val source ref(u8) = read_file(source_path)
-    if @deref(source) == 0
-        @puts("scar: cannot read file")
-        return 1
+    val source = fs.read_text[_](@addr(arena), source_path)?
+    if source == none
+        return error("scar: cannot read file")
     end
 
     val tokens list[ast.Token] = lxr.lex(source)
@@ -61,11 +30,7 @@ pub def compile(source_path ref(u8), output_path ref(u8)) i32
     val c_code ref(u8) = cgen.generate_c(@addr(resolved), @addr(info))
 
     val c_path ref(u8) = "/tmp/scar-compile.c"
-    val write_rc i32 = write_file(c_path, c_code)
-    if write_rc != 0
-        printf("scar: cannot write C output\n")
-        return 1
-    end
+    fs.write_text(c_path, c_code)?
 
     val cmd_buf list[u8] = []
     append_str(@addr(cmd_buf), "tcc -O0 ")
@@ -75,11 +40,11 @@ pub def compile(source_path ref(u8), output_path ref(u8)) i32
     append_str(@addr(cmd_buf), " 2>/dev/null")
     @append(cmd_buf, 0)
     val cmd_str ref(u8) = @addr(cmd_buf[0])
-    val rc i32 = system(cmd_str)
+
+    val rc i32 = os.exec(cmd_str)?
     if rc != 0
-        printf("scar: tcc failed to compile\n")
         remove(c_path)
-        return 1
+        return error("scar: tcc failed to compile")
     end
 
     remove(c_path)
@@ -87,7 +52,7 @@ pub def compile(source_path ref(u8), output_path ref(u8)) i32
 end
 
 def append_str(buf ref(list[u8]), s ref(u8))
-    val slen usize = strlen(s)
+    val slen usize = str.len(s)
     var i usize = 0
     for i < slen
         @append(buf, @deref(@add(s, i)))
@@ -98,7 +63,7 @@ end
 pub def main() void
     val args list[ref(u8)] = @args()
     if @len(args) < 2
-        printf("usage: scar-compile <source.scar> [output]\n")
+        @puts("usage: scar-compile <source.scar> [output]")
         return
     end
     val source_path ref(u8) = args[1]
@@ -107,8 +72,16 @@ pub def main() void
         output_path = args[2]
     end
     @print("SOURCE PATH: {s}\n", {source_path})
-    val rc i32 = compile(source_path, output_path)
-    if rc != 0
-        exit(rc)
+
+    match compile(source_path, output_path)
+        ok rc => (
+            if rc != 0
+                exit(rc)
+            end
+        )
+        error msg => (
+            @puts(msg)
+            exit(1)
+        )
     end
 end
