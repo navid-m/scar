@@ -259,10 +259,10 @@ def collect_type_from_expr(expr ref(ast.Expr), types ref(list[TypeEntry]))
         )
         ast.Expr.Unary(u) => collect_type_from_expr(u.expr, types)
         ast.Expr.Call(c) => (
-            collect_type_from_expr(@deref(c).callee, types)
+            collect_type_from_expr(c.callee, types)
             var i usize = 0
-            for i < @len(@deref(c).args)
-                collect_type_from_expr(@addr(@deref(c).args[i]), types)
+            for i < @len(c.args)
+                collect_type_from_expr(@addr(c.args[i]), types)
                 i++
             end
         )

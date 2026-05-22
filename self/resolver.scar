@@ -1,6 +1,7 @@
 val ast = use("ast")
+val allocators = use("std/allocators")
 
-pub def resolve(program ref(ast.Program)) ast.Program
+pub def resolve(program ref(ast.Program), arena ref(allocators.Arena)) ast.Program|error
     val result ast.Program = ast.Program(
         module_uses: program.module_uses,
         functions: [] as list[ast.Function],
@@ -11,7 +12,7 @@ pub def resolve(program ref(ast.Program)) ast.Program
     var i usize = 0
     for i < @len(program.functions)
         val fn_ref ref(ast.Function) = @addr(program.functions[i])
-        val resolved ast.Function = resolve_function(fn_ref)
+        val resolved ast.Function = resolve_function(fn_ref, arena)?
         @append(result.functions, resolved)
         i++
     end
@@ -19,11 +20,11 @@ pub def resolve(program ref(ast.Program)) ast.Program
     return result
 end
 
-def resolve_function(fun ref(ast.Function)) ast.Function
+def resolve_function(fun ref(ast.Function), arena ref(allocators.Arena)) ast.Function|error
     val resolved ast.Function = ast.Function(
         name: fun.name,
         params: [] as list[ast.Param],
-        return_type: resolve_type(@addr(fun.return_type)),
+        return_type: resolve_type(@addr(fun.return_type), arena)?,
         body: [] as list[ast.Stmt],
         is_pub: fun.is_pub,
         is_extern: fun.is_extern,
@@ -37,7 +38,7 @@ def resolve_function(fun ref(ast.Function)) ast.Function
         val param_ref ref(ast.Param) = @addr(fun.params[i])
         var resolved_param ast.Param = ast.Param(
             name: param_ref.name,
-            ty: resolve_type(@addr(param_ref.ty)),
+            ty: resolve_type(@addr(param_ref.ty), arena)?,
             line: param_ref.line,
             column: param_ref.column
         )
@@ -47,7 +48,7 @@ def resolve_function(fun ref(ast.Function)) ast.Function
 
     i = 0
     for i < @len(fun.body)
-        val resolved_stmt ast.Stmt = resolve_stmt(@addr(fun.body[i]))
+        val resolved_stmt ast.Stmt = resolve_stmt(@addr(fun.body[i]), arena)?
         @append(resolved.body, resolved_stmt)
         i++
     end
@@ -55,102 +56,103 @@ def resolve_function(fun ref(ast.Function)) ast.Function
     return resolved
 end
 
-def resolve_stmt(stmt ref(ast.Stmt)) ast.Stmt
+def resolve_stmt(stmt ref(ast.Stmt), arena ref(allocators.Arena)) ast.Stmt|error
     match @deref(stmt)
         ast.Stmt.VarDecl(vd) => (
-            var resolved_init ast.Expr = resolve_expr(@addr(vd.init))
-            var resolved_decl_type ast.Type = resolve_type(@addr(vd.declared_type))
-            return ast.Stmt.VarDecl(@addr(ast.StmtVarDecl(
-                name: vd.name,
-                mutable: vd.mutable,
-                declared_type: resolved_decl_type,
-                init: resolved_init,
-                line: vd.line,
-                column: vd.column
-            )))
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.StmtVarDecl) as usize)?
+            var p ref(ast.StmtVarDecl) = @bitcast(raw, ref(ast.StmtVarDecl))
+            p.name = vd.name
+            p.mutable = vd.mutable
+            p.declared_type = resolve_type(@addr(vd.declared_type), arena)?
+            p.init = resolve_expr(@addr(vd.init), arena)?
+            p.line = vd.line
+            p.column = vd.column
+            return ast.Stmt.VarDecl(p)
         )
         ast.Stmt.Assign(a) => (
-            var resolved_target ast.Expr = resolve_expr(@addr(a.target))
-            var resolved_value ast.Expr = resolve_expr(@addr(a.value))
-            return ast.Stmt.Assign(@addr(ast.StmtAssign(
-                target: resolved_target,
-                value: resolved_value,
-                line: a.line,
-                column: a.column
-            )))
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.StmtAssign) as usize)?
+            var p ref(ast.StmtAssign) = @bitcast(raw, ref(ast.StmtAssign))
+            p.target = resolve_expr(@addr(a.target), arena)?
+            p.value = resolve_expr(@addr(a.value), arena)?
+            p.line = a.line
+            p.column = a.column
+            return ast.Stmt.Assign(p)
         )
         ast.Stmt.Return(r) => (
-            var resolved_value ast.Expr = resolve_expr(@addr(r.value))
-            return ast.Stmt.Return(@addr(ast.StmtReturn(
-                value: resolved_value,
-                line: r.line,
-                column: r.column
-            )))
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.StmtReturn) as usize)?
+            var p ref(ast.StmtReturn) = @bitcast(raw, ref(ast.StmtReturn))
+            p.value = resolve_expr(@addr(r.value), arena)?
+            p.line = r.line
+            p.column = r.column
+            return ast.Stmt.Return(p)
         )
         ast.Stmt.If(if_stmt) => (
-            var resolved_cond ast.Expr = resolve_expr(@addr(if_stmt.condition))
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.StmtIf) as usize)?
+            var p ref(ast.StmtIf) = @bitcast(raw, ref(ast.StmtIf))
+            p.condition = resolve_expr(@addr(if_stmt.condition), arena)?
+            p.line = if_stmt.line
+            p.column = if_stmt.column
             var resolved_then list[ast.Stmt] = []
             var resolved_else list[ast.Stmt] = []
             var k usize = 0
             for k < @len(if_stmt.then_body)
-                @append(resolved_then, resolve_stmt(@addr(if_stmt.then_body[k])))
+                @append(resolved_then, resolve_stmt(@addr(if_stmt.then_body[k]), arena)?)
                 k++
             end
             k = 0
             for k < @len(if_stmt.else_body)
-                @append(resolved_else, resolve_stmt(@addr(if_stmt.else_body[k])))
+                @append(resolved_else, resolve_stmt(@addr(if_stmt.else_body[k]), arena)?)
                 k++
             end
-            return ast.Stmt.If(@addr(ast.StmtIf(
-                condition: resolved_cond,
-                then_body: resolved_then,
-                else_body: resolved_else,
-                line: if_stmt.line,
-                column: if_stmt.column
-            )))
+            p.then_body = resolved_then
+            p.else_body = resolved_else
+            return ast.Stmt.If(p)
         )
         ast.Stmt.While(w) => (
-            var resolved_cond ast.Expr = resolve_expr(@addr(w.condition))
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.StmtWhile) as usize)?
+            var p ref(ast.StmtWhile) = @bitcast(raw, ref(ast.StmtWhile))
+            p.condition = resolve_expr(@addr(w.condition), arena)?
+            p.line = w.line
+            p.column = w.column
             var resolved_body list[ast.Stmt] = []
             var k usize = 0
             for k < @len(w.body)
-                @append(resolved_body, resolve_stmt(@addr(w.body[k])))
+                @append(resolved_body, resolve_stmt(@addr(w.body[k]), arena)?)
                 k++
             end
-            return ast.Stmt.While(@addr(ast.StmtWhile(
-                condition: resolved_cond,
-                body: resolved_body,
-                line: w.line,
-                column: w.column
-            )))
+            p.body = resolved_body
+            return ast.Stmt.While(p)
         )
         ast.Stmt.ForRange(fr) => (
-            var resolved_start ast.Expr = resolve_expr(@addr(fr.start))
-            var resolved_end ast.Expr = resolve_expr(@addr(fr.End))
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.StmtForRange) as usize)?
+            var p ref(ast.StmtForRange) = @bitcast(raw, ref(ast.StmtForRange))
+            p.var_name = fr.var_name
+            p.start = resolve_expr(@addr(fr.start), arena)?
+            p.End = resolve_expr(@addr(fr.End), arena)?
+            p.line = fr.line
+            p.column = fr.column
             var resolved_body list[ast.Stmt] = []
             var k usize = 0
             for k < @len(fr.body)
-                @append(resolved_body, resolve_stmt(@addr(fr.body[k])))
+                @append(resolved_body, resolve_stmt(@addr(fr.body[k]), arena)?)
                 k++
             end
-            return ast.Stmt.ForRange(@addr(ast.StmtForRange(
-                var_name: fr.var_name,
-                start: resolved_start,
-                End: resolved_end,
-                body: resolved_body,
-                line: fr.line,
-                column: fr.column
-            )))
+            p.body = resolved_body
+            return ast.Stmt.ForRange(p)
         )
         ast.Stmt.Match(m) => (
-            var resolved_expr ast.Expr = resolve_expr(@addr(m.expr))
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.StmtMatch) as usize)?
+            var p ref(ast.StmtMatch) = @bitcast(raw, ref(ast.StmtMatch))
+            p.expr = resolve_expr(@addr(m.expr), arena)?
+            p.line = m.line
+            p.column = m.column
             var resolved_arms list[ast.MatchArm] = []
             var k usize = 0
             for k < @len(m.arms)
                 var resolved_body list[ast.Stmt] = []
                 var l usize = 0
                 for l < @len(m.arms[k].body)
-                    @append(resolved_body, resolve_stmt(@addr(m.arms[k].body[l])))
+                    @append(resolved_body, resolve_stmt(@addr(m.arms[k].body[l]), arena)?)
                     l++
                 end
                 @append(resolved_arms, ast.MatchArm(
@@ -160,34 +162,38 @@ def resolve_stmt(stmt ref(ast.Stmt)) ast.Stmt
                 ))
                 k++
             end
-            return ast.Stmt.Match(@addr(ast.StmtMatch(
-                expr: resolved_expr,
-                arms: resolved_arms,
-                line: m.line,
-                column: m.column
-            )))
+            p.arms = resolved_arms
+            return ast.Stmt.Match(p)
         )
         ast.Stmt.ExprStmt(e) => (
-            var resolved ast.Expr = resolve_expr(e)
-            return ast.Stmt.ExprStmt(@addr(resolved))
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.Expr) as usize)?
+            var p ref(ast.Expr) = @bitcast(raw, ref(ast.Expr))
+            @deref(p) = resolve_expr(e, arena)?
+            return ast.Stmt.ExprStmt(p)
         )
         ast.Stmt.Increment(e) => (
-            var resolved ast.Expr = resolve_expr(e)
-            return ast.Stmt.Increment(@addr(resolved))
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.Expr) as usize)?
+            var p ref(ast.Expr) = @bitcast(raw, ref(ast.Expr))
+            @deref(p) = resolve_expr(e, arena)?
+            return ast.Stmt.Increment(p)
         )
         ast.Stmt.Decrement(e) => (
-            var resolved ast.Expr = resolve_expr(e)
-            return ast.Stmt.Decrement(@addr(resolved))
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.Expr) as usize)?
+            var p ref(ast.Expr) = @bitcast(raw, ref(ast.Expr))
+            @deref(p) = resolve_expr(e, arena)?
+            return ast.Stmt.Decrement(p)
         )
         ast.Stmt.Assert(e) => (
-            var resolved ast.Expr = resolve_expr(e)
-            return ast.Stmt.Assert(@addr(resolved))
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.Expr) as usize)?
+            var p ref(ast.Expr) = @bitcast(raw, ref(ast.Expr))
+            @deref(p) = resolve_expr(e, arena)?
+            return ast.Stmt.Assert(p)
         )
         ast.Stmt.Block(body) => (
             var resolved_body list[ast.Stmt] = []
             var k usize = 0
             for k < @len(body)
-                @append(resolved_body, resolve_stmt(@addr(body[k])))
+                @append(resolved_body, resolve_stmt(@addr(body[k]), arena)?)
                 k++
             end
             return ast.Stmt.Block(resolved_body)
@@ -196,7 +202,7 @@ def resolve_stmt(stmt ref(ast.Stmt)) ast.Stmt
     end
 end
 
-def resolve_expr(expr ref(ast.Expr)) ast.Expr
+def resolve_expr(expr ref(ast.Expr), arena ref(allocators.Arena)) ast.Expr|error
     match @deref(expr)
         ast.Expr.IntLit(v) => return ast.Expr.IntLit(v)
         ast.Expr.FloatLit(v) => return ast.Expr.FloatLit(v)
@@ -208,149 +214,151 @@ def resolve_expr(expr ref(ast.Expr)) ast.Expr
         ast.Expr.ErrorLit(v) => return ast.Expr.ErrorLit(v)
         ast.Expr.Path(segments) => return ast.Expr.Path(segments)
         ast.Expr.Binary(b) => (
-            var resolved_lhs ast.Expr = resolve_expr(b.lhs)
-            var resolved_rhs ast.Expr = resolve_expr(b.rhs)
-            return ast.Expr.Binary(@addr(ast.ExprBinary(
-                lhs: @addr(resolved_lhs),
-                op: b.op,
-                rhs: @addr(resolved_rhs)
-            )))
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.ExprBinary) as usize)?
+            var p ref(ast.ExprBinary) = @bitcast(raw, ref(ast.ExprBinary))
+            p.lhs = @addr(resolve_expr(b.lhs, arena)?)
+            p.op = b.op
+            p.rhs = @addr(resolve_expr(b.rhs, arena)?)
+            return ast.Expr.Binary(p)
         )
         ast.Expr.Unary(u) => (
-            var resolved_inner ast.Expr = resolve_expr(u.expr)
-            return ast.Expr.Unary(@addr(ast.ExprUnary(
-                op: u.op,
-                expr: @addr(resolved_inner)
-            )))
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.ExprUnary) as usize)?
+            var p ref(ast.ExprUnary) = @bitcast(raw, ref(ast.ExprUnary))
+            p.op = u.op
+            p.expr = @addr(resolve_expr(u.expr, arena)?)
+            return ast.Expr.Unary(p)
         )
         ast.Expr.Call(c) => (
-            var resolved_callee ast.Expr = resolve_expr(c.callee)
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.ExprCall) as usize)?
+            var p ref(ast.ExprCall) = @bitcast(raw, ref(ast.ExprCall))
+            p.callee = @addr(resolve_expr(c.callee, arena)?)
             var resolved_args list[ast.Expr] = []
             var i usize = 0
             for i < @len(c.args)
-                @append(resolved_args, resolve_expr(@addr(c.args[i])))
+                @append(resolved_args, resolve_expr(@addr(c.args[i]), arena)?)
                 i++
             end
-            return ast.Expr.Call(@addr(ast.ExprCall(
-                callee: @addr(resolved_callee),
-                args: resolved_args
-            )))
+            p.args = resolved_args
+            return ast.Expr.Call(p)
         )
         ast.Expr.Index(idx) => (
-            var resolved_base ast.Expr = resolve_expr(idx.base)
-            var resolved_index ast.Expr = resolve_expr(idx.index)
-            return ast.Expr.Index(@addr(ast.ExprIndex(
-                base: @addr(resolved_base),
-                index: @addr(resolved_index)
-            )))
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.ExprIndex) as usize)?
+            var p ref(ast.ExprIndex) = @bitcast(raw, ref(ast.ExprIndex))
+            p.base = @addr(resolve_expr(idx.base, arena)?)
+            p.index = @addr(resolve_expr(idx.index, arena)?)
+            return ast.Expr.Index(p)
         )
         ast.Expr.Field(f) => (
-            var resolved_base ast.Expr = resolve_expr(f.base)
-            return ast.Expr.Field(@addr(ast.ExprField(
-                base: @addr(resolved_base),
-                field: f.field
-            )))
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.ExprField) as usize)?
+            var p ref(ast.ExprField) = @bitcast(raw, ref(ast.ExprField))
+            p.base = @addr(resolve_expr(f.base, arena)?)
+            p.field = f.field
+            return ast.Expr.Field(p)
         )
         ast.Expr.Cast(c) => (
-            var resolved_inner ast.Expr = resolve_expr(c.expr)
-            var resolved_ty ast.Type = resolve_type(@addr(c.ty))
-            return ast.Expr.Cast(@addr(ast.ExprCast(
-                expr: @addr(resolved_inner),
-                ty: resolved_ty
-            )))
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.ExprCast) as usize)?
+            var p ref(ast.ExprCast) = @bitcast(raw, ref(ast.ExprCast))
+            p.expr = @addr(resolve_expr(c.expr, arena)?)
+            p.ty = resolve_type(@addr(c.ty), arena)?
+            return ast.Expr.Cast(p)
         )
         ast.Expr.BitCast(bc) => (
-            var resolved_inner ast.Expr = resolve_expr(bc.expr)
-            var resolved_ty ast.Type = resolve_type(@addr(bc.ty))
-            return ast.Expr.BitCast(@addr(ast.ExprBitCast(
-                expr: @addr(resolved_inner),
-                ty: resolved_ty
-            )))
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.ExprBitCast) as usize)?
+            var p ref(ast.ExprBitCast) = @bitcast(raw, ref(ast.ExprBitCast))
+            p.expr = @addr(resolve_expr(bc.expr, arena)?)
+            p.ty = resolve_type(@addr(bc.ty), arena)?
+            return ast.Expr.BitCast(p)
         )
         ast.Expr.SizeOf(ty) => (
-            var resolved_ty ast.Type = resolve_type(ty)
-            return ast.Expr.SizeOf(@addr(resolved_ty))
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.Type) as usize)?
+            var p ref(ast.Type) = @bitcast(raw, ref(ast.Type))
+            @deref(p) = resolve_type(ty, arena)?
+            return ast.Expr.SizeOf(p)
         )
         ast.Expr.ListLit(elems) => (
             var resolved list[ast.Expr] = []
             var i usize = 0
             for i < @len(elems)
-                @append(resolved, resolve_expr(@addr(elems[i])))
+                @append(resolved, resolve_expr(@addr(elems[i]), arena)?)
                 i++
             end
             return ast.Expr.ListLit(resolved)
         )
         ast.Expr.StructInit(si) => (
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.ExprStructInit) as usize)?
+            var p ref(ast.ExprStructInit) = @bitcast(raw, ref(ast.ExprStructInit))
+            p.name = si.name
             var resolved_fields list[ast.FieldInit] = []
             var i usize = 0
             for i < @len(si.fields)
-                var resolved_value ast.Expr = resolve_expr(@addr(si.fields[i].value))
+                var resolved_value ast.Expr = resolve_expr(@addr(si.fields[i].value), arena)?
                 @append(resolved_fields, ast.FieldInit(
                     name: si.fields[i].name,
                     value: resolved_value
                 ))
                 i++
             end
+            p.fields = resolved_fields
             var resolved_type_args list[ast.Type] = []
             i = 0
             for i < @len(si.type_args)
-                @append(resolved_type_args, resolve_type(@addr(si.type_args[i])))
+                @append(resolved_type_args, resolve_type(@addr(si.type_args[i]), arena)?)
                 i++
             end
-            return ast.Expr.StructInit(@addr(ast.ExprStructInit(
-                name: si.name,
-                type_args: resolved_type_args,
-                fields: resolved_fields
-            )))
+            p.type_args = resolved_type_args
+            return ast.Expr.StructInit(p)
         )
         ast.Expr.MethodCall(mc) => (
-            var resolved_receiver ast.Expr = resolve_expr(mc.receiver)
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.ExprMethodCall) as usize)?
+            var p ref(ast.ExprMethodCall) = @bitcast(raw, ref(ast.ExprMethodCall))
+            p.receiver = @addr(resolve_expr(mc.receiver, arena)?)
+            p.method = mc.method
             var resolved_args list[ast.Expr] = []
             var i usize = 0
             for i < @len(mc.args)
-                @append(resolved_args, resolve_expr(@addr(mc.args[i])))
+                @append(resolved_args, resolve_expr(@addr(mc.args[i]), arena)?)
                 i++
             end
-            return ast.Expr.MethodCall(@addr(ast.ExprMethodCall(
-                receiver: @addr(resolved_receiver),
-                method: mc.method,
-                args: resolved_args
-            )))
+            p.args = resolved_args
+            return ast.Expr.MethodCall(p)
         )
         ast.Expr.Specialize(sp) => (
-            var resolved_callee ast.Expr = resolve_expr(sp.callee)
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.ExprSpecialize) as usize)?
+            var p ref(ast.ExprSpecialize) = @bitcast(raw, ref(ast.ExprSpecialize))
+            p.callee = @addr(resolve_expr(sp.callee, arena)?)
             var resolved_type_args list[ast.Type] = []
             var i usize = 0
             for i < @len(sp.type_args)
-                @append(resolved_type_args, resolve_type(@addr(sp.type_args[i])))
+                @append(resolved_type_args, resolve_type(@addr(sp.type_args[i]), arena)?)
                 i++
             end
-            return ast.Expr.Specialize(@addr(ast.ExprSpecialize(
-                callee: @addr(resolved_callee),
-                type_args: resolved_type_args
-            )))
+            p.type_args = resolved_type_args
+            return ast.Expr.Specialize(p)
         )
         ast.Expr.BuiltinCall(bc) => (
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.ExprBuiltinCall) as usize)?
+            var p ref(ast.ExprBuiltinCall) = @bitcast(raw, ref(ast.ExprBuiltinCall))
+            p.name = bc.name
             var resolved_args list[ast.Expr] = []
             var i usize = 0
             for i < @len(bc.args)
-                @append(resolved_args, resolve_expr(@addr(bc.args[i])))
+                @append(resolved_args, resolve_expr(@addr(bc.args[i]), arena)?)
                 i++
             end
-            return ast.Expr.BuiltinCall(@addr(ast.ExprBuiltinCall(
-                name: bc.name,
-                args: resolved_args
-            )))
+            p.args = resolved_args
+            return ast.Expr.BuiltinCall(p)
         )
         ast.Expr.Try(inner) => (
-            var resolved_inner ast.Expr = resolve_expr(inner)
-            return ast.Expr.Try(@addr(resolved_inner))
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.Expr) as usize)?
+            var p ref(ast.Expr) = @bitcast(raw, ref(ast.Expr))
+            @deref(p) = resolve_expr(inner, arena)?
+            return ast.Expr.Try(p)
         )
         ast.Expr.Pack(elems) => (
             var resolved list[ast.Expr] = []
             var i usize = 0
             for i < @len(elems)
-                @append(resolved, resolve_expr(@addr(elems[i])))
+                @append(resolved, resolve_expr(@addr(elems[i]), arena)?)
                 i++
             end
             return ast.Expr.Pack(resolved)
@@ -358,7 +366,7 @@ def resolve_expr(expr ref(ast.Expr)) ast.Expr
     end
 end
 
-def resolve_type(ty ref(ast.Type)) ast.Type
+def resolve_type(ty ref(ast.Type), arena ref(allocators.Arena)) ast.Type|error
     match @deref(ty)
         ast.Type.Void(v) => return ast.Type.Void(v)
         ast.Type.Bool(v) => return ast.Type.Bool(v)
@@ -382,24 +390,46 @@ def resolve_type(ty ref(ast.Type)) ast.Type
             var resolved list[ast.Type] = []
             var i usize = 0
             for i < @len(type_args)
-                @append(resolved, resolve_type(@addr(type_args[i])))
+                @append(resolved, resolve_type(@addr(type_args[i]), arena)?)
                 i++
             end
             return ast.Type.Applied(name, resolved)
         )
-        ast.Type.Ref(inner) => return ast.Type.Ref(@addr(resolve_type(inner)))
-        ast.Type.Mut(inner) => return ast.Type.Mut(@addr(resolve_type(inner)))
-        ast.Type.List(inner) => return ast.Type.List(@addr(resolve_type(inner)))
-        ast.Type.Result(inner) => return ast.Type.Result(@addr(resolve_type(inner)))
+        ast.Type.Ref(inner) => (
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.Type) as usize)?
+            var p ref(ast.Type) = @bitcast(raw, ref(ast.Type))
+            @deref(p) = resolve_type(inner, arena)?
+            return ast.Type.Ref(p)
+        )
+        ast.Type.Mut(inner) => (
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.Type) as usize)?
+            var p ref(ast.Type) = @bitcast(raw, ref(ast.Type))
+            @deref(p) = resolve_type(inner, arena)?
+            return ast.Type.Mut(p)
+        )
+        ast.Type.List(inner) => (
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.Type) as usize)?
+            var p ref(ast.Type) = @bitcast(raw, ref(ast.Type))
+            @deref(p) = resolve_type(inner, arena)?
+            return ast.Type.List(p)
+        )
+        ast.Type.Result(inner) => (
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.Type) as usize)?
+            var p ref(ast.Type) = @bitcast(raw, ref(ast.Type))
+            @deref(p) = resolve_type(inner, arena)?
+            return ast.Type.Result(p)
+        )
         ast.Type.FnPtr(params, ret) => (
             var resolved_params list[ast.Type] = []
             var i usize = 0
             for i < @len(params)
-                @append(resolved_params, resolve_type(@addr(params[i])))
+                @append(resolved_params, resolve_type(@addr(params[i]), arena)?)
                 i++
             end
-            var resolved_ret ast.Type = resolve_type(ret)
-            return ast.Type.FnPtr(resolved_params, @addr(resolved_ret))
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.Type) as usize)?
+            var p ref(ast.Type) = @bitcast(raw, ref(ast.Type))
+            @deref(p) = resolve_type(ret, arena)?
+            return ast.Type.FnPtr(resolved_params, p)
         )
     end
 end
