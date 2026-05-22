@@ -2724,7 +2724,6 @@ fn infer_field_type(
                 return Ok(Type::Applied(name.clone(), payloads.clone()));
             }
 
-            eprintln!("[SEMA] infer_field_type: type `{name}` has no field `{field}`");
             Err(CompileError::new(format!(
                 "type `{name}` has no field `{field}`"
             )))
