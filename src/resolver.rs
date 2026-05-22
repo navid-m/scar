@@ -51,6 +51,8 @@ pub fn resolve_entry_program(entry: &Path) -> Result<Program, CompileError> {
         None,
     );
     let local_functions = build_function_map(&program.functions, None);
+    let local_globals = build_global_map(&program.globals, None);
+    LOCAL_GLOBALS.with(|lg| *lg.borrow_mut() = local_globals);
     let mut interface_defs = resolver.resolved_interfaces;
     for interface_def in program.interface_defs {
         interface_defs.push(rewrite_interface_def(
@@ -222,6 +224,8 @@ impl Resolver {
             Some(&prefix),
         );
         let local_functions = build_function_map(&parsed.functions, Some(&prefix));
+        let local_globals = build_global_map(&parsed.globals, Some(&prefix));
+        LOCAL_GLOBALS.with(|lg| *lg.borrow_mut() = local_globals);
         let public_functions = build_public_function_map(&parsed.functions, Some(&prefix));
         let public_types = build_public_named_type_map(&parsed.type_defs, Some(&prefix));
         let public_interfaces = build_public_interface_map(&parsed.interface_defs, Some(&prefix));
@@ -267,7 +271,7 @@ impl Resolver {
                 &module_aliases,
             )?);
         }
-        let public_globals = build_public_global_map(&(parsed.globals.clone()), Some(&prefix));
+        let public_globals = build_public_global_map(&parsed.globals);
 
         if self.emitted_modules.insert(module_path.clone()) {
             self.resolved_interfaces.extend(rewritten_interfaces);
@@ -427,6 +431,19 @@ fn build_function_map(functions: &[Function], prefix: Option<&str>) -> HashMap<S
         .collect()
 }
 
+fn build_global_map(globals: &[GlobalVar], prefix: Option<&str>) -> HashMap<String, String> {
+    globals
+        .iter()
+        .map(|global| {
+            let mapped = match prefix {
+                Some(prefix) => format!("{prefix}__{}", global.name),
+                None => global.name.clone(),
+            };
+            (global.name.clone(), mapped)
+        })
+        .collect()
+}
+
 fn build_public_function_map(
     functions: &[Function],
     prefix: Option<&str>,
@@ -542,15 +559,16 @@ fn build_public_typeset_map(
         .collect()
 }
 
-fn build_public_global_map(globals: &[GlobalVar], prefix: Option<&str>) -> HashMap<String, String> {
+fn build_public_global_map(globals: &[GlobalVar]) -> HashMap<String, String> {
+    let local_globals = LOCAL_GLOBALS.with(|lg| lg.borrow().clone());
     globals
         .iter()
         .filter(|g| g.is_pub)
         .map(|g| {
-            let mapped = match prefix {
-                Some(prefix) => format!("{prefix}__{}", g.name),
-                None => g.name.clone(),
-            };
+            let mapped = local_globals
+                .get(&g.name)
+                .cloned()
+                .unwrap_or_else(|| g.name.clone());
             (g.name.clone(), mapped)
         })
         .collect()
@@ -562,6 +580,9 @@ fn rewrite_global_var(
     local_types: &HashMap<String, String>,
     module_aliases: &ModuleAliases,
 ) -> Result<GlobalVar, CompileError> {
+    if let Some(mapped) = LOCAL_GLOBALS.with(|lg| lg.borrow().get(&global.name).cloned()) {
+        global.name = mapped;
+    }
     global.ty = rewrite_type(global.ty, local_types, module_aliases);
     global.init = rewrite_expr(global.init, local_functions, local_types, module_aliases)?;
     Ok(global)
@@ -606,6 +627,7 @@ fn module_prefix(module_path: &Path, root_dir: &Path) -> String {
 thread_local! {
     static LOCAL_VARS: std::cell::RefCell<HashSet<String>> = std::cell::RefCell::new(HashSet::new());
     static USED_MODULE_ALIASES: std::cell::RefCell<HashSet<String>> = std::cell::RefCell::new(HashSet::new());
+    static LOCAL_GLOBALS: std::cell::RefCell<HashMap<String, String>> = std::cell::RefCell::new(HashMap::new());
 }
 
 fn collect_local_vars(params: &[Param], body: &[Stmt]) -> HashSet<String> {
@@ -1154,6 +1176,9 @@ fn rewrite_expr(
                 let is_local = LOCAL_VARS.with(|lv| lv.borrow().contains(&path[0]));
                 if !is_local {
                     if let Some(mapped) = local_functions.get(&path[0]) {
+                        return Ok(Expr::Path(vec![mapped.clone()]));
+                    }
+                    if let Some(mapped) = LOCAL_GLOBALS.with(|lg| lg.borrow().get(&path[0]).cloned()) {
                         return Ok(Expr::Path(vec![mapped.clone()]));
                     }
                 }
