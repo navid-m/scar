@@ -10,11 +10,10 @@ val cgen = use("codegen")
 val rslv = use("resolver")
 
 val usage_message ref(u8) = \\ usage:
-                            \\   scar [-emit [-o <output.c>]] <source.scar> [output]
+                            \\   scar [-emit <source.scar> [-o <output>]
                             \\
                             \\ -emit       Emit the generated IR
-                            \\ -o          Choose output file for generated IR
-                            \\ [output]    The output file for the generated exectutable
+                            \\ -o          Choose output file (for -emit or binary)
     
 pub def compile(source_path ref(u8), output_path ref(u8)) i32|error
     guard source_path != none && !str.eql(source_path, "") else
@@ -117,19 +116,22 @@ pub def main() void
             emit_mode = true
         elif str.eql(arg, "-o")
             if i + 1 >= @len(args)
+                @puts(usage_message)
                 return
             end
-            if emit_mode
-                emit_output_path = args[i + 1]
-            else
-                binary_output_path = args[i + 1]
-            end
             i++
+            val next_arg ref(u8) = args[i]
+            if emit_mode
+                emit_output_path = next_arg
+            elif source_path != none && binary_output_path == none
+                binary_output_path = next_arg
+            else
+                @puts(usage_message)
+                return
+            end
         else
             if source_path == none
                 source_path = arg
-            elif !emit_mode && binary_output_path == none
-                binary_output_path = arg
             else
                 @puts(usage_message)
                 return
@@ -141,10 +143,6 @@ pub def main() void
     if source_path == none
         @puts(usage_message)
         return
-    end
-    
-    if !emit_mode && binary_output_path == none
-        binary_output_path = "./a.out"
     end
     
     if emit_mode
@@ -160,6 +158,24 @@ pub def main() void
             )
         end
     else
+        if binary_output_path == none
+            var arena = allocators.Arena.new(4096 as usize)?
+            defer
+                allocators.Arena.destroy(@addr(arena))
+            end
+            val base = fs.strip_extension[_](@addr(arena), source_path)?
+            val bname = fs.basename[_](@addr(arena), base)?
+            var out_buf list[u8] = []
+            append_str(@addr(out_buf), "./scar-out/")
+            append_str(@addr(out_buf), bname)
+            when windows
+                append_str(@addr(out_buf), ".exe")
+            end
+            @append(out_buf, 0)
+            binary_output_path = @addr(out_buf[0])
+            fs.create_dir_all("./scar-out")
+        end
+        
         match compile(source_path, binary_output_path)
             ok rc => (
                 if rc != 0
