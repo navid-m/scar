@@ -1,0 +1,4 @@
+pub def main()
+    @puts("hello, world")
+end
+
