@@ -1,7 +1,7 @@
 val ast = use("ast")
 
 pub def resolve(program ref(ast.Program)) ast.Program
-    var result ast.Program = ast.Program(
+    val result ast.Program = ast.Program(
         module_uses: program.module_uses,
         functions: [] as list[ast.Function],
         type_defs: [] as list[ast.TypeDef],
@@ -56,7 +56,7 @@ def resolve_function(fun ref(ast.Function)) ast.Function
 end
 
 def resolve_stmt(stmt ref(ast.Stmt)) ast.Stmt
-    match stmt
+    match @deref(stmt)
         ast.Stmt.VarDecl(vd) => (
             var resolved_init ast.Expr = resolve_expr(@addr(vd.init))
             var resolved_decl_type ast.Type = resolve_type(@addr(vd.declared_type))
