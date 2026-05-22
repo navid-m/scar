@@ -717,7 +717,7 @@ def format_u64_for_str(v u64, buf ref(list[u8]))
 end
 
 def parse_expr(p ref(ast.TokenList)) ast.Expr
-    parse_expr_or(p, 0)
+    return parse_expr_or(p, 0)
 end
 
 def parse_expr_or(p ref(ast.TokenList), min_prec usize) ast.Expr
