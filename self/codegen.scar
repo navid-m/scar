@@ -913,7 +913,7 @@ def append_str(output ref(ref(u8)), output_len ref(usize), s ref(u8))
 end
 
 def append_u64(output ref(ref(u8)), output_len ref(usize), v u64, arena ref(allocators.Arena))
-    var buf_res = allocators.Arena.alloc(arena, 32)
+    val buf_res = allocators.Arena.alloc(arena, 32)
     var buf ref(u8) = none
     match buf_res
         ok m => buf = m as ref(u8)
