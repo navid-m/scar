@@ -5,7 +5,7 @@ pub def resolve(program ref(ast.Program), arena ref(allocators.Arena)) ast.Progr
     val result ast.Program = ast.Program(
         module_uses: program.module_uses,
         functions: [] as list[ast.Function],
-        type_defs: [] as list[ast.TypeDef],
+        type_defs: program.type_defs,
         tests: program.tests
     )
 

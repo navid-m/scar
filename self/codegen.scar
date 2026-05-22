@@ -26,6 +26,13 @@ pub def generate_c(program ref(ast.Program), info ref(sema.ProgramInfo), arena r
 
     append_runtime_prelude(@addr(output), @addr(output_len))
 
+    var j usize = 0
+    for j < @len(program.type_defs)
+        val td ref(ast.TypeDef) = @addr(program.type_defs[j])
+        render_typedef(td, arena, @addr(output), @addr(output_len))
+        j++
+    end
+
     var i usize = 0
     for i < @len(program.functions)
         val fn_ref ref(ast.Function) = @addr(program.functions[i])
@@ -86,6 +93,32 @@ def append_runtime_prelude(output ref(ref(u8)), output_len ref(usize))
     append_str(output, output_len, "static void scar_runtime_free(void *ptr) {\n")
     append_str(output, output_len, "    free(ptr);\n")
     append_str(output, output_len, "}\n\n")
+end
+
+def render_typedef(td ref(ast.TypeDef), arena ref(allocators.Arena), output ref(ref(u8)), output_len ref(usize))
+    append_str(output, output_len, "typedef struct ")
+    append_str(output, output_len, td.name)
+    append_str(output, output_len, "_scar_tag ")
+    append_str(output, output_len, td.name)
+    append_str(output, output_len, ";\n\n")
+
+    append_str(output, output_len, "typedef struct ")
+    append_str(output, output_len, td.name)
+    append_str(output, output_len, "_scar_tag {\n")
+    
+    var i usize = 0
+    for i < @len(td.fields)
+        val field ref(ast.FieldDef) = @addr(td.fields[i])
+        append_str(output, output_len, "    ")
+        append_str(output, output_len, c_type(@addr(field.ty), arena))
+        append_str(output, output_len, " ")
+        append_str(output, output_len, field.name)
+        append_str(output, output_len, ";\n")
+        i++
+    end
+    append_str(output, output_len, "} ")
+    append_str(output, output_len, td.name)
+    append_str(output, output_len, ";\n\n")
 end
 
 def render_function(fun ref(ast.Function), info ref(sema.ProgramInfo), arena ref(allocators.Arena), output ref(ref(u8)), output_len ref(usize))
