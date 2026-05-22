@@ -2231,6 +2231,12 @@ fn analyze_builtin(
         "append" | "capacity" | "reserve" | "set" | "insert" | "remove" | "clear" | "len" => {
             analyze_builtin_list_method(name, args, functions, types, scope)
         }
+        "args" => {
+            if !args.is_empty() {
+                return Err(CompileError::new("@args expects no arguments"));
+            }
+            Ok(Type::List(Box::new(Type::Ref(Box::new(Type::U8)))))
+        }
         "puts" => {
             if args.len() != 1 {
                 return Err(CompileError::new("@puts expects exactly one argument"));

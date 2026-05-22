@@ -50,7 +50,7 @@ end
 pub def compile(source_path ref(u8), output_path ref(u8)) i32
     val source ref(u8) = read_file(source_path)
     if @deref(source) == 0
-        printf("scar: cannot read file %s\n")
+        @puts("scar: cannot read file")
         return 1
     end
 
@@ -96,7 +96,7 @@ def append_str(buf ref(list[u8]), s ref(u8))
 end
 
 pub def main() void
-    val args list[ref(u8)] = @zeroed()
+    val args list[ref(u8)] = @args()
     if @len(args) < 2
         printf("usage: scar-compile <source.scar> [output]\n")
         return
@@ -106,6 +106,7 @@ pub def main() void
     if @len(args) >= 3
         output_path = args[2]
     end
+    @print("SOURCE PATH: {s}\n", {source_path})
     val rc i32 = compile(source_path, output_path)
     if rc != 0
         exit(rc)

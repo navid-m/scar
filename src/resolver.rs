@@ -2868,6 +2868,7 @@ impl GenericInstantiator {
     ) -> Option<Type> {
         match name {
             "puts" | "print" | "free" | "memcpy" => Some(Type::Void),
+            "args" => Some(Type::List(Box::new(Type::Ref(Box::new(Type::U8))))),
             "alloc" | "realloc" => Some(Type::Mut(Box::new(Type::Ref(Box::new(Type::U8))))),
             "addr" => Some(Type::Ref(Box::new(
                 self.infer_expr_type(args.first()?, scope)?,

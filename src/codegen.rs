@@ -181,6 +181,8 @@ fn render_runtime_prelude(install_debug_handlers: bool) -> String {
     output.push_str("static void scar_runtime_free(void *ptr) {\n");
     output.push_str("    free(ptr);\n");
     output.push_str("}\n\n");
+    output.push_str("static int scar__argc;\n");
+    output.push_str("static char **scar__argv;\n\n");
     if install_debug_handlers {
         output.push_str("static void scar_runtime_signal_handler(int signal_number) {\n");
         output.push_str("    fprintf(stderr, \"scar: fatal signal %d\\n\", signal_number);\n");
@@ -2006,7 +2008,9 @@ fn render_entrypoint(
         .cloned()
         .ok_or_else(|| CompileError::new("missing mangled symbol for main"))?;
     let mut output = String::new();
-    output.push_str("int main(void) {\n");
+    output.push_str("int main(int argc, char *argv[]) {\n");
+    output.push_str("    scar__argc = argc;\n");
+    output.push_str("    scar__argv = argv;\n");
     if install_debug_handlers {
         output.push_str("    scar_runtime_install_signal_handlers();\n");
     }
@@ -2349,6 +2353,13 @@ fn render_builtin_call(
                 rendered_args.push(render_print_value(marker, &arg_ty, &rendered)?);
             }
             Ok(format!("printf({})", rendered_args.join(", ")))
+        }
+        "args" => {
+            let list_name = c_type(&Type::List(Box::new(Type::Ref(Box::new(Type::U8)))));
+            let helper_prefix = list_helper_prefix(&Type::Ref(Box::new(Type::U8)));
+            Ok(format!(
+                "({{ {list_name} __scar_args = {helper_prefix}_new(); {helper_prefix}_ensure_capacity(&__scar_args, scar__argc); memcpy(__scar_args.data, scar__argv, sizeof(const char *) * (size_t)scar__argc); __scar_args.len = scar__argc; __scar_args; }})"
+            ))
         }
         "neg" => Ok(format!(
             "(-({}))",
@@ -2958,6 +2969,7 @@ fn infer_builtin_type(
             }
         }
         "puts" | "print" | "flush" | "free" | "memcpy" | "memset" | "zeroed" => Ok(Type::Void),
+        "args" => Ok(Type::List(Box::new(Type::Ref(Box::new(Type::U8))))),
         "neg" => infer_codegen_expr_type(&args[0], function, info),
         "shl" | "shr" => infer_codegen_expr_type(&args[0], function, info),
         "add" => Ok(pointer_arithmetic_type(&infer_codegen_expr_type(
