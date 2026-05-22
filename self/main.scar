@@ -20,10 +20,6 @@ pub def compile(source_path ref(u8), output_path ref(u8)) i32|error
         return error("scar: source path was empty")
     end
     var arena = allocators.Arena.new(2097152 as usize)?
-    defer
-        allocators.Arena.destroy(@addr(arena))
-    end
-
     val source = fs.read_text[_](@addr(arena), source_path)?
     if source == none
         return error("scar: cannot read file")
@@ -64,9 +60,6 @@ end
 
 pub def emit(source_path ref(u8), output_path ref(u8)) i32|error
     var arena = allocators.Arena.new(2097152 as usize)?
-    defer
-        allocators.Arena.destroy(@addr(arena))
-    end
 
     val source = fs.read_text[_](@addr(arena), source_path)?
     if source == none
@@ -88,6 +81,7 @@ pub def emit(source_path ref(u8), output_path ref(u8)) i32|error
         fs.write_text(output_path, c_code)?
     end
 
+    allocators.Arena.destroy(@addr(arena))
     return 0
 end
 
