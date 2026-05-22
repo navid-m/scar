@@ -174,7 +174,7 @@ def render_stmt(stmt ref(ast.Stmt), fun ref(ast.Function), info ref(sema.Program
         )
         ast.Stmt.Return(r) => (
             indent(output, output_len, level)
-            if !is_void_type(@addr(r.value))
+            if !is_void_type(@addr(fun.return_type))
                 append_str(output, output_len, "__scar_return_value = ")
                 append_expr(@addr(r.value), fun, info, output, output_len)
                 append_str(output, output_len, ";\n")
@@ -277,7 +277,7 @@ def render_stmt(stmt ref(ast.Stmt), fun ref(ast.Function), info ref(sema.Program
 
                         var l usize = 0
                         for l < @len(m.arms[k].bindings)
-                            if @len(m.arms[k].bindings[l]) > 0
+                            if str.len(m.arms[k].bindings[l]) > 0
                                 indent(output, output_len, level + 2)
                                 append_str(output, output_len, m.arms[k].bindings[l])
                                 append_str(output, output_len, " = ")
