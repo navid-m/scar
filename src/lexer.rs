@@ -161,13 +161,17 @@ impl Lexer {
                         let mut value = String::new();
                         let start_line = self.line;
                         let start_column = self.column;
+                        let mut just_continued = true;
                         loop {
-                            while let Some(ws) = self.peek() {
-                                if ws == ' ' || ws == '\t' {
-                                    self.bump();
-                                } else {
-                                    break;
+                            if just_continued {
+                                while let Some(ws) = self.peek() {
+                                    if ws == ' ' || ws == '\t' {
+                                        self.bump();
+                                    } else {
+                                        break;
+                                    }
                                 }
+                                just_continued = false;
                             }
                             let Some(ch) = self.peek() else {
                                 return Err(self.error("unterminated multiline string"));
@@ -187,6 +191,7 @@ impl Lexer {
                                     self.bump();
                                     self.bump();
                                     value.push('\n');
+                                    just_continued = true;
                                     continue;
                                 } else {
                                     break;
