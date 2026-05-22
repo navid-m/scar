@@ -480,13 +480,7 @@ fn build_named_symbol_map(
             Some(prefix) => format!("{prefix}__{}", enum_def.name),
             None => enum_def.name.clone(),
         };
-        named.insert(enum_def.name.clone(), mapped.clone());
-        for variant in &enum_def.variants {
-            named.insert(
-                format!("{}.{}", enum_def.name, variant.name),
-                format!("{}__{}", mapped, variant.name),
-            );
-        }
+        named.insert(enum_def.name.clone(), mapped);
     }
     named
 }
@@ -1251,13 +1245,16 @@ fn rewrite_expr(
                     if local_types.contains_key(&qualified) {
                         return Ok(Expr::Path(vec![path[0].clone(), field]));
                     }
+                    if local_types.contains_key(&path[0]) {
+                        return Ok(Expr::Path(vec![path[0].clone(), field]));
+                    }
                     for (key, value) in local_types {
                         if *value == path[0] {
                             let unmapped_qualified = format!("{}.{}", key, field);
                             if let Some(mapped) = local_types.get(&unmapped_qualified) {
                                 return Ok(Expr::Path(vec![mapped.clone()]));
                             }
-                            break;
+                            return Ok(Expr::Path(vec![key.clone(), field]));
                         }
                     }
                     if path[0].contains("__") {

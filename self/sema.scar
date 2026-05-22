@@ -962,9 +962,6 @@ end
 test "analyzes struct initialization"
     val info ProgramInfo = parse_and_analyze("type Point\n\tx i32\n\ty i32\nend\npub def main() void\n\tval p = Point(x: 1, y: 2)\nend\n")
     assert @len(info.functions) == 1
-    val length usize = @len(info.types)
-    @print("LEN: {d}\n", {length})
-    @flush()
     assert @len(info.types) == 1
 end
 
