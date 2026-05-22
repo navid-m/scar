@@ -52,7 +52,6 @@ def resolve_function(fun ref(ast.Function), arena ref(allocators.Arena)) ast.Fun
         @append(resolved.body, resolved_stmt)
         i++
     end
-
     return resolved
 end
 

@@ -33,7 +33,7 @@ pub def compile(source_path ref(u8), output_path ref(u8)) i32|error
         c_code ref(u8)         = cgen.generate_c(@addr(resolved), @addr(info), @addr(arena))
         c_path ref(u8)         = "/tmp/scar-compile.c"
     )
-    
+
     fs.write_text(c_path, c_code)?
 
     val cmd_buf list[u8] = []

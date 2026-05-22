@@ -52,6 +52,18 @@ val KW_LINK   u8 = 46
 val KW_GUARD  u8 = 47
 val KW_ASSIGN u8 = 48
 
+def box_expr(arena ref(allocators.Arena), e ast.Expr) ref(ast.Expr)
+    val res = allocators.Arena.alloc(arena, @sizeof(ast.Expr) as usize)
+    match res
+        ok m => (
+            var p ref(ast.Expr) = @bitcast(m, ref(ast.Expr))
+            @deref(p) = e
+            return p
+        )
+        error _ => return none
+    end
+end
+
 def is_keyword(p ref(ast.TokenList), id u8) bool
     match p.tokens[p.pos].kind
         ast.TokenKind.Keyword(v) => return v == id
@@ -467,15 +479,15 @@ def parse_stmt(p ref(ast.TokenList), arena ref(allocators.Arena)) ast.Stmt
         )
         ast.TokenKind.PlusPlus(_) => (
             advance(p)
-            return ast.Stmt.Increment(@addr(expr))
+            return ast.Stmt.Increment(box_expr(arena, expr))
         )
         ast.TokenKind.MinusMinus(_) => (
             advance(p)
-            return ast.Stmt.Decrement(@addr(expr))
+            return ast.Stmt.Decrement(box_expr(arena, expr))
         )
-        ast.TokenKind.Newline(_) => return ast.Stmt.ExprStmt(@addr(expr))
-        ast.TokenKind.Eof(_) => return ast.Stmt.ExprStmt(@addr(expr))
-        _ => return ast.Stmt.ExprStmt(@addr(expr))
+        ast.TokenKind.Newline(_) => return ast.Stmt.ExprStmt(box_expr(arena, expr))
+        ast.TokenKind.Eof(_) => return ast.Stmt.ExprStmt(box_expr(arena, expr))
+        _ => return ast.Stmt.ExprStmt(box_expr(arena, expr))
     end
 end
 
@@ -771,9 +783,9 @@ def parse_expr_or(p ref(ast.TokenList), arena ref(allocators.Arena), min_prec us
         advance(p)
         val right ast.Expr = parse_expr_and(p, arena, op_opt + 1)
         left = ast.Expr.Binary(@addr(ast.ExprBinary(
-            lhs: @addr(left),
+            lhs: box_expr(arena, left),
             op: token_to_binary_op(p.tokens[p.pos - 1].kind),
-            rhs: @addr(right)
+            rhs: box_expr(arena, right)
         )))
     end
     return left
