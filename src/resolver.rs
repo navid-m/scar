@@ -480,7 +480,13 @@ fn build_named_symbol_map(
             Some(prefix) => format!("{prefix}__{}", enum_def.name),
             None => enum_def.name.clone(),
         };
-        named.insert(enum_def.name.clone(), mapped);
+        named.insert(enum_def.name.clone(), mapped.clone());
+        for variant in &enum_def.variants {
+            named.insert(
+                format!("{}.{}", enum_def.name, variant.name),
+                format!("{}__{}", mapped, variant.name),
+            );
+        }
     }
     named
 }
@@ -1213,6 +1219,14 @@ fn rewrite_expr(
         Expr::FieldAccess { base, field } => {
             if let Expr::Path(ref path) = *base {
                 if path.len() == 1 {
+                    let qualified = format!("{}.{}", path[0], field);
+                    if local_types.contains_key(&qualified) {
+                        let type_mapped = local_types
+                            .get(&path[0])
+                            .cloned()
+                            .unwrap_or_else(|| path[0].clone());
+                        return Ok(Expr::Path(vec![type_mapped, field.clone()]));
+                    }
                     let is_local = LOCAL_VARS.with(|lv| lv.borrow().contains(&path[0]));
                     if !is_local {
                         if let Some(module) = module_aliases.get(&path[0]) {
@@ -1239,22 +1253,23 @@ fn rewrite_expr(
             if let Expr::Path(ref path) = rewritten_base {
                 if path.len() == 1 {
                     let qualified = format!("{}.{}", path[0], field);
-                    if let Some(mapped) = local_types.get(&qualified) {
-                        return Ok(Expr::Path(vec![mapped.clone()]));
-                    }
                     if local_types.contains_key(&qualified) {
-                        return Ok(Expr::Path(vec![path[0].clone(), field]));
+                        let type_mapped = local_types
+                            .get(&path[0])
+                            .cloned()
+                            .unwrap_or_else(|| path[0].clone());
+                        return Ok(Expr::Path(vec![type_mapped, field.clone()]));
                     }
                     if local_types.contains_key(&path[0]) {
-                        return Ok(Expr::Path(vec![path[0].clone(), field]));
+                        return Ok(Expr::Path(vec![path[0].clone(), field.clone()]));
                     }
                     for (key, value) in local_types {
                         if *value == path[0] {
                             let unmapped_qualified = format!("{}.{}", key, field);
-                            if let Some(mapped) = local_types.get(&unmapped_qualified) {
-                                return Ok(Expr::Path(vec![mapped.clone()]));
+                            if local_types.contains_key(&unmapped_qualified) {
+                                return Ok(Expr::Path(vec![key.clone(), field.clone()]));
                             }
-                            return Ok(Expr::Path(vec![key.clone(), field]));
+                            return Ok(Expr::Path(vec![key.clone(), field.clone()]));
                         }
                     }
                     if path[0].contains("__") {

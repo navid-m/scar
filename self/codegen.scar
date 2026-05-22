@@ -153,7 +153,7 @@ def render_signature(fun ref(ast.Function), info ref(sema.ProgramInfo), output r
 end
 
 def render_stmt(stmt ref(ast.Stmt), fun ref(ast.Function), info ref(sema.ProgramInfo), level usize, next_temp_id ref(usize), output ref(ref(u8)), output_len ref(usize))
-    match stmt
+    match @deref(stmt)
         ast.Stmt.VarDecl(vd) => (
             val ty ref(ast.Type) = lookup_local_type(vd.name, fun, info)
             indent(output, output_len, level)
@@ -343,7 +343,7 @@ def render_stmt(stmt ref(ast.Stmt), fun ref(ast.Function), info ref(sema.Program
 end
 
 def append_expr(expr ref(ast.Expr), fun ref(ast.Function), info ref(sema.ProgramInfo), output ref(ref(u8)), output_len ref(usize))
-    match expr
+    match @deref(expr)
         ast.Expr.IntLit(v) => append_u64(output, output_len, v)
         ast.Expr.FloatLit(v) => append_f64(output, output_len, v)
         ast.Expr.BoolLit(v) => (
@@ -652,7 +652,7 @@ def render_entrypoint(fun ref(ast.Function), info ref(sema.ProgramInfo), output 
 end
 
 def c_type(ty ref(ast.Type)) ref(u8)
-    match ty
+    match @deref(ty)
         ast.Type.Void(_) => return "void"
         ast.Type.Bool(_) => return "int32_t"
         ast.Type.I8(_) => return "int8_t"
@@ -783,14 +783,14 @@ def binary_op_str(op ast.BinaryOp) ref(u8)
 end
 
 def is_void_type(ty ref(ast.Type)) bool
-    match ty
+    match @deref(ty)
         ast.Type.Void(_) => return true
         _ => return false
     end
 end
 
 def is_aggregate_type(ty ref(ast.Type)) bool
-    match ty
+    match @deref(ty)
         ast.Type.Named(_) => return true
         ast.Type.Applied(_, _) => return true
         _ => return false

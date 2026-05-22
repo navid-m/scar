@@ -197,7 +197,7 @@ def resolve_stmt(stmt ref(ast.Stmt)) ast.Stmt
 end
 
 def resolve_expr(expr ref(ast.Expr)) ast.Expr
-    match expr
+    match @deref(expr)
         ast.Expr.IntLit(v) => return ast.Expr.IntLit(v)
         ast.Expr.FloatLit(v) => return ast.Expr.FloatLit(v)
         ast.Expr.BoolLit(v) => return ast.Expr.BoolLit(v)
@@ -359,7 +359,7 @@ def resolve_expr(expr ref(ast.Expr)) ast.Expr
 end
 
 def resolve_type(ty ref(ast.Type)) ast.Type
-    match ty
+    match @deref(ty)
         ast.Type.Void(v) => return ast.Type.Void(v)
         ast.Type.Bool(v) => return ast.Type.Bool(v)
         ast.Type.I8(v) => return ast.Type.I8(v)
