@@ -738,7 +738,7 @@ end
 def format_u64_for_str(v u64, buf ref(list[u8]))
     var value u64 = v
     if value == 0
-        @append(buf, '0')
+        @append(@deref(buf), '0')
         return
     end
     var digits list[u8] = []
@@ -749,7 +749,7 @@ def format_u64_for_str(v u64, buf ref(list[u8]))
     var k usize = @len(digits)
     for k > 0
         k--
-        @append(buf, digits[k])
+        @append(@deref(buf), digits[k])
     end
 end
 

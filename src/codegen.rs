@@ -266,6 +266,7 @@ fn render_function(
     info: &ProgramInfo,
     _: bool,
 ) -> Result<(), CompileError> {
+    info.scope_overrides.borrow_mut().clear();
     let locals = info.locals.get(&function.name).cloned().unwrap_or_default();
     let deref_locals = collect_deref_locals(&function.body, &locals);
     let mut next_temp_id = 0usize;
