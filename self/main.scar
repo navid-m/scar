@@ -82,9 +82,7 @@ pub def emit(source_path ref(u8), output_path ref(u8)) i32|error
         c_code ref(u8)         = cgen.generate_c(@addr(resolved), @addr(info))
     )
     
-    @puts("=== GENERATED C CODE ===")
     @puts(c_code)
-    @puts("=== END GENERATED C CODE ===")
     
     if output_path == none
         return 0
