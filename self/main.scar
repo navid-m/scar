@@ -71,8 +71,6 @@ pub def main() void
     if @len(args) >= 3
         output_path = args[2]
     end
-    @print("SOURCE PATH: {s}\n", {source_path})
-
     match compile(source_path, output_path)
         ok rc => (
             if rc != 0
