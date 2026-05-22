@@ -3,7 +3,8 @@ val ast = use("ast")
 pub def resolve(program ref(ast.Program)) ast.Program
     var result ast.Program = ast.Program(
         module_uses: program.module_uses,
-        functions: [],
+        functions: [] as list[ast.Function],
+        type_defs: [] as list[ast.TypeDef],
         tests: program.tests
     )
 
@@ -19,11 +20,11 @@ pub def resolve(program ref(ast.Program)) ast.Program
 end
 
 def resolve_function(fun ref(ast.Function)) ast.Function
-    var resolved ast.Function = ast.Function(
+    val resolved ast.Function = ast.Function(
         name: fun.name,
-        params: [],
+        params: [] as list[ast.Param],
         return_type: resolve_type(@addr(fun.return_type)),
-        body: [],
+        body: [] as list[ast.Stmt],
         is_pub: fun.is_pub,
         is_extern: fun.is_extern,
         extern_name: fun.extern_name,
