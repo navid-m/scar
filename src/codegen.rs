@@ -3658,9 +3658,6 @@ fn c_type(ty: &Type) -> String {
         Type::Applied(name, _) => name.clone(),
         Type::Mut(inner) => c_type_mut(inner),
         Type::Ref(inner) => {
-            if inner.as_ref() == &Type::U8 {
-                return "const char *".to_string();
-            }
             let inner = c_type(inner);
             if inner.ends_with('*') {
                 format!("{inner}*")
@@ -4129,8 +4126,6 @@ fn c_type_named(ty: &Type, name: &str) -> String {
 
 fn c_type_mut(ty: &Type) -> String {
     match ty {
-        Type::U8 => "char".to_string(),
-        Type::Ref(inner) if inner.as_ref() == &Type::U8 => "char *".to_string(),
         Type::Ref(inner) => {
             let inner = c_type_mut(inner);
             if inner.ends_with('*') {
