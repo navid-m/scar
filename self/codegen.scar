@@ -3,21 +3,6 @@ val ast = use("ast")
 val sema = use("sema")
 val allocators = use("std/allocators")
 
-val KW_VOID    u8 = 15
-val KW_BOOL    u8 = 16
-val KW_I8      u8 = 17
-val KW_I16     u8 = 18
-val KW_I32     u8 = 19
-val KW_I64     u8 = 20
-val KW_ISIZE   u8 = 21
-val KW_U8      u8 = 22
-val KW_U16     u8 = 23
-val KW_U32     u8 = 24
-val KW_U64     u8 = 25
-val KW_USIZE   u8 = 26
-val KW_F32     u8 = 27
-val KW_F64     u8 = 28
-
 pub def generate_c(program ref(ast.Program), info ref(sema.ProgramInfo), arena ref(allocators.Arena)) ref(u8)
     val output_res = allocators.Arena.alloc(arena, 1048576)
     var output ref(u8) = none
