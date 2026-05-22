@@ -181,7 +181,7 @@ pub def main() void
                 end
             )
             error msg => (
-                @print("scar: error: {s}", {msg})
+                @print("comperr: {s}", {msg})
                 os.exit(1)
             )
         end
