@@ -684,6 +684,17 @@ when posix
 		remove_dir(path)?
 	end
 
+	pub def remove_file(path ref(u8)) void|error
+		guard path != none else
+			return io_error[void]("got a null path")
+		end
+		if unlink(path) != 0
+			return io_error[void](
+				last_errno_message("failed to remove file")
+			)
+		end
+	end
+
 	pub def exists(path ref(u8)) bool
 		guard path != none else
 			return false
@@ -813,7 +824,7 @@ when windows
 		return str.eql(name, ".") || str.eql(name, "..")
 	end
 
-	def delete_file(path ref(u8)) void|error
+	pub def remove_file(path ref(u8)) void|error
 		clear_last_error()
 		if DeleteFileA(path) == 0
 			return io_error[void](
@@ -1070,7 +1081,7 @@ when windows
 		end
 
 		if is_file(path)
-			return delete_file(path)
+			return remove_file(path)
 		end
 
 		var ac = allocators.Arena.new(16384 as usize)?
@@ -1080,7 +1091,7 @@ when windows
 			if entry.is_dir
 				remove_dir_all(entry.path)?
 			else
-				delete_file(entry.path)?
+				remove_file(entry.path)?
 			end
 		end
 
@@ -1161,6 +1172,10 @@ when redox | plan9
 	end
 
 	pub def remove_dir_all(path ref(u8)) void|error
+		return unsupported_fs[void]()
+	end
+
+	pub def remove_file(path ref(u8)) void|error
 		return unsupported_fs[void]()
 	end
 
