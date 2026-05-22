@@ -9,7 +9,6 @@ val sema = use("sema")
 val cgen = use("codegen")
 val rslv = use("resolver")
 
-extern def remove(path ref(u8)) i32 :: "remove"
 extern def exit(code i32) void :: "exit"
 
 pub def compile(source_path ref(u8), output_path ref(u8)) i32|error
@@ -47,7 +46,7 @@ pub def compile(source_path ref(u8), output_path ref(u8)) i32|error
         return error("scar: tcc failed to link")
     end
 
-    remove(c_path)
+    fs.remove_file(c_path)
     return 0
 end
 
