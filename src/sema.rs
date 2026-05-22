@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 
 use crate::{
@@ -30,13 +31,14 @@ pub struct InterfaceDefInfo {
     pub methods: Vec<InterfaceMethod>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct ProgramInfo {
     pub functions: HashMap<String, FunctionSig>,
     pub function_symbols: HashMap<String, String>,
     pub types: HashMap<String, TypeDefInfo>,
     pub locals: HashMap<String, HashMap<String, Type>>,
     pub globals: HashMap<String, (Type, bool)>, // name -> (type, mutable)
+    pub scope_overrides: RefCell<HashMap<String, Type>>,
 }
 
 #[derive(Debug, Clone)]
@@ -190,6 +192,7 @@ pub fn analyze(program: &Program) -> Result<ProgramInfo, CompileErrors> {
         types,
         locals,
         globals,
+        scope_overrides: RefCell::new(HashMap::new()),
     })
 }
 

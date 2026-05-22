@@ -1115,6 +1115,20 @@ fn render_stmt_inner<'a>(
             match resolve_codegen_aliases(&matched_ty, info)? {
                 Type::Result(ok_ty) => {
                     for (index, arm) in arms.iter().enumerate() {
+                        let saved_overrides = info.scope_overrides.borrow().clone();
+                        {
+                            let mut overrides = info.scope_overrides.borrow_mut();
+                            if let Some(binding) =
+                                arm.bindings.first().and_then(|binding| binding.as_ref())
+                            {
+                                let binding_ty = match &arm.kind {
+                                    MatchArmKind::Ok => (*ok_ty).clone(),
+                                    MatchArmKind::Error => Type::Ref(Box::new(Type::U8)),
+                                    MatchArmKind::Variant(_) => unreachable!(),
+                                };
+                                overrides.insert(binding.clone(), binding_ty);
+                            }
+                        }
                         indent(output, level + 1);
                         if index == 0 {
                             output.push_str("if (");
@@ -1169,6 +1183,7 @@ fn render_stmt_inner<'a>(
                                 deref_locals,
                             )?;
                         }
+                        *info.scope_overrides.borrow_mut() = saved_overrides;
                         indent(output, level + 1);
                         output.push_str("}\n");
                     }
@@ -1311,6 +1326,15 @@ fn render_stmt_inner<'a>(
                                     output.push_str(";\n");
                                 }
                             }
+                            let saved_overrides = info.scope_overrides.borrow().clone();
+                            {
+                                let mut overrides = info.scope_overrides.borrow_mut();
+                                for (binding, payload_ty) in arm.bindings.iter().zip(payload_types.iter()) {
+                                    if let Some(binding) = binding {
+                                        overrides.insert(binding.clone(), payload_ty.clone());
+                                    }
+                                }
+                            }
                             for stmt in &arm.body {
                                 render_stmt(
                                     defer_stack,
@@ -1324,6 +1348,7 @@ fn render_stmt_inner<'a>(
                                     deref_locals,
                                 )?;
                             }
+                            *info.scope_overrides.borrow_mut() = saved_overrides;
                             indent(output, level + 1);
                             output.push_str("}\n");
                         }
@@ -2009,10 +2034,11 @@ fn render_entrypoint(
 }
 
 fn render_symbol_name(name: &str, function: &Function, info: &ProgramInfo) -> String {
-    if info
-        .locals
-        .get(&function.name)
-        .is_some_and(|locals| locals.contains_key(name))
+    if info.scope_overrides.borrow().contains_key(name)
+        || info
+            .locals
+            .get(&function.name)
+            .is_some_and(|locals| locals.contains_key(name))
         || function.params.iter().any(|param| param.name == name)
     {
         return mangle_local_symbol(name);
@@ -2142,10 +2168,16 @@ fn render_call(
         if path.len() == 1 {
             let name = &path[0];
             let local_ty = info
-                .locals
-                .get(&function.name)
-                .and_then(|locals| locals.get(name))
+                .scope_overrides
+                .borrow()
+                .get(name)
                 .cloned()
+                .or_else(|| {
+                    info.locals
+                        .get(&function.name)
+                        .and_then(|locals| locals.get(name))
+                        .cloned()
+                })
                 .or_else(|| {
                     function
                         .params
@@ -2564,10 +2596,16 @@ fn infer_codegen_expr_type(
         }
         Expr::Path(path) => match path.as_slice() {
             [name] => info
-                .locals
-                .get(&function.name)
-                .and_then(|locals| locals.get(name))
+                .scope_overrides
+                .borrow()
+                .get(name)
                 .cloned()
+                .or_else(|| {
+                    info.locals
+                        .get(&function.name)
+                        .and_then(|locals| locals.get(name))
+                        .cloned()
+                })
                 .or_else(|| {
                     function
                         .params
