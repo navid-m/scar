@@ -3443,7 +3443,8 @@ fn render_list_helpers(list_ty: &Type) -> Result<String, CompileError> {
     output.push_str(&list_name);
     output.push_str(" *list, int32_t index) {\n");
     output.push_str("    if (index < 0 || index >= list->len) {\n");
-    output.push_str("        scar_runtime_panic(\"list index out of bounds\");\n");
+    output.push_str("        fprintf(stderr, \"scar: panic: list index out of bounds (index %d, len %d)\\n\", index, list->len);\n");
+    output.push_str("        exit(1);\n");
     output.push_str("    }\n");
     output.push_str("    return &list->data[index];\n");
     output.push_str("}\n\n");
@@ -3507,7 +3508,8 @@ fn render_list_helpers(list_ty: &Type) -> Result<String, CompileError> {
     output.push_str(&element_c_ty);
     output.push_str(" value) {\n");
     output.push_str("    if (index < 0 || index > list->len) {\n");
-    output.push_str("        scar_runtime_panic(\"list insert index out of bounds\");\n");
+    output.push_str("        fprintf(stderr, \"scar: panic: list insert index out of bounds (index %d, len %d)\\n\", index, list->len);\n");
+    output.push_str("        exit(1);\n");
     output.push_str("    }\n");
     output.push_str("    ");
     output.push_str(&helper_prefix);

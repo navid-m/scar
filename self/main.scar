@@ -82,8 +82,12 @@ pub def emit(source_path ref(u8), output_path ref(u8)) i32|error
         c_code ref(u8)         = cgen.generate_c(@addr(resolved), @addr(info))
     )
     
+    @puts("=== GENERATED C CODE ===")
+    @puts(c_code)
+    @puts("=== END GENERATED C CODE ===")
+    
     if output_path == none
-        @puts(c_code)
+        return 0
     else
         fs.write_text(output_path, c_code)?
     end
@@ -101,6 +105,7 @@ def append_str(buf ref(list[u8]), s ref(u8))
 end
 
 pub def main() void
+    @puts("ok1")
     val args list[ref(u8)] = @args()
     
     var emit_mode bool = false
@@ -108,9 +113,11 @@ pub def main() void
     var source_path ref(u8) = none
     var binary_output_path ref(u8) = none
     var i usize = 1
-    
+    @puts("ok2")
     for i < @len(args)
+        @puts("about to do it...")
         val arg ref(u8) = args[i]
+        @puts("ok3")
         if str.eql(arg, "-emit")
             emit_mode = true
         elif str.eql(arg, "-o")
@@ -119,8 +126,10 @@ pub def main() void
                 return
             end
             if emit_mode
+                @puts("ok3")
                 emit_output_path = args[i + 1]
             else
+                @puts("ok4")
                 binary_output_path = args[i + 1]
             end
             i++
@@ -159,6 +168,7 @@ pub def main() void
             )
         end
     else
+        @puts("doing compile...")
         match compile(source_path, binary_output_path)
             ok rc => (
                 if rc != 0

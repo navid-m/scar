@@ -529,6 +529,8 @@ def append_builtin_call(bc ref(ast.ExprBuiltinCall), fun ref(ast.Function), info
         append_str(output, output_len, ")")
     elif str.eql(bc.name, "flush")
         append_str(output, output_len, "fflush(stdout)")
+    elif str.eql(bc.name, "args")
+        append_str(output, output_len, "({ list_ref_u8 __scar_args = list_ref_u8_new(); list_ref_u8_ensure_capacity(&__scar_args, scar__argc); memcpy(__scar_args.data, scar__argv, sizeof(const char *) * (size_t)scar__argc); __scar_args.len = scar__argc; __scar_args; })")
     elif str.eql(bc.name, "print")
         append_str(output, output_len, "printf(")
         append_expr(@addr(bc.args[0]), fun, info, output, output_len)

@@ -595,6 +595,8 @@ end
 def infer_builtin_type(name ref(u8), args ref(list[ast.Expr]), bindings ref(list[BindingEntry]), functions ref(list[FunctionEntry]), types ref(list[TypeEntry])) ast.Type
     if str.eql(name, "puts") || str.eql(name, "print") || str.eql(name, "flush")
         return ast.Type.Void(0)
+    elif str.eql(name, "args")
+        return ast.Type.List(@addr(ast.Type.Ref(@addr(ast.Type.U8(0)))))
     elif str.eql(name, "alloc") || str.eql(name, "realloc")
         return ast.Type.Mut(@addr(ast.Type.Ref(@addr(ast.Type.U8(0)))))
     elif str.eql(name, "addr")
