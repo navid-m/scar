@@ -8,13 +8,11 @@ PASS_COUNT=0
 FAIL_COUNT=0
 
 pass() {
-	printf "\n[pass] $1"
-	PASS_COUNT=$((PASS_COUNT + 1))
+	printf "\n[pass] %s" "$1"
 }
 
 fail() {
-	printf "\n[fail] $1"
-	FAIL_COUNT=$((FAIL_COUNT + 1))
+	printf "\n[fail] %s" "$1"
 }
 
 info() {
@@ -22,13 +20,17 @@ info() {
 }
 
 run_sample_tests() {
-	find ./samples/self -type f -name "*.scar" | sort | while read -r file; do
+	while read -r file; do
 		if "$PROGRAM" "$file"; then
 			pass "$file"
+			((PASS_COUNT++))
 		else
 			fail "$file"
+			((FAIL_COUNT++))
 		fi
-	done
+	done < <(
+		find ./samples/self -type f -name "*.scar" | sort
+	)
 }
 
 run_sample_tests
