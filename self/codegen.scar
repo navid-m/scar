@@ -1379,6 +1379,32 @@ def append_expr(expr ref(ast.Expr), fun ref(ast.Function), info ref(sema.Program
                         end
                     end
                     if !is_known_global
+                        val prefix_len usize = str.len(segments[0])
+                        var gi2 usize = 0
+                        for gi2 < @len(info.functions)
+                            val fname ref(u8) = info.functions[gi2].name
+                            val flen usize = str.len(fname)
+                            if flen > prefix_len + 2
+                                if @deref(@add(fname, prefix_len)) == '_' && @deref(@add(fname, prefix_len + 1)) == '_'
+                                    var match_prefix bool = true
+                                    var ci usize = 0
+                                    for ci < prefix_len
+                                        if @deref(@add(fname, ci)) != @deref(@add(segments[0], ci))
+                                            match_prefix = false
+                                            break
+                                        end
+                                        ci++
+                                    end
+                                    if match_prefix
+                                        is_known_global = true
+                                        break
+                                    end
+                                end
+                            end
+                            gi2++
+                        end
+                    end
+                    if !is_known_global
                         first_is_local = true
                         first_is_match_binding = true
                     end
