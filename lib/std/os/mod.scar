@@ -2,7 +2,14 @@ val allocators = use("std/allocators")
 val fs = use("std/fs")
 val str = use("std/string")
 
-extern def remove(path ref(u8)) i32 :: "remove"
+pub extern def remove(path ref(u8)) i32 :: "remove"
+pub extern def fopen(path ref(u8), mode ref(u8)) ref(u8) :: "fopen"
+pub extern def fclose(f ref(u8)) i32 :: "fclose"
+pub extern def fread(buf ref(u8), size usize, count usize, f ref(u8)) usize :: "fread"
+pub extern def fseek(f ref(u8), offset i64, whence i32) i32 :: "fseek"
+pub extern def ftell(f ref(u8)) i64 :: "ftell"
+pub extern def getenv(name ref(u8)) ref(u8) :: "getenv"
+pub extern def getcwd(buf ref(u8), size usize) ref(u8) :: "getcwd"
 pub extern def exit(code u32) void :: "exit"
 
 pub type ExecResult
@@ -109,10 +116,8 @@ def delete_temp_file(path ref(u8)) void|error
 end
 
 when posix
-	extern def getenv(name ref(u8)) ref(u8) :: "getenv"
 	extern def setenv(name ref(u8), value ref(u8), overwrite i32) i32 :: "setenv"
 	extern def system(command ref(u8)) i32 :: "system"
-	extern def getcwd(buffer mut(ref(u8)), size usize) ref(u8) :: "getcwd"
 	extern def mkstemp(template mut(ref(u8))) i32 :: "mkstemp"
 	extern def close(fd i32) i32 :: "close"
 	extern def strerror(code i32) ref(u8) :: "strerror"

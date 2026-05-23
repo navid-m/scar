@@ -4,30 +4,18 @@ val str = use("std/string")
 val lxr = use("lexer")
 val prs = use("parser")
 val reflection = use("std/reflection")
-
-extern "stdio.h"
-extern "sys/stat.h"
-extern "stdlib.h"
-extern "unistd.h"
-
-extern def fopen(path ref(u8), mode ref(u8)) ref(u8) :: "fopen"
-extern def fclose(f ref(u8)) i32 :: "fclose"
-extern def fread(buf ref(u8), size usize, count usize, f ref(u8)) usize :: "fread"
-extern def fseek(f ref(u8), offset i64, whence i32) i32 :: "fseek"
-extern def ftell(f ref(u8)) i64 :: "ftell"
-extern def getenv(name ref(u8)) ref(u8) :: "getenv"
-extern def getcwd(buf ref(u8), size usize) ref(u8) :: "getcwd"
+val os = use("std/os")
 
 def read_file(path ref(u8), arena ref(allocators.Arena)) ref(u8)
-    val f ref(u8) = fopen(path, "rb")
+    val f ref(u8) = os.fopen(path, "rb")
     if f == none
         return none
     end
-    fseek(f, 0 as i64, 2 as i32)
-    val size i64 = ftell(f)
-    fseek(f, 0 as i64, 0 as i32)
+    os.fseek(f, 0 as i64, 2 as i32)
+    val size i64 = os.ftell(f)
+    os.fseek(f, 0 as i64, 0 as i32)
     if size <= 0 as i64
-        fclose(f)
+        os.fclose(f)
         return none
     end
     val buf_res = allocators.Arena.alloc(arena, size as usize + 1)
@@ -35,13 +23,13 @@ def read_file(path ref(u8), arena ref(allocators.Arena)) ref(u8)
     match buf_res
         ok m => buf = m as ref(u8)
         error _ => (
-            fclose(f)
+            os.fclose(f)
             return none
         )
     end
-    fread(buf, 1 as usize, size as usize, f)
+    os.fread(buf, 1 as usize, size as usize, f)
     @deref(@as_mut(@add(buf, size as usize))) = 0
-    fclose(f)
+    os.fclose(f)
     return buf
 end
 
@@ -78,11 +66,11 @@ def get_dirname(path ref(u8), arena ref(allocators.Arena)) ref(u8)
 end
 
 def path_exists(path ref(u8)) bool
-    val f ref(u8) = fopen(path, "rb")
+    val f ref(u8) = os.fopen(path, "rb")
     if f == none
         return false
     end
-    fclose(f)
+    os.fclose(f)
     return true
 end
 
@@ -110,7 +98,7 @@ def find_std_root(arena ref(allocators.Arena)) ref(u8)
         ok m => cwd_buf = m as ref(u8)
         error _ => return none
     end
-    val cwd_result ref(u8) = getcwd(cwd_buf, 4096 as usize)
+    val cwd_result ref(u8) = os.getcwd(cwd_buf, 4096 as usize)
     if cwd_result != none
         val local_std ref(u8) = concat_path(cwd_buf, "lib/std", arena)
         if local_std != none
@@ -120,7 +108,7 @@ def find_std_root(arena ref(allocators.Arena)) ref(u8)
             end
         end
     end
-    val home ref(u8) = getenv("HOME")
+    val home ref(u8) = os.getenv("HOME")
     if home != none
         val home_std ref(u8) = concat_path(home, ".scar/lib/std", arena)
         if home_std != none
