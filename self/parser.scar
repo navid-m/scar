@@ -654,9 +654,27 @@ def parse_stmt(p ref(ast.TokenList), arena ref(allocators.Arena), current_platfo
             advance(p)
             return ast.Stmt.Decrement(box_expr(arena, expr))
         )
-        ast.TokenKind.Newline(_) => return ast.Stmt.ExprStmt(box_expr(arena, expr))
-        ast.TokenKind.Eof(_) => return ast.Stmt.ExprStmt(box_expr(arena, expr))
-        _ => return ast.Stmt.ExprStmt(box_expr(arena, expr))
+        ast.TokenKind.Newline(_) => return ast.Stmt.ExprStmt(box_expr(arena, promote_bracketless_call(arena, expr)))
+        ast.TokenKind.Eof(_) => return ast.Stmt.ExprStmt(box_expr(arena, promote_bracketless_call(arena, expr)))
+        _ => return ast.Stmt.ExprStmt(box_expr(arena, promote_bracketless_call(arena, expr)))
+    end
+end
+
+def promote_bracketless_call(arena ref(allocators.Arena), expr ast.Expr) ast.Expr
+    match expr
+        ast.Expr.Ident(_) => (
+            val raw_res = allocators.Arena.alloc(arena, @sizeof(ast.ExprCall) as usize)
+            match raw_res
+                ok raw => (
+                    var p ref(ast.ExprCall) = @bitcast(raw, ref(ast.ExprCall))
+                    p.callee = box_expr(arena, expr)
+                    p.args = [] as list[ast.Expr]
+                    return ast.Expr.Call(p)
+                )
+                error _ => return expr
+            end
+        )
+        _ => return expr
     end
 end
 
