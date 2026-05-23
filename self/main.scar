@@ -8,6 +8,7 @@ val prs = use("parser")
 val sema = use("sema")
 val cgen = use("codegen")
 val rslv = use("resolver")
+val reflection = use("std/reflection")
 
 val usage_message ref(u8) = \\ usage:
                             \\   scar [-emit <source.scar> [-o <output>]
@@ -25,9 +26,11 @@ pub def compile(source_path ref(u8), output_path ref(u8)) i32|error
         return error("scar: cannot read file")
     end
 
+    val platform = reflection.current_platform_name[_](@addr(arena))?
+
     val (
         tokens list[ast.Token] = lxr.lex(source, @addr(arena))
-        prog ast.Program       = prs.parse_program(tokens, @addr(arena))
+        prog ast.Program       = prs.parse_program(tokens, @addr(arena), platform)
         resolved ast.Program   = rslv.resolve(@addr(prog), @addr(arena))?
         info sema.ProgramInfo  = sema.analyze(@addr(resolved), @addr(arena))
         c_code ref(u8)         = cgen.generate_c(@addr(resolved), @addr(info), @addr(arena))
@@ -66,9 +69,11 @@ pub def emit(source_path ref(u8), output_path ref(u8)) i32|error
         return error("scar: cannot read file")
     end
 
+    val platform = reflection.current_platform_name[_](@addr(arena))?
+
     val (
         tokens list[ast.Token] = lxr.lex(source, @addr(arena))
-        prog ast.Program       = prs.parse_program(tokens, @addr(arena))
+        prog ast.Program       = prs.parse_program(tokens, @addr(arena), platform)
         resolved ast.Program   = rslv.resolve(@addr(prog), @addr(arena))?
         info sema.ProgramInfo  = sema.analyze(@addr(resolved), @addr(arena))
         c_code ref(u8)         = cgen.generate_c(@addr(resolved), @addr(info), @addr(arena))

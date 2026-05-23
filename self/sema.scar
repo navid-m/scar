@@ -4,9 +4,9 @@ val lxr = use("lexer")
 val prs = use("parser")
 val allocators = use("std/allocators")
 
-pub def parse_and_analyze(source ref(u8), arena ref(allocators.Arena)) ProgramInfo
+pub def parse_and_analyze(source ref(u8), arena ref(allocators.Arena), current_platform ref(u8)) ProgramInfo
     val tokens list[ast.Token] = lxr.lex(source, arena)
-    val prog ast.Program = prs.parse_program(tokens, arena)
+    val prog ast.Program = prs.parse_program(tokens, arena, current_platform)
     return analyze(@addr(prog), arena)
 end
 

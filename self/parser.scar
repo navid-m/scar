@@ -154,6 +154,37 @@ def next_non_newline_kind(p ref(ast.TokenList)) u8
     return 255
 end
 
+def platform_matches(current_platform ref(u8), target ref(u8)) bool
+    if str.eql(target, "posix")
+        return str.eql(current_platform, "linux")
+            || str.eql(current_platform, "darwin")
+            || str.eql(current_platform, "freebsd")
+            || str.eql(current_platform, "openbsd")
+            || str.eql(current_platform, "netbsd")
+            || str.eql(current_platform, "dragonflybsd")
+            || str.eql(current_platform, "android")
+            || str.eql(current_platform, "ios")
+            || str.eql(current_platform, "haiku")
+    end
+    return str.eql(current_platform, target)
+end
+
+def parse_when_condition(p ref(ast.TokenList), arena ref(allocators.Arena), current_platform ref(u8)) bool
+    val first ref(u8) = expect_ident(p, arena)
+    var matches bool = platform_matches(current_platform, first)
+    for
+        match p.tokens[p.pos].kind
+            ast.TokenKind.Pipe(_) => advance(p)
+            _ => break
+        end
+        val name ref(u8) = expect_ident(p, arena)
+        if platform_matches(current_platform, name)
+            matches = true
+        end
+    end
+    return matches
+end
+
 def skip_to_newline(p ref(ast.TokenList))
     for !is_eof(p)
         match p.tokens[p.pos].kind
@@ -391,24 +422,24 @@ def is_keyword_in(p ref(ast.TokenList), ids list[u8]) bool
     end
 end
 
-def parse_block_until(p ref(ast.TokenList), arena ref(allocators.Arena), terminators list[u8]) list[ast.Stmt]
+def parse_block_until(p ref(ast.TokenList), arena ref(allocators.Arena), terminators list[u8], current_platform ref(u8)) list[ast.Stmt]
     var body list[ast.Stmt] = []
     consume_newlines(p)
     for !is_eof(p)
         if is_keyword_in(p, terminators)
             break
         end
-        @append(body, parse_stmt(p, arena))
+        @append(body, parse_stmt(p, arena, current_platform))
         consume_newlines(p)
     end
     return body
 end
 
-def parse_block(p ref(ast.TokenList), arena ref(allocators.Arena)) list[ast.Stmt]
-    return parse_block_until(p, arena, [KW_END])
+def parse_block(p ref(ast.TokenList), arena ref(allocators.Arena), current_platform ref(u8)) list[ast.Stmt]
+    return parse_block_until(p, arena, [KW_END], current_platform)
 end
 
-def parse_stmt(p ref(ast.TokenList), arena ref(allocators.Arena)) ast.Stmt
+def parse_stmt(p ref(ast.TokenList), arena ref(allocators.Arena), current_platform ref(u8)) ast.Stmt
     consume_newlines(p)
 
     if is_keyword(p, KW_VAL) || is_keyword(p, KW_VAR)
@@ -459,19 +490,19 @@ def parse_stmt(p ref(ast.TokenList), arena ref(allocators.Arena)) ast.Stmt
     end
 
     if is_keyword(p, KW_IF)
-        return parse_if_stmt(p, arena)
+        return parse_if_stmt(p, arena, current_platform)
     end
 
     if is_keyword(p, KW_FOR)
-        return parse_for_stmt(p, arena)
+        return parse_for_stmt(p, arena, current_platform)
     end
 
     if is_keyword(p, KW_WHILE)
-        return parse_while_stmt(p, arena)
+        return parse_while_stmt(p, arena, current_platform)
     end
 
     if is_keyword(p, KW_MATCH)
-        return parse_match_stmt(p, arena)
+        return parse_match_stmt(p, arena, current_platform)
     end
 
     if is_keyword(p, KW_BREAK)
@@ -487,11 +518,15 @@ def parse_stmt(p ref(ast.TokenList), arena ref(allocators.Arena)) ast.Stmt
     if is_keyword(p, KW_DEFER)
         advance(p)
         expect_newline(p)
-        val body list[ast.Stmt] = parse_block(p, arena)
+        val body list[ast.Stmt] = parse_block(p, arena, current_platform)
         if !is_eof(p) && is_keyword(p, KW_END)
             advance(p)
         end
         return ast.Stmt.Block(body)
+    end
+
+    if is_keyword(p, KW_WHEN)
+        return parse_when_stmt(p, arena, current_platform)
     end
 
     val line usize = p.tokens[p.pos].line
@@ -523,19 +558,34 @@ def parse_stmt(p ref(ast.TokenList), arena ref(allocators.Arena)) ast.Stmt
     end
 end
 
-def parse_if_stmt(p ref(ast.TokenList), arena ref(allocators.Arena)) ast.Stmt
+def parse_when_stmt(p ref(ast.TokenList), arena ref(allocators.Arena), current_platform ref(u8)) ast.Stmt
+    advance(p)
+    val matches bool = parse_when_condition(p, arena, current_platform)
+    expect_newline(p)
+    val body list[ast.Stmt] = parse_block(p, arena, current_platform)
+    if !is_eof(p) && is_keyword(p, KW_END)
+        advance(p)
+    end
+    if matches
+        return ast.Stmt.Block(body)
+    else
+        return ast.Stmt.Block([] as list[ast.Stmt])
+    end
+end
+
+def parse_if_stmt(p ref(ast.TokenList), arena ref(allocators.Arena), current_platform ref(u8)) ast.Stmt
     advance(p)
     val line usize = p.tokens[p.pos].line
     val column usize = p.tokens[p.pos].column
     val condition ast.Expr = parse_expr(p, arena)
     expect_newline(p)
-    val then_body list[ast.Stmt] = parse_block_until(p, arena, [KW_ELSE, KW_ELIF, KW_END])
+    val then_body list[ast.Stmt] = parse_block_until(p, arena, [KW_ELSE, KW_ELIF, KW_END], current_platform)
 
     var else_body list[ast.Stmt] = []
     if is_keyword(p, KW_ELSE)
         advance(p)
         expect_newline(p)
-        else_body = parse_block_until(p, arena, [KW_END])
+        else_body = parse_block_until(p, arena, [KW_END], current_platform)
     elif is_keyword(p, KW_ELIF)
         var elif_arms list[ast.Stmt] = []
         var elif_bodies list[list[ast.Stmt]] = []
@@ -544,14 +594,14 @@ def parse_if_stmt(p ref(ast.TokenList), arena ref(allocators.Arena)) ast.Stmt
             advance(p)
             val elif_cond ast.Expr = parse_expr(p, arena)
             expect_newline(p)
-            val elif_then list[ast.Stmt] = parse_block_until(p, arena, [KW_ELSE, KW_ELIF, KW_END])
+            val elif_then list[ast.Stmt] = parse_block_until(p, arena, [KW_ELSE, KW_ELIF, KW_END], current_platform)
             @append(elif_conds, elif_cond)
             @append(elif_bodies, elif_then)
         end
         if is_keyword(p, KW_ELSE)
             advance(p)
             expect_newline(p)
-            else_body = parse_block_until(p, arena, [KW_END])
+            else_body = parse_block_until(p, arena, [KW_END], current_platform)
         end
         var k usize = @len(elif_conds)
         for k > 0
@@ -582,7 +632,7 @@ def parse_if_stmt(p ref(ast.TokenList), arena ref(allocators.Arena)) ast.Stmt
     )))
 end
 
-def parse_for_stmt(p ref(ast.TokenList), arena ref(allocators.Arena)) ast.Stmt
+def parse_for_stmt(p ref(ast.TokenList), arena ref(allocators.Arena), current_platform ref(u8)) ast.Stmt
     advance(p)
     val line usize = p.tokens[p.pos].line
     val column usize = p.tokens[p.pos].column
@@ -599,7 +649,7 @@ def parse_for_stmt(p ref(ast.TokenList), arena ref(allocators.Arena)) ast.Stmt
                         advance(p)
                         val end_expr ast.Expr = parse_expr(p, arena)
                         expect_newline(p)
-                        val body list[ast.Stmt] = parse_block(p, arena)
+                        val body list[ast.Stmt] = parse_block(p, arena, current_platform)
                         if !is_eof(p) && is_keyword(p, KW_END)
                             advance(p)
                         end
@@ -621,7 +671,7 @@ def parse_for_stmt(p ref(ast.TokenList), arena ref(allocators.Arena)) ast.Stmt
 
     val condition ast.Expr = parse_expr(p, arena)
     expect_newline(p)
-    val body list[ast.Stmt] = parse_block(p, arena)
+    val body list[ast.Stmt] = parse_block(p, arena, current_platform)
     if !is_eof(p) && is_keyword(p, KW_END)
         advance(p)
     end
@@ -633,13 +683,13 @@ def parse_for_stmt(p ref(ast.TokenList), arena ref(allocators.Arena)) ast.Stmt
     )))
 end
 
-def parse_while_stmt(p ref(ast.TokenList), arena ref(allocators.Arena)) ast.Stmt
+def parse_while_stmt(p ref(ast.TokenList), arena ref(allocators.Arena), current_platform ref(u8)) ast.Stmt
     advance(p)
     val line usize = p.tokens[p.pos].line
     val column usize = p.tokens[p.pos].column
     val condition ast.Expr = parse_expr(p, arena)
     expect_newline(p)
-    val body list[ast.Stmt] = parse_block(p, arena)
+    val body list[ast.Stmt] = parse_block(p, arena, current_platform)
     if !is_eof(p) && is_keyword(p, KW_END)
         advance(p)
     end
@@ -651,7 +701,7 @@ def parse_while_stmt(p ref(ast.TokenList), arena ref(allocators.Arena)) ast.Stmt
     )))
 end
 
-def parse_match_stmt(p ref(ast.TokenList), arena ref(allocators.Arena)) ast.Stmt
+def parse_match_stmt(p ref(ast.TokenList), arena ref(allocators.Arena), current_platform ref(u8)) ast.Stmt
     advance(p)
     val line usize = p.tokens[p.pos].line
     val column usize = p.tokens[p.pos].column
@@ -699,15 +749,14 @@ def parse_match_stmt(p ref(ast.TokenList), arena ref(allocators.Arena)) ast.Stmt
                         ast.TokenKind.RParen(_) => break
                         _ => ()
                     end
-                    @append(arm_body, parse_stmt(p, arena))
-                    consume_newlines(p)
-                end
-                match p.tokens[p.pos].kind
-                    ast.TokenKind.RParen(_) => advance(p)
-                    _ => ()
-                end
-            )
-            _ => @append(arm_body, parse_stmt(p, arena))
+                        @append(arm_body, parse_stmt(p, arena, current_platform))
+                    end
+                    match p.tokens[p.pos].kind
+                        ast.TokenKind.RParen(_) => advance(p)
+                        _ => ()
+                    end
+                )
+                _ => @append(arm_body, parse_stmt(p, arena, current_platform))
         end
         @append(arms, ast.MatchArm(
             kind: kind,
@@ -1416,7 +1465,7 @@ def parse_module_use(p ref(ast.TokenList), arena ref(allocators.Arena)) ast.Modu
     return ast.ModuleUse(name: name, path: path)
 end
 
-def parse_function(p ref(ast.TokenList), arena ref(allocators.Arena), is_pub bool) ast.Function
+def parse_function(p ref(ast.TokenList), arena ref(allocators.Arena), is_pub bool, current_platform ref(u8)) ast.Function
     val line usize = p.tokens[p.pos].line
     val column usize = p.tokens[p.pos].column
     advance(p)
@@ -1462,7 +1511,7 @@ def parse_function(p ref(ast.TokenList), arena ref(allocators.Arena), is_pub boo
     end
 
     expect_newline(p)
-    val body list[ast.Stmt] = parse_block(p, arena)
+    val body list[ast.Stmt] = parse_block(p, arena, current_platform)
     if !is_eof(p)
         advance(p)
     end
@@ -1575,7 +1624,7 @@ def parse_extern_function(p ref(ast.TokenList), arena ref(allocators.Arena), is_
     )
 end
 
-def parse_test_block(p ref(ast.TokenList), arena ref(allocators.Arena)) ast.TestBlock
+def parse_test_block(p ref(ast.TokenList), arena ref(allocators.Arena), current_platform ref(u8)) ast.TestBlock
     advance(p)
 
     val name_res = allocators.Arena.alloc(arena, 1)
@@ -1597,7 +1646,7 @@ def parse_test_block(p ref(ast.TokenList), arena ref(allocators.Arena)) ast.Test
     end
 
     expect_newline(p)
-    val body list[ast.Stmt] = parse_block(p, arena)
+    val body list[ast.Stmt] = parse_block(p, arena, current_platform)
     if !is_eof(p)
         advance(p)
     end
@@ -1739,7 +1788,7 @@ def parse_enum_def(p ref(ast.TokenList), arena ref(allocators.Arena), is_pub_val
     )
 end
 
-pub def parse_program(tokens list[ast.Token], arena ref(allocators.Arena)) ast.Program
+pub def parse_program(tokens list[ast.Token], arena ref(allocators.Arena), current_platform ref(u8)) ast.Program
     var p ast.TokenList = ast.TokenList(tokens: tokens, pos: 0)
     var module_uses list[ast.ModuleUse] = []
     var functions list[ast.Function] = []
@@ -1751,7 +1800,7 @@ pub def parse_program(tokens list[ast.Token], arena ref(allocators.Arena)) ast.P
     for !is_eof(@addr(p))
         consume_newlines(@addr(p))
         if is_keyword(@addr(p), KW_DEF)
-            @append(functions, parse_function(@addr(p), arena, false))
+            @append(functions, parse_function(@addr(p), arena, false, current_platform))
         elif is_keyword(@addr(p), KW_PUB) && next_is_keyword(@addr(p), KW_EXTERN)
             advance(@addr(p))
             advance(@addr(p))
@@ -1762,7 +1811,7 @@ pub def parse_program(tokens list[ast.Token], arena ref(allocators.Arena)) ast.P
             end
         elif is_keyword(@addr(p), KW_PUB) && next_is_keyword(@addr(p), KW_DEF)
             advance(@addr(p))
-            @append(functions, parse_function(@addr(p), arena, true))
+            @append(functions, parse_function(@addr(p), arena, true, current_platform))
         elif is_keyword(@addr(p), KW_PUB) && next_is_keyword(@addr(p), KW_TYPE)
             advance(@addr(p))
             @append(type_defs, parse_type_def(@addr(p), arena, true))
@@ -1789,11 +1838,137 @@ pub def parse_program(tokens list[ast.Token], arena ref(allocators.Arena)) ast.P
         elif is_keyword(@addr(p), KW_ENUM)
             @append(type_defs, parse_enum_def(@addr(p), arena, false))
         elif is_keyword(@addr(p), KW_TEST)
-            @append(tests, parse_test_block(@addr(p), arena))
+            @append(tests, parse_test_block(@addr(p), arena, current_platform))
         elif is_keyword(@addr(p), KW_VAL) && is_module_use(@addr(p))
             @append(module_uses, parse_module_use(@addr(p), arena))
         elif is_keyword(@addr(p), KW_VAL) || is_keyword(@addr(p), KW_VAR)
             skip_to_newline(@addr(p))
+        elif is_keyword(@addr(p), KW_WHEN)
+            advance(@addr(p))
+            val matches bool = parse_when_condition(@addr(p), arena, current_platform)
+            expect_newline(@addr(p))
+            if matches
+                consume_newlines(@addr(p))
+                for !is_eof(@addr(p)) && !is_keyword(@addr(p), KW_END)
+                    consume_newlines(@addr(p))
+                    if is_keyword(@addr(p), KW_DEF)
+                        @append(functions, parse_function(@addr(p), arena, false, current_platform))
+                    elif is_keyword(@addr(p), KW_PUB) && next_is_keyword(@addr(p), KW_EXTERN)
+                        advance(@addr(p))
+                        advance(@addr(p))
+                        if is_keyword(@addr(p), KW_DEF)
+                            @append(functions, parse_extern_function(@addr(p), arena, true))
+                        else
+                            skip_to_newline(@addr(p))
+                        end
+                    elif is_keyword(@addr(p), KW_PUB) && next_is_keyword(@addr(p), KW_DEF)
+                        advance(@addr(p))
+                        @append(functions, parse_function(@addr(p), arena, true, current_platform))
+                    elif is_keyword(@addr(p), KW_PUB) && next_is_keyword(@addr(p), KW_TYPE)
+                        advance(@addr(p))
+                        @append(type_defs, parse_type_def(@addr(p), arena, true))
+                    elif is_keyword(@addr(p), KW_PUB) && next_is_keyword(@addr(p), KW_UNION)
+                        advance(@addr(p))
+                        @append(type_defs, parse_union_def(@addr(p), arena, true))
+                    elif is_keyword(@addr(p), KW_PUB) && next_is_keyword(@addr(p), KW_ENUM)
+                        advance(@addr(p))
+                        @append(type_defs, parse_enum_def(@addr(p), arena, true))
+                    elif is_keyword(@addr(p), KW_PUB)
+                        advance(@addr(p))
+                        skip_top_level_item(@addr(p))
+                    elif is_keyword(@addr(p), KW_EXTERN)
+                        advance(@addr(p))
+                        if is_keyword(@addr(p), KW_DEF)
+                            @append(functions, parse_extern_function(@addr(p), arena, false))
+                        else
+                            skip_to_newline(@addr(p))
+                        end
+                    elif is_keyword(@addr(p), KW_TYPE)
+                        @append(type_defs, parse_type_def(@addr(p), arena, false))
+                    elif is_keyword(@addr(p), KW_UNION)
+                        @append(type_defs, parse_union_def(@addr(p), arena, false))
+                    elif is_keyword(@addr(p), KW_ENUM)
+                        @append(type_defs, parse_enum_def(@addr(p), arena, false))
+                    elif is_keyword(@addr(p), KW_TEST)
+                        @append(tests, parse_test_block(@addr(p), arena, current_platform))
+                    elif is_keyword(@addr(p), KW_VAL) && is_module_use(@addr(p))
+                        @append(module_uses, parse_module_use(@addr(p), arena))
+                    elif is_keyword(@addr(p), KW_VAL) || is_keyword(@addr(p), KW_VAR)
+                        skip_to_newline(@addr(p))
+                    elif is_keyword(@addr(p), KW_WHEN)
+                        advance(@addr(p))
+                        val inner_matches bool = parse_when_condition(@addr(p), arena, current_platform)
+                        expect_newline(@addr(p))
+                        if inner_matches
+                            consume_newlines(@addr(p))
+                            for !is_eof(@addr(p)) && !is_keyword(@addr(p), KW_END)
+                                consume_newlines(@addr(p))
+                                if is_keyword(@addr(p), KW_DEF)
+                                    @append(functions, parse_function(@addr(p), arena, false, current_platform))
+                                elif is_keyword(@addr(p), KW_PUB) && next_is_keyword(@addr(p), KW_EXTERN)
+                                    advance(@addr(p))
+                                    advance(@addr(p))
+                                    if is_keyword(@addr(p), KW_DEF)
+                                        @append(functions, parse_extern_function(@addr(p), arena, true))
+                                    else
+                                        skip_to_newline(@addr(p))
+                                    end
+                                elif is_keyword(@addr(p), KW_PUB) && next_is_keyword(@addr(p), KW_DEF)
+                                    advance(@addr(p))
+                                    @append(functions, parse_function(@addr(p), arena, true, current_platform))
+                                elif is_keyword(@addr(p), KW_PUB) && next_is_keyword(@addr(p), KW_TYPE)
+                                    advance(@addr(p))
+                                    @append(type_defs, parse_type_def(@addr(p), arena, true))
+                                elif is_keyword(@addr(p), KW_PUB) && next_is_keyword(@addr(p), KW_UNION)
+                                    advance(@addr(p))
+                                    @append(type_defs, parse_union_def(@addr(p), arena, true))
+                                elif is_keyword(@addr(p), KW_PUB) && next_is_keyword(@addr(p), KW_ENUM)
+                                    advance(@addr(p))
+                                    @append(type_defs, parse_enum_def(@addr(p), arena, true))
+                                elif is_keyword(@addr(p), KW_PUB)
+                                    advance(@addr(p))
+                                    skip_top_level_item(@addr(p))
+                                elif is_keyword(@addr(p), KW_EXTERN)
+                                    advance(@addr(p))
+                                    if is_keyword(@addr(p), KW_DEF)
+                                        @append(functions, parse_extern_function(@addr(p), arena, false))
+                                    else
+                                        skip_to_newline(@addr(p))
+                                    end
+                                elif is_keyword(@addr(p), KW_TYPE)
+                                    @append(type_defs, parse_type_def(@addr(p), arena, false))
+                                elif is_keyword(@addr(p), KW_UNION)
+                                    @append(type_defs, parse_union_def(@addr(p), arena, false))
+                                elif is_keyword(@addr(p), KW_ENUM)
+                                    @append(type_defs, parse_enum_def(@addr(p), arena, false))
+                                elif is_keyword(@addr(p), KW_TEST)
+                                    @append(tests, parse_test_block(@addr(p), arena, current_platform))
+                                elif is_keyword(@addr(p), KW_VAL) && is_module_use(@addr(p))
+                                    @append(module_uses, parse_module_use(@addr(p), arena))
+                                elif is_keyword(@addr(p), KW_VAL) || is_keyword(@addr(p), KW_VAR)
+                                    skip_to_newline(@addr(p))
+                                else
+                                    skip_top_level_item(@addr(p))
+                                end
+                                consume_newlines(@addr(p))
+                            end
+                        else
+                            skip_block(@addr(p))
+                        end
+                        if !is_eof(@addr(p)) && is_keyword(@addr(p), KW_END)
+                            advance(@addr(p))
+                        end
+                    else
+                        skip_top_level_item(@addr(p))
+                    end
+                    consume_newlines(@addr(p))
+                end
+            else
+                skip_block(@addr(p))
+            end
+            if !is_eof(@addr(p)) && is_keyword(@addr(p), KW_END)
+                advance(@addr(p))
+            end
         else
             skip_top_level_item(@addr(p))
         end
