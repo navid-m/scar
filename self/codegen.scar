@@ -797,14 +797,22 @@ def render_stmt(stmt ref(ast.Stmt), fun ref(ast.Function), info ref(sema.Program
             end
             append_str(output, output_len, c_type_named(ty, vd.name, arena))
             append_str(output, output_len, " = ")
-            append_expr(@addr(vd.init), fun, info, arena, output, output_len)
+            if is_list_lit_expr(@addr(vd.init))
+                append_list_literal_from_expr(@addr(vd.init), ty, fun, info, arena, output, output_len)
+            else
+                append_expr(@addr(vd.init), fun, info, arena, output, output_len)
+            end
             append_str(output, output_len, ";\n")
         )
         ast.Stmt.Assign(a) => (
             indent(output, output_len, level)
             append_expr(@addr(a.target), fun, info, arena, output, output_len)
             append_str(output, output_len, " = ")
-            append_expr(@addr(a.value), fun, info, arena, output, output_len)
+            if is_list_lit_expr(@addr(a.value))
+                append_list_literal_from_expr(@addr(a.value), get_expr_type(@addr(a.target), fun, info), fun, info, arena, output, output_len)
+            else
+                append_expr(@addr(a.value), fun, info, arena, output, output_len)
+            end
             append_str(output, output_len, ";\n")
         )
         ast.Stmt.AddAssign(a) => (
@@ -1314,7 +1322,12 @@ def append_expr(expr ref(ast.Expr), fun ref(ast.Function), info ref(sema.Program
                 if i > 0
                     append_str(output, output_len, ", ")
                 end
-                append_expr(@addr(c.args[i]), fun, info, arena, output, output_len)
+                if is_list_lit_expr(@addr(c.args[i]))
+                    val param_ty ref(ast.Type) = lookup_function_param_type(c.callee, i, info)
+                    append_list_literal_from_expr(@addr(c.args[i]), param_ty, fun, info, arena, output, output_len)
+                else
+                    append_expr(@addr(c.args[i]), fun, info, arena, output, output_len)
+                end
                 i++
             end
             append_str(output, output_len, ")")
@@ -1407,7 +1420,12 @@ def append_expr(expr ref(ast.Expr), fun ref(ast.Function), info ref(sema.Program
                 append_str(output, output_len, ".")
                 append_str(output, output_len, si.fields[i].name)
                 append_str(output, output_len, " = ")
-                append_expr(@addr(si.fields[i].value), fun, info, arena, output, output_len)
+                val field_ty ref(ast.Type) = infer_field_type_simple(@addr(ast.Type.Named(si.name)), si.fields[i].name, info)
+                if is_list_lit_expr(@addr(si.fields[i].value))
+                    append_list_literal_from_expr(@addr(si.fields[i].value), field_ty, fun, info, arena, output, output_len)
+                else
+                    append_expr(@addr(si.fields[i].value), fun, info, arena, output, output_len)
+                end
                 i++
             end
             append_str(output, output_len, " }")
@@ -2093,15 +2111,91 @@ end
 
 def deref_type(ty ref(ast.Type)) ref(ast.Type)
     match @deref(ty)
-        ast.Type.Ref(inner) => return inner
-        ast.Type.Mut(inner) => (
-            match @deref(inner)
-                ast.Type.Ref(inner2) => return inner2
-                _ => return inner
-            end
-        )
+        ast.Type.Ref(inner) => return deref_type(inner)
+        ast.Type.Mut(inner) => return deref_type(inner)
         _ => return ty
     end
+end
+
+def is_list_lit_expr(expr ref(ast.Expr)) bool
+    match @deref(expr)
+        ast.Expr.ListLit(_) => return true
+        _ => return false
+    end
+end
+
+def append_list_literal_from_expr(expr ref(ast.Expr), hint ref(ast.Type), fun ref(ast.Function), info ref(sema.ProgramInfo), arena ref(allocators.Arena), output ref(ref(u8)), output_len ref(usize))
+    match @deref(expr)
+        ast.Expr.ListLit(elems) => (
+            val deref_hint ref(ast.Type) = deref_type(hint)
+            var element_ty ref(ast.Type) = get_list_element_type(deref_hint)
+            match @deref(element_ty)
+                ast.Type.Void(_) => (
+                    if @len(elems) > 0
+                        element_ty = get_expr_type(@addr(elems[0]), fun, info)
+                    end
+                )
+                _ => ()
+            end
+            val helper_prefix ref(u8) = list_helper_prefix(element_ty, arena)
+            if @len(elems) == 0
+                append_str(output, output_len, helper_prefix)
+                append_str(output, output_len, "_new()")
+            else
+                append_str(output, output_len, helper_prefix)
+                append_str(output, output_len, "_from_array((")
+                append_str(output, output_len, c_type(element_ty, arena))
+                append_str(output, output_len, " const []){")
+                var i usize = 0
+                for i < @len(elems)
+                    if i > 0
+                        append_str(output, output_len, ", ")
+                    end
+                    if is_list_lit_expr(@addr(elems[i]))
+                        append_list_literal_from_expr(@addr(elems[i]), element_ty, fun, info, arena, output, output_len)
+                    else
+                        append_expr(@addr(elems[i]), fun, info, arena, output, output_len)
+                    end
+                    i++
+                end
+                append_str(output, output_len, "}, ")
+                append_u64(output, output_len, @len(elems) as u64, arena)
+                append_str(output, output_len, ")")
+            end
+        )
+        _ => append_expr(expr, fun, info, arena, output, output_len)
+    end
+end
+
+def lookup_function_param_type(callee ref(ast.Expr), param_idx usize, info ref(sema.ProgramInfo)) ref(ast.Type)
+    match @deref(callee)
+        ast.Expr.Ident(name) => (
+            var i usize = 0
+            for i < @len(info.functions)
+                if str.eql(info.functions[i].name, name)
+                    if param_idx < @len(info.functions[i].sig.params)
+                        return @addr(info.functions[i].sig.params[param_idx])
+                    end
+                end
+                i++
+            end
+        )
+        ast.Expr.Path(segments) => (
+            if @len(segments) == 1
+                var i usize = 0
+                for i < @len(info.functions)
+                    if str.eql(info.functions[i].name, segments[0])
+                        if param_idx < @len(info.functions[i].sig.params)
+                            return @addr(info.functions[i].sig.params[param_idx])
+                        end
+                    end
+                    i++
+                end
+            end
+        )
+        _ => ()
+    end
+    return @addr(ast.Type.Void(0))
 end
 
 def get_expr_type(expr ref(ast.Expr), fun ref(ast.Function), info ref(sema.ProgramInfo)) ref(ast.Type)
@@ -2122,6 +2216,36 @@ def get_expr_type(expr ref(ast.Expr), fun ref(ast.Function), info ref(sema.Progr
                 return lookup_local_type(segments[0], fun, info)
             end
             return @addr(ast.Type.Void(0))
+        )
+        ast.Expr.IntLit(_) => return @addr(ast.Type.I64(0))
+        ast.Expr.FloatLit(_) => return @addr(ast.Type.F64(0))
+        ast.Expr.BoolLit(_) => return @addr(ast.Type.Bool(0))
+        ast.Expr.CharLit(_) => return @addr(ast.Type.U8(0))
+        ast.Expr.StrLit(_) => return @addr(ast.Type.Ref(@addr(ast.Type.U8(0))))
+        ast.Expr.Call(c) => (
+            match @deref(c.callee)
+                ast.Expr.Ident(name) => (
+                    var i usize = 0
+                    for i < @len(info.functions)
+                        if str.eql(info.functions[i].name, name)
+                            return @addr(info.functions[i].sig.return_type)
+                        end
+                        i++
+                    end
+                )
+                ast.Expr.Path(segments) => (
+                    if @len(segments) == 1
+                        var i usize = 0
+                        for i < @len(info.functions)
+                            if str.eql(info.functions[i].name, segments[0])
+                                return @addr(info.functions[i].sig.return_type)
+                            end
+                            i++
+                        end
+                    end
+                )
+                _ => ()
+            end
         )
         _ => return @addr(ast.Type.Void(0))
     end
