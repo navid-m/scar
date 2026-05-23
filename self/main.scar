@@ -30,7 +30,7 @@ pub def compile(source_path ref(u8), output_path ref(u8)) i32|error
 
     val (
         tokens list[ast.Token] = lxr.lex(source, @addr(arena))
-        prog ast.Program       = prs.parse_program(tokens, @addr(arena), platform)
+        prog ast.Program       = prs.parse_program(tokens, @addr(arena), platform, source_path)
         resolved ast.Program   = rslv.resolve(@addr(prog), source_path, @addr(arena))?
         info sema.ProgramInfo  = sema.analyze(@addr(resolved), @addr(arena))
         c_code ref(u8)         = cgen.generate_c(@addr(resolved), @addr(info), @addr(arena))
@@ -73,7 +73,7 @@ pub def emit(source_path ref(u8), output_path ref(u8)) i32|error
 
     val (
         tokens list[ast.Token] = lxr.lex(source, @addr(arena))
-        prog ast.Program       = prs.parse_program(tokens, @addr(arena), platform)
+        prog ast.Program       = prs.parse_program(tokens, @addr(arena), platform, source_path)
         resolved ast.Program   = rslv.resolve(@addr(prog), source_path, @addr(arena))?
         info sema.ProgramInfo  = sema.analyze(@addr(resolved), @addr(arena))
         c_code ref(u8)         = cgen.generate_c(@addr(resolved), @addr(info), @addr(arena))

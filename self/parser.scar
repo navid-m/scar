@@ -1582,7 +1582,7 @@ def parse_primary(p ref(ast.TokenList), arena ref(allocators.Arena)) ast.Expr
             end
             val tok_line usize = p.tokens[p.pos].line
             val tok_col usize = p.tokens[p.pos].column
-            @print("parse error: unexpected keyword in expression at line {d}, col {d}\n", {tok_line, tok_col})
+            @print("{s}:{d}:{d}: parse error: unexpected keyword in expression\n", {p.source_file, tok_line, tok_col})
             advance(p)
             return ast.Expr.None(0)
         )
@@ -1595,11 +1595,13 @@ def parse_primary(p ref(ast.TokenList), arena ref(allocators.Arena)) ast.Expr
                     advance(p)
                     consume_newlines(p)
                     for !is_eof(p)
+                        consume_newlines(p)
                         match p.tokens[p.pos].kind
                             ast.TokenKind.RParen(_) => break
                             _ => ()
                         end
                         @append(args, parse_expr(p, arena))
+                        consume_newlines(p)
                         match p.tokens[p.pos].kind
                             ast.TokenKind.Comma(_) => (
                                 advance(p)
@@ -1608,6 +1610,7 @@ def parse_primary(p ref(ast.TokenList), arena ref(allocators.Arena)) ast.Expr
                             _ => break
                         end
                     end
+                    consume_newlines(p)
                     match p.tokens[p.pos].kind
                         ast.TokenKind.RParen(_) => advance(p)
                         _ => ()
@@ -1724,7 +1727,7 @@ def parse_primary(p ref(ast.TokenList), arena ref(allocators.Arena)) ast.Expr
         _ => (
             val tok_line usize = p.tokens[p.pos].line
             val tok_col usize = p.tokens[p.pos].column
-            @print("parse error: unexpected token in expression at line {d}, col {d}\n", {tok_line, tok_col})
+            @print("{s}:{d}:{d}: parse error: unexpected token in expression\n", {p.source_file, tok_line, tok_col})
             advance(p)
             return ast.Expr.None(0)
         )
@@ -2178,8 +2181,8 @@ def parse_enum_def(p ref(ast.TokenList), arena ref(allocators.Arena), is_pub_val
     )
 end
 
-pub def parse_program(tokens list[ast.Token], arena ref(allocators.Arena), current_platform ref(u8)) ast.Program
-    var p ast.TokenList = ast.TokenList(tokens: tokens, pos: 0)
+pub def parse_program(tokens list[ast.Token], arena ref(allocators.Arena), current_platform ref(u8), source_file ref(u8)) ast.Program
+    var p ast.TokenList = ast.TokenList(tokens: tokens, pos: 0, source_file: source_file)
     var module_uses list[ast.ModuleUse] = []
     var functions list[ast.Function] = []
     var type_defs list[ast.TypeDef] = []

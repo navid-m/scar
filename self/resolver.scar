@@ -100,7 +100,7 @@ pub def resolve(program ref(ast.Program), source_path ref(u8), arena ref(allocat
         end
         val platform ref(u8) = "linux"
         val mod_tokens list[ast.Token] = lxr.lex(mod_source, arena)
-        val mod_prog ast.Program = prs.parse_program(mod_tokens, arena, platform)
+        val mod_prog ast.Program = prs.parse_program(mod_tokens, arena, platform, mod_path)
 
         var pub_type_names list[ref(u8)] = []
         var ti usize = 0
