@@ -769,6 +769,22 @@ def parse_for_stmt(p ref(ast.TokenList), arena ref(allocators.Arena), current_pl
             )
             _ => ()
         end
+        if is_keyword(p, KW_IN)
+            advance(p)
+            val iterable ast.Expr = parse_expr(p, arena)
+            expect_newline(p)
+            val body list[ast.Stmt] = parse_block(p, arena, current_platform)
+            if !is_eof(p) && is_keyword(p, KW_END)
+                advance(p)
+            end
+            return ast.Stmt.ForEach(@addr(ast.StmtForEach(
+                var_name: var_name,
+                iterable: iterable,
+                body: body,
+                line: line,
+                column: column
+            )))
+        end
     end
 
     var condition ast.Expr = ast.Expr.IntLit(1)

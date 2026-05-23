@@ -268,6 +268,14 @@ def collect_types_from_stmt(stmt ref(ast.Stmt), types ref(list[TypeEntry]))
                 k++
             end
         )
+        ast.Stmt.ForEach(fe) => (
+            collect_type_from_expr(@addr(fe.iterable), types)
+            var k usize = 0
+            for k < @len(fe.body)
+                collect_types_from_stmt(@addr(fe.body[k]), types)
+                k++
+            end
+        )
         ast.Stmt.ExprStmt(e) => collect_type_from_expr(e, types)
         ast.Stmt.Increment(e) => collect_type_from_expr(e, types)
         ast.Stmt.Decrement(e) => collect_type_from_expr(e, types)
@@ -495,6 +503,20 @@ def analyze_stmt(stmt ref(ast.Stmt), bindings ref(list[BindingEntry]), functions
             var k usize = 0
             for k < @len(fr.body)
                 analyze_stmt(@addr(fr.body[k]), bindings, functions, types)
+                k++
+            end
+        )
+        ast.Stmt.ForEach(fe) => (
+            val iter_ty ast.Type = analyze_expr(@addr(fe.iterable), bindings, functions, types)
+            var elem_ty ast.Type = ast.Type.Void(0)
+            match iter_ty
+                ast.Type.List(inner) => elem_ty = @deref(inner)
+                _ => ()
+            end
+            @append(bindings, BindingEntry(name: fe.var_name, ty: elem_ty))
+            var k usize = 0
+            for k < @len(fe.body)
+                analyze_stmt(@addr(fe.body[k]), bindings, functions, types)
                 k++
             end
         )

@@ -1002,6 +1002,53 @@ def render_stmt(stmt ref(ast.Stmt), fun ref(ast.Function), info ref(sema.Program
             indent(output, output_len, level)
             append_str(output, output_len, "}\n")
         )
+        ast.Stmt.ForEach(fe) => (
+            val iter_ty ref(ast.Type) = lookup_local_type_of_expr(@addr(fe.iterable), fun, info)
+            val temp_id usize = @deref(next_temp_id)
+            @deref(next_temp_id) = temp_id + 1
+            var iter_name_buf list[u8] = []
+            format_temp_name("__scar_iter_", temp_id, @addr(iter_name_buf))
+            val iter_name ref(u8) = @addr(iter_name_buf[0])
+            var index_name_buf list[u8] = []
+            format_temp_name("__scar_index_", temp_id, @addr(index_name_buf))
+            val index_name ref(u8) = @addr(index_name_buf[0])
+            val elem_ty ref(ast.Type) = list_element_type(iter_ty)
+            indent(output, output_len, level)
+            append_str(output, output_len, "{\n")
+            indent(output, output_len, level + 1)
+            append_str(output, output_len, c_type(iter_ty, arena))
+            append_str(output, output_len, " ")
+            append_str(output, output_len, iter_name)
+            append_str(output, output_len, " = ")
+            append_expr(@addr(fe.iterable), fun, info, arena, output, output_len)
+            append_str(output, output_len, ";\n")
+            indent(output, output_len, level + 1)
+            append_str(output, output_len, "for (int32_t ")
+            append_str(output, output_len, index_name)
+            append_str(output, output_len, " = 0; ")
+            append_str(output, output_len, index_name)
+            append_str(output, output_len, " < ")
+            append_str(output, output_len, iter_name)
+            append_str(output, output_len, ".len; ++")
+            append_str(output, output_len, index_name)
+            append_str(output, output_len, ") {\n")
+            indent(output, output_len, level + 2)
+            append_str(output, output_len, c_type_named(elem_ty, fe.var_name, arena))
+            append_str(output, output_len, " = ")
+            append_str(output, output_len, iter_name)
+            append_str(output, output_len, ".data[")
+            append_str(output, output_len, index_name)
+            append_str(output, output_len, "];\n")
+            var k usize = 0
+            for k < @len(fe.body)
+                render_stmt(@addr(fe.body[k]), fun, info, level + 2, next_temp_id, defers, arena, output, output_len)
+                k++
+            end
+            indent(output, output_len, level + 1)
+            append_str(output, output_len, "}\n")
+            indent(output, output_len, level)
+            append_str(output, output_len, "}\n")
+        )
         ast.Stmt.Match(m) => (
             val temp_id usize = @deref(next_temp_id)
             @deref(next_temp_id) = temp_id + 1
@@ -2802,6 +2849,24 @@ def is_local_variable(name ref(u8), fun ref(ast.Function), info ref(sema.Program
     match @deref(ty)
         ast.Type.Void(_) => return false
         _ => return true
+    end
+end
+
+def infer_expr_local_type(expr ref(ast.Expr), fun ref(ast.Function), info ref(sema.ProgramInfo)) ref(ast.Type)
+    match @deref(expr)
+        ast.Expr.Ident(name) => return lookup_local_type(name, fun, info)
+        _ => return @addr(ast.Type.Void(0))
+    end
+end
+
+def lookup_local_type_of_expr(expr ref(ast.Expr), fun ref(ast.Function), info ref(sema.ProgramInfo)) ref(ast.Type)
+    return infer_expr_local_type(expr, fun, info)
+end
+
+def list_element_type(list_ty ref(ast.Type)) ref(ast.Type)
+    match @deref(list_ty)
+        ast.Type.List(inner) => return inner
+        _ => return @addr(ast.Type.Void(0))
     end
 end
 

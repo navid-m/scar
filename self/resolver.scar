@@ -461,6 +461,22 @@ def resolve_stmt(stmt ref(ast.Stmt), arena ref(allocators.Arena)) ast.Stmt|error
             p.body = resolved_body
             return ast.Stmt.ForRange(p)
         )
+        ast.Stmt.ForEach(fe) => (
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.StmtForEach) as usize)?
+            var p ref(ast.StmtForEach) = @bitcast(raw, ref(ast.StmtForEach))
+            p.var_name = fe.var_name
+            p.iterable = resolve_expr(@addr(fe.iterable), arena)?
+            p.line = fe.line
+            p.column = fe.column
+            var resolved_body list[ast.Stmt] = []
+            var k usize = 0
+            for k < @len(fe.body)
+                @append(resolved_body, resolve_stmt(@addr(fe.body[k]), arena)?)
+                k++
+            end
+            p.body = resolved_body
+            return ast.Stmt.ForEach(p)
+        )
         ast.Stmt.Match(m) => (
             val raw = allocators.Arena.alloc(arena, @sizeof(ast.StmtMatch) as usize)?
             var p ref(ast.StmtMatch) = @bitcast(raw, ref(ast.StmtMatch))

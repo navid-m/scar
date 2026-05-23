@@ -270,6 +270,7 @@ pub union Stmt
 	If(ref(StmtIf))
 	While(ref(StmtWhile))
 	ForRange(ref(StmtForRange))
+	ForEach(ref(StmtForEach))
 	Match(ref(StmtMatch))
 	ExprStmt(ref(Expr))
 	Block(list[Stmt])
@@ -322,6 +323,14 @@ pub type StmtForRange
 	var_name ref(u8)
 	start Expr
 	End Expr
+	body list[Stmt]
+	line usize
+	column usize
+end
+
+pub type StmtForEach
+	var_name ref(u8)
+	iterable Expr
 	body list[Stmt]
 	line usize
 	column usize
