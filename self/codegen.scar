@@ -1362,14 +1362,8 @@ def append_expr(expr ref(ast.Expr), fun ref(ast.Function), info ref(sema.Program
                         i++
                     end
                 else
-                    var i usize = 0
-                    for i < @len(segments)
-                        if i > 0
-                            append_str(output, output_len, "__")
-                        end
-                        append_str(output, output_len, segments[i])
-                        i++
-                    end
+                    val joined ref(u8) = join_segments_with_dunder(segments, arena)
+                    append_str(output, output_len, lookup_symbol(joined, info, arena))
                 end
             end
         )
@@ -2347,6 +2341,40 @@ def find_last_dot(s ref(u8)) usize
         end
     end
     return slen
+end
+
+def join_segments_with_dunder(segments list[ref(u8)], arena ref(allocators.Arena)) ref(u8)
+    var total usize = 1
+    var i usize = 0
+    for i < @len(segments)
+        total = total + str.len(segments[i])
+        if i > 0
+            total = total + 2
+        end
+        i++
+    end
+    val buf_res = allocators.Arena.alloc(arena, total)
+    var buf ref(u8) = none
+    match buf_res
+        ok m => buf = m as ref(u8)
+        error _ => return ""
+    end
+    var offset usize = 0
+    i = 0
+    for i < @len(segments)
+        if i > 0
+            @deref(@as_mut(@add(buf, offset))) = '_'
+            offset++
+            @deref(@as_mut(@add(buf, offset))) = '_'
+            offset++
+        end
+        val slen usize = str.len(segments[i])
+        @memcpy(@add(buf, offset), segments[i], slen)
+        offset = offset + slen
+        i++
+    end
+    @deref(@as_mut(@add(buf, offset))) = 0
+    return buf
 end
 
 def strip_module_prefix(name ref(u8)) ref(u8)

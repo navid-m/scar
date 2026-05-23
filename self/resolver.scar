@@ -1,24 +1,243 @@
 val ast = use("ast")
 val allocators = use("std/allocators")
+val str = use("std/string")
+val lxr = use("lexer")
+val prs = use("parser")
 
-pub def resolve(program ref(ast.Program), arena ref(allocators.Arena)) ast.Program|error
+extern "stdio.h"
+extern "sys/stat.h"
+
+extern def fopen(path ref(u8), mode ref(u8)) ref(u8) :: "fopen"
+extern def fclose(f ref(u8)) i32 :: "fclose"
+extern def fread(buf ref(u8), size usize, count usize, f ref(u8)) usize :: "fread"
+extern def fseek(f ref(u8), offset i64, whence i32) i32 :: "fseek"
+extern def ftell(f ref(u8)) i64 :: "ftell"
+
+def read_file(path ref(u8), arena ref(allocators.Arena)) ref(u8)
+    val f ref(u8) = fopen(path, "rb")
+    if f == none
+        return none
+    end
+    fseek(f, 0 as i64, 2 as i32)
+    val size i64 = ftell(f)
+    fseek(f, 0 as i64, 0 as i32)
+    if size <= 0 as i64
+        fclose(f)
+        return none
+    end
+    val buf_res = allocators.Arena.alloc(arena, size as usize + 1)
+    var buf ref(u8) = none
+    match buf_res
+        ok m => buf = m as ref(u8)
+        error _ => (
+            fclose(f)
+            return none
+        )
+    end
+    fread(buf, 1 as usize, size as usize, f)
+    @deref(@as_mut(@add(buf, size as usize))) = 0
+    fclose(f)
+    return buf
+end
+
+def get_dirname(path ref(u8), arena ref(allocators.Arena)) ref(u8)
+    val plen usize = str.len(path)
+    var last_sep usize = plen
+    var i usize = 0
+    for i < plen
+        if @deref(@add(path, i)) == '/'
+            last_sep = i
+        end
+        i++
+    end
+    if last_sep == plen
+        val dot_res = allocators.Arena.alloc(arena, 2)
+        var dot ref(u8) = none
+        match dot_res
+            ok m => dot = m as ref(u8)
+            error _ => return "."
+        end
+        @deref(@as_mut(dot)) = '.'
+        @deref(@as_mut(@add(dot, 1))) = 0
+        return dot
+    end
+    val buf_res = allocators.Arena.alloc(arena, last_sep + 1)
+    var buf ref(u8) = none
+    match buf_res
+        ok m => buf = m as ref(u8)
+        error _ => return "."
+    end
+    @memcpy(buf, path, last_sep)
+    @deref(@as_mut(@add(buf, last_sep))) = 0
+    return buf
+end
+
+pub def resolve(program ref(ast.Program), source_path ref(u8), arena ref(allocators.Arena)) ast.Program|error
+    var resolved_type_defs list[ast.TypeDef] = []
+    var resolved_functions list[ast.Function] = []
+    var resolved_extern_headers list[ref(u8)] = []
+
+    val source_dir ref(u8) = get_dirname(source_path, arena)
+
+    var mi usize = 0
+    for mi < @len(program.module_uses)
+        val mu ref(ast.ModuleUse) = @addr(program.module_uses[mi])
+        val path_len usize = str.len(mu.path)
+        val is_std bool = path_len >= 4
+            && @deref(mu.path) == 's'
+            && @deref(@add(mu.path, 1)) == 't'
+            && @deref(@add(mu.path, 2)) == 'd'
+            && @deref(@add(mu.path, 3)) == '/'
+        if is_std
+            mi++
+            continue
+        end
+        val mod_path ref(u8) = resolve_module_path(source_dir, mu.path, arena)?
+        val mod_source ref(u8) = read_file(mod_path, arena)
+        if mod_source == none
+            mi++
+            continue
+        end
+        val platform ref(u8) = "linux"
+        val mod_tokens list[ast.Token] = lxr.lex(mod_source, arena)
+        val mod_prog ast.Program = prs.parse_program(mod_tokens, arena, platform)
+
+        var ti usize = 0
+        for ti < @len(mod_prog.type_defs)
+            val td ref(ast.TypeDef) = @addr(mod_prog.type_defs[ti])
+            if td.is_pub
+                val prefixed_name ref(u8) = prefix_name(mu.name, td.name, arena)
+                val prefixed_td ast.TypeDef = ast.TypeDef(
+                    name: prefixed_name,
+                    kind: td.kind,
+                    fields: td.fields,
+                    variants: td.variants,
+                    is_pub: false
+                )
+                @append(resolved_type_defs, prefixed_td)
+            end
+            ti++
+        end
+
+        var fi usize = 0
+        for fi < @len(mod_prog.functions)
+            val fn_ref ref(ast.Function) = @addr(mod_prog.functions[fi])
+            if fn_ref.is_pub
+                val prefixed_name ref(u8) = prefix_name(mu.name, fn_ref.name, arena)
+                val prefixed_fn ast.Function = ast.Function(
+                    name: prefixed_name,
+                    params: fn_ref.params,
+                    return_type: fn_ref.return_type,
+                    body: fn_ref.body,
+                    is_pub: false,
+                    is_extern: fn_ref.is_extern,
+                    extern_name: fn_ref.extern_name,
+                    line: fn_ref.line,
+                    column: fn_ref.column
+                )
+                @append(resolved_functions, prefixed_fn)
+            end
+            fi++
+        end
+
+        var hi usize = 0
+        for hi < @len(mod_prog.extern_headers)
+            @append(resolved_extern_headers, mod_prog.extern_headers[hi])
+            hi++
+        end
+
+        mi++
+    end
+
+    var ti usize = 0
+    for ti < @len(program.type_defs)
+        @append(resolved_type_defs, program.type_defs[ti])
+        ti++
+    end
+
+    var hi usize = 0
+    for hi < @len(program.extern_headers)
+        @append(resolved_extern_headers, program.extern_headers[hi])
+        hi++
+    end
+
     val result ast.Program = ast.Program(
         module_uses: program.module_uses,
         functions: [] as list[ast.Function],
-        type_defs: program.type_defs,
+        type_defs: resolved_type_defs,
         tests: program.tests,
-        extern_headers: program.extern_headers
+        extern_headers: resolved_extern_headers
     )
 
     var i usize = 0
+    for i < @len(resolved_functions)
+        val fn_ref ref(ast.Function) = @addr(resolved_functions[i])
+        val resolved_fn ast.Function = resolve_function(fn_ref, arena)?
+        @append(result.functions, resolved_fn)
+        i++
+    end
+
+    i = 0
     for i < @len(program.functions)
         val fn_ref ref(ast.Function) = @addr(program.functions[i])
-        val resolved ast.Function = resolve_function(fn_ref, arena)?
-        @append(result.functions, resolved)
+        val resolved_fn ast.Function = resolve_function(fn_ref, arena)?
+        @append(result.functions, resolved_fn)
         i++
     end
 
     return result
+end
+
+def resolve_module_path(source_dir ref(u8), mod_path ref(u8), arena ref(allocators.Arena)) ref(u8)|error
+    val dir_len usize = str.len(source_dir)
+    val path_len usize = str.len(mod_path)
+    var needs_scar bool = true
+    if path_len >= 5
+        if @deref(@add(mod_path, path_len - 5)) == '.'
+            && @deref(@add(mod_path, path_len - 4)) == 's'
+            && @deref(@add(mod_path, path_len - 3)) == 'c'
+            && @deref(@add(mod_path, path_len - 2)) == 'a'
+            && @deref(@add(mod_path, path_len - 1)) == 'r'
+            needs_scar = false
+        end
+    end
+    var ext_len usize = 0
+    if needs_scar
+        ext_len = 5
+    end
+    val total usize = dir_len + 1 + path_len + ext_len + 1
+    val buf_res = allocators.Arena.alloc(arena, total)
+    var buf ref(u8) = none
+    match buf_res
+        ok m => buf = m as ref(u8)
+        error _ => return error("alloc failed")
+    end
+    @memcpy(buf, source_dir, dir_len)
+    @deref(@as_mut(@add(buf, dir_len))) = '/'
+    @memcpy(@add(buf, dir_len + 1), mod_path, path_len)
+    if needs_scar
+        @memcpy(@add(buf, dir_len + 1 + path_len), ".scar", 5)
+    end
+    @deref(@as_mut(@add(buf, dir_len + 1 + path_len + ext_len))) = 0
+    return buf
+end
+
+def prefix_name(prefix ref(u8), name ref(u8), arena ref(allocators.Arena)) ref(u8)
+    val plen usize = str.len(prefix)
+    val nlen usize = str.len(name)
+    val total usize = plen + 2 + nlen + 1
+    val buf_res = allocators.Arena.alloc(arena, total)
+    var buf ref(u8) = none
+    match buf_res
+        ok m => buf = m as ref(u8)
+        error _ => return name
+    end
+    @memcpy(buf, prefix, plen)
+    @deref(@as_mut(@add(buf, plen))) = '_'
+    @deref(@as_mut(@add(buf, plen + 1))) = '_'
+    @memcpy(@add(buf, plen + 2), name, nlen)
+    @deref(@as_mut(@add(buf, plen + 2 + nlen))) = 0
+    return buf
 end
 
 def resolve_function(fun ref(ast.Function), arena ref(allocators.Arena)) ast.Function|error
