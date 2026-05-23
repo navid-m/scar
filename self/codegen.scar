@@ -755,7 +755,13 @@ def append_expr(expr ref(ast.Expr), fun ref(ast.Function), info ref(sema.Program
             append_str(output, output_len, "\"")
         )
         ast.Expr.None(_) => append_str(output, output_len, "NULL")
-        ast.Expr.Ident(name) => append_str(output, output_len, mangle_local_symbol(name, arena))
+        ast.Expr.Ident(name) => (
+            if is_local_variable(name, fun, info)
+                append_str(output, output_len, mangle_local_symbol(name, arena))
+            else
+                append_str(output, output_len, lookup_symbol(name, info, arena))
+            end
+        )
         ast.Expr.Path(segments) => (
             if @len(segments) == 1
                 append_str(output, output_len, mangle_local_symbol(segments[0], arena))

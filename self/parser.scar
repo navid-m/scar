@@ -375,11 +375,27 @@ def parse_dotted_name(p ref(ast.TokenList), arena ref(allocators.Arena)) ref(u8)
     end
 end
 
-def parse_block_until(p ref(ast.TokenList), arena ref(allocators.Arena), end_kw bool) list[ast.Stmt]
+def is_keyword_in(p ref(ast.TokenList), ids list[u8]) bool
+    match p.tokens[p.pos].kind
+        ast.TokenKind.Keyword(v) => (
+            var i usize = 0
+            for i < @len(ids)
+                if ids[i] == v
+                    return true
+                end
+                i++
+            end
+            return false
+        )
+        _ => return false
+    end
+end
+
+def parse_block_until(p ref(ast.TokenList), arena ref(allocators.Arena), terminators list[u8]) list[ast.Stmt]
     var body list[ast.Stmt] = []
     consume_newlines(p)
     for !is_eof(p)
-        if end_kw && is_keyword(p, KW_END)
+        if is_keyword_in(p, terminators)
             break
         end
         @append(body, parse_stmt(p, arena))
@@ -389,7 +405,7 @@ def parse_block_until(p ref(ast.TokenList), arena ref(allocators.Arena), end_kw 
 end
 
 def parse_block(p ref(ast.TokenList), arena ref(allocators.Arena)) list[ast.Stmt]
-    return parse_block_until(p, arena, true)
+    return parse_block_until(p, arena, [KW_END])
 end
 
 def parse_stmt(p ref(ast.TokenList), arena ref(allocators.Arena)) ast.Stmt
@@ -513,13 +529,13 @@ def parse_if_stmt(p ref(ast.TokenList), arena ref(allocators.Arena)) ast.Stmt
     val column usize = p.tokens[p.pos].column
     val condition ast.Expr = parse_expr(p, arena)
     expect_newline(p)
-    val then_body list[ast.Stmt] = parse_block_until(p, arena, false)
+    val then_body list[ast.Stmt] = parse_block_until(p, arena, [KW_ELSE, KW_ELIF, KW_END])
 
     var else_body list[ast.Stmt] = []
     if is_keyword(p, KW_ELSE)
         advance(p)
         expect_newline(p)
-        else_body = parse_block_until(p, arena, false)
+        else_body = parse_block_until(p, arena, [KW_END])
     elif is_keyword(p, KW_ELIF)
         var elif_arms list[ast.Stmt] = []
         var elif_bodies list[list[ast.Stmt]] = []
@@ -528,14 +544,14 @@ def parse_if_stmt(p ref(ast.TokenList), arena ref(allocators.Arena)) ast.Stmt
             advance(p)
             val elif_cond ast.Expr = parse_expr(p, arena)
             expect_newline(p)
-            val elif_then list[ast.Stmt] = parse_block_until(p, arena, false)
+            val elif_then list[ast.Stmt] = parse_block_until(p, arena, [KW_ELSE, KW_ELIF, KW_END])
             @append(elif_conds, elif_cond)
             @append(elif_bodies, elif_then)
         end
         if is_keyword(p, KW_ELSE)
             advance(p)
             expect_newline(p)
-            else_body = parse_block_until(p, arena, false)
+            else_body = parse_block_until(p, arena, [KW_END])
         end
         var k usize = @len(elif_conds)
         for k > 0
@@ -678,7 +694,7 @@ def parse_match_stmt(p ref(ast.TokenList), arena ref(allocators.Arena)) ast.Stmt
         match p.tokens[p.pos].kind
             ast.TokenKind.LParen(_) => (
                 advance(p)
-                arm_body = parse_block_until(p, arena, false)
+                arm_body = parse_block_until(p, arena, [] as list[u8])
                 match p.tokens[p.pos].kind
                     ast.TokenKind.RParen(_) => advance(p)
                     _ => ()
@@ -840,9 +856,9 @@ def parse_expr_and(p ref(ast.TokenList), arena ref(allocators.Arena), min_prec u
         advance(p)
         val right ast.Expr = parse_expr_comparison(p, arena, op_opt + 1)
         left = ast.Expr.Binary(@addr(ast.ExprBinary(
-            lhs: @addr(left),
+            lhs: box_expr(arena, left),
             op: token_to_binary_op(p.tokens[p.pos - 1].kind),
-            rhs: @addr(right)
+            rhs: box_expr(arena, right)
         )))
     end
     return left
@@ -867,9 +883,9 @@ def parse_expr_comparison(p ref(ast.TokenList), arena ref(allocators.Arena), min
         advance(p)
         val right ast.Expr = parse_expr_additive(p, arena, op_opt + 1)
         left = ast.Expr.Binary(@addr(ast.ExprBinary(
-            lhs: @addr(left),
+            lhs: box_expr(arena, left),
             op: token_to_binary_op(p.tokens[p.pos - 1].kind),
-            rhs: @addr(right)
+            rhs: box_expr(arena, right)
         )))
     end
     return left
@@ -890,9 +906,9 @@ def parse_expr_additive(p ref(ast.TokenList), arena ref(allocators.Arena), min_p
         advance(p)
         val right ast.Expr = parse_expr_multiplicative(p, arena, op_opt + 1)
         left = ast.Expr.Binary(@addr(ast.ExprBinary(
-            lhs: @addr(left),
+            lhs: box_expr(arena, left),
             op: token_to_binary_op(p.tokens[p.pos - 1].kind),
-            rhs: @addr(right)
+            rhs: box_expr(arena, right)
         )))
     end
     return left
@@ -914,9 +930,9 @@ def parse_expr_multiplicative(p ref(ast.TokenList), arena ref(allocators.Arena),
         advance(p)
         val right ast.Expr = parse_expr_postfix(p, arena)
         left = ast.Expr.Binary(@addr(ast.ExprBinary(
-            lhs: @addr(left),
+            lhs: box_expr(arena, left),
             op: token_to_binary_op(p.tokens[p.pos - 1].kind),
-            rhs: @addr(right)
+            rhs: box_expr(arena, right)
         )))
     end
     return left
@@ -1070,7 +1086,7 @@ def parse_expr_postfix(p ref(ast.TokenList), arena ref(allocators.Arena)) ast.Ex
                         _ => ()
                     end
                     expr = ast.Expr.Call(@addr(ast.ExprCall(
-                        callee: @addr(expr),
+                        callee: box_expr(arena, expr),
                         args: args
                     )))
                 end
@@ -1102,13 +1118,13 @@ def parse_expr_postfix(p ref(ast.TokenList), arena ref(allocators.Arena)) ast.Ex
                             _ => ()
                         end
                         expr = ast.Expr.MethodCall(@addr(ast.ExprMethodCall(
-                            receiver: @addr(expr),
+                            receiver: box_expr(arena, expr),
                             method: field,
                             args: args
                         )))
                     )
                     _ => expr = ast.Expr.Field(@addr(ast.ExprField(
-                        base: @addr(expr),
+                        base: box_expr(arena, expr),
                         field: field
                     )))
                 end
@@ -1121,8 +1137,8 @@ def parse_expr_postfix(p ref(ast.TokenList), arena ref(allocators.Arena)) ast.Ex
                     _ => ()
                 end
                 expr = ast.Expr.Index(@addr(ast.ExprIndex(
-                    base: @addr(expr),
-                    index: @addr(index)
+                    base: box_expr(arena, expr),
+                    index: box_expr(arena, index)
                 )))
             )
             _ => break
@@ -1202,7 +1218,7 @@ def parse_primary(p ref(ast.TokenList), arena ref(allocators.Arena)) ast.Expr
             val expr ast.Expr = parse_expr_postfix(p, arena)
             return ast.Expr.Unary(@addr(ast.ExprUnary(
                 op: ast.UnaryOp.LogicalNot,
-                expr: @addr(expr)
+                expr: box_expr(arena, expr)
             )))
         )
         ast.TokenKind.Minus(_) => (
@@ -1210,7 +1226,7 @@ def parse_primary(p ref(ast.TokenList), arena ref(allocators.Arena)) ast.Expr
             val expr ast.Expr = parse_expr_postfix(p, arena)
             return ast.Expr.Unary(@addr(ast.ExprUnary(
                 op: ast.UnaryOp.Neg,
-                expr: @addr(expr)
+                expr: box_expr(arena, expr)
             )))
         )
         ast.TokenKind.Tilde(_) => (
@@ -1218,7 +1234,7 @@ def parse_primary(p ref(ast.TokenList), arena ref(allocators.Arena)) ast.Expr
             val expr ast.Expr = parse_expr_postfix(p, arena)
             return ast.Expr.Unary(@addr(ast.ExprUnary(
                 op: ast.UnaryOp.BitNot,
-                expr: @addr(expr)
+                expr: box_expr(arena, expr)
             )))
         )
         ast.TokenKind.LParen(_) => (
