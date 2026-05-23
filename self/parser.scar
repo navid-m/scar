@@ -904,6 +904,27 @@ def parse_match_arm_kind(p ref(ast.TokenList), arena ref(allocators.Arena)) ast.
                         val second ref(u8) = expect_ident(p, arena)
                         val len1 usize = str.len(name)
                         val len2 usize = str.len(second)
+                        match p.tokens[p.pos].kind
+                            ast.TokenKind.Dot(_) => (
+                                advance(p)
+                                val third ref(u8) = expect_ident(p, arena)
+                                val len3 usize = str.len(third)
+                                var combined_res = allocators.Arena.alloc(arena, len1 + 1 + len2 + 1 + len3 + 1)
+                                var combined ref(u8) = none
+                                match combined_res
+                                    ok m => combined = m as ref(u8)
+                                    error _ => return ast.MatchArmKind.VariantName(name)
+                                end
+                                @memcpy(combined, name, len1)
+                                @deref(@as_mut(@add(combined, len1))) = 46
+                                @memcpy(@add(combined, len1 + 1), second, len2)
+                                @deref(@as_mut(@add(combined, len1 + 1 + len2))) = 46
+                                @memcpy(@add(combined, len1 + 1 + len2 + 1), third, len3)
+                                @deref(@as_mut(@add(combined, len1 + 1 + len2 + 1 + len3))) = 0
+                                return ast.MatchArmKind.VariantName(combined)
+                            )
+                            _ => ()
+                        end
                         var combined_res = allocators.Arena.alloc(arena, len1 + 1 + len2 + 1)
                         var combined ref(u8) = none
                         match combined_res
