@@ -2040,12 +2040,7 @@ def c_type(ty ref(ast.Type), arena ref(allocators.Arena)) ref(u8)
 end
 
 def c_type_bare(ty ref(ast.Type), arena ref(allocators.Arena)) ref(u8)
-    val full ref(u8) = c_type(ty, arena)
-    val dot_pos usize = find_last_dot(full)
-    if dot_pos < str.len(full)
-        return @add(full, dot_pos + 1)
-    end
-    return full
+    return c_type(ty, arena)
 end
 
 def mangle_type_name(name ref(u8), arena ref(allocators.Arena)) ref(u8)

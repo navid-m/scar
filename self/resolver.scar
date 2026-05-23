@@ -764,7 +764,44 @@ def resolve_type(ty ref(ast.Type), arena ref(allocators.Arena)) ast.Type|error
         ast.Type.Infer(v) => return ast.Type.Infer(v)
         ast.Type.Error(v) => return ast.Type.Error(v)
         ast.Type.None(v) => return ast.Type.None(v)
-        ast.Type.Named(name) => return ast.Type.Named(name)
+        ast.Type.Named(name) => (
+            val nlen usize = str.len(name)
+            var dot_pos usize = nlen
+            var i usize = 0
+            for i < nlen
+                if @deref(@add(name, i)) == '.'
+                    dot_pos = i
+                    break
+                end
+                i++
+            end
+            if dot_pos == nlen
+                return ast.Type.Named(name)
+            end
+            val result_res = allocators.Arena.alloc(arena, nlen + 2)
+            var result ref(u8) = none
+            match result_res
+                ok m => result = m as ref(u8)
+                error _ => return ast.Type.Named(name)
+            end
+            var src usize = 0
+            var dst usize = 0
+            for src < nlen
+                val ch u8 = @deref(@add(name, src))
+                if ch == '.'
+                    @deref(@as_mut(@add(result, dst))) = '_'
+                    dst++
+                    @deref(@as_mut(@add(result, dst))) = '_'
+                    dst++
+                else
+                    @deref(@as_mut(@add(result, dst))) = ch
+                    dst++
+                end
+                src++
+            end
+            @deref(@as_mut(@add(result, dst))) = 0
+            return ast.Type.Named(result)
+        )
         ast.Type.Applied(name, type_args) => (
             var resolved list[ast.Type] = []
             var i usize = 0
