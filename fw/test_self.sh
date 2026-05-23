@@ -3,7 +3,6 @@
 set -uo pipefail
 
 PROGRAM="./scar-dev"
-
 PASS_COUNT=0
 FAIL_COUNT=0
 
@@ -18,6 +17,15 @@ fail() {
 info() {
 	echo "[info] $1"
 }
+
+if [ ! -f "$PROGRAM" ]; then
+	info "scar-dev not found, running make."
+
+	if ! make; then
+		fail "make failed."
+		exit 1
+	fi
+fi
 
 run_sample_tests() {
 	while read -r file; do
