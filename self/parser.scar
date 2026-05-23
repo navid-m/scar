@@ -1769,6 +1769,7 @@ def parse_function(p ref(ast.TokenList), arena ref(allocators.Arena), is_pub boo
                     _ => break
                 end
             end
+            consume_newlines(p)
             match p.tokens[p.pos].kind
                 ast.TokenKind.RParen(_) => advance(p)
                 _ => ()
@@ -1776,7 +1777,6 @@ def parse_function(p ref(ast.TokenList), arena ref(allocators.Arena), is_pub boo
         )
     end
 
-    consume_newlines(p)
     var return_type ast.Type = @zeroed()
     if starts_type(p)
         return_type = parse_type(p, arena)
@@ -1844,6 +1844,7 @@ def parse_extern_function(p ref(ast.TokenList), arena ref(allocators.Arena), is_
                     _ => break
                 end
             end
+            consume_newlines(p)
             match p.tokens[p.pos].kind
                 ast.TokenKind.RParen(_) => advance(p)
                 _ => ()
