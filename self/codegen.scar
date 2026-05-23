@@ -785,12 +785,15 @@ def render_function(fun ref(ast.Function), info ref(sema.ProgramInfo), arena ref
     end
 
     var next_temp_id usize = 0
+    var defers list[list[ast.Stmt]] = []
+    @append(defers, [] as list[ast.Stmt])
     var i usize = 0
     for i < @len(fun.body)
-        render_stmt(@addr(fun.body[i]), fun, info, 1, @addr(next_temp_id), arena, output, output_len)
+        render_stmt(@addr(fun.body[i]), fun, info, 1, @addr(next_temp_id), @addr(defers), arena, output, output_len)
         i++
     end
 
+    render_defers(@addr(defers), 0, fun, info, 1, @addr(next_temp_id), arena, output, output_len)
     append_str(output, output_len, "__scar_return:\n")
     if is_void_type(@addr(fun.return_type))
         append_str(output, output_len, "    return;\n")
@@ -798,6 +801,19 @@ def render_function(fun ref(ast.Function), info ref(sema.ProgramInfo), arena ref
         append_str(output, output_len, "    return __scar_return_value;\n")
     end
     append_str(output, output_len, "}\n")
+end
+
+def render_defers(defers ref(list[list[ast.Stmt]]), from_level usize, fun ref(ast.Function), info ref(sema.ProgramInfo), level usize, next_temp_id ref(usize), arena ref(allocators.Arena), output ref(ref(u8)), output_len ref(usize))
+    var di usize = @len(@deref(defers))
+    for di > from_level
+        di--
+        val scope ref(list[ast.Stmt]) = @addr(@deref(defers)[di])
+        var si usize = @len(@deref(scope))
+        for si > 0
+            si--
+            render_stmt(@addr(@deref(scope)[si]), fun, info, level, next_temp_id, defers, arena, output, output_len)
+        end
+    end
 end
 
 def render_signature(fun ref(ast.Function), info ref(sema.ProgramInfo), arena ref(allocators.Arena), output ref(ref(u8)), output_len ref(usize))
@@ -829,7 +845,7 @@ def render_signature(fun ref(ast.Function), info ref(sema.ProgramInfo), arena re
     append_str(output, output_len, ")")
 end
 
-def render_stmt(stmt ref(ast.Stmt), fun ref(ast.Function), info ref(sema.ProgramInfo), level usize, next_temp_id ref(usize), arena ref(allocators.Arena), output ref(ref(u8)), output_len ref(usize))
+def render_stmt(stmt ref(ast.Stmt), fun ref(ast.Function), info ref(sema.ProgramInfo), level usize, next_temp_id ref(usize), defers ref(list[list[ast.Stmt]]), arena ref(allocators.Arena), output ref(ref(u8)), output_len ref(usize))
     match @deref(stmt)
         ast.Stmt.VarDecl(vd) => (
             val ty ref(ast.Type) = lookup_local_type(vd.name, fun, info)
@@ -913,7 +929,16 @@ def render_stmt(stmt ref(ast.Stmt), fun ref(ast.Function), info ref(sema.Program
                 append_expr(@addr(r.value), fun, info, arena, output, output_len)
                 append_str(output, output_len, ";\n")
             end
+            render_defers(defers, 0, fun, info, level, next_temp_id, arena, output, output_len)
             append_str(output, output_len, "    goto __scar_return;\n")
+        )
+        ast.Stmt.Defer(body) => (
+            val scope_idx usize = @len(@deref(defers)) - 1
+            var i usize = 0
+            for i < @len(body)
+                @append(@deref(defers)[scope_idx], body[i])
+                i++
+            end
         )
         ast.Stmt.If(if_stmt) => (
             indent(output, output_len, level)
@@ -922,7 +947,7 @@ def render_stmt(stmt ref(ast.Stmt), fun ref(ast.Function), info ref(sema.Program
             append_str(output, output_len, ") {\n")
             var k usize = 0
             for k < @len(if_stmt.then_body)
-                render_stmt(@addr(if_stmt.then_body[k]), fun, info, level + 1, next_temp_id, arena, output, output_len)
+                render_stmt(@addr(if_stmt.then_body[k]), fun, info, level + 1, next_temp_id, defers, arena, output, output_len)
                 k++
             end
             indent(output, output_len, level)
@@ -931,7 +956,7 @@ def render_stmt(stmt ref(ast.Stmt), fun ref(ast.Function), info ref(sema.Program
                 append_str(output, output_len, " else {\n")
                 k = 0
                 for k < @len(if_stmt.else_body)
-                    render_stmt(@addr(if_stmt.else_body[k]), fun, info, level + 1, next_temp_id, arena, output, output_len)
+                    render_stmt(@addr(if_stmt.else_body[k]), fun, info, level + 1, next_temp_id, defers, arena, output, output_len)
                     k++
                 end
                 indent(output, output_len, level)
@@ -947,7 +972,7 @@ def render_stmt(stmt ref(ast.Stmt), fun ref(ast.Function), info ref(sema.Program
             append_str(output, output_len, ") {\n")
             var k usize = 0
             for k < @len(w.body)
-                render_stmt(@addr(w.body[k]), fun, info, level + 1, next_temp_id, arena, output, output_len)
+                render_stmt(@addr(w.body[k]), fun, info, level + 1, next_temp_id, defers, arena, output, output_len)
                 k++
             end
             indent(output, output_len, level)
@@ -971,7 +996,7 @@ def render_stmt(stmt ref(ast.Stmt), fun ref(ast.Function), info ref(sema.Program
             append_str(output, output_len, ") {\n")
             var k usize = 0
             for k < @len(fr.body)
-                render_stmt(@addr(fr.body[k]), fun, info, level + 1, next_temp_id, arena, output, output_len)
+                render_stmt(@addr(fr.body[k]), fun, info, level + 1, next_temp_id, defers, arena, output, output_len)
                 k++
             end
             indent(output, output_len, level)
@@ -1031,7 +1056,7 @@ def render_stmt(stmt ref(ast.Stmt), fun ref(ast.Function), info ref(sema.Program
                     end
                     var l usize = 0
                     for l < @len(m.arms[k].body)
-                        render_stmt(@addr(m.arms[k].body[l]), fun, info, level + 2, next_temp_id, arena, output, output_len)
+                        render_stmt(@addr(m.arms[k].body[l]), fun, info, level + 2, next_temp_id, defers, arena, output, output_len)
                         l++
                     end
                     indent(output, output_len, level + 1)
@@ -1134,7 +1159,7 @@ def render_stmt(stmt ref(ast.Stmt), fun ref(ast.Function), info ref(sema.Program
                             end
                             var l usize = 0
                             for l < @len(m.arms[k].body)
-                                render_stmt(@addr(m.arms[k].body[l]), fun, info, level + 2, next_temp_id, arena, output, output_len)
+                                render_stmt(@addr(m.arms[k].body[l]), fun, info, level + 2, next_temp_id, defers, arena, output, output_len)
                                 l++
                             end
                             indent(output, output_len, level + 1)
@@ -1202,7 +1227,7 @@ def render_stmt(stmt ref(ast.Stmt), fun ref(ast.Function), info ref(sema.Program
                             end
                             var l usize = 0
                             for l < @len(m.arms[k].body)
-                                render_stmt(@addr(m.arms[k].body[l]), fun, info, level + 2, next_temp_id, arena, output, output_len)
+                                render_stmt(@addr(m.arms[k].body[l]), fun, info, level + 2, next_temp_id, defers, arena, output, output_len)
                                 l++
                             end
                             indent(output, output_len, level + 1)
@@ -1221,7 +1246,7 @@ def render_stmt(stmt ref(ast.Stmt), fun ref(ast.Function), info ref(sema.Program
                             end
                             var l usize = 0
                             for l < @len(m.arms[k].body)
-                                render_stmt(@addr(m.arms[k].body[l]), fun, info, level + 2, next_temp_id, arena, output, output_len)
+                                render_stmt(@addr(m.arms[k].body[l]), fun, info, level + 2, next_temp_id, defers, arena, output, output_len)
                                 l++
                             end
                             indent(output, output_len, level + 1)
@@ -1262,7 +1287,7 @@ def render_stmt(stmt ref(ast.Stmt), fun ref(ast.Function), info ref(sema.Program
         ast.Stmt.Block(body) => (
             var k usize = 0
             for k < @len(body)
-                render_stmt(@addr(body[k]), fun, info, level, next_temp_id, arena, output, output_len)
+                render_stmt(@addr(body[k]), fun, info, level, next_temp_id, defers, arena, output, output_len)
                 k++
             end
         )

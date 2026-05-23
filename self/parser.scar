@@ -546,7 +546,7 @@ def parse_stmt(p ref(ast.TokenList), arena ref(allocators.Arena), current_platfo
         if !is_eof(p) && is_keyword(p, KW_END)
             advance(p)
         end
-        return ast.Stmt.Block(body)
+        return ast.Stmt.Defer(body)
     end
 
     if is_keyword(p, KW_WHEN)

@@ -273,6 +273,7 @@ pub union Stmt
 	Match(ref(StmtMatch))
 	ExprStmt(ref(Expr))
 	Block(list[Stmt])
+	Defer(list[Stmt])
 	Break(u8)
 	Continue(u8)
 	Increment(ref(Expr))

@@ -519,6 +519,15 @@ def resolve_stmt(stmt ref(ast.Stmt), arena ref(allocators.Arena)) ast.Stmt|error
             end
             return ast.Stmt.Block(resolved_body)
         )
+        ast.Stmt.Defer(body) => (
+            var resolved_body list[ast.Stmt] = []
+            var k usize = 0
+            for k < @len(body)
+                @append(resolved_body, resolve_stmt(@addr(body[k]), arena)?)
+                k++
+            end
+            return ast.Stmt.Defer(resolved_body)
+        )
         _ => return @deref(stmt)
     end
 end

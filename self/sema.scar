@@ -279,6 +279,13 @@ def collect_types_from_stmt(stmt ref(ast.Stmt), types ref(list[TypeEntry]))
                 k++
             end
         )
+        ast.Stmt.Defer(body) => (
+            var k usize = 0
+            for k < @len(body)
+                collect_types_from_stmt(@addr(body[k]), types)
+                k++
+            end
+        )
         _ => ()
     end
 end
@@ -496,6 +503,13 @@ def analyze_stmt(stmt ref(ast.Stmt), bindings ref(list[BindingEntry]), functions
         ast.Stmt.Decrement(e) => analyze_expr(e, bindings, functions, types)
         ast.Stmt.Assert(e) => analyze_expr(e, bindings, functions, types)
         ast.Stmt.Block(body) => (
+            var k usize = 0
+            for k < @len(body)
+                analyze_stmt(@addr(body[k]), bindings, functions, types)
+                k++
+            end
+        )
+        ast.Stmt.Defer(body) => (
             var k usize = 0
             for k < @len(body)
                 analyze_stmt(@addr(body[k]), bindings, functions, types)

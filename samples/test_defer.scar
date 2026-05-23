@@ -1,6 +1,0 @@
-pub def main()
-    defer
-        @puts("deferred")
-    end
-    @puts("hello")
-end
