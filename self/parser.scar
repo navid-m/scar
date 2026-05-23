@@ -841,11 +841,12 @@ def parse_expr_or(p ref(ast.TokenList), arena ref(allocators.Arena), min_prec us
         if op_opt == 0 || op_opt < min_prec
             break
         end
+        val op_val = token_to_binary_op(p.tokens[p.pos].kind)
         advance(p)
         val right ast.Expr = parse_expr_and(p, arena, op_opt + 1)
         left = ast.Expr.Binary(@addr(ast.ExprBinary(
             lhs: box_expr(arena, left),
-            op: token_to_binary_op(p.tokens[p.pos - 1].kind),
+            op: op_val,
             rhs: box_expr(arena, right)
         )))
     end
@@ -863,11 +864,12 @@ def parse_expr_and(p ref(ast.TokenList), arena ref(allocators.Arena), min_prec u
         if op_opt == 0 || op_opt < min_prec
             break
         end
+        val op_val = token_to_binary_op(p.tokens[p.pos].kind)
         advance(p)
         val right ast.Expr = parse_expr_comparison(p, arena, op_opt + 1)
         left = ast.Expr.Binary(@addr(ast.ExprBinary(
             lhs: box_expr(arena, left),
-            op: token_to_binary_op(p.tokens[p.pos - 1].kind),
+            op: op_val,
             rhs: box_expr(arena, right)
         )))
     end
@@ -890,11 +892,12 @@ def parse_expr_comparison(p ref(ast.TokenList), arena ref(allocators.Arena), min
         if op_opt == 0 || op_opt < min_prec
             break
         end
+        val op_val = token_to_binary_op(p.tokens[p.pos].kind)
         advance(p)
         val right ast.Expr = parse_expr_additive(p, arena, op_opt + 1)
         left = ast.Expr.Binary(@addr(ast.ExprBinary(
             lhs: box_expr(arena, left),
-            op: token_to_binary_op(p.tokens[p.pos - 1].kind),
+            op: op_val,
             rhs: box_expr(arena, right)
         )))
     end
@@ -913,11 +916,12 @@ def parse_expr_additive(p ref(ast.TokenList), arena ref(allocators.Arena), min_p
         if op_opt == 0 || op_opt < min_prec
             break
         end
+        val op_val = token_to_binary_op(p.tokens[p.pos].kind)
         advance(p)
         val right ast.Expr = parse_expr_multiplicative(p, arena, op_opt + 1)
         left = ast.Expr.Binary(@addr(ast.ExprBinary(
             lhs: box_expr(arena, left),
-            op: token_to_binary_op(p.tokens[p.pos - 1].kind),
+            op: op_val,
             rhs: box_expr(arena, right)
         )))
     end
@@ -937,11 +941,12 @@ def parse_expr_multiplicative(p ref(ast.TokenList), arena ref(allocators.Arena),
         if op_opt == 0 || op_opt < min_prec
             break
         end
+        val op_val = token_to_binary_op(p.tokens[p.pos].kind)
         advance(p)
         val right ast.Expr = parse_expr_postfix(p, arena)
         left = ast.Expr.Binary(@addr(ast.ExprBinary(
             lhs: box_expr(arena, left),
-            op: token_to_binary_op(p.tokens[p.pos - 1].kind),
+            op: op_val,
             rhs: box_expr(arena, right)
         )))
     end
