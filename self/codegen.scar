@@ -1585,7 +1585,30 @@ def append_builtin_call(bc ref(ast.ExprBuiltinCall), fun ref(ast.Function), info
         val translated_fmt ref(u8) = @addr(translated[0])
 
         append_str(output, output_len, "printf(\"")
-        append_str(output, output_len, translated_fmt)
+        var fmt_idx usize = 0
+        for fmt_idx < @len(translated)
+            val fmt_ch u8 = translated[fmt_idx]
+            if fmt_ch == 0
+                break
+            elif fmt_ch == '\n'
+                append_str(output, output_len, "\\n")
+            elif fmt_ch == '\t'
+                append_str(output, output_len, "\\t")
+            elif fmt_ch == '\r'
+                append_str(output, output_len, "\\r")
+            else
+                val single_buf_res = allocators.Arena.alloc(arena, 2)
+                match single_buf_res
+                    ok m => (
+                        @deref(@as_mut(m as ref(u8))) = fmt_ch
+                        @deref(@as_mut(@add(m as ref(u8), 1))) = 0
+                        append_str(output, output_len, m as ref(u8))
+                    )
+                    error _ => ()
+                end
+            end
+            fmt_idx++
+        end
         append_str(output, output_len, "\"")
         var arg_idx usize = 0
         for arg_idx < @len(flat_args)

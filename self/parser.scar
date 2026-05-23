@@ -1297,6 +1297,7 @@ def parse_struct_init(p ref(ast.TokenList), arena ref(allocators.Arena), name re
         consume_newlines(p)
         val value ast.Expr = parse_expr(p, arena)
         @append(fields, ast.FieldInit(name: field_name, value: value))
+        consume_newlines(p)
         match p.tokens[p.pos].kind
             ast.TokenKind.Comma(_) => (
                 advance(p)
@@ -1305,6 +1306,7 @@ def parse_struct_init(p ref(ast.TokenList), arena ref(allocators.Arena), name re
             _ => break
         end
     end
+    consume_newlines(p)
     match p.tokens[p.pos].kind
         ast.TokenKind.RParen(_) => advance(p)
         _ => ()
@@ -1342,6 +1344,7 @@ def parse_expr_postfix(p ref(ast.TokenList), arena ref(allocators.Arena)) ast.Ex
                             _ => ()
                         end
                         @append(args, parse_expr(p, arena))
+                        consume_newlines(p)
                         match p.tokens[p.pos].kind
                             ast.TokenKind.Comma(_) => (
                                 advance(p)
@@ -1350,6 +1353,7 @@ def parse_expr_postfix(p ref(ast.TokenList), arena ref(allocators.Arena)) ast.Ex
                             _ => break
                         end
                     end
+                    consume_newlines(p)
                     match p.tokens[p.pos].kind
                         ast.TokenKind.RParen(_) => advance(p)
                         _ => ()
@@ -1374,6 +1378,7 @@ def parse_expr_postfix(p ref(ast.TokenList), arena ref(allocators.Arena)) ast.Ex
                                 _ => ()
                             end
                             @append(args, parse_expr(p, arena))
+                            consume_newlines(p)
                             match p.tokens[p.pos].kind
                                 ast.TokenKind.Comma(_) => (
                                     advance(p)
@@ -1382,6 +1387,7 @@ def parse_expr_postfix(p ref(ast.TokenList), arena ref(allocators.Arena)) ast.Ex
                                 _ => break
                             end
                         end
+                        consume_newlines(p)
                         match p.tokens[p.pos].kind
                             ast.TokenKind.RParen(_) => advance(p)
                             _ => ()
@@ -1409,6 +1415,26 @@ def parse_expr_postfix(p ref(ast.TokenList), arena ref(allocators.Arena)) ast.Ex
                     base: box_expr(arena, expr),
                     index: box_expr(arena, index)
                 )))
+            )
+            ast.TokenKind.Keyword(v) => (
+                if v == KW_AS
+                    advance(p)
+                    val cast_ty ast.Type = parse_type(p, arena)
+                    val cast_res = allocators.Arena.alloc(arena, @sizeof(ast.ExprCast) as usize)
+                    match cast_res
+                        ok m => (
+                            var cast_ptr ref(ast.ExprCast) = @bitcast(m, ref(ast.ExprCast))
+                            @deref(cast_ptr) = ast.ExprCast(
+                                expr: box_expr(arena, expr),
+                                ty: cast_ty
+                            )
+                            expr = ast.Expr.Cast(cast_ptr)
+                        )
+                        error _ => ()
+                    end
+                else
+                    break
+                end
             )
             _ => break
         end
@@ -1750,6 +1776,7 @@ def parse_function(p ref(ast.TokenList), arena ref(allocators.Arena), is_pub boo
         )
     end
 
+    consume_newlines(p)
     var return_type ast.Type = @zeroed()
     if starts_type(p)
         return_type = parse_type(p, arena)
