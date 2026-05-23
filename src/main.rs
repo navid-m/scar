@@ -213,7 +213,7 @@ impl BuildCli {
 
             match arg.as_str() {
                 "-o" | "--output" => pending_output = true,
-                "--emit" => emit_c = true,
+                "--emit" | "-emit" => emit_c = true,
                 "-opt" | "--opt" => optimize = true,
                 _ if arg.starts_with('-') => {
                     return Err(CompileError::new(format!("unknown flag: {arg}")));
