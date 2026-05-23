@@ -33,7 +33,7 @@ pub def generate_c(program ref(ast.Program), info ref(sema.ProgramInfo), arena r
     var j usize = 0
     for j < @len(program.type_defs)
         val td ref(ast.TypeDef) = @addr(program.type_defs[j])
-        render_typedef(td, arena, @addr(output), @addr(output_len))
+        render_typedef_forward(td, @addr(output), @addr(output_len))
         j++
     end
 
@@ -45,6 +45,13 @@ pub def generate_c(program ref(ast.Program), info ref(sema.ProgramInfo), arena r
             j++
         end
         append_str(@addr(output), @addr(output_len), "\n")
+    end
+
+    j = 0
+    for j < @len(program.type_defs)
+        val td ref(ast.TypeDef) = @addr(program.type_defs[j])
+        render_typedef(td, arena, @addr(output), @addr(output_len))
+        j++
     end
 
     if @len(list_types) > 0
@@ -532,6 +539,26 @@ def render_list_helpers(list_ty ref(ast.Type), arena ref(allocators.Arena), outp
     append_str(output, output_len, "}\n")
 end
 
+def render_typedef_forward(td ref(ast.TypeDef), output ref(ref(u8)), output_len ref(usize))
+    match td.kind
+        ast.TypeDefKind.Struct => (
+            append_str(output, output_len, "typedef struct ")
+            append_str(output, output_len, td.name)
+            append_str(output, output_len, "_scar_tag ")
+            append_str(output, output_len, td.name)
+            append_str(output, output_len, ";\n")
+        )
+        ast.TypeDefKind.Union => (
+            append_str(output, output_len, "typedef struct ")
+            append_str(output, output_len, td.name)
+            append_str(output, output_len, "_scar_tag ")
+            append_str(output, output_len, td.name)
+            append_str(output, output_len, ";\n")
+        )
+        ast.TypeDefKind.Enum => ()
+    end
+end
+
 def render_typedef(td ref(ast.TypeDef), arena ref(allocators.Arena), output ref(ref(u8)), output_len ref(usize))
     match td.kind
         ast.TypeDefKind.Enum => (
@@ -604,11 +631,6 @@ def render_typedef(td ref(ast.TypeDef), arena ref(allocators.Arena), output ref(
             append_str(output, output_len, ";\n\n")
         )
         ast.TypeDefKind.Struct => (
-            append_str(output, output_len, "typedef struct ")
-            append_str(output, output_len, td.name)
-            append_str(output, output_len, "_scar_tag ")
-            append_str(output, output_len, td.name)
-            append_str(output, output_len, ";\n")
             append_str(output, output_len, "typedef struct ")
             append_str(output, output_len, td.name)
             append_str(output, output_len, "_scar_tag {\n")
@@ -1320,26 +1342,16 @@ def append_expr(expr ref(ast.Expr), fun ref(ast.Function), info ref(sema.Program
             append_str(output, output_len, "(")
             append_expr(f.base, fun, info, arena, output, output_len)
             var use_arrow bool = false
-            var i usize = 0
-            for i < @len(fun.params)
-                match @deref(expr)
-                    ast.Expr.Ident(name) => (
-                        if str.eql(fun.params[i].name, name)
-                            match @deref(@addr(fun.params[i].ty))
-                                ast.Type.Ref(_) => use_arrow = true
-                                ast.Type.Mut(inner) => (
-                                    match @deref(inner)
-                                        ast.Type.Ref(_) => use_arrow = true
-                                        _ => ()
-                                    end
-                                )
-                                _ => ()
-                            end
-                        end
-                    )
-                    _ => ()
-                end
-                i++
+            val base_ty_for_arrow ref(ast.Type) = get_expr_type(f.base, fun, info)
+            match @deref(base_ty_for_arrow)
+                ast.Type.Ref(_) => use_arrow = true
+                ast.Type.Mut(inner) => (
+                    match @deref(inner)
+                        ast.Type.Ref(_) => use_arrow = true
+                        _ => ()
+                    end
+                )
+                _ => ()
             end
             if use_arrow
                 append_str(output, output_len, ")->")

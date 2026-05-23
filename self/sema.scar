@@ -401,10 +401,14 @@ end
 def analyze_stmt(stmt ref(ast.Stmt), bindings ref(list[BindingEntry]), functions ref(list[FunctionEntry]), types ref(list[TypeEntry]))
     match @deref(stmt)
         ast.Stmt.VarDecl(vd) => (
-            val inferred ast.Type = infer_expr_type(@addr(vd.init), bindings, functions, types)
+            var ty ast.Type = vd.declared_type
+            match ty
+                ast.Type.Void(_) => ty = infer_expr_type(@addr(vd.init), bindings, functions, types)
+                _ => ()
+            end
             @append(bindings, BindingEntry(
                 name: vd.name,
-                ty: inferred
+                ty: ty
             ))
         )
         ast.Stmt.Assign(a) => (
@@ -474,8 +478,9 @@ def analyze_stmt(stmt ref(ast.Stmt), bindings ref(list[BindingEntry]), functions
             end
         )
         ast.Stmt.ForRange(fr) => (
-            analyze_expr(@addr(fr.start), bindings, functions, types)
+            val start_ty ast.Type = analyze_expr(@addr(fr.start), bindings, functions, types)
             analyze_expr(@addr(fr.End), bindings, functions, types)
+            @append(bindings, BindingEntry(name: fr.var_name, ty: start_ty))
             var k usize = 0
             for k < @len(fr.body)
                 analyze_stmt(@addr(fr.body[k]), bindings, functions, types)

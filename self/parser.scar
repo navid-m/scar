@@ -560,6 +560,7 @@ def parse_stmt(p ref(ast.TokenList), arena ref(allocators.Arena), current_platfo
     match p.tokens[p.pos].kind
         ast.TokenKind.Assign(_) => (
             advance(p)
+            consume_newlines(p)
             val value ast.Expr = parse_expr(p, arena)
             return ast.Stmt.Assign(@addr(ast.StmtAssign(
                 target: expr,
@@ -570,6 +571,7 @@ def parse_stmt(p ref(ast.TokenList), arena ref(allocators.Arena), current_platfo
         )
         ast.TokenKind.PlusEqual(_) => (
             advance(p)
+            consume_newlines(p)
             val value ast.Expr = parse_expr(p, arena)
             return ast.Stmt.AddAssign(@addr(ast.StmtAssign(
                 target: expr,
@@ -580,6 +582,7 @@ def parse_stmt(p ref(ast.TokenList), arena ref(allocators.Arena), current_platfo
         )
         ast.TokenKind.MinusEqual(_) => (
             advance(p)
+            consume_newlines(p)
             val value ast.Expr = parse_expr(p, arena)
             return ast.Stmt.SubAssign(@addr(ast.StmtAssign(
                 target: expr,
@@ -590,6 +593,7 @@ def parse_stmt(p ref(ast.TokenList), arena ref(allocators.Arena), current_platfo
         )
         ast.TokenKind.StarEqual(_) => (
             advance(p)
+            consume_newlines(p)
             val value ast.Expr = parse_expr(p, arena)
             return ast.Stmt.MulAssign(@addr(ast.StmtAssign(
                 target: expr,
@@ -600,6 +604,7 @@ def parse_stmt(p ref(ast.TokenList), arena ref(allocators.Arena), current_platfo
         )
         ast.TokenKind.SlashEqual(_) => (
             advance(p)
+            consume_newlines(p)
             val value ast.Expr = parse_expr(p, arena)
             return ast.Stmt.DivAssign(@addr(ast.StmtAssign(
                 target: expr,
@@ -610,6 +615,7 @@ def parse_stmt(p ref(ast.TokenList), arena ref(allocators.Arena), current_platfo
         )
         ast.TokenKind.CaretEqual(_) => (
             advance(p)
+            consume_newlines(p)
             val value ast.Expr = parse_expr(p, arena)
             return ast.Stmt.BitXorAssign(@addr(ast.StmtAssign(
                 target: expr,
@@ -620,6 +626,7 @@ def parse_stmt(p ref(ast.TokenList), arena ref(allocators.Arena), current_platfo
         )
         ast.TokenKind.AmpEqual(_) => (
             advance(p)
+            consume_newlines(p)
             val value ast.Expr = parse_expr(p, arena)
             return ast.Stmt.BitAndAssign(@addr(ast.StmtAssign(
                 target: expr,
@@ -630,6 +637,7 @@ def parse_stmt(p ref(ast.TokenList), arena ref(allocators.Arena), current_platfo
         )
         ast.TokenKind.PipeEqual(_) => (
             advance(p)
+            consume_newlines(p)
             val value ast.Expr = parse_expr(p, arena)
             return ast.Stmt.BitOrAssign(@addr(ast.StmtAssign(
                 target: expr,
@@ -987,6 +995,7 @@ def parse_expr_or(p ref(ast.TokenList), arena ref(allocators.Arena), min_prec us
         end
         val op_val = token_to_binary_op(p.tokens[p.pos].kind)
         advance(p)
+        consume_newlines(p)
         val right ast.Expr = parse_expr_and(p, arena, op_opt + 1)
         left = ast.Expr.Binary(@addr(ast.ExprBinary(
             lhs: box_expr(arena, left),
@@ -998,7 +1007,7 @@ def parse_expr_or(p ref(ast.TokenList), arena ref(allocators.Arena), min_prec us
 end
 
 def parse_expr_and(p ref(ast.TokenList), arena ref(allocators.Arena), min_prec usize) ast.Expr
-    var left ast.Expr = parse_expr_comparison(p, arena, min_prec)
+    var left ast.Expr = parse_expr_bitor(p, arena, min_prec)
     for
         match p.tokens[p.pos].kind
             ast.TokenKind.AmpAmp(_) => ()
@@ -1010,6 +1019,79 @@ def parse_expr_and(p ref(ast.TokenList), arena ref(allocators.Arena), min_prec u
         end
         val op_val = token_to_binary_op(p.tokens[p.pos].kind)
         advance(p)
+        consume_newlines(p)
+        val right ast.Expr = parse_expr_bitor(p, arena, op_opt + 1)
+        left = ast.Expr.Binary(@addr(ast.ExprBinary(
+            lhs: box_expr(arena, left),
+            op: op_val,
+            rhs: box_expr(arena, right)
+        )))
+    end
+    return left
+end
+
+def parse_expr_bitor(p ref(ast.TokenList), arena ref(allocators.Arena), min_prec usize) ast.Expr
+    var left ast.Expr = parse_expr_bitxor(p, arena, min_prec)
+    for
+        match p.tokens[p.pos].kind
+            ast.TokenKind.Pipe(_) => ()
+            _ => break
+        end
+        val op_opt usize = binary_op_precedence_bitor()
+        if op_opt == 0 || op_opt < min_prec
+            break
+        end
+        val op_val = token_to_binary_op(p.tokens[p.pos].kind)
+        advance(p)
+        consume_newlines(p)
+        val right ast.Expr = parse_expr_bitxor(p, arena, op_opt + 1)
+        left = ast.Expr.Binary(@addr(ast.ExprBinary(
+            lhs: box_expr(arena, left),
+            op: op_val,
+            rhs: box_expr(arena, right)
+        )))
+    end
+    return left
+end
+
+def parse_expr_bitxor(p ref(ast.TokenList), arena ref(allocators.Arena), min_prec usize) ast.Expr
+    var left ast.Expr = parse_expr_bitand(p, arena, min_prec)
+    for
+        match p.tokens[p.pos].kind
+            ast.TokenKind.Caret(_) => ()
+            _ => break
+        end
+        val op_opt usize = binary_op_precedence_bitxor()
+        if op_opt == 0 || op_opt < min_prec
+            break
+        end
+        val op_val = token_to_binary_op(p.tokens[p.pos].kind)
+        advance(p)
+        consume_newlines(p)
+        val right ast.Expr = parse_expr_bitand(p, arena, op_opt + 1)
+        left = ast.Expr.Binary(@addr(ast.ExprBinary(
+            lhs: box_expr(arena, left),
+            op: op_val,
+            rhs: box_expr(arena, right)
+        )))
+    end
+    return left
+end
+
+def parse_expr_bitand(p ref(ast.TokenList), arena ref(allocators.Arena), min_prec usize) ast.Expr
+    var left ast.Expr = parse_expr_comparison(p, arena, min_prec)
+    for
+        match p.tokens[p.pos].kind
+            ast.TokenKind.Amp(_) => ()
+            _ => break
+        end
+        val op_opt usize = binary_op_precedence_bitand()
+        if op_opt == 0 || op_opt < min_prec
+            break
+        end
+        val op_val = token_to_binary_op(p.tokens[p.pos].kind)
+        advance(p)
+        consume_newlines(p)
         val right ast.Expr = parse_expr_comparison(p, arena, op_opt + 1)
         left = ast.Expr.Binary(@addr(ast.ExprBinary(
             lhs: box_expr(arena, left),
@@ -1021,7 +1103,7 @@ def parse_expr_and(p ref(ast.TokenList), arena ref(allocators.Arena), min_prec u
 end
 
 def parse_expr_comparison(p ref(ast.TokenList), arena ref(allocators.Arena), min_prec usize) ast.Expr
-    var left ast.Expr = parse_expr_additive(p, arena, min_prec)
+    var left ast.Expr = parse_expr_shift(p, arena, min_prec)
     for
         match p.tokens[p.pos].kind
             ast.TokenKind.Less(_) => ()
@@ -1038,6 +1120,32 @@ def parse_expr_comparison(p ref(ast.TokenList), arena ref(allocators.Arena), min
         end
         val op_val = token_to_binary_op(p.tokens[p.pos].kind)
         advance(p)
+        consume_newlines(p)
+        val right ast.Expr = parse_expr_shift(p, arena, op_opt + 1)
+        left = ast.Expr.Binary(@addr(ast.ExprBinary(
+            lhs: box_expr(arena, left),
+            op: op_val,
+            rhs: box_expr(arena, right)
+        )))
+    end
+    return left
+end
+
+def parse_expr_shift(p ref(ast.TokenList), arena ref(allocators.Arena), min_prec usize) ast.Expr
+    var left ast.Expr = parse_expr_additive(p, arena, min_prec)
+    for
+        match p.tokens[p.pos].kind
+            ast.TokenKind.ShiftLeft(_) => ()
+            ast.TokenKind.ShiftRight(_) => ()
+            _ => break
+        end
+        val op_opt usize = binary_op_precedence_shift()
+        if op_opt == 0 || op_opt < min_prec
+            break
+        end
+        val op_val = token_to_binary_op(p.tokens[p.pos].kind)
+        advance(p)
+        consume_newlines(p)
         val right ast.Expr = parse_expr_additive(p, arena, op_opt + 1)
         left = ast.Expr.Binary(@addr(ast.ExprBinary(
             lhs: box_expr(arena, left),
@@ -1062,6 +1170,7 @@ def parse_expr_additive(p ref(ast.TokenList), arena ref(allocators.Arena), min_p
         end
         val op_val = token_to_binary_op(p.tokens[p.pos].kind)
         advance(p)
+        consume_newlines(p)
         val right ast.Expr = parse_expr_multiplicative(p, arena, op_opt + 1)
         left = ast.Expr.Binary(@addr(ast.ExprBinary(
             lhs: box_expr(arena, left),
@@ -1087,6 +1196,7 @@ def parse_expr_multiplicative(p ref(ast.TokenList), arena ref(allocators.Arena),
         end
         val op_val = token_to_binary_op(p.tokens[p.pos].kind)
         advance(p)
+        consume_newlines(p)
         val right ast.Expr = parse_expr_postfix(p, arena)
         left = ast.Expr.Binary(@addr(ast.ExprBinary(
             lhs: box_expr(arena, left),
@@ -1398,7 +1508,9 @@ def parse_primary(p ref(ast.TokenList), arena ref(allocators.Arena)) ast.Expr
         )
         ast.TokenKind.LParen(_) => (
             advance(p)
+            consume_newlines(p)
             val expr ast.Expr = parse_expr(p, arena)
+            consume_newlines(p)
             match p.tokens[p.pos].kind
                 ast.TokenKind.RParen(_) => advance(p)
                 _ => ()
@@ -1462,16 +1574,32 @@ def binary_op_precedence_and() usize
     return 2
 end
 
-def binary_op_precedence_comparison() usize
+def binary_op_precedence_bitor() usize
+    return 3
+end
+
+def binary_op_precedence_bitxor() usize
+    return 4
+end
+
+def binary_op_precedence_bitand() usize
     return 5
 end
 
-def binary_op_precedence_additive() usize
+def binary_op_precedence_comparison() usize
     return 6
 end
 
-def binary_op_precedence_multiplicative() usize
+def binary_op_precedence_shift() usize
     return 7
+end
+
+def binary_op_precedence_additive() usize
+    return 8
+end
+
+def binary_op_precedence_multiplicative() usize
+    return 9
 end
 
 def token_to_binary_op(kind ast.TokenKind) ast.BinaryOp
@@ -1598,6 +1726,7 @@ def parse_function(p ref(ast.TokenList), arena ref(allocators.Arena), is_pub boo
         )
     end
 
+    consume_newlines(p)
     var return_type ast.Type = @zeroed()
     if starts_type(p)
         return_type = parse_type(p, arena)
