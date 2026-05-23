@@ -1,0 +1,10 @@
+def some_func()
+    guard (true && true) || true else
+        # whatever
+        @puts("what")
+    end
+    @puts("ok it works")
+end
+
+pub def main()
+end
