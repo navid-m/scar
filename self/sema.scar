@@ -191,6 +191,34 @@ def collect_types_from_stmt(stmt ref(ast.Stmt), types ref(list[TypeEntry]))
             collect_type_from_expr(@addr(a.target), types)
             collect_type_from_expr(@addr(a.value), types)
         )
+        ast.Stmt.AddAssign(a) => (
+            collect_type_from_expr(@addr(a.target), types)
+            collect_type_from_expr(@addr(a.value), types)
+        )
+        ast.Stmt.SubAssign(a) => (
+            collect_type_from_expr(@addr(a.target), types)
+            collect_type_from_expr(@addr(a.value), types)
+        )
+        ast.Stmt.MulAssign(a) => (
+            collect_type_from_expr(@addr(a.target), types)
+            collect_type_from_expr(@addr(a.value), types)
+        )
+        ast.Stmt.DivAssign(a) => (
+            collect_type_from_expr(@addr(a.target), types)
+            collect_type_from_expr(@addr(a.value), types)
+        )
+        ast.Stmt.BitXorAssign(a) => (
+            collect_type_from_expr(@addr(a.target), types)
+            collect_type_from_expr(@addr(a.value), types)
+        )
+        ast.Stmt.BitAndAssign(a) => (
+            collect_type_from_expr(@addr(a.target), types)
+            collect_type_from_expr(@addr(a.value), types)
+        )
+        ast.Stmt.BitOrAssign(a) => (
+            collect_type_from_expr(@addr(a.target), types)
+            collect_type_from_expr(@addr(a.value), types)
+        )
         ast.Stmt.Return(r) => (
             collect_type_from_expr(@addr(r.value), types)
         )
@@ -380,6 +408,34 @@ def analyze_stmt(stmt ref(ast.Stmt), bindings ref(list[BindingEntry]), functions
             ))
         )
         ast.Stmt.Assign(a) => (
+            analyze_expr(@addr(a.target), bindings, functions, types)
+            analyze_expr(@addr(a.value), bindings, functions, types)
+        )
+        ast.Stmt.AddAssign(a) => (
+            analyze_expr(@addr(a.target), bindings, functions, types)
+            analyze_expr(@addr(a.value), bindings, functions, types)
+        )
+        ast.Stmt.SubAssign(a) => (
+            analyze_expr(@addr(a.target), bindings, functions, types)
+            analyze_expr(@addr(a.value), bindings, functions, types)
+        )
+        ast.Stmt.MulAssign(a) => (
+            analyze_expr(@addr(a.target), bindings, functions, types)
+            analyze_expr(@addr(a.value), bindings, functions, types)
+        )
+        ast.Stmt.DivAssign(a) => (
+            analyze_expr(@addr(a.target), bindings, functions, types)
+            analyze_expr(@addr(a.value), bindings, functions, types)
+        )
+        ast.Stmt.BitXorAssign(a) => (
+            analyze_expr(@addr(a.target), bindings, functions, types)
+            analyze_expr(@addr(a.value), bindings, functions, types)
+        )
+        ast.Stmt.BitAndAssign(a) => (
+            analyze_expr(@addr(a.target), bindings, functions, types)
+            analyze_expr(@addr(a.value), bindings, functions, types)
+        )
+        ast.Stmt.BitOrAssign(a) => (
             analyze_expr(@addr(a.target), bindings, functions, types)
             analyze_expr(@addr(a.value), bindings, functions, types)
         )

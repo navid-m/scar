@@ -37,6 +37,25 @@ pub def generate_c(program ref(ast.Program), info ref(sema.ProgramInfo), arena r
         j++
     end
 
+    val list_types list[ast.Type] = collect_list_types(program, info, arena)
+    if @len(list_types) > 0
+        j = 0
+        for j < @len(list_types)
+            render_list_typedef(@addr(list_types[j]), arena, @addr(output), @addr(output_len))
+            j++
+        end
+        append_str(@addr(output), @addr(output_len), "\n")
+    end
+
+    if @len(list_types) > 0
+        j = 0
+        for j < @len(list_types)
+            render_list_helpers(@addr(list_types[j]), arena, @addr(output), @addr(output_len))
+            append_str(@addr(output), @addr(output_len), "\n")
+            j++
+        end
+    end
+
     var i usize = 0
     for i < @len(program.functions)
         val fn_ref ref(ast.Function) = @addr(program.functions[i])
@@ -120,6 +139,397 @@ def append_runtime_prelude(output ref(ref(u8)), output_len ref(usize))
     append_str(output, output_len, "    signal(SIGABRT, scar_runtime_signal_handler);\n")
     append_str(output, output_len, "#endif\n")
     append_str(output, output_len, "}\n\n")
+end
+
+def collect_list_types(program ref(ast.Program), info ref(sema.ProgramInfo), arena ref(allocators.Arena)) list[ast.Type]
+    var seen list[ast.Type] = []
+    var i usize = 0
+    for i < @len(program.type_defs)
+        val td ref(ast.TypeDef) = @addr(program.type_defs[i])
+        var j usize = 0
+        for j < @len(td.fields)
+            collect_list_types_from_type(@addr(td.fields[j].ty), @addr(seen), arena)
+            j++
+        end
+        j = 0
+        for j < @len(td.variants)
+            var k usize = 0
+            for k < @len(td.variants[j].payload_types)
+                collect_list_types_from_type(@addr(td.variants[j].payload_types[k]), @addr(seen), arena)
+                k++
+            end
+            j++
+        end
+        i++
+    end
+    i = 0
+    for i < @len(program.functions)
+        val fn_ref ref(ast.Function) = @addr(program.functions[i])
+        collect_list_types_from_type(@addr(fn_ref.return_type), @addr(seen), arena)
+        var j usize = 0
+        for j < @len(fn_ref.params)
+            collect_list_types_from_type(@addr(fn_ref.params[j].ty), @addr(seen), arena)
+            j++
+        end
+        i++
+    end
+    i = 0
+    for i < @len(info.locals)
+        var j usize = 0
+        for j < @len(info.locals[i].bindings)
+            collect_list_types_from_type(@addr(info.locals[i].bindings[j].ty), @addr(seen), arena)
+            j++
+        end
+        i++
+    end
+    return seen
+end
+
+def list_type_equals(a ref(ast.Type), b ref(ast.Type)) bool
+    match @deref(a)
+        ast.Type.List(a_inner) => (
+            match @deref(b)
+                ast.Type.List(b_inner) => return list_type_equals(a_inner, b_inner)
+                _ => return false
+            end
+        )
+        ast.Type.I8(_) => (
+            match @deref(b)
+                ast.Type.I8(_) => return true
+                _ => return false
+            end
+        )
+        ast.Type.I16(_) => (
+            match @deref(b)
+                ast.Type.I16(_) => return true
+                _ => return false
+            end
+        )
+        ast.Type.I32(_) => (
+            match @deref(b)
+                ast.Type.I32(_) => return true
+                _ => return false
+            end
+        )
+        ast.Type.I64(_) => (
+            match @deref(b)
+                ast.Type.I64(_) => return true
+                _ => return false
+            end
+        )
+        ast.Type.Isize(_) => (
+            match @deref(b)
+                ast.Type.Isize(_) => return true
+                _ => return false
+            end
+        )
+        ast.Type.U8(_) => (
+            match @deref(b)
+                ast.Type.U8(_) => return true
+                _ => return false
+            end
+        )
+        ast.Type.U16(_) => (
+            match @deref(b)
+                ast.Type.U16(_) => return true
+                _ => return false
+            end
+        )
+        ast.Type.U32(_) => (
+            match @deref(b)
+                ast.Type.U32(_) => return true
+                _ => return false
+            end
+        )
+        ast.Type.U64(_) => (
+            match @deref(b)
+                ast.Type.U64(_) => return true
+                _ => return false
+            end
+        )
+        ast.Type.Usize(_) => (
+            match @deref(b)
+                ast.Type.Usize(_) => return true
+                _ => return false
+            end
+        )
+        ast.Type.Bool(_) => (
+            match @deref(b)
+                ast.Type.Bool(_) => return true
+                _ => return false
+            end
+        )
+        ast.Type.F32(_) => (
+            match @deref(b)
+                ast.Type.F32(_) => return true
+                _ => return false
+            end
+        )
+        ast.Type.F64(_) => (
+            match @deref(b)
+                ast.Type.F64(_) => return true
+                _ => return false
+            end
+        )
+        ast.Type.Named(na) => (
+            match @deref(b)
+                ast.Type.Named(nb) => return str.eql(na, nb)
+                _ => return false
+            end
+        )
+        ast.Type.Ref(inner) => (
+            match @deref(b)
+                ast.Type.Ref(inner2) => return list_type_equals(inner, inner2)
+                _ => return false
+            end
+        )
+        ast.Type.Mut(inner) => (
+            match @deref(b)
+                ast.Type.Mut(inner2) => return list_type_equals(inner, inner2)
+                _ => return false
+            end
+        )
+        _ => return false
+    end
+end
+
+def list_type_in_list(ty ref(ast.Type), list_list ref(list[ast.Type])) bool
+    var i usize = 0
+    for i < @len(list_list)
+        if list_type_equals(ty, @addr(list_list[i]))
+            return true
+        end
+        i++
+    end
+    return false
+end
+
+def collect_list_types_from_type(ty ref(ast.Type), seen ref(list[ast.Type]), arena ref(allocators.Arena))
+    match @deref(ty)
+        ast.Type.List(inner) => (
+            collect_list_types_from_type(inner, seen, arena)
+            if !list_type_in_list(ty, seen)
+                @append(seen, @deref(ty))
+            end
+        )
+        ast.Type.Result(inner) => collect_list_types_from_type(inner, seen, arena)
+        ast.Type.Mut(inner) => collect_list_types_from_type(inner, seen, arena)
+        ast.Type.Ref(inner) => collect_list_types_from_type(inner, seen, arena)
+        ast.Type.FnPtr(params, ret) => (
+            var i usize = 0
+            for i < @len(params)
+                collect_list_types_from_type(@addr(params[i]), seen, arena)
+                i++
+            end
+            collect_list_types_from_type(ret, seen, arena)
+        )
+        _ => ()
+    end
+end
+
+def render_list_typedef(list_ty ref(ast.Type), arena ref(allocators.Arena), output ref(ref(u8)), output_len ref(usize))
+    val element_ty ref(ast.Type) = get_list_element_type(list_ty)
+    val list_name ref(u8) = c_type(list_ty, arena)
+    val element_c_type ref(u8) = c_type(element_ty, arena)
+    append_str(output, output_len, "typedef struct {\n")
+    append_str(output, output_len, "    ")
+    append_str(output, output_len, element_c_type)
+    append_str(output, output_len, " *data;\n")
+    append_str(output, output_len, "    int32_t len;\n")
+    append_str(output, output_len, "    int32_t cap;\n")
+    append_str(output, output_len, "} ")
+    append_str(output, output_len, list_name)
+    append_str(output, output_len, ";\n")
+end
+
+def render_list_helpers(list_ty ref(ast.Type), arena ref(allocators.Arena), output ref(ref(u8)), output_len ref(usize))
+    val element_ty ref(ast.Type) = get_list_element_type(list_ty)
+    val list_name ref(u8) = c_type(list_ty, arena)
+    val element_c_type ref(u8) = c_type(element_ty, arena)
+    val helper_prefix ref(u8) = list_helper_prefix(element_ty, arena)
+
+    append_str(output, output_len, "static ")
+    append_str(output, output_len, list_name)
+    append_str(output, output_len, " ")
+    append_str(output, output_len, helper_prefix)
+    append_str(output, output_len, "_new(void) {\n")
+    append_str(output, output_len, "    return (")
+    append_str(output, output_len, list_name)
+    append_str(output, output_len, "){ .data = NULL, .len = 0, .cap = 0 };\n")
+    append_str(output, output_len, "}\n\n")
+
+    append_str(output, output_len, "static void ")
+    append_str(output, output_len, helper_prefix)
+    append_str(output, output_len, "_ensure_capacity(")
+    append_str(output, output_len, list_name)
+    append_str(output, output_len, " *list, int32_t requested) {\n")
+    append_str(output, output_len, "    if (requested < 0) {\n")
+    append_str(output, output_len, "        scar_runtime_panic(\"list capacity cannot be negative\");\n")
+    append_str(output, output_len, "    }\n")
+    append_str(output, output_len, "    if (requested <= list->cap) {\n")
+    append_str(output, output_len, "        return;\n")
+    append_str(output, output_len, "    }\n")
+    append_str(output, output_len, "    int32_t new_cap = list->cap > 0 ? list->cap : 4;\n")
+    append_str(output, output_len, "    while (new_cap < requested) {\n")
+    append_str(output, output_len, "        if (new_cap > INT32_MAX / 2) {\n")
+    append_str(output, output_len, "            new_cap = requested;\n")
+    append_str(output, output_len, "            break;\n")
+    append_str(output, output_len, "        }\n")
+    append_str(output, output_len, "        new_cap *= 2;\n")
+    append_str(output, output_len, "    }\n")
+    append_str(output, output_len, "    void *resized = realloc(list->data, sizeof(")
+    append_str(output, output_len, element_c_type)
+    append_str(output, output_len, ") * (size_t)new_cap);\n")
+    append_str(output, output_len, "    if (resized == NULL) {\n")
+    append_str(output, output_len, "        scar_runtime_panic(\"failed to allocate list storage\");\n")
+    append_str(output, output_len, "    }\n")
+    append_str(output, output_len, "    list->data = (")
+    append_str(output, output_len, element_c_type)
+    append_str(output, output_len, " *)resized;\n")
+    append_str(output, output_len, "    list->cap = new_cap;\n")
+    append_str(output, output_len, "}\n\n")
+
+    append_str(output, output_len, "static ")
+    append_str(output, output_len, list_name)
+    append_str(output, output_len, " ")
+    append_str(output, output_len, helper_prefix)
+    append_str(output, output_len, "_from_array(")
+    append_str(output, output_len, element_c_type)
+    append_str(output, output_len, " const *items, int32_t len) {\n")
+    append_str(output, output_len, "    ")
+    append_str(output, output_len, list_name)
+    append_str(output, output_len, " list = ")
+    append_str(output, output_len, helper_prefix)
+    append_str(output, output_len, "_new();\n")
+    append_str(output, output_len, "    if (len == 0) {\n")
+    append_str(output, output_len, "        return list;\n")
+    append_str(output, output_len, "    }\n")
+    append_str(output, output_len, "    ")
+    append_str(output, output_len, helper_prefix)
+    append_str(output, output_len, "_ensure_capacity(&list, len);\n")
+    append_str(output, output_len, "    memcpy(list.data, items, sizeof(")
+    append_str(output, output_len, element_c_type)
+    append_str(output, output_len, ") * (size_t)len);\n")
+    append_str(output, output_len, "    list.len = len;\n")
+    append_str(output, output_len, "    return list;\n")
+    append_str(output, output_len, "}\n\n")
+
+    append_str(output, output_len, "static ")
+    append_str(output, output_len, element_c_type)
+    append_str(output, output_len, " *")
+    append_str(output, output_len, helper_prefix)
+    append_str(output, output_len, "_at(")
+    append_str(output, output_len, list_name)
+    append_str(output, output_len, " *list, int32_t index) {\n")
+    append_str(output, output_len, "    if (index < 0 || index >= list->len) {\n")
+    append_str(output, output_len, "        fprintf(stderr, \"scar: panic: list index out of bounds (index %d, len %d)\\n\", index, list->len);\n")
+    append_str(output, output_len, "        exit(1);\n")
+    append_str(output, output_len, "    }\n")
+    append_str(output, output_len, "    return &list->data[index];\n")
+    append_str(output, output_len, "}\n\n")
+
+    append_str(output, output_len, "static int32_t ")
+    append_str(output, output_len, helper_prefix)
+    append_str(output, output_len, "_capacity(")
+    append_str(output, output_len, list_name)
+    append_str(output, output_len, " *list) {\n")
+    append_str(output, output_len, "    return list->cap;\n")
+    append_str(output, output_len, "}\n\n")
+
+    append_str(output, output_len, "static uintptr_t ")
+    append_str(output, output_len, helper_prefix)
+    append_str(output, output_len, "_len(")
+    append_str(output, output_len, list_name)
+    append_str(output, output_len, " *list) {\n")
+    append_str(output, output_len, "    return (uintptr_t)list->len;\n")
+    append_str(output, output_len, "}\n\n")
+
+    append_str(output, output_len, "static void ")
+    append_str(output, output_len, helper_prefix)
+    append_str(output, output_len, "_reserve(")
+    append_str(output, output_len, list_name)
+    append_str(output, output_len, " *list, int32_t capacity) {\n")
+    append_str(output, output_len, "    ")
+    append_str(output, output_len, helper_prefix)
+    append_str(output, output_len, "_ensure_capacity(list, capacity);\n")
+    append_str(output, output_len, "}\n\n")
+
+    append_str(output, output_len, "static void ")
+    append_str(output, output_len, helper_prefix)
+    append_str(output, output_len, "_append(")
+    append_str(output, output_len, list_name)
+    append_str(output, output_len, " *list, ")
+    append_str(output, output_len, element_c_type)
+    append_str(output, output_len, " value) {\n")
+    append_str(output, output_len, "    ")
+    append_str(output, output_len, helper_prefix)
+    append_str(output, output_len, "_ensure_capacity(list, list->len + 1);\n")
+    append_str(output, output_len, "    list->data[list->len++] = value;\n")
+    append_str(output, output_len, "}\n\n")
+
+    append_str(output, output_len, "static void ")
+    append_str(output, output_len, helper_prefix)
+    append_str(output, output_len, "_set(")
+    append_str(output, output_len, list_name)
+    append_str(output, output_len, " *list, int32_t index, ")
+    append_str(output, output_len, element_c_type)
+    append_str(output, output_len, " value) {\n")
+    append_str(output, output_len, "    *")
+    append_str(output, output_len, helper_prefix)
+    append_str(output, output_len, "_at(list, index) = value;\n")
+    append_str(output, output_len, "}\n\n")
+
+    append_str(output, output_len, "static void ")
+    append_str(output, output_len, helper_prefix)
+    append_str(output, output_len, "_insert(")
+    append_str(output, output_len, list_name)
+    append_str(output, output_len, " *list, int32_t index, ")
+    append_str(output, output_len, element_c_type)
+    append_str(output, output_len, " value) {\n")
+    append_str(output, output_len, "    if (index < 0 || index > list->len) {\n")
+    append_str(output, output_len, "        fprintf(stderr, \"scar: panic: list insert index out of bounds (index %d, len %d)\\n\", index, list->len);\n")
+    append_str(output, output_len, "        exit(1);\n")
+    append_str(output, output_len, "    }\n")
+    append_str(output, output_len, "    ")
+    append_str(output, output_len, helper_prefix)
+    append_str(output, output_len, "_ensure_capacity(list, list->len + 1);\n")
+    append_str(output, output_len, "    if (index < list->len) {\n")
+    append_str(output, output_len, "        memmove(&list->data[index + 1], &list->data[index], sizeof(")
+    append_str(output, output_len, element_c_type)
+    append_str(output, output_len, ") * (size_t)(list->len - index));\n")
+    append_str(output, output_len, "    }\n")
+    append_str(output, output_len, "    list->data[index] = value;\n")
+    append_str(output, output_len, "    list->len += 1;\n")
+    append_str(output, output_len, "}\n\n")
+
+    append_str(output, output_len, "static ")
+    append_str(output, output_len, element_c_type)
+    append_str(output, output_len, " ")
+    append_str(output, output_len, helper_prefix)
+    append_str(output, output_len, "_remove(")
+    append_str(output, output_len, list_name)
+    append_str(output, output_len, " *list, int32_t index) {\n")
+    append_str(output, output_len, "    ")
+    append_str(output, output_len, element_c_type)
+    append_str(output, output_len, " removed = *")
+    append_str(output, output_len, helper_prefix)
+    append_str(output, output_len, "_at(list, index);\n")
+    append_str(output, output_len, "    if (index + 1 < list->len) {\n")
+    append_str(output, output_len, "        memmove(&list->data[index], &list->data[index + 1], sizeof(")
+    append_str(output, output_len, element_c_type)
+    append_str(output, output_len, ") * (size_t)(list->len - index - 1));\n")
+    append_str(output, output_len, "    }\n")
+    append_str(output, output_len, "    list->len -= 1;\n")
+    append_str(output, output_len, "    return removed;\n")
+    append_str(output, output_len, "}\n\n")
+
+    append_str(output, output_len, "static void ")
+    append_str(output, output_len, helper_prefix)
+    append_str(output, output_len, "_clear(")
+    append_str(output, output_len, list_name)
+    append_str(output, output_len, " *list) {\n")
+    append_str(output, output_len, "    list->len = 0;\n")
+    append_str(output, output_len, "}\n")
 end
 
 def render_typedef(td ref(ast.TypeDef), arena ref(allocators.Arena), output ref(ref(u8)), output_len ref(usize))
@@ -372,6 +782,55 @@ def render_stmt(stmt ref(ast.Stmt), fun ref(ast.Function), info ref(sema.Program
             indent(output, output_len, level)
             append_expr(@addr(a.target), fun, info, arena, output, output_len)
             append_str(output, output_len, " = ")
+            append_expr(@addr(a.value), fun, info, arena, output, output_len)
+            append_str(output, output_len, ";\n")
+        )
+        ast.Stmt.AddAssign(a) => (
+            indent(output, output_len, level)
+            append_expr(@addr(a.target), fun, info, arena, output, output_len)
+            append_str(output, output_len, " += ")
+            append_expr(@addr(a.value), fun, info, arena, output, output_len)
+            append_str(output, output_len, ";\n")
+        )
+        ast.Stmt.SubAssign(a) => (
+            indent(output, output_len, level)
+            append_expr(@addr(a.target), fun, info, arena, output, output_len)
+            append_str(output, output_len, " -= ")
+            append_expr(@addr(a.value), fun, info, arena, output, output_len)
+            append_str(output, output_len, ";\n")
+        )
+        ast.Stmt.MulAssign(a) => (
+            indent(output, output_len, level)
+            append_expr(@addr(a.target), fun, info, arena, output, output_len)
+            append_str(output, output_len, " *= ")
+            append_expr(@addr(a.value), fun, info, arena, output, output_len)
+            append_str(output, output_len, ";\n")
+        )
+        ast.Stmt.DivAssign(a) => (
+            indent(output, output_len, level)
+            append_expr(@addr(a.target), fun, info, arena, output, output_len)
+            append_str(output, output_len, " /= ")
+            append_expr(@addr(a.value), fun, info, arena, output, output_len)
+            append_str(output, output_len, ";\n")
+        )
+        ast.Stmt.BitXorAssign(a) => (
+            indent(output, output_len, level)
+            append_expr(@addr(a.target), fun, info, arena, output, output_len)
+            append_str(output, output_len, " ^= ")
+            append_expr(@addr(a.value), fun, info, arena, output, output_len)
+            append_str(output, output_len, ";\n")
+        )
+        ast.Stmt.BitAndAssign(a) => (
+            indent(output, output_len, level)
+            append_expr(@addr(a.target), fun, info, arena, output, output_len)
+            append_str(output, output_len, " &= ")
+            append_expr(@addr(a.value), fun, info, arena, output, output_len)
+            append_str(output, output_len, ";\n")
+        )
+        ast.Stmt.BitOrAssign(a) => (
+            indent(output, output_len, level)
+            append_expr(@addr(a.target), fun, info, arena, output, output_len)
+            append_str(output, output_len, " |= ")
             append_expr(@addr(a.value), fun, info, arena, output, output_len)
             append_str(output, output_len, ";\n")
         )
@@ -839,16 +1298,54 @@ def append_expr(expr ref(ast.Expr), fun ref(ast.Function), info ref(sema.Program
             append_str(output, output_len, ")")
         )
         ast.Expr.Index(idx) => (
-            append_str(output, output_len, "(")
-            append_expr(idx.base, fun, info, arena, output, output_len)
-            append_str(output, output_len, ".data[")
+            val base_ty ref(ast.Type) = get_expr_type(idx.base, fun, info)
+            val base_ty_deref ref(ast.Type) = deref_type(base_ty)
+            val element_ty ref(ast.Type) = get_list_element_type(base_ty_deref)
+            val helper_prefix ref(u8) = list_helper_prefix(element_ty, arena)
+            append_str(output, output_len, "(*")
+            append_str(output, output_len, helper_prefix)
+            append_str(output, output_len, "_at(")
+            if is_ref_type(base_ty)
+                append_expr(idx.base, fun, info, arena, output, output_len)
+            else
+                append_str(output, output_len, "&(")
+                append_expr(idx.base, fun, info, arena, output, output_len)
+                append_str(output, output_len, ")")
+            end
+            append_str(output, output_len, ", ")
             append_expr(idx.index, fun, info, arena, output, output_len)
-            append_str(output, output_len, "])")
+            append_str(output, output_len, "))")
         )
         ast.Expr.Field(f) => (
             append_str(output, output_len, "(")
             append_expr(f.base, fun, info, arena, output, output_len)
-            append_str(output, output_len, ").")
+            var use_arrow bool = false
+            var i usize = 0
+            for i < @len(fun.params)
+                match @deref(expr)
+                    ast.Expr.Ident(name) => (
+                        if str.eql(fun.params[i].name, name)
+                            match @deref(@addr(fun.params[i].ty))
+                                ast.Type.Ref(_) => use_arrow = true
+                                ast.Type.Mut(inner) => (
+                                    match @deref(inner)
+                                        ast.Type.Ref(_) => use_arrow = true
+                                        _ => ()
+                                    end
+                                )
+                                _ => ()
+                            end
+                        end
+                    )
+                    _ => ()
+                end
+                i++
+            end
+            if use_arrow
+                append_str(output, output_len, ")->")
+            else
+                append_str(output, output_len, ").")
+            end
             append_str(output, output_len, f.field)
         )
         ast.Expr.Cast(c) => (
@@ -904,18 +1401,42 @@ def append_expr(expr ref(ast.Expr), fun ref(ast.Function), info ref(sema.Program
             append_str(output, output_len, " }")
         )
         ast.Expr.MethodCall(mc) => (
-            val element_ty ref(u8) = "void"
-            append_str(output, output_len, "list_")
-            append_str(output, output_len, mc.method)
-            append_str(output, output_len, "(")
-            append_expr(mc.receiver, fun, info, arena, output, output_len)
-            var i usize = 0
-            for i < @len(mc.args)
-                append_str(output, output_len, ", ")
-                append_expr(@addr(mc.args[i]), fun, info, arena, output, output_len)
-                i++
+            val receiver_ty ref(ast.Type) = get_expr_type(mc.receiver, fun, info)
+            val deref_ty ref(ast.Type) = deref_type(receiver_ty)
+            if is_list_type(deref_ty)
+                val element_ty ref(ast.Type) = get_list_element_type(deref_ty)
+                val helper_prefix ref(u8) = list_helper_prefix(element_ty, arena)
+                append_str(output, output_len, helper_prefix)
+                append_str(output, output_len, "_")
+                append_str(output, output_len, mc.method)
+                append_str(output, output_len, "(")
+                if is_ref_type(receiver_ty)
+                    append_expr(mc.receiver, fun, info, arena, output, output_len)
+                else
+                    append_str(output, output_len, "&(")
+                    append_expr(mc.receiver, fun, info, arena, output, output_len)
+                    append_str(output, output_len, ")")
+                end
+                var i usize = 0
+                for i < @len(mc.args)
+                    append_str(output, output_len, ", ")
+                    append_expr(@addr(mc.args[i]), fun, info, arena, output, output_len)
+                    i++
+                end
+                append_str(output, output_len, ")")
+            else
+                append_str(output, output_len, "list_")
+                append_str(output, output_len, mc.method)
+                append_str(output, output_len, "(")
+                append_expr(mc.receiver, fun, info, arena, output, output_len)
+                var i usize = 0
+                for i < @len(mc.args)
+                    append_str(output, output_len, ", ")
+                    append_expr(@addr(mc.args[i]), fun, info, arena, output, output_len)
+                    i++
+                end
+                append_str(output, output_len, ")")
             end
-            append_str(output, output_len, ")")
         )
         ast.Expr.BuiltinCall(bc) => (
             append_builtin_call(bc, fun, info, arena, output, output_len)
@@ -1139,24 +1660,64 @@ def append_builtin_call(bc ref(ast.ExprBuiltinCall), fun ref(ast.Function), info
         append_str(output, output_len, ")")
     elif str.eql(bc.name, "len")
         if @len(bc.args) > 0
-            append_expr(@addr(bc.args[0]), fun, info, arena, output, output_len)
-            append_str(output, output_len, ".len")
+            val arg_ty ref(ast.Type) = get_expr_type(@addr(bc.args[0]), fun, info)
+            val deref_ty ref(ast.Type) = deref_type(arg_ty)
+            if is_list_type(deref_ty)
+                val element_ty ref(ast.Type) = get_list_element_type(deref_ty)
+                val helper_prefix ref(u8) = list_helper_prefix(element_ty, arena)
+                append_str(output, output_len, helper_prefix)
+                append_str(output, output_len, "_len(")
+                if is_ref_type(arg_ty)
+                    append_expr(@addr(bc.args[0]), fun, info, arena, output, output_len)
+                else
+                    append_str(output, output_len, "&(")
+                    append_expr(@addr(bc.args[0]), fun, info, arena, output, output_len)
+                    append_str(output, output_len, ")")
+                end
+                append_str(output, output_len, ")")
+            else
+                append_expr(@addr(bc.args[0]), fun, info, arena, output, output_len)
+                append_str(output, output_len, ".len")
+            end
         else
             append_str(output, output_len, "0")
         end
     elif str.eql(bc.name, "append")
         if @len(bc.args) > 0
-            append_expr(@addr(bc.args[0]), fun, info, arena, output, output_len)
-            append_str(output, output_len, ".append(")
-            var i usize = 1
-            for i < @len(bc.args)
-                if i > 1
-                    append_str(output, output_len, ", ")
+            val arg_ty ref(ast.Type) = get_expr_type(@addr(bc.args[0]), fun, info)
+            val deref_ty ref(ast.Type) = deref_type(arg_ty)
+            if is_list_type(deref_ty)
+                val element_ty ref(ast.Type) = get_list_element_type(deref_ty)
+                val helper_prefix ref(u8) = list_helper_prefix(element_ty, arena)
+                append_str(output, output_len, helper_prefix)
+                append_str(output, output_len, "_append(")
+                if is_ref_type(arg_ty)
+                    append_expr(@addr(bc.args[0]), fun, info, arena, output, output_len)
+                else
+                    append_str(output, output_len, "&(")
+                    append_expr(@addr(bc.args[0]), fun, info, arena, output, output_len)
+                    append_str(output, output_len, ")")
                 end
-                append_expr(@addr(bc.args[i]), fun, info, arena, output, output_len)
-                i++
+                var i usize = 1
+                for i < @len(bc.args)
+                    append_str(output, output_len, ", ")
+                    append_expr(@addr(bc.args[i]), fun, info, arena, output, output_len)
+                    i++
+                end
+                append_str(output, output_len, ")")
+            else
+                append_expr(@addr(bc.args[0]), fun, info, arena, output, output_len)
+                append_str(output, output_len, ".append(")
+                var i usize = 1
+                for i < @len(bc.args)
+                    if i > 1
+                        append_str(output, output_len, ", ")
+                    end
+                    append_expr(@addr(bc.args[i]), fun, info, arena, output, output_len)
+                    i++
+                end
+                append_str(output, output_len, ")")
             end
-            append_str(output, output_len, ")")
         end
     else
         append_str(output, output_len, "0")
@@ -1222,7 +1783,22 @@ def c_type(ty ref(ast.Type), arena ref(allocators.Arena)) ref(u8)
             @deref(@as_mut(@add(result, inner_len + 2))) = 0
             return result
         )
-        ast.Type.List(_) => return "list"
+        ast.Type.List(inner) => (
+            val suffix ref(u8) = type_suffix(inner, arena)
+            val slen usize = str.len(suffix)
+            val prefix ref(u8) = "scar_list__"
+            val plen usize = str.len(prefix)
+            val result_res = allocators.Arena.alloc(arena, plen + slen + 1)
+            var result ref(u8) = none
+            match result_res
+                ok m => result = m as ref(u8)
+                error _ => return "void"
+            end
+            @memcpy(result, prefix, plen)
+            @memcpy(@add(result, plen), suffix, slen)
+            @deref(@as_mut(@add(result, plen + slen))) = 0
+            return result
+        )
         ast.Type.Result(_) => return "scar_result"
         ast.Type.Named(name) => return name
         ast.Type.Applied(name, _) => return name
@@ -1249,6 +1825,201 @@ def c_type_named(ty ref(ast.Type), name ref(u8), arena ref(allocators.Arena)) re
     @deref(@as_mut(@add(result, base_len))) = ' '
     @memcpy(@add(result, base_len + 1), mangled, mangled_len)
     @deref(@as_mut(@add(result, base_len + 1 + mangled_len))) = 0
+    return result
+end
+
+def type_suffix(ty ref(ast.Type), arena ref(allocators.Arena)) ref(u8)
+    match @deref(ty)
+        ast.Type.Void(_) => return "void"
+        ast.Type.Bool(_) => return "bool"
+        ast.Type.I8(_) => return "i8"
+        ast.Type.I16(_) => return "i16"
+        ast.Type.I32(_) => return "i32"
+        ast.Type.I64(_) => return "i64"
+        ast.Type.Isize(_) => return "isize"
+        ast.Type.U8(_) => return "u8"
+        ast.Type.U16(_) => return "u16"
+        ast.Type.U32(_) => return "u32"
+        ast.Type.U64(_) => return "u64"
+        ast.Type.Usize(_) => return "usize"
+        ast.Type.F32(_) => return "f32"
+        ast.Type.F64(_) => return "f64"
+        ast.Type.Named(name) => (
+            val nlen usize = str.len(name)
+            val result_res = allocators.Arena.alloc(arena, nlen + 1)
+            var result ref(u8) = none
+            match result_res
+                ok m => result = m as ref(u8)
+                error _ => return "error"
+            end
+            var i usize = 0
+            for i < nlen
+                val ch u8 = @deref(@add(name, i))
+                if (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '_'
+                    @deref(@as_mut(@add(result, i))) = ch
+                else
+                    @deref(@as_mut(@add(result, i))) = '_'
+                end
+                i++
+            end
+            @deref(@as_mut(@add(result, nlen))) = 0
+            return result
+        )
+        ast.Type.List(inner) => (
+            val inner_suffix ref(u8) = type_suffix(inner, arena)
+            val islen usize = str.len(inner_suffix)
+            val prefix ref(u8) = "list__"
+            val plen usize = str.len(prefix)
+            val result_res = allocators.Arena.alloc(arena, plen + islen + 1)
+            var result ref(u8) = none
+            match result_res
+                ok m => result = m as ref(u8)
+                error _ => return "error"
+            end
+            @memcpy(result, prefix, plen)
+            @memcpy(@add(result, plen), inner_suffix, islen)
+            @deref(@as_mut(@add(result, plen + islen))) = 0
+            return result
+        )
+        ast.Type.Ref(inner) => (
+            val inner_suffix ref(u8) = type_suffix(inner, arena)
+            val islen usize = str.len(inner_suffix)
+            val prefix ref(u8) = "ref__"
+            val plen usize = str.len(prefix)
+            val result_res = allocators.Arena.alloc(arena, plen + islen + 1)
+            var result ref(u8) = none
+            match result_res
+                ok m => result = m as ref(u8)
+                error _ => return "error"
+            end
+            @memcpy(result, prefix, plen)
+            @memcpy(@add(result, plen), inner_suffix, islen)
+            @deref(@as_mut(@add(result, plen + islen))) = 0
+            return result
+        )
+        ast.Type.Mut(inner) => (
+            val inner_suffix ref(u8) = type_suffix(inner, arena)
+            val islen usize = str.len(inner_suffix)
+            val prefix ref(u8) = "mut__"
+            val plen usize = str.len(prefix)
+            val result_res = allocators.Arena.alloc(arena, plen + islen + 1)
+            var result ref(u8) = none
+            match result_res
+                ok m => result = m as ref(u8)
+                error _ => return "error"
+            end
+            @memcpy(result, prefix, plen)
+            @memcpy(@add(result, plen), inner_suffix, islen)
+            @deref(@as_mut(@add(result, plen + islen))) = 0
+            return result
+        )
+        ast.Type.Result(inner) => (
+            val inner_suffix ref(u8) = type_suffix(inner, arena)
+            val islen usize = str.len(inner_suffix)
+            val prefix ref(u8) = "result__"
+            val plen usize = str.len(prefix)
+            val result_res = allocators.Arena.alloc(arena, plen + islen + 1)
+            var result ref(u8) = none
+            match result_res
+                ok m => result = m as ref(u8)
+                error _ => return "error"
+            end
+            @memcpy(result, prefix, plen)
+            @memcpy(@add(result, plen), inner_suffix, islen)
+            @deref(@as_mut(@add(result, plen + islen))) = 0
+            return result
+        )
+        ast.Type.FnPtr(params, ret) => (
+            val ret_suffix ref(u8) = type_suffix(ret, arena)
+            val rlen usize = str.len(ret_suffix)
+            val prefix ref(u8) = "fn__"
+            val plen usize = str.len(prefix)
+            var total usize = plen + rlen + 1
+            var i usize = 0
+            for i < @len(params)
+                val param_suffix ref(u8) = type_suffix(@addr(params[i]), arena)
+                total = total + str.len(param_suffix) + 2
+                i++
+            end
+            val result_res = allocators.Arena.alloc(arena, total)
+            var result ref(u8) = none
+            match result_res
+                ok m => result = m as ref(u8)
+                error _ => return "error"
+            end
+            @memcpy(result, prefix, plen)
+            var offset usize = plen
+            i = 0
+            for i < @len(params)
+                val param_suffix ref(u8) = type_suffix(@addr(params[i]), arena)
+                val pslen usize = str.len(param_suffix)
+                @memcpy(@add(result, offset), param_suffix, pslen)
+                offset = offset + pslen
+                @deref(@as_mut(@add(result, offset))) = '_'
+                offset++
+                @deref(@as_mut(@add(result, offset))) = '_'
+                offset++
+                i++
+            end
+            @memcpy(@add(result, offset), ret_suffix, rlen)
+            offset = offset + rlen
+            @deref(@as_mut(@add(result, offset))) = 0
+            return result
+        )
+        ast.Type.Applied(name, type_args) => (
+            val nlen usize = str.len(name)
+            var total usize = nlen + 2
+            var i usize = 0
+            for i < @len(type_args)
+                val arg_suffix ref(u8) = type_suffix(@addr(type_args[i]), arena)
+                total = total + str.len(arg_suffix) + 2
+                i++
+            end
+            val result_res = allocators.Arena.alloc(arena, total)
+            var result ref(u8) = none
+            match result_res
+                ok m => result = m as ref(u8)
+                error _ => return "error"
+            end
+            @memcpy(result, name, nlen)
+            var offset usize = nlen
+            @deref(@as_mut(@add(result, offset))) = '_'
+            offset++
+            @deref(@as_mut(@add(result, offset))) = '_'
+            offset++
+            i = 0
+            for i < @len(type_args)
+                val arg_suffix ref(u8) = type_suffix(@addr(type_args[i]), arena)
+                val aslen usize = str.len(arg_suffix)
+                @memcpy(@add(result, offset), arg_suffix, aslen)
+                offset = offset + aslen
+                @deref(@as_mut(@add(result, offset))) = '_'
+                offset++
+                @deref(@as_mut(@add(result, offset))) = '_'
+                offset++
+                i++
+            end
+            @deref(@as_mut(@add(result, offset - 2))) = 0
+            return result
+        )
+        _ => return "void"
+    end
+end
+
+def list_helper_prefix(element_ty ref(ast.Type), arena ref(allocators.Arena)) ref(u8)
+    val suffix ref(u8) = type_suffix(element_ty, arena)
+    val slen usize = str.len(suffix)
+    val prefix ref(u8) = "scar_list__"
+    val plen usize = str.len(prefix)
+    val result_res = allocators.Arena.alloc(arena, plen + slen + 1)
+    var result ref(u8) = none
+    match result_res
+        ok m => result = m as ref(u8)
+        error _ => return "scar_list__void"
+    end
+    @memcpy(result, prefix, plen)
+    @memcpy(@add(result, plen), suffix, slen)
+    @deref(@as_mut(@add(result, plen + slen))) = 0
     return result
 end
 
@@ -1293,6 +2064,92 @@ def find_last_dot(s ref(u8)) usize
         end
     end
     return slen
+end
+
+def is_ref_type(ty ref(ast.Type)) bool
+    match @deref(ty)
+        ast.Type.Ref(_) => return true
+        ast.Type.Mut(inner) => (
+            match @deref(inner)
+                ast.Type.Ref(_) => return true
+                _ => return false
+            end
+        )
+        _ => return false
+    end
+end
+
+def deref_type(ty ref(ast.Type)) ref(ast.Type)
+    match @deref(ty)
+        ast.Type.Ref(inner) => return inner
+        ast.Type.Mut(inner) => (
+            match @deref(inner)
+                ast.Type.Ref(inner2) => return inner2
+                _ => return inner
+            end
+        )
+        _ => return ty
+    end
+end
+
+def get_expr_type(expr ref(ast.Expr), fun ref(ast.Function), info ref(sema.ProgramInfo)) ref(ast.Type)
+    match @deref(expr)
+        ast.Expr.Ident(name) => return lookup_local_type(name, fun, info)
+        ast.Expr.Field(f) => (
+            val base_ty ref(ast.Type) = get_expr_type(f.base, fun, info)
+            val base_ty_deref ref(ast.Type) = deref_type(base_ty)
+            return infer_field_type_simple(base_ty_deref, f.field, info)
+        )
+        ast.Expr.Index(idx) => (
+            val base_ty ref(ast.Type) = get_expr_type(idx.base, fun, info)
+            val base_ty_deref ref(ast.Type) = deref_type(base_ty)
+            return get_list_element_type(base_ty_deref)
+        )
+        ast.Expr.Path(segments) => (
+            if @len(segments) == 1
+                return lookup_local_type(segments[0], fun, info)
+            end
+            return @addr(ast.Type.Void(0))
+        )
+        _ => return @addr(ast.Type.Void(0))
+    end
+end
+
+def infer_field_type_simple(base_ty ref(ast.Type), field ref(u8), info ref(sema.ProgramInfo)) ref(ast.Type)
+    match @deref(base_ty)
+        ast.Type.Named(name) => (
+            var i usize = 0
+            for i < @len(info.types)
+                if str.eql(info.types[i].name, name)
+                    var j usize = 0
+                    for j < @len(info.types[i].info.field_map)
+                        if str.eql(info.types[i].info.field_map[j].name, field)
+                            return @addr(info.types[i].info.field_map[j].ty)
+                        end
+                        j++
+                    end
+                    break
+                end
+                i++
+            end
+        )
+        _ => ()
+    end
+    return @addr(ast.Type.Void(0))
+end
+
+def get_list_element_type(ty ref(ast.Type)) ref(ast.Type)
+    match @deref(ty)
+        ast.Type.List(inner) => return inner
+        _ => return @addr(ast.Type.Void(0))
+    end
+end
+
+def is_list_type(ty ref(ast.Type)) bool
+    match @deref(ty)
+        ast.Type.List(_) => return true
+        _ => return false
+    end
 end
 
 def lookup_symbol(name ref(u8), info ref(sema.ProgramInfo), arena ref(allocators.Arena)) ref(u8)

@@ -300,36 +300,60 @@ def parse_type(p ref(ast.TokenList), arena ref(allocators.Arena)) ast.Type
                     ast.TokenKind.LParen(_) => advance(p)
                     _ => ()
                 end
-                parse_type(p, arena)
+                val inner ast.Type = parse_type(p, arena)
                 match p.tokens[p.pos].kind
                     ast.TokenKind.RParen(_) => advance(p)
                     _ => ()
                 end
-                return ast.Type.Void(0)
+                val raw_res = allocators.Arena.alloc(arena, @sizeof(ast.Type) as usize)
+                match raw_res
+                    ok raw => (
+                        var inner_ptr ref(ast.Type) = @bitcast(raw, ref(ast.Type))
+                        @deref(inner_ptr) = inner
+                        return ast.Type.Mut(inner_ptr)
+                    )
+                    error _ => return ast.Type.Void(0)
+                end
             elif v == KW_REF
                 advance(p)
                 match p.tokens[p.pos].kind
                     ast.TokenKind.LParen(_) => advance(p)
                     _ => ()
                 end
-                parse_type(p, arena)
+                val inner ast.Type = parse_type(p, arena)
                 match p.tokens[p.pos].kind
                     ast.TokenKind.RParen(_) => advance(p)
                     _ => ()
                 end
-                return ast.Type.Void(0)
+                val raw_res = allocators.Arena.alloc(arena, @sizeof(ast.Type) as usize)
+                match raw_res
+                    ok raw => (
+                        var inner_ptr ref(ast.Type) = @bitcast(raw, ref(ast.Type))
+                        @deref(inner_ptr) = inner
+                        return ast.Type.Ref(inner_ptr)
+                    )
+                    error _ => return ast.Type.Void(0)
+                end
             elif v == KW_LIST
                 advance(p)
                 match p.tokens[p.pos].kind
                     ast.TokenKind.LBracket(_) => advance(p)
                     _ => ()
                 end
-                parse_type(p, arena)
+                val inner ast.Type = parse_type(p, arena)
                 match p.tokens[p.pos].kind
                     ast.TokenKind.RBracket(_) => advance(p)
                     _ => ()
                 end
-                return ast.Type.Void(0)
+                val raw_res = allocators.Arena.alloc(arena, @sizeof(ast.Type) as usize)
+                match raw_res
+                    ok raw => (
+                        var inner_ptr ref(ast.Type) = @bitcast(raw, ref(ast.Type))
+                        @deref(inner_ptr) = inner
+                        return ast.Type.List(inner_ptr)
+                    )
+                    error _ => return ast.Type.Void(0)
+                end
             end
             advance(p)
             return ast.Type.Void(0)
@@ -538,6 +562,76 @@ def parse_stmt(p ref(ast.TokenList), arena ref(allocators.Arena), current_platfo
             advance(p)
             val value ast.Expr = parse_expr(p, arena)
             return ast.Stmt.Assign(@addr(ast.StmtAssign(
+                target: expr,
+                value: value,
+                line: line,
+                column: column
+            )))
+        )
+        ast.TokenKind.PlusEqual(_) => (
+            advance(p)
+            val value ast.Expr = parse_expr(p, arena)
+            return ast.Stmt.AddAssign(@addr(ast.StmtAssign(
+                target: expr,
+                value: value,
+                line: line,
+                column: column
+            )))
+        )
+        ast.TokenKind.MinusEqual(_) => (
+            advance(p)
+            val value ast.Expr = parse_expr(p, arena)
+            return ast.Stmt.SubAssign(@addr(ast.StmtAssign(
+                target: expr,
+                value: value,
+                line: line,
+                column: column
+            )))
+        )
+        ast.TokenKind.StarEqual(_) => (
+            advance(p)
+            val value ast.Expr = parse_expr(p, arena)
+            return ast.Stmt.MulAssign(@addr(ast.StmtAssign(
+                target: expr,
+                value: value,
+                line: line,
+                column: column
+            )))
+        )
+        ast.TokenKind.SlashEqual(_) => (
+            advance(p)
+            val value ast.Expr = parse_expr(p, arena)
+            return ast.Stmt.DivAssign(@addr(ast.StmtAssign(
+                target: expr,
+                value: value,
+                line: line,
+                column: column
+            )))
+        )
+        ast.TokenKind.CaretEqual(_) => (
+            advance(p)
+            val value ast.Expr = parse_expr(p, arena)
+            return ast.Stmt.BitXorAssign(@addr(ast.StmtAssign(
+                target: expr,
+                value: value,
+                line: line,
+                column: column
+            )))
+        )
+        ast.TokenKind.AmpEqual(_) => (
+            advance(p)
+            val value ast.Expr = parse_expr(p, arena)
+            return ast.Stmt.BitAndAssign(@addr(ast.StmtAssign(
+                target: expr,
+                value: value,
+                line: line,
+                column: column
+            )))
+        )
+        ast.TokenKind.PipeEqual(_) => (
+            advance(p)
+            val value ast.Expr = parse_expr(p, arena)
+            return ast.Stmt.BitOrAssign(@addr(ast.StmtAssign(
                 target: expr,
                 value: value,
                 line: line,

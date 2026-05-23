@@ -77,6 +77,69 @@ def resolve_stmt(stmt ref(ast.Stmt), arena ref(allocators.Arena)) ast.Stmt|error
             p.column = a.column
             return ast.Stmt.Assign(p)
         )
+        ast.Stmt.AddAssign(a) => (
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.StmtAssign) as usize)?
+            var p ref(ast.StmtAssign) = @bitcast(raw, ref(ast.StmtAssign))
+            p.target = resolve_expr(@addr(a.target), arena)?
+            p.value = resolve_expr(@addr(a.value), arena)?
+            p.line = a.line
+            p.column = a.column
+            return ast.Stmt.AddAssign(p)
+        )
+        ast.Stmt.SubAssign(a) => (
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.StmtAssign) as usize)?
+            var p ref(ast.StmtAssign) = @bitcast(raw, ref(ast.StmtAssign))
+            p.target = resolve_expr(@addr(a.target), arena)?
+            p.value = resolve_expr(@addr(a.value), arena)?
+            p.line = a.line
+            p.column = a.column
+            return ast.Stmt.SubAssign(p)
+        )
+        ast.Stmt.MulAssign(a) => (
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.StmtAssign) as usize)?
+            var p ref(ast.StmtAssign) = @bitcast(raw, ref(ast.StmtAssign))
+            p.target = resolve_expr(@addr(a.target), arena)?
+            p.value = resolve_expr(@addr(a.value), arena)?
+            p.line = a.line
+            p.column = a.column
+            return ast.Stmt.MulAssign(p)
+        )
+        ast.Stmt.DivAssign(a) => (
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.StmtAssign) as usize)?
+            var p ref(ast.StmtAssign) = @bitcast(raw, ref(ast.StmtAssign))
+            p.target = resolve_expr(@addr(a.target), arena)?
+            p.value = resolve_expr(@addr(a.value), arena)?
+            p.line = a.line
+            p.column = a.column
+            return ast.Stmt.DivAssign(p)
+        )
+        ast.Stmt.BitXorAssign(a) => (
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.StmtAssign) as usize)?
+            var p ref(ast.StmtAssign) = @bitcast(raw, ref(ast.StmtAssign))
+            p.target = resolve_expr(@addr(a.target), arena)?
+            p.value = resolve_expr(@addr(a.value), arena)?
+            p.line = a.line
+            p.column = a.column
+            return ast.Stmt.BitXorAssign(p)
+        )
+        ast.Stmt.BitAndAssign(a) => (
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.StmtAssign) as usize)?
+            var p ref(ast.StmtAssign) = @bitcast(raw, ref(ast.StmtAssign))
+            p.target = resolve_expr(@addr(a.target), arena)?
+            p.value = resolve_expr(@addr(a.value), arena)?
+            p.line = a.line
+            p.column = a.column
+            return ast.Stmt.BitAndAssign(p)
+        )
+        ast.Stmt.BitOrAssign(a) => (
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.StmtAssign) as usize)?
+            var p ref(ast.StmtAssign) = @bitcast(raw, ref(ast.StmtAssign))
+            p.target = resolve_expr(@addr(a.target), arena)?
+            p.value = resolve_expr(@addr(a.value), arena)?
+            p.line = a.line
+            p.column = a.column
+            return ast.Stmt.BitOrAssign(p)
+        )
         ast.Stmt.Return(r) => (
             val raw = allocators.Arena.alloc(arena, @sizeof(ast.StmtReturn) as usize)?
             var p ref(ast.StmtReturn) = @bitcast(raw, ref(ast.StmtReturn))
