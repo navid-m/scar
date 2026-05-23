@@ -102,16 +102,46 @@ pub def resolve(program ref(ast.Program), source_path ref(u8), arena ref(allocat
         val mod_tokens list[ast.Token] = lxr.lex(mod_source, arena)
         val mod_prog ast.Program = prs.parse_program(mod_tokens, arena, platform)
 
+        var pub_type_names list[ref(u8)] = []
         var ti usize = 0
+        for ti < @len(mod_prog.type_defs)
+            if mod_prog.type_defs[ti].is_pub
+                @append(pub_type_names, mod_prog.type_defs[ti].name)
+            end
+            ti++
+        end
+
+        ti = 0
         for ti < @len(mod_prog.type_defs)
             val td ref(ast.TypeDef) = @addr(mod_prog.type_defs[ti])
             if td.is_pub
                 val prefixed_name ref(u8) = prefix_name(mu.name, td.name, arena)
+                var prefixed_fields list[ast.FieldDef] = []
+                var fi2 usize = 0
+                for fi2 < @len(td.fields)
+                    val f ref(ast.FieldDef) = @addr(td.fields[fi2])
+                    val rewritten_ty ast.Type = rewrite_type_with_prefix(@addr(f.ty), mu.name, @addr(pub_type_names), arena)
+                    @append(prefixed_fields, ast.FieldDef(name: f.name, ty: rewritten_ty, line: f.line, column: f.column))
+                    fi2++
+                end
+                var prefixed_variants list[ast.VariantDef] = []
+                var vi usize = 0
+                for vi < @len(td.variants)
+                    val v ref(ast.VariantDef) = @addr(td.variants[vi])
+                    var rewritten_payloads list[ast.Type] = []
+                    var pi usize = 0
+                    for pi < @len(v.payload_types)
+                        @append(rewritten_payloads, rewrite_type_with_prefix(@addr(v.payload_types[pi]), mu.name, @addr(pub_type_names), arena))
+                        pi++
+                    end
+                    @append(prefixed_variants, ast.VariantDef(name: v.name, payload_types: rewritten_payloads))
+                    vi++
+                end
                 val prefixed_td ast.TypeDef = ast.TypeDef(
                     name: prefixed_name,
                     kind: td.kind,
-                    fields: td.fields,
-                    variants: td.variants,
+                    fields: prefixed_fields,
+                    variants: prefixed_variants,
                     is_pub: false
                 )
                 @append(resolved_type_defs, prefixed_td)
@@ -124,10 +154,19 @@ pub def resolve(program ref(ast.Program), source_path ref(u8), arena ref(allocat
             val fn_ref ref(ast.Function) = @addr(mod_prog.functions[fi])
             if fn_ref.is_pub
                 val prefixed_name ref(u8) = prefix_name(mu.name, fn_ref.name, arena)
+                var prefixed_params list[ast.Param] = []
+                var pi usize = 0
+                for pi < @len(fn_ref.params)
+                    val param ref(ast.Param) = @addr(fn_ref.params[pi])
+                    val rewritten_ty ast.Type = rewrite_type_with_prefix(@addr(param.ty), mu.name, @addr(pub_type_names), arena)
+                    @append(prefixed_params, ast.Param(name: param.name, ty: rewritten_ty, line: param.line, column: param.column))
+                    pi++
+                end
+                val rewritten_ret ast.Type = rewrite_type_with_prefix(@addr(fn_ref.return_type), mu.name, @addr(pub_type_names), arena)
                 val prefixed_fn ast.Function = ast.Function(
                     name: prefixed_name,
-                    params: fn_ref.params,
-                    return_type: fn_ref.return_type,
+                    params: prefixed_params,
+                    return_type: rewritten_ret,
                     body: fn_ref.body,
                     is_pub: false,
                     is_extern: fn_ref.is_extern,
@@ -771,5 +810,54 @@ def resolve_type(ty ref(ast.Type), arena ref(allocators.Arena)) ast.Type|error
             @deref(p) = resolve_type(ret, arena)?
             return ast.Type.FnPtr(resolved_params, p)
         )
+    end
+end
+
+def rewrite_type_with_prefix(ty ref(ast.Type), module_prefix ref(u8), pub_names ref(list[ref(u8)]), arena ref(allocators.Arena)) ast.Type
+    match @deref(ty)
+        ast.Type.Named(name) => (
+            var i usize = 0
+            for i < @len(@deref(pub_names))
+                if str.eql(@deref(pub_names)[i], name)
+                    return ast.Type.Named(prefix_name(module_prefix, name, arena))
+                end
+                i++
+            end
+            return @deref(ty)
+        )
+        ast.Type.Ref(inner) => (
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.Type) as usize)
+            match raw
+                ok m => (
+                    var p ref(ast.Type) = @bitcast(m, ref(ast.Type))
+                    @deref(p) = rewrite_type_with_prefix(inner, module_prefix, pub_names, arena)
+                    return ast.Type.Ref(p)
+                )
+                error _ => return @deref(ty)
+            end
+        )
+        ast.Type.Mut(inner) => (
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.Type) as usize)
+            match raw
+                ok m => (
+                    var p ref(ast.Type) = @bitcast(m, ref(ast.Type))
+                    @deref(p) = rewrite_type_with_prefix(inner, module_prefix, pub_names, arena)
+                    return ast.Type.Mut(p)
+                )
+                error _ => return @deref(ty)
+            end
+        )
+        ast.Type.List(inner) => (
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.Type) as usize)
+            match raw
+                ok m => (
+                    var p ref(ast.Type) = @bitcast(m, ref(ast.Type))
+                    @deref(p) = rewrite_type_with_prefix(inner, module_prefix, pub_names, arena)
+                    return ast.Type.List(p)
+                )
+                error _ => return @deref(ty)
+            end
+        )
+        _ => return @deref(ty)
     end
 end
