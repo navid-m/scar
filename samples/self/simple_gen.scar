@@ -1,4 +1,4 @@
-def some_gen[T](x: T, y: T) T
+def some_gen[T](x T, y T) T
     return x + y
 end
 
