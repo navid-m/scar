@@ -749,14 +749,15 @@ def parse_match_stmt(p ref(ast.TokenList), arena ref(allocators.Arena), current_
                         ast.TokenKind.RParen(_) => break
                         _ => ()
                     end
-                        @append(arm_body, parse_stmt(p, arena, current_platform))
-                    end
-                    match p.tokens[p.pos].kind
-                        ast.TokenKind.RParen(_) => advance(p)
-                        _ => ()
-                    end
-                )
-                _ => @append(arm_body, parse_stmt(p, arena, current_platform))
+                    @append(arm_body, parse_stmt(p, arena, current_platform))
+                    consume_newlines(p)
+                end
+                match p.tokens[p.pos].kind
+                    ast.TokenKind.RParen(_) => advance(p)
+                    _ => ()
+                end
+            )
+            _ => @append(arm_body, parse_stmt(p, arena, current_platform))
         end
         @append(arms, ast.MatchArm(
             kind: kind,
