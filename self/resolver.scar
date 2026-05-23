@@ -75,10 +75,12 @@ def path_exists(path ref(u8)) bool
 end
 
 def concat_path(a ref(u8), b ref(u8), arena ref(allocators.Arena)) ref(u8)
-    val alen usize = str.len(a)
-    val blen usize = str.len(b)
-    val total usize = alen + 1 + blen + 1
-    val buf_res = allocators.Arena.alloc(arena, total)
+    val (
+        alen usize = str.len(a)
+        blen usize = str.len(b)
+        total usize = alen + 1 + blen + 1
+        buf_res = allocators.Arena.alloc(arena, total)
+    )
     var buf ref(u8) = none
     match buf_res
         ok m => buf = m as ref(u8)
