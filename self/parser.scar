@@ -771,7 +771,12 @@ def parse_for_stmt(p ref(ast.TokenList), arena ref(allocators.Arena), current_pl
         end
     end
 
-    val condition ast.Expr = parse_expr(p, arena)
+    var condition ast.Expr = ast.Expr.IntLit(1)
+    match p.tokens[p.pos].kind
+        ast.TokenKind.Newline(_) => ()
+        ast.TokenKind.Eof(_) => ()
+        _ => condition = parse_expr(p, arena)
+    end
     expect_newline(p)
     val body list[ast.Stmt] = parse_block(p, arena, current_platform)
     if !is_eof(p) && is_keyword(p, KW_END)
