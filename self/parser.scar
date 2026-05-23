@@ -471,6 +471,53 @@ def parse_stmt(p ref(ast.TokenList), arena ref(allocators.Arena), current_platfo
         advance(p)
         val line usize = p.tokens[p.pos].line
         val column usize = p.tokens[p.pos].column
+
+        match p.tokens[p.pos].kind
+            ast.TokenKind.LParen(_) => (
+                advance(p)
+                consume_newlines(p)
+                var decls list[ast.Stmt] = []
+                for !is_eof(p)
+                    match p.tokens[p.pos].kind
+                        ast.TokenKind.RParen(_) => break
+                        _ => ()
+                    end
+                    val decl_line usize = p.tokens[p.pos].line
+                    val decl_col usize = p.tokens[p.pos].column
+                    val decl_name ref(u8) = expect_ident(p, arena)
+                    var decl_type ast.Type = ast.Type.Void(0)
+                    match p.tokens[p.pos].kind
+                        ast.TokenKind.Assign(_) => ()
+                        _ => (
+                            if starts_type(p)
+                                decl_type = parse_type(p, arena)
+                            end
+                        )
+                    end
+                    match p.tokens[p.pos].kind
+                        ast.TokenKind.Assign(_) => advance(p)
+                        _ => ()
+                    end
+                    val decl_init ast.Expr = parse_expr(p, arena)
+                    @append(decls, ast.Stmt.VarDecl(@addr(ast.StmtVarDecl(
+                        name: decl_name,
+                        mutable: mutable,
+                        declared_type: decl_type,
+                        init: decl_init,
+                        line: decl_line,
+                        column: decl_col
+                    ))))
+                    consume_newlines(p)
+                end
+                match p.tokens[p.pos].kind
+                    ast.TokenKind.RParen(_) => advance(p)
+                    _ => ()
+                end
+                return ast.Stmt.Block(decls)
+            )
+            _ => ()
+        end
+
         val name ref(u8) = expect_ident(p, arena)
         var declared_type ast.Type = ast.Type.Void(0)
         match p.tokens[p.pos].kind
@@ -553,9 +600,11 @@ def parse_stmt(p ref(ast.TokenList), arena ref(allocators.Arena), current_platfo
         return parse_when_stmt(p, arena, current_platform)
     end
 
-    val line usize = p.tokens[p.pos].line
-    val column usize = p.tokens[p.pos].column
-    val expr ast.Expr = parse_expr(p, arena)
+    val (
+        line   usize    = p.tokens[p.pos].line
+        column usize    = p.tokens[p.pos].column
+        expr   ast.Expr = parse_expr(p, arena)
+    )
 
     match p.tokens[p.pos].kind
         ast.TokenKind.Assign(_) => (
@@ -1531,6 +1580,9 @@ def parse_primary(p ref(ast.TokenList), arena ref(allocators.Arena)) ast.Expr
                 advance(p)
                 return ast.Expr.None(0)
             end
+            val tok_line usize = p.tokens[p.pos].line
+            val tok_col usize = p.tokens[p.pos].column
+            @print("parse error: unexpected keyword in expression at line {d}, col {d}\n", {tok_line, tok_col})
             advance(p)
             return ast.Expr.None(0)
         )
@@ -1670,6 +1722,9 @@ def parse_primary(p ref(ast.TokenList), arena ref(allocators.Arena)) ast.Expr
             end
         )
         _ => (
+            val tok_line usize = p.tokens[p.pos].line
+            val tok_col usize = p.tokens[p.pos].column
+            @print("parse error: unexpected token in expression at line {d}, col {d}\n", {tok_line, tok_col})
             advance(p)
             return ast.Expr.None(0)
         )
