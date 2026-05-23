@@ -93,6 +93,24 @@ def append_runtime_prelude(output ref(ref(u8)), output_len ref(usize))
     append_str(output, output_len, "static void scar_runtime_free(void *ptr) {\n")
     append_str(output, output_len, "    free(ptr);\n")
     append_str(output, output_len, "}\n\n")
+    append_str(output, output_len, "static int scar__argc;\n")
+    append_str(output, output_len, "static char **scar__argv;\n\n")
+    append_str(output, output_len, "static void scar_runtime_signal_handler(int signal_number) {\n")
+    append_str(output, output_len, "    fprintf(stderr, \"scar: fatal signal %d\\n\", signal_number);\n")
+    append_str(output, output_len, "    _Exit(128 + signal_number);\n")
+    append_str(output, output_len, "}\n\n")
+    append_str(output, output_len, "static void scar_runtime_install_signal_handlers(void) {\n")
+    append_str(output, output_len, "    signal(SIGSEGV, scar_runtime_signal_handler);\n")
+    append_str(output, output_len, "#ifdef SIGBUS\n")
+    append_str(output, output_len, "    signal(SIGBUS, scar_runtime_signal_handler);\n")
+    append_str(output, output_len, "#endif\n")
+    append_str(output, output_len, "#ifdef SIGILL\n")
+    append_str(output, output_len, "    signal(SIGILL, scar_runtime_signal_handler);\n")
+    append_str(output, output_len, "#endif\n")
+    append_str(output, output_len, "#ifdef SIGABRT\n")
+    append_str(output, output_len, "    signal(SIGABRT, scar_runtime_signal_handler);\n")
+    append_str(output, output_len, "#endif\n")
+    append_str(output, output_len, "}\n\n")
 end
 
 def render_typedef(td ref(ast.TypeDef), arena ref(allocators.Arena), output ref(ref(u8)), output_len ref(usize))
@@ -436,13 +454,25 @@ def append_expr(expr ref(ast.Expr), fun ref(ast.Function), info ref(sema.Program
             if @len(segments) == 1
                 append_str(output, output_len, mangle_local_symbol(segments[0], arena))
             else
-                var i usize = 0
-                for i < @len(segments)
-                    if i > 0
-                        append_str(output, output_len, "__")
+                if is_local_variable(segments[0], fun, info)
+                    append_str(output, output_len, "(")
+                    append_str(output, output_len, mangle_local_symbol(segments[0], arena))
+                    append_str(output, output_len, ")")
+                    var i usize = 1
+                    for i < @len(segments)
+                        append_str(output, output_len, ".")
+                        append_str(output, output_len, segments[i])
+                        i++
                     end
-                    append_str(output, output_len, segments[i])
-                    i++
+                else
+                    var i usize = 0
+                    for i < @len(segments)
+                        if i > 0
+                            append_str(output, output_len, "__")
+                        end
+                        append_str(output, output_len, segments[i])
+                        i++
+                    end
                 end
             end
         )
@@ -603,20 +633,111 @@ def append_builtin_call(bc ref(ast.ExprBuiltinCall), fun ref(ast.Function), info
     elif str.eql(bc.name, "args")
         append_str(output, output_len, "({ list_ref_u8 __scar_args = list_ref_u8_new(); list_ref_u8_ensure_capacity(&__scar_args, scar__argc); memcpy(__scar_args.data, scar__argv, sizeof(const char *) * (size_t)scar__argc); __scar_args.len = scar__argc; __scar_args; })")
     elif str.eql(bc.name, "print")
-        append_str(output, output_len, "printf(")
+        var fmt ref(u8) = ""
         match bc.args[0]
-            ast.Expr.StrLit(s) => (
-                append_str(output, output_len, "\"")
-                append_str(output, output_len, translate_format_string(s, arena))
-                append_str(output, output_len, "\"")
-            )
-            _ => append_expr(@addr(bc.args[0]), fun, info, arena, output, output_len)
+            ast.Expr.StrLit(s) => fmt = s
+            _ => ()
         end
+        
+        var flat_args list[ast.Expr] = []
         var i usize = 1
         for i < @len(bc.args)
-            append_str(output, output_len, ", ")
-            append_expr(@addr(bc.args[i]), fun, info, arena, output, output_len)
+            match bc.args[i]
+                ast.Expr.Pack(elems) => (
+                    var j usize = 0
+                    for j < @len(elems)
+                        @append(flat_args, elems[j])
+                        j++
+                    end
+                )
+                _ => @append(flat_args, bc.args[i])
+            end
             i++
+        end
+
+        var translated list[u8] = []
+        var markers list[ref(u8)] = []
+        val flen usize = str.len(fmt)
+        var idx usize = 0
+        for idx < flen
+            val ch u8 = @deref(@add(fmt, idx))
+            if ch == '{'
+                var end_idx usize = idx + 1
+                for end_idx < flen && @deref(@add(fmt, end_idx)) != '}'
+                    end_idx++
+                end
+                if end_idx < flen
+                    val mlen usize = end_idx - (idx + 1)
+                    val marker_res = allocators.Arena.alloc(arena, mlen + 1)
+                    var marker ref(u8) = none
+                    match marker_res
+                        ok m => marker = m as ref(u8)
+                        error _ => ()
+                    end
+                    if marker != none
+                        @memcpy(marker, @add(fmt, idx + 1), mlen)
+                        @deref(@as_mut(@add(marker, mlen))) = 0
+                        @append(markers, marker)
+                    end
+                    
+                    if str.eql(marker, "d") || str.eql(marker, "")
+                        @append(translated, '%')
+                        @append(translated, 'j')
+                        @append(translated, 'd')
+                    elif str.eql(marker, "u")
+                        @append(translated, '%')
+                        @append(translated, 'j')
+                        @append(translated, 'u')
+                    elif str.eql(marker, "s")
+                        @append(translated, '%')
+                        @append(translated, 's')
+                    elif str.eql(marker, "c")
+                        @append(translated, '%')
+                        @append(translated, 'c')
+                    else
+                        @append(translated, '%')
+                        var k usize = 0
+                        for k < mlen
+                            @append(translated, @deref(@add(marker, k)))
+                            k++
+                        end
+                    end
+                    idx = end_idx + 1
+                    continue
+                end
+            end
+            @append(translated, ch)
+            idx++
+        end
+        @append(translated, 0)
+        val translated_fmt ref(u8) = @addr(translated[0])
+
+        append_str(output, output_len, "printf(\"")
+        append_str(output, output_len, translated_fmt)
+        append_str(output, output_len, "\"")
+        var arg_idx usize = 0
+        for arg_idx < @len(flat_args)
+            append_str(output, output_len, ", ")
+            var marker ref(u8) = ""
+            if arg_idx < @len(markers)
+                marker = markers[arg_idx]
+            end
+            if str.eql(marker, "d") || str.eql(marker, "")
+                append_str(output, output_len, "((intmax_t)(")
+                append_expr(@addr(flat_args[arg_idx]), fun, info, arena, output, output_len)
+                append_str(output, output_len, "))")
+            elif str.eql(marker, "u")
+                append_str(output, output_len, "((uintmax_t)(")
+                append_expr(@addr(flat_args[arg_idx]), fun, info, arena, output, output_len)
+                append_str(output, output_len, "))")
+            elif str.eql(marker, "c")
+                append_str(output, output_len, "((int)(")
+                append_expr(@addr(flat_args[arg_idx]), fun, info, arena, output, output_len)
+                append_str(output, output_len, "))")
+            else
+                append_expr(@addr(flat_args[arg_idx]), fun, info, arena, output, output_len)
+            end
+            arg_idx++
         end
         append_str(output, output_len, ")")
     elif str.eql(bc.name, "alloc")
@@ -723,7 +844,10 @@ end
 
 def render_entrypoint(fun ref(ast.Function), info ref(sema.ProgramInfo), arena ref(allocators.Arena), output ref(ref(u8)), output_len ref(usize))
     val symbol ref(u8) = lookup_symbol(fun.name, info, arena)
-    append_str(output, output_len, "int main(void) {\n")
+    append_str(output, output_len, "int main(int argc, char *argv[]) {\n")
+    append_str(output, output_len, "    scar__argc = argc;\n")
+    append_str(output, output_len, "    scar__argv = argv;\n")
+    append_str(output, output_len, "    scar_runtime_install_signal_handlers();\n")
     append_str(output, output_len, "    ")
     append_str(output, output_len, symbol)
     append_str(output, output_len, "();\n")
@@ -872,6 +996,14 @@ def lookup_local_type(name ref(u8), fun ref(ast.Function), info ref(sema.Program
         i++
     end
     return @addr(ast.Type.Void(0))
+end
+
+def is_local_variable(name ref(u8), fun ref(ast.Function), info ref(sema.ProgramInfo)) bool
+    val ty ref(ast.Type) = lookup_local_type(name, fun, info)
+    match @deref(ty)
+        ast.Type.Void(_) => return false
+        _ => return true
+    end
 end
 
 def binary_op_str(op ast.BinaryOp) ref(u8)
