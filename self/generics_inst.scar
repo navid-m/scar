@@ -1,0 +1,797 @@
+val str = use("std/string")
+val ast = use("ast")
+val allocators = use("std/allocators")
+val gen = use("generics")
+
+pub type GenericState
+    templates list[ast.Function]
+    generated list[ast.Function]
+    instantiated_keys list[ref(u8)]
+    instantiated_names list[ref(u8)]
+end
+
+def find_template(state ref(GenericState), name ref(u8)) ref(ast.Function)
+    var i usize = 0
+    for i < @len(state.templates)
+        if str.eql(state.templates[i].name, name)
+            return @addr(state.templates[i])
+        end
+        i++
+    end
+    return none
+end
+
+def find_instantiated(state ref(GenericState), key ref(u8)) ref(u8)
+    var i usize = 0
+    for i < @len(state.instantiated_keys)
+        if str.eql(state.instantiated_keys[i], key)
+            return state.instantiated_names[i]
+        end
+        i++
+    end
+    return none
+end
+
+def make_specialization_key(name ref(u8), type_args ref(list[ast.Type]), arena ref(allocators.Arena)) ref(u8)
+    var result ref(u8) = gen.concat3(name, "[", "", arena)
+    var i usize = 0
+    for i < @len(@deref(type_args))
+        if i > 0
+            result = gen.concat3(result, ",", "", arena)
+        end
+        result = gen.concat3(result, gen.type_suffix(@addr(@deref(type_args)[i]), arena), "", arena)
+        i++
+    end
+    result = gen.concat3(result, "]", "", arena)
+    return result
+end
+
+def instantiate(state ref(GenericState), name ref(u8), type_args ref(list[ast.Type]), arena ref(allocators.Arena)) ref(u8)
+    val key ref(u8) = make_specialization_key(name, type_args, arena)
+    val existing ref(u8) = find_instantiated(state, key)
+    if existing != none
+        return existing
+    end
+
+    val template ref(ast.Function) = find_template(state, name)
+    if template == none
+        return name
+    end
+
+    val specialized_name ref(u8) = gen.build_specialized_name(name, type_args, arena)
+    @append(state.instantiated_keys, key)
+    @append(state.instantiated_names, specialized_name)
+
+    var new_params list[ast.Param] = []
+    var i usize = 0
+    for i < @len(template.params)
+        val param ref(ast.Param) = @addr(template.params[i])
+        @append(new_params, ast.Param(
+            name: param.name,
+            ty: gen.substitute_type(@addr(param.ty), @addr(template.generic_params), type_args, arena),
+            line: param.line,
+            column: param.column
+        ))
+        i++
+    end
+
+    val new_ret ast.Type = gen.substitute_type(@addr(template.return_type), @addr(template.generic_params), type_args, arena)
+
+    var new_body list[ast.Stmt] = []
+    i = 0
+    for i < @len(template.body)
+        @append(new_body, gen.substitute_stmt(@addr(template.body[i]), @addr(template.generic_params), type_args, arena))
+        i++
+    end
+
+    val specialized ast.Function = ast.Function(
+        name: specialized_name,
+        params: new_params,
+        return_type: new_ret,
+        body: new_body,
+        is_pub: false,
+        is_extern: false,
+        extern_name: template.extern_name,
+        generic_params: [] as list[ref(u8)],
+        line: template.line,
+        column: template.column
+    )
+    @append(state.generated, specialized)
+
+    rewrite_function_calls(state, @addr(state.generated[@len(state.generated) - 1]), arena)
+
+    return specialized_name
+end
+
+def rewrite_expr_calls(state ref(GenericState), expr ref(ast.Expr), arena ref(allocators.Arena)) ast.Expr
+    match @deref(expr)
+        ast.Expr.Call(c) => (
+            match @deref(c.callee)
+                ast.Expr.Specialize(sp) => (
+                    var fn_name ref(u8) = none
+                    match @deref(sp.callee)
+                        ast.Expr.Ident(name) => fn_name = name
+                        ast.Expr.Path(segs) => (
+                            if @len(segs) > 0
+                                fn_name = segs[@len(segs) - 1]
+                                if @len(segs) > 1
+                                    val joined ref(u8) = join_segs(segs, arena)
+                                    fn_name = joined
+                                end
+                            end
+                        )
+                        _ => ()
+                    end
+                    if fn_name != none
+                        val concrete_name ref(u8) = instantiate(state, fn_name, @addr(sp.type_args), arena)
+                        var new_args list[ast.Expr] = []
+                        var i usize = 0
+                        for i < @len(c.args)
+                            @append(new_args, rewrite_expr_calls(state, @addr(c.args[i]), arena))
+                            i++
+                        end
+                        val raw = allocators.Arena.alloc(arena, @sizeof(ast.ExprCall) as usize)
+                        match raw
+                            ok m => (
+                                var p ref(ast.ExprCall) = @bitcast(m, ref(ast.ExprCall))
+                                val callee_raw = allocators.Arena.alloc(arena, @sizeof(ast.Expr) as usize)
+                                match callee_raw
+                                    ok cm => (
+                                        var cp ref(ast.Expr) = @bitcast(cm, ref(ast.Expr))
+                                        @deref(cp) = ast.Expr.Ident(concrete_name)
+                                        p.callee = cp
+                                    )
+                                    error _ => p.callee = c.callee
+                                end
+                                p.args = new_args
+                                return ast.Expr.Call(p)
+                            )
+                            error _ => return @deref(expr)
+                        end
+                    end
+                    return @deref(expr)
+                )
+                _ => (
+                    val raw = allocators.Arena.alloc(arena, @sizeof(ast.ExprCall) as usize)
+                    match raw
+                        ok m => (
+                            var p ref(ast.ExprCall) = @bitcast(m, ref(ast.ExprCall))
+                            val callee_raw = allocators.Arena.alloc(arena, @sizeof(ast.Expr) as usize)
+                            match callee_raw
+                                ok cm => (
+                                    var cp ref(ast.Expr) = @bitcast(cm, ref(ast.Expr))
+                                    @deref(cp) = rewrite_expr_calls(state, c.callee, arena)
+                                    p.callee = cp
+                                )
+                                error _ => p.callee = c.callee
+                            end
+                            var new_args list[ast.Expr] = []
+                            var i usize = 0
+                            for i < @len(c.args)
+                                @append(new_args, rewrite_expr_calls(state, @addr(c.args[i]), arena))
+                                i++
+                            end
+                            p.args = new_args
+                            return ast.Expr.Call(p)
+                        )
+                        error _ => return @deref(expr)
+                    end
+                )
+            end
+        )
+        ast.Expr.Binary(b) => (
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.ExprBinary) as usize)
+            match raw
+                ok m => (
+                    var p ref(ast.ExprBinary) = @bitcast(m, ref(ast.ExprBinary))
+                    val lhs_raw = allocators.Arena.alloc(arena, @sizeof(ast.Expr) as usize)
+                    val rhs_raw = allocators.Arena.alloc(arena, @sizeof(ast.Expr) as usize)
+                    match lhs_raw
+                        ok lm => (
+                            var lp ref(ast.Expr) = @bitcast(lm, ref(ast.Expr))
+                            @deref(lp) = rewrite_expr_calls(state, b.lhs, arena)
+                            p.lhs = lp
+                        )
+                        error _ => p.lhs = b.lhs
+                    end
+                    match rhs_raw
+                        ok rm => (
+                            var rp ref(ast.Expr) = @bitcast(rm, ref(ast.Expr))
+                            @deref(rp) = rewrite_expr_calls(state, b.rhs, arena)
+                            p.rhs = rp
+                        )
+                        error _ => p.rhs = b.rhs
+                    end
+                    p.op = b.op
+                    return ast.Expr.Binary(p)
+                )
+                error _ => return @deref(expr)
+            end
+        )
+        ast.Expr.Unary(u) => (
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.ExprUnary) as usize)
+            match raw
+                ok m => (
+                    var p ref(ast.ExprUnary) = @bitcast(m, ref(ast.ExprUnary))
+                    val inner_raw = allocators.Arena.alloc(arena, @sizeof(ast.Expr) as usize)
+                    match inner_raw
+                        ok im => (
+                            var ip ref(ast.Expr) = @bitcast(im, ref(ast.Expr))
+                            @deref(ip) = rewrite_expr_calls(state, u.expr, arena)
+                            p.expr = ip
+                        )
+                        error _ => p.expr = u.expr
+                    end
+                    p.op = u.op
+                    return ast.Expr.Unary(p)
+                )
+                error _ => return @deref(expr)
+            end
+        )
+        ast.Expr.Field(f) => (
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.ExprField) as usize)
+            match raw
+                ok m => (
+                    var p ref(ast.ExprField) = @bitcast(m, ref(ast.ExprField))
+                    val base_raw = allocators.Arena.alloc(arena, @sizeof(ast.Expr) as usize)
+                    match base_raw
+                        ok bm => (
+                            var bp ref(ast.Expr) = @bitcast(bm, ref(ast.Expr))
+                            @deref(bp) = rewrite_expr_calls(state, f.base, arena)
+                            p.base = bp
+                        )
+                        error _ => p.base = f.base
+                    end
+                    p.field = f.field
+                    return ast.Expr.Field(p)
+                )
+                error _ => return @deref(expr)
+            end
+        )
+        ast.Expr.Index(idx) => (
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.ExprIndex) as usize)
+            match raw
+                ok m => (
+                    var p ref(ast.ExprIndex) = @bitcast(m, ref(ast.ExprIndex))
+                    val base_raw = allocators.Arena.alloc(arena, @sizeof(ast.Expr) as usize)
+                    val idx_raw = allocators.Arena.alloc(arena, @sizeof(ast.Expr) as usize)
+                    match base_raw
+                        ok bm => (
+                            var bp ref(ast.Expr) = @bitcast(bm, ref(ast.Expr))
+                            @deref(bp) = rewrite_expr_calls(state, idx.base, arena)
+                            p.base = bp
+                        )
+                        error _ => p.base = idx.base
+                    end
+                    match idx_raw
+                        ok im => (
+                            var ip ref(ast.Expr) = @bitcast(im, ref(ast.Expr))
+                            @deref(ip) = rewrite_expr_calls(state, idx.index, arena)
+                            p.index = ip
+                        )
+                        error _ => p.index = idx.index
+                    end
+                    return ast.Expr.Index(p)
+                )
+                error _ => return @deref(expr)
+            end
+        )
+        ast.Expr.MethodCall(mc) => (
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.ExprMethodCall) as usize)
+            match raw
+                ok m => (
+                    var p ref(ast.ExprMethodCall) = @bitcast(m, ref(ast.ExprMethodCall))
+                    val recv_raw = allocators.Arena.alloc(arena, @sizeof(ast.Expr) as usize)
+                    match recv_raw
+                        ok rm => (
+                            var rp ref(ast.Expr) = @bitcast(rm, ref(ast.Expr))
+                            @deref(rp) = rewrite_expr_calls(state, mc.receiver, arena)
+                            p.receiver = rp
+                        )
+                        error _ => p.receiver = mc.receiver
+                    end
+                    p.method = mc.method
+                    var new_args list[ast.Expr] = []
+                    var i usize = 0
+                    for i < @len(mc.args)
+                        @append(new_args, rewrite_expr_calls(state, @addr(mc.args[i]), arena))
+                        i++
+                    end
+                    p.args = new_args
+                    return ast.Expr.MethodCall(p)
+                )
+                error _ => return @deref(expr)
+            end
+        )
+        ast.Expr.BuiltinCall(bc) => (
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.ExprBuiltinCall) as usize)
+            match raw
+                ok m => (
+                    var p ref(ast.ExprBuiltinCall) = @bitcast(m, ref(ast.ExprBuiltinCall))
+                    p.name = bc.name
+                    var new_args list[ast.Expr] = []
+                    var i usize = 0
+                    for i < @len(bc.args)
+                        @append(new_args, rewrite_expr_calls(state, @addr(bc.args[i]), arena))
+                        i++
+                    end
+                    p.args = new_args
+                    return ast.Expr.BuiltinCall(p)
+                )
+                error _ => return @deref(expr)
+            end
+        )
+        ast.Expr.Try(inner) => (
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.Expr) as usize)
+            match raw
+                ok m => (
+                    var p ref(ast.Expr) = @bitcast(m, ref(ast.Expr))
+                    @deref(p) = rewrite_expr_calls(state, inner, arena)
+                    return ast.Expr.Try(p)
+                )
+                error _ => return @deref(expr)
+            end
+        )
+        ast.Expr.Pack(elems) => (
+            var new_elems list[ast.Expr] = []
+            var i usize = 0
+            for i < @len(elems)
+                @append(new_elems, rewrite_expr_calls(state, @addr(elems[i]), arena))
+                i++
+            end
+            return ast.Expr.Pack(new_elems)
+        )
+        ast.Expr.ListLit(elems) => (
+            var new_elems list[ast.Expr] = []
+            var i usize = 0
+            for i < @len(elems)
+                @append(new_elems, rewrite_expr_calls(state, @addr(elems[i]), arena))
+                i++
+            end
+            return ast.Expr.ListLit(new_elems)
+        )
+        ast.Expr.StructInit(si) => (
+            var new_fields list[ast.FieldInit] = []
+            var i usize = 0
+            for i < @len(si.fields)
+                @append(new_fields, ast.FieldInit(
+                    name: si.fields[i].name,
+                    value: rewrite_expr_calls(state, @addr(si.fields[i].value), arena)
+                ))
+                i++
+            end
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.ExprStructInit) as usize)
+            match raw
+                ok m => (
+                    var p ref(ast.ExprStructInit) = @bitcast(m, ref(ast.ExprStructInit))
+                    p.name = si.name
+                    p.type_args = si.type_args
+                    p.fields = new_fields
+                    return ast.Expr.StructInit(p)
+                )
+                error _ => return @deref(expr)
+            end
+        )
+        _ => return @deref(expr)
+    end
+end
+
+def join_segs(segs list[ref(u8)], arena ref(allocators.Arena)) ref(u8)
+    var total usize = 0
+    var i usize = 0
+    for i < @len(segs)
+        total += str.len(segs[i])
+        if i + 1 < @len(segs)
+            total += 2
+        end
+        i++
+    end
+    val buf_res = allocators.Arena.alloc(arena, total + 1)
+    var buf ref(u8) = none
+    match buf_res
+        ok m => buf = m as ref(u8)
+        error _ => return segs[0]
+    end
+    var pos usize = 0
+    i = 0
+    for i < @len(segs)
+        val slen usize = str.len(segs[i])
+        @memcpy(@add(buf, pos), segs[i], slen)
+        pos += slen
+        if i + 1 < @len(segs)
+            @deref(@as_mut(@add(buf, pos))) = '_'
+            pos++
+            @deref(@as_mut(@add(buf, pos))) = '_'
+            pos++
+        end
+        i++
+    end
+    @deref(@as_mut(@add(buf, pos))) = 0
+    return buf
+end
+
+def rewrite_stmt_calls(state ref(GenericState), stmt ref(ast.Stmt), arena ref(allocators.Arena)) ast.Stmt
+    match @deref(stmt)
+        ast.Stmt.VarDecl(vd) => (
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.StmtVarDecl) as usize)
+            match raw
+                ok m => (
+                    var p ref(ast.StmtVarDecl) = @bitcast(m, ref(ast.StmtVarDecl))
+                    p.name = vd.name
+                    p.mutable = vd.mutable
+                    p.declared_type = vd.declared_type
+                    p.init = rewrite_expr_calls(state, @addr(vd.init), arena)
+                    p.line = vd.line
+                    p.column = vd.column
+                    return ast.Stmt.VarDecl(p)
+                )
+                error _ => return @deref(stmt)
+            end
+        )
+        ast.Stmt.Assign(a) => (
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.StmtAssign) as usize)
+            match raw
+                ok m => (
+                    var p ref(ast.StmtAssign) = @bitcast(m, ref(ast.StmtAssign))
+                    p.target = rewrite_expr_calls(state, @addr(a.target), arena)
+                    p.value = rewrite_expr_calls(state, @addr(a.value), arena)
+                    p.line = a.line
+                    p.column = a.column
+                    return ast.Stmt.Assign(p)
+                )
+                error _ => return @deref(stmt)
+            end
+        )
+        ast.Stmt.AddAssign(a) => (
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.StmtAssign) as usize)
+            match raw
+                ok m => (
+                    var p ref(ast.StmtAssign) = @bitcast(m, ref(ast.StmtAssign))
+                    p.target = rewrite_expr_calls(state, @addr(a.target), arena)
+                    p.value = rewrite_expr_calls(state, @addr(a.value), arena)
+                    p.line = a.line
+                    p.column = a.column
+                    return ast.Stmt.AddAssign(p)
+                )
+                error _ => return @deref(stmt)
+            end
+        )
+        ast.Stmt.SubAssign(a) => (
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.StmtAssign) as usize)
+            match raw
+                ok m => (
+                    var p ref(ast.StmtAssign) = @bitcast(m, ref(ast.StmtAssign))
+                    p.target = rewrite_expr_calls(state, @addr(a.target), arena)
+                    p.value = rewrite_expr_calls(state, @addr(a.value), arena)
+                    p.line = a.line
+                    p.column = a.column
+                    return ast.Stmt.SubAssign(p)
+                )
+                error _ => return @deref(stmt)
+            end
+        )
+        ast.Stmt.MulAssign(a) => (
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.StmtAssign) as usize)
+            match raw
+                ok m => (
+                    var p ref(ast.StmtAssign) = @bitcast(m, ref(ast.StmtAssign))
+                    p.target = rewrite_expr_calls(state, @addr(a.target), arena)
+                    p.value = rewrite_expr_calls(state, @addr(a.value), arena)
+                    p.line = a.line
+                    p.column = a.column
+                    return ast.Stmt.MulAssign(p)
+                )
+                error _ => return @deref(stmt)
+            end
+        )
+        ast.Stmt.DivAssign(a) => (
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.StmtAssign) as usize)
+            match raw
+                ok m => (
+                    var p ref(ast.StmtAssign) = @bitcast(m, ref(ast.StmtAssign))
+                    p.target = rewrite_expr_calls(state, @addr(a.target), arena)
+                    p.value = rewrite_expr_calls(state, @addr(a.value), arena)
+                    p.line = a.line
+                    p.column = a.column
+                    return ast.Stmt.DivAssign(p)
+                )
+                error _ => return @deref(stmt)
+            end
+        )
+        ast.Stmt.BitAndAssign(a) => (
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.StmtAssign) as usize)
+            match raw
+                ok m => (
+                    var p ref(ast.StmtAssign) = @bitcast(m, ref(ast.StmtAssign))
+                    p.target = rewrite_expr_calls(state, @addr(a.target), arena)
+                    p.value = rewrite_expr_calls(state, @addr(a.value), arena)
+                    p.line = a.line
+                    p.column = a.column
+                    return ast.Stmt.BitAndAssign(p)
+                )
+                error _ => return @deref(stmt)
+            end
+        )
+        ast.Stmt.BitOrAssign(a) => (
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.StmtAssign) as usize)
+            match raw
+                ok m => (
+                    var p ref(ast.StmtAssign) = @bitcast(m, ref(ast.StmtAssign))
+                    p.target = rewrite_expr_calls(state, @addr(a.target), arena)
+                    p.value = rewrite_expr_calls(state, @addr(a.value), arena)
+                    p.line = a.line
+                    p.column = a.column
+                    return ast.Stmt.BitOrAssign(p)
+                )
+                error _ => return @deref(stmt)
+            end
+        )
+        ast.Stmt.BitXorAssign(a) => (
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.StmtAssign) as usize)
+            match raw
+                ok m => (
+                    var p ref(ast.StmtAssign) = @bitcast(m, ref(ast.StmtAssign))
+                    p.target = rewrite_expr_calls(state, @addr(a.target), arena)
+                    p.value = rewrite_expr_calls(state, @addr(a.value), arena)
+                    p.line = a.line
+                    p.column = a.column
+                    return ast.Stmt.BitXorAssign(p)
+                )
+                error _ => return @deref(stmt)
+            end
+        )
+        ast.Stmt.Return(r) => (
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.StmtReturn) as usize)
+            match raw
+                ok m => (
+                    var p ref(ast.StmtReturn) = @bitcast(m, ref(ast.StmtReturn))
+                    p.value = rewrite_expr_calls(state, @addr(r.value), arena)
+                    p.line = r.line
+                    p.column = r.column
+                    return ast.Stmt.Return(p)
+                )
+                error _ => return @deref(stmt)
+            end
+        )
+        ast.Stmt.If(if_stmt) => (
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.StmtIf) as usize)
+            match raw
+                ok m => (
+                    var p ref(ast.StmtIf) = @bitcast(m, ref(ast.StmtIf))
+                    p.condition = rewrite_expr_calls(state, @addr(if_stmt.condition), arena)
+                    p.line = if_stmt.line
+                    p.column = if_stmt.column
+                    var new_then list[ast.Stmt] = []
+                    var new_else list[ast.Stmt] = []
+                    var k usize = 0
+                    for k < @len(if_stmt.then_body)
+                        @append(new_then, rewrite_stmt_calls(state, @addr(if_stmt.then_body[k]), arena))
+                        k++
+                    end
+                    k = 0
+                    for k < @len(if_stmt.else_body)
+                        @append(new_else, rewrite_stmt_calls(state, @addr(if_stmt.else_body[k]), arena))
+                        k++
+                    end
+                    p.then_body = new_then
+                    p.else_body = new_else
+                    return ast.Stmt.If(p)
+                )
+                error _ => return @deref(stmt)
+            end
+        )
+        ast.Stmt.While(w) => (
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.StmtWhile) as usize)
+            match raw
+                ok m => (
+                    var p ref(ast.StmtWhile) = @bitcast(m, ref(ast.StmtWhile))
+                    p.condition = rewrite_expr_calls(state, @addr(w.condition), arena)
+                    p.line = w.line
+                    p.column = w.column
+                    var new_body list[ast.Stmt] = []
+                    var k usize = 0
+                    for k < @len(w.body)
+                        @append(new_body, rewrite_stmt_calls(state, @addr(w.body[k]), arena))
+                        k++
+                    end
+                    p.body = new_body
+                    return ast.Stmt.While(p)
+                )
+                error _ => return @deref(stmt)
+            end
+        )
+        ast.Stmt.ForRange(fr) => (
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.StmtForRange) as usize)
+            match raw
+                ok m => (
+                    var p ref(ast.StmtForRange) = @bitcast(m, ref(ast.StmtForRange))
+                    p.var_name = fr.var_name
+                    p.start = rewrite_expr_calls(state, @addr(fr.start), arena)
+                    p.End = rewrite_expr_calls(state, @addr(fr.End), arena)
+                    p.line = fr.line
+                    p.column = fr.column
+                    var new_body list[ast.Stmt] = []
+                    var k usize = 0
+                    for k < @len(fr.body)
+                        @append(new_body, rewrite_stmt_calls(state, @addr(fr.body[k]), arena))
+                        k++
+                    end
+                    p.body = new_body
+                    return ast.Stmt.ForRange(p)
+                )
+                error _ => return @deref(stmt)
+            end
+        )
+        ast.Stmt.ForEach(fe) => (
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.StmtForEach) as usize)
+            match raw
+                ok m => (
+                    var p ref(ast.StmtForEach) = @bitcast(m, ref(ast.StmtForEach))
+                    p.var_name = fe.var_name
+                    p.iterable = rewrite_expr_calls(state, @addr(fe.iterable), arena)
+                    p.line = fe.line
+                    p.column = fe.column
+                    var new_body list[ast.Stmt] = []
+                    var k usize = 0
+                    for k < @len(fe.body)
+                        @append(new_body, rewrite_stmt_calls(state, @addr(fe.body[k]), arena))
+                        k++
+                    end
+                    p.body = new_body
+                    return ast.Stmt.ForEach(p)
+                )
+                error _ => return @deref(stmt)
+            end
+        )
+        ast.Stmt.Match(m) => (
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.StmtMatch) as usize)
+            match raw
+                ok m2 => (
+                    var p ref(ast.StmtMatch) = @bitcast(m2, ref(ast.StmtMatch))
+                    p.expr = rewrite_expr_calls(state, @addr(m.expr), arena)
+                    p.line = m.line
+                    p.column = m.column
+                    var new_arms list[ast.MatchArm] = []
+                    var k usize = 0
+                    for k < @len(m.arms)
+                        var new_body list[ast.Stmt] = []
+                        var l usize = 0
+                        for l < @len(m.arms[k].body)
+                            @append(new_body, rewrite_stmt_calls(state, @addr(m.arms[k].body[l]), arena))
+                            l++
+                        end
+                        @append(new_arms, ast.MatchArm(
+                            kind: m.arms[k].kind,
+                            bindings: m.arms[k].bindings,
+                            body: new_body
+                        ))
+                        k++
+                    end
+                    p.arms = new_arms
+                    return ast.Stmt.Match(p)
+                )
+                error _ => return @deref(stmt)
+            end
+        )
+        ast.Stmt.ExprStmt(e) => (
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.Expr) as usize)
+            match raw
+                ok m => (
+                    var p ref(ast.Expr) = @bitcast(m, ref(ast.Expr))
+                    @deref(p) = rewrite_expr_calls(state, e, arena)
+                    return ast.Stmt.ExprStmt(p)
+                )
+                error _ => return @deref(stmt)
+            end
+        )
+        ast.Stmt.Increment(e) => (
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.Expr) as usize)
+            match raw
+                ok m => (
+                    var p ref(ast.Expr) = @bitcast(m, ref(ast.Expr))
+                    @deref(p) = rewrite_expr_calls(state, e, arena)
+                    return ast.Stmt.Increment(p)
+                )
+                error _ => return @deref(stmt)
+            end
+        )
+        ast.Stmt.Decrement(e) => (
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.Expr) as usize)
+            match raw
+                ok m => (
+                    var p ref(ast.Expr) = @bitcast(m, ref(ast.Expr))
+                    @deref(p) = rewrite_expr_calls(state, e, arena)
+                    return ast.Stmt.Decrement(p)
+                )
+                error _ => return @deref(stmt)
+            end
+        )
+        ast.Stmt.Assert(e) => (
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.Expr) as usize)
+            match raw
+                ok m => (
+                    var p ref(ast.Expr) = @bitcast(m, ref(ast.Expr))
+                    @deref(p) = rewrite_expr_calls(state, e, arena)
+                    return ast.Stmt.Assert(p)
+                )
+                error _ => return @deref(stmt)
+            end
+        )
+        ast.Stmt.Block(body) => (
+            var new_body list[ast.Stmt] = []
+            var k usize = 0
+            for k < @len(body)
+                @append(new_body, rewrite_stmt_calls(state, @addr(body[k]), arena))
+                k++
+            end
+            return ast.Stmt.Block(new_body)
+        )
+        ast.Stmt.Defer(body) => (
+            var new_body list[ast.Stmt] = []
+            var k usize = 0
+            for k < @len(body)
+                @append(new_body, rewrite_stmt_calls(state, @addr(body[k]), arena))
+                k++
+            end
+            return ast.Stmt.Defer(new_body)
+        )
+        _ => return @deref(stmt)
+    end
+end
+
+def rewrite_function_calls(state ref(GenericState), fun ref(ast.Function), arena ref(allocators.Arena))
+    var new_body list[ast.Stmt] = []
+    var i usize = 0
+    for i < @len(fun.body)
+        @append(new_body, rewrite_stmt_calls(state, @addr(fun.body[i]), arena))
+        i++
+    end
+    fun.body = new_body
+end
+
+pub def instantiate_generics(program ref(ast.Program), arena ref(allocators.Arena)) ast.Program
+    var state GenericState = GenericState(
+        templates: [] as list[ast.Function],
+        generated: [] as list[ast.Function],
+        instantiated_keys: [] as list[ref(u8)],
+        instantiated_names: [] as list[ref(u8)]
+    )
+
+    var concrete_functions list[ast.Function] = []
+    var i usize = 0
+    for i < @len(program.functions)
+        val fn_ref ref(ast.Function) = @addr(program.functions[i])
+        if @len(fn_ref.generic_params) > 0
+            @append(state.templates, @deref(fn_ref))
+        else
+            @append(concrete_functions, @deref(fn_ref))
+        end
+        i++
+    end
+
+    i = 0
+    for i < @len(concrete_functions)
+        rewrite_function_calls(@addr(state), @addr(concrete_functions[i]), arena)
+        i++
+    end
+
+    var all_functions list[ast.Function] = []
+    i = 0
+    for i < @len(concrete_functions)
+        @append(all_functions, concrete_functions[i])
+        i++
+    end
+    i = 0
+    for i < @len(state.generated)
+        @append(all_functions, state.generated[i])
+        i++
+    end
+
+    return ast.Program(
+        module_uses: program.module_uses,
+        functions: all_functions,
+        type_defs: program.type_defs,
+        tests: program.tests,
+        extern_headers: program.extern_headers
+    )
+end

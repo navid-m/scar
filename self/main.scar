@@ -9,6 +9,7 @@ val sema = use("sema")
 val cgen = use("codegen")
 val rslv = use("resolver")
 val reflection = use("std/reflection")
+val ginst = use("generics_inst")
 
 val usage_message ref(u8) = \\ usage:
                             \\   scar [-emit <source.scar> [-o <output>]
@@ -32,8 +33,9 @@ pub def compile(source_path ref(u8), output_path ref(u8)) i32|error
         tokens list[ast.Token] = lxr.lex(source, @addr(arena))
         prog ast.Program       = prs.parse_program(tokens, @addr(arena), platform, source_path)
         resolved ast.Program   = rslv.resolve(@addr(prog), source_path, @addr(arena))?
-        info sema.ProgramInfo  = sema.analyze(@addr(resolved), @addr(arena))
-        c_code ref(u8)         = cgen.generate_c(@addr(resolved), @addr(info), @addr(arena))
+        instantiated ast.Program = ginst.instantiate_generics(@addr(resolved), @addr(arena))
+        info sema.ProgramInfo  = sema.analyze(@addr(instantiated), @addr(arena))
+        c_code ref(u8)         = cgen.generate_c(@addr(instantiated), @addr(info), @addr(arena))
         c_path ref(u8)         = "/tmp/scar-compile.c"
     )
 
@@ -75,8 +77,9 @@ pub def emit(source_path ref(u8), output_path ref(u8)) i32|error
         tokens list[ast.Token] = lxr.lex(source, @addr(arena))
         prog ast.Program       = prs.parse_program(tokens, @addr(arena), platform, source_path)
         resolved ast.Program   = rslv.resolve(@addr(prog), source_path, @addr(arena))?
-        info sema.ProgramInfo  = sema.analyze(@addr(resolved), @addr(arena))
-        c_code ref(u8)         = cgen.generate_c(@addr(resolved), @addr(info), @addr(arena))
+        instantiated ast.Program = ginst.instantiate_generics(@addr(resolved), @addr(arena))
+        info sema.ProgramInfo  = sema.analyze(@addr(instantiated), @addr(arena))
+        c_code ref(u8)         = cgen.generate_c(@addr(instantiated), @addr(info), @addr(arena))
     )
     
     if output_path == none

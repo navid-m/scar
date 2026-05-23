@@ -1938,6 +1938,37 @@ def parse_function(p ref(ast.TokenList), arena ref(allocators.Arena), is_pub boo
 
     val name ref(u8) = parse_dotted_name(p, arena)
 
+    var generic_params list[ref(u8)] = []
+    match p.tokens[p.pos].kind
+        ast.TokenKind.LBracket(_) => (
+            advance(p)
+            for !is_eof(p)
+                match p.tokens[p.pos].kind
+                    ast.TokenKind.RBracket(_) => break
+                    _ => ()
+                end
+                val gname ref(u8) = expect_ident(p, arena)
+                @append(generic_params, gname)
+                match p.tokens[p.pos].kind
+                    ast.TokenKind.Colon(_) => (
+                        advance(p)
+                        parse_type(p, arena)
+                    )
+                    _ => ()
+                end
+                match p.tokens[p.pos].kind
+                    ast.TokenKind.Comma(_) => advance(p)
+                    _ => break
+                end
+            end
+            match p.tokens[p.pos].kind
+                ast.TokenKind.RBracket(_) => advance(p)
+                _ => ()
+            end
+        )
+        _ => ()
+    end
+
     match p.tokens[p.pos].kind
         ast.TokenKind.LParen(_) => advance(p)
         _ => ()
@@ -1970,6 +2001,7 @@ def parse_function(p ref(ast.TokenList), arena ref(allocators.Arena), is_pub boo
         )
     end
 
+    consume_newlines(p)
     var return_type ast.Type = @zeroed()
     if starts_type(p)
         return_type = parse_type_with_error_union(p, arena)
@@ -2001,6 +2033,7 @@ def parse_function(p ref(ast.TokenList), arena ref(allocators.Arena), is_pub boo
         is_pub: is_pub,
         is_extern: false,
         extern_name: empty,
+        generic_params: generic_params,
         line: line,
         column: column
     )
@@ -2087,6 +2120,7 @@ def parse_extern_function(p ref(ast.TokenList), arena ref(allocators.Arena), is_
         is_pub: is_pub,
         is_extern: true,
         extern_name: extern_name,
+        generic_params: [] as list[ref(u8)],
         line: line,
         column: column
     )

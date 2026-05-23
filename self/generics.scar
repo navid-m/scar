@@ -1,0 +1,840 @@
+val str = use("std/string")
+val ast = use("ast")
+val allocators = use("std/allocators")
+
+pub type InstantiatedKey
+    name ref(u8)
+    suffix ref(u8)
+end
+
+pub def type_suffix(ty ref(ast.Type), arena ref(allocators.Arena)) ref(u8)
+    match @deref(ty)
+        ast.Type.Void(_) => return "void"
+        ast.Type.Bool(_) => return "bool"
+        ast.Type.I8(_) => return "i8"
+        ast.Type.I16(_) => return "i16"
+        ast.Type.I32(_) => return "i32"
+        ast.Type.I64(_) => return "i64"
+        ast.Type.Isize(_) => return "isize"
+        ast.Type.U8(_) => return "u8"
+        ast.Type.U16(_) => return "u16"
+        ast.Type.U32(_) => return "u32"
+        ast.Type.U64(_) => return "u64"
+        ast.Type.Usize(_) => return "usize"
+        ast.Type.F32(_) => return "f32"
+        ast.Type.F64(_) => return "f64"
+        ast.Type.None(_) => return "none"
+        ast.Type.Error(_) => return "error"
+        ast.Type.Infer(_) => return "infer"
+        ast.Type.Named(name) => return sanitize_name(name, arena)
+        ast.Type.Ref(inner) => (
+            val inner_suf ref(u8) = type_suffix(inner, arena)
+            return concat3("ref__", inner_suf, "", arena)
+        )
+        ast.Type.Mut(inner) => (
+            val inner_suf ref(u8) = type_suffix(inner, arena)
+            return concat3("mut__", inner_suf, "", arena)
+        )
+        ast.Type.List(inner) => (
+            val inner_suf ref(u8) = type_suffix(inner, arena)
+            return concat3("list__", inner_suf, "", arena)
+        )
+        ast.Type.Result(inner) => (
+            val inner_suf ref(u8) = type_suffix(inner, arena)
+            return concat3("result__", inner_suf, "", arena)
+        )
+        ast.Type.Applied(name, type_args) => (
+            val base ref(u8) = sanitize_name(name, arena)
+            var result ref(u8) = base
+            var i usize = 0
+            for i < @len(type_args)
+                val arg_suf ref(u8) = type_suffix(@addr(type_args[i]), arena)
+                result = concat3(result, "__", arg_suf, arena)
+                i++
+            end
+            return result
+        )
+        ast.Type.FnPtr(_, ret) => (
+            val ret_suf ref(u8) = type_suffix(ret, arena)
+            return concat3("fnptr__", ret_suf, "", arena)
+        )
+    end
+    return "unknown"
+end
+
+def sanitize_name(name ref(u8), arena ref(allocators.Arena)) ref(u8)
+    val nlen usize = str.len(name)
+    val buf_res = allocators.Arena.alloc(arena, nlen + 1)
+    var buf ref(u8) = none
+    match buf_res
+        ok m => buf = m as ref(u8)
+        error _ => return name
+    end
+    var i usize = 0
+    for i < nlen
+        val ch u8 = @deref(@add(name, i))
+        if (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '_'
+            @deref(@as_mut(@add(buf, i))) = ch
+        else
+            @deref(@as_mut(@add(buf, i))) = '_'
+        end
+        i++
+    end
+    @deref(@as_mut(@add(buf, nlen))) = 0
+    return buf
+end
+
+pub def concat3(a ref(u8), b ref(u8), c ref(u8), arena ref(allocators.Arena)) ref(u8)
+    val alen usize = str.len(a)
+    val blen usize = str.len(b)
+    val clen usize = str.len(c)
+    val total usize = alen + blen + clen + 1
+    val buf_res = allocators.Arena.alloc(arena, total)
+    var buf ref(u8) = none
+    match buf_res
+        ok m => buf = m as ref(u8)
+        error _ => return a
+    end
+    @memcpy(buf, a, alen)
+    @memcpy(@add(buf, alen), b, blen)
+    @memcpy(@add(buf, alen + blen), c, clen)
+    @deref(@as_mut(@add(buf, alen + blen + clen))) = 0
+    return buf
+end
+
+pub def build_specialized_name(base_name ref(u8), type_args ref(list[ast.Type]), arena ref(allocators.Arena)) ref(u8)
+    var result ref(u8) = concat3(base_name, "__generic__", "", arena)
+    var i usize = 0
+    for i < @len(@deref(type_args))
+        if i > 0
+            result = concat3(result, "__", "", arena)
+        end
+        val suf ref(u8) = type_suffix(@addr(@deref(type_args)[i]), arena)
+        result = concat3(result, suf, "", arena)
+        i++
+    end
+    return result
+end
+
+pub def substitute_type(ty ref(ast.Type), params ref(list[ref(u8)]), type_args ref(list[ast.Type]), arena ref(allocators.Arena)) ast.Type
+    match @deref(ty)
+        ast.Type.Named(name) => (
+            var i usize = 0
+            for i < @len(@deref(params))
+                if str.eql(@deref(params)[i], name)
+                    return @deref(type_args)[i]
+                end
+                i++
+            end
+            return @deref(ty)
+        )
+        ast.Type.Applied(name, targs) => (
+            var new_args list[ast.Type] = []
+            var i usize = 0
+            for i < @len(targs)
+                @append(new_args, substitute_type(@addr(targs[i]), params, type_args, arena))
+                i++
+            end
+            return ast.Type.Applied(name, new_args)
+        )
+        ast.Type.Ref(inner) => (
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.Type) as usize)
+            match raw
+                ok m => (
+                    var p ref(ast.Type) = @bitcast(m, ref(ast.Type))
+                    @deref(p) = substitute_type(inner, params, type_args, arena)
+                    return ast.Type.Ref(p)
+                )
+                error _ => return @deref(ty)
+            end
+        )
+        ast.Type.Mut(inner) => (
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.Type) as usize)
+            match raw
+                ok m => (
+                    var p ref(ast.Type) = @bitcast(m, ref(ast.Type))
+                    @deref(p) = substitute_type(inner, params, type_args, arena)
+                    return ast.Type.Mut(p)
+                )
+                error _ => return @deref(ty)
+            end
+        )
+        ast.Type.List(inner) => (
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.Type) as usize)
+            match raw
+                ok m => (
+                    var p ref(ast.Type) = @bitcast(m, ref(ast.Type))
+                    @deref(p) = substitute_type(inner, params, type_args, arena)
+                    return ast.Type.List(p)
+                )
+                error _ => return @deref(ty)
+            end
+        )
+        ast.Type.Result(inner) => (
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.Type) as usize)
+            match raw
+                ok m => (
+                    var p ref(ast.Type) = @bitcast(m, ref(ast.Type))
+                    @deref(p) = substitute_type(inner, params, type_args, arena)
+                    return ast.Type.Result(p)
+                )
+                error _ => return @deref(ty)
+            end
+        )
+        ast.Type.FnPtr(fparams, ret) => (
+            var new_params list[ast.Type] = []
+            var i usize = 0
+            for i < @len(fparams)
+                @append(new_params, substitute_type(@addr(fparams[i]), params, type_args, arena))
+                i++
+            end
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.Type) as usize)
+            match raw
+                ok m => (
+                    var p ref(ast.Type) = @bitcast(m, ref(ast.Type))
+                    @deref(p) = substitute_type(ret, params, type_args, arena)
+                    return ast.Type.FnPtr(new_params, p)
+                )
+                error _ => return @deref(ty)
+            end
+        )
+        _ => return @deref(ty)
+    end
+end
+
+pub def substitute_expr(expr ref(ast.Expr), params ref(list[ref(u8)]), type_args ref(list[ast.Type]), arena ref(allocators.Arena)) ast.Expr
+    match @deref(expr)
+        ast.Expr.StructInit(si) => (
+            var new_fields list[ast.FieldInit] = []
+            var i usize = 0
+            for i < @len(si.fields)
+                @append(new_fields, ast.FieldInit(
+                    name: si.fields[i].name,
+                    value: substitute_expr(@addr(si.fields[i].value), params, type_args, arena)
+                ))
+                i++
+            end
+            var new_targs list[ast.Type] = []
+            i = 0
+            for i < @len(si.type_args)
+                @append(new_targs, substitute_type(@addr(si.type_args[i]), params, type_args, arena))
+                i++
+            end
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.ExprStructInit) as usize)
+            match raw
+                ok m => (
+                    var p ref(ast.ExprStructInit) = @bitcast(m, ref(ast.ExprStructInit))
+                    p.name = si.name
+                    p.type_args = new_targs
+                    p.fields = new_fields
+                    return ast.Expr.StructInit(p)
+                )
+                error _ => return @deref(expr)
+            end
+        )
+        ast.Expr.Binary(b) => (
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.ExprBinary) as usize)
+            match raw
+                ok m => (
+                    var p ref(ast.ExprBinary) = @bitcast(m, ref(ast.ExprBinary))
+                    val lhs_raw = allocators.Arena.alloc(arena, @sizeof(ast.Expr) as usize)
+                    val rhs_raw = allocators.Arena.alloc(arena, @sizeof(ast.Expr) as usize)
+                    match lhs_raw
+                        ok lm => (
+                            var lp ref(ast.Expr) = @bitcast(lm, ref(ast.Expr))
+                            @deref(lp) = substitute_expr(b.lhs, params, type_args, arena)
+                            p.lhs = lp
+                        )
+                        error _ => p.lhs = b.lhs
+                    end
+                    match rhs_raw
+                        ok rm => (
+                            var rp ref(ast.Expr) = @bitcast(rm, ref(ast.Expr))
+                            @deref(rp) = substitute_expr(b.rhs, params, type_args, arena)
+                            p.rhs = rp
+                        )
+                        error _ => p.rhs = b.rhs
+                    end
+                    p.op = b.op
+                    return ast.Expr.Binary(p)
+                )
+                error _ => return @deref(expr)
+            end
+        )
+        ast.Expr.Unary(u) => (
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.ExprUnary) as usize)
+            match raw
+                ok m => (
+                    var p ref(ast.ExprUnary) = @bitcast(m, ref(ast.ExprUnary))
+                    val inner_raw = allocators.Arena.alloc(arena, @sizeof(ast.Expr) as usize)
+                    match inner_raw
+                        ok im => (
+                            var ip ref(ast.Expr) = @bitcast(im, ref(ast.Expr))
+                            @deref(ip) = substitute_expr(u.expr, params, type_args, arena)
+                            p.expr = ip
+                        )
+                        error _ => p.expr = u.expr
+                    end
+                    p.op = u.op
+                    return ast.Expr.Unary(p)
+                )
+                error _ => return @deref(expr)
+            end
+        )
+        ast.Expr.Call(c) => (
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.ExprCall) as usize)
+            match raw
+                ok m => (
+                    var p ref(ast.ExprCall) = @bitcast(m, ref(ast.ExprCall))
+                    val callee_raw = allocators.Arena.alloc(arena, @sizeof(ast.Expr) as usize)
+                    match callee_raw
+                        ok cm => (
+                            var cp ref(ast.Expr) = @bitcast(cm, ref(ast.Expr))
+                            @deref(cp) = substitute_expr(c.callee, params, type_args, arena)
+                            p.callee = cp
+                        )
+                        error _ => p.callee = c.callee
+                    end
+                    var new_args list[ast.Expr] = []
+                    var i usize = 0
+                    for i < @len(c.args)
+                        @append(new_args, substitute_expr(@addr(c.args[i]), params, type_args, arena))
+                        i++
+                    end
+                    p.args = new_args
+                    return ast.Expr.Call(p)
+                )
+                error _ => return @deref(expr)
+            end
+        )
+        ast.Expr.Specialize(sp) => (
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.ExprSpecialize) as usize)
+            match raw
+                ok m => (
+                    var p ref(ast.ExprSpecialize) = @bitcast(m, ref(ast.ExprSpecialize))
+                    val callee_raw = allocators.Arena.alloc(arena, @sizeof(ast.Expr) as usize)
+                    match callee_raw
+                        ok cm => (
+                            var cp ref(ast.Expr) = @bitcast(cm, ref(ast.Expr))
+                            @deref(cp) = substitute_expr(sp.callee, params, type_args, arena)
+                            p.callee = cp
+                        )
+                        error _ => p.callee = sp.callee
+                    end
+                    var new_targs list[ast.Type] = []
+                    var i usize = 0
+                    for i < @len(sp.type_args)
+                        @append(new_targs, substitute_type(@addr(sp.type_args[i]), params, type_args, arena))
+                        i++
+                    end
+                    p.type_args = new_targs
+                    return ast.Expr.Specialize(p)
+                )
+                error _ => return @deref(expr)
+            end
+        )
+        ast.Expr.Index(idx) => (
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.ExprIndex) as usize)
+            match raw
+                ok m => (
+                    var p ref(ast.ExprIndex) = @bitcast(m, ref(ast.ExprIndex))
+                    val base_raw = allocators.Arena.alloc(arena, @sizeof(ast.Expr) as usize)
+                    val idx_raw = allocators.Arena.alloc(arena, @sizeof(ast.Expr) as usize)
+                    match base_raw
+                        ok bm => (
+                            var bp ref(ast.Expr) = @bitcast(bm, ref(ast.Expr))
+                            @deref(bp) = substitute_expr(idx.base, params, type_args, arena)
+                            p.base = bp
+                        )
+                        error _ => p.base = idx.base
+                    end
+                    match idx_raw
+                        ok im => (
+                            var ip ref(ast.Expr) = @bitcast(im, ref(ast.Expr))
+                            @deref(ip) = substitute_expr(idx.index, params, type_args, arena)
+                            p.index = ip
+                        )
+                        error _ => p.index = idx.index
+                    end
+                    return ast.Expr.Index(p)
+                )
+                error _ => return @deref(expr)
+            end
+        )
+        ast.Expr.Field(f) => (
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.ExprField) as usize)
+            match raw
+                ok m => (
+                    var p ref(ast.ExprField) = @bitcast(m, ref(ast.ExprField))
+                    val base_raw = allocators.Arena.alloc(arena, @sizeof(ast.Expr) as usize)
+                    match base_raw
+                        ok bm => (
+                            var bp ref(ast.Expr) = @bitcast(bm, ref(ast.Expr))
+                            @deref(bp) = substitute_expr(f.base, params, type_args, arena)
+                            p.base = bp
+                        )
+                        error _ => p.base = f.base
+                    end
+                    p.field = f.field
+                    return ast.Expr.Field(p)
+                )
+                error _ => return @deref(expr)
+            end
+        )
+        ast.Expr.Cast(c) => (
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.ExprCast) as usize)
+            match raw
+                ok m => (
+                    var p ref(ast.ExprCast) = @bitcast(m, ref(ast.ExprCast))
+                    val inner_raw = allocators.Arena.alloc(arena, @sizeof(ast.Expr) as usize)
+                    match inner_raw
+                        ok im => (
+                            var ip ref(ast.Expr) = @bitcast(im, ref(ast.Expr))
+                            @deref(ip) = substitute_expr(c.expr, params, type_args, arena)
+                            p.expr = ip
+                        )
+                        error _ => p.expr = c.expr
+                    end
+                    p.ty = substitute_type(@addr(c.ty), params, type_args, arena)
+                    return ast.Expr.Cast(p)
+                )
+                error _ => return @deref(expr)
+            end
+        )
+        ast.Expr.BitCast(bc) => (
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.ExprBitCast) as usize)
+            match raw
+                ok m => (
+                    var p ref(ast.ExprBitCast) = @bitcast(m, ref(ast.ExprBitCast))
+                    val inner_raw = allocators.Arena.alloc(arena, @sizeof(ast.Expr) as usize)
+                    match inner_raw
+                        ok im => (
+                            var ip ref(ast.Expr) = @bitcast(im, ref(ast.Expr))
+                            @deref(ip) = substitute_expr(bc.expr, params, type_args, arena)
+                            p.expr = ip
+                        )
+                        error _ => p.expr = bc.expr
+                    end
+                    p.ty = substitute_type(@addr(bc.ty), params, type_args, arena)
+                    return ast.Expr.BitCast(p)
+                )
+                error _ => return @deref(expr)
+            end
+        )
+        ast.Expr.MethodCall(mc) => (
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.ExprMethodCall) as usize)
+            match raw
+                ok m => (
+                    var p ref(ast.ExprMethodCall) = @bitcast(m, ref(ast.ExprMethodCall))
+                    val recv_raw = allocators.Arena.alloc(arena, @sizeof(ast.Expr) as usize)
+                    match recv_raw
+                        ok rm => (
+                            var rp ref(ast.Expr) = @bitcast(rm, ref(ast.Expr))
+                            @deref(rp) = substitute_expr(mc.receiver, params, type_args, arena)
+                            p.receiver = rp
+                        )
+                        error _ => p.receiver = mc.receiver
+                    end
+                    p.method = mc.method
+                    var new_args list[ast.Expr] = []
+                    var i usize = 0
+                    for i < @len(mc.args)
+                        @append(new_args, substitute_expr(@addr(mc.args[i]), params, type_args, arena))
+                        i++
+                    end
+                    p.args = new_args
+                    return ast.Expr.MethodCall(p)
+                )
+                error _ => return @deref(expr)
+            end
+        )
+        ast.Expr.BuiltinCall(bc) => (
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.ExprBuiltinCall) as usize)
+            match raw
+                ok m => (
+                    var p ref(ast.ExprBuiltinCall) = @bitcast(m, ref(ast.ExprBuiltinCall))
+                    p.name = bc.name
+                    var new_args list[ast.Expr] = []
+                    var i usize = 0
+                    for i < @len(bc.args)
+                        @append(new_args, substitute_expr(@addr(bc.args[i]), params, type_args, arena))
+                        i++
+                    end
+                    p.args = new_args
+                    return ast.Expr.BuiltinCall(p)
+                )
+                error _ => return @deref(expr)
+            end
+        )
+        ast.Expr.Try(inner) => (
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.Expr) as usize)
+            match raw
+                ok m => (
+                    var p ref(ast.Expr) = @bitcast(m, ref(ast.Expr))
+                    @deref(p) = substitute_expr(inner, params, type_args, arena)
+                    return ast.Expr.Try(p)
+                )
+                error _ => return @deref(expr)
+            end
+        )
+        ast.Expr.ListLit(elems) => (
+            var new_elems list[ast.Expr] = []
+            var i usize = 0
+            for i < @len(elems)
+                @append(new_elems, substitute_expr(@addr(elems[i]), params, type_args, arena))
+                i++
+            end
+            return ast.Expr.ListLit(new_elems)
+        )
+        ast.Expr.Pack(elems) => (
+            var new_elems list[ast.Expr] = []
+            var i usize = 0
+            for i < @len(elems)
+                @append(new_elems, substitute_expr(@addr(elems[i]), params, type_args, arena))
+                i++
+            end
+            return ast.Expr.Pack(new_elems)
+        )
+        ast.Expr.SizeOf(ty) => (
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.Type) as usize)
+            match raw
+                ok m => (
+                    var p ref(ast.Type) = @bitcast(m, ref(ast.Type))
+                    @deref(p) = substitute_type(ty, params, type_args, arena)
+                    return ast.Expr.SizeOf(p)
+                )
+                error _ => return @deref(expr)
+            end
+        )
+        _ => return @deref(expr)
+    end
+end
+
+pub def substitute_stmt(stmt ref(ast.Stmt), params ref(list[ref(u8)]), type_args ref(list[ast.Type]), arena ref(allocators.Arena)) ast.Stmt
+    match @deref(stmt)
+        ast.Stmt.VarDecl(vd) => (
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.StmtVarDecl) as usize)
+            match raw
+                ok m => (
+                    var p ref(ast.StmtVarDecl) = @bitcast(m, ref(ast.StmtVarDecl))
+                    p.name = vd.name
+                    p.mutable = vd.mutable
+                    p.declared_type = substitute_type(@addr(vd.declared_type), params, type_args, arena)
+                    p.init = substitute_expr(@addr(vd.init), params, type_args, arena)
+                    p.line = vd.line
+                    p.column = vd.column
+                    return ast.Stmt.VarDecl(p)
+                )
+                error _ => return @deref(stmt)
+            end
+        )
+        ast.Stmt.Assign(a) => (
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.StmtAssign) as usize)
+            match raw
+                ok m => (
+                    var p ref(ast.StmtAssign) = @bitcast(m, ref(ast.StmtAssign))
+                    p.target = substitute_expr(@addr(a.target), params, type_args, arena)
+                    p.value = substitute_expr(@addr(a.value), params, type_args, arena)
+                    p.line = a.line
+                    p.column = a.column
+                    return ast.Stmt.Assign(p)
+                )
+                error _ => return @deref(stmt)
+            end
+        )
+        ast.Stmt.AddAssign(a) => (
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.StmtAssign) as usize)
+            match raw
+                ok m => (
+                    var p ref(ast.StmtAssign) = @bitcast(m, ref(ast.StmtAssign))
+                    p.target = substitute_expr(@addr(a.target), params, type_args, arena)
+                    p.value = substitute_expr(@addr(a.value), params, type_args, arena)
+                    p.line = a.line
+                    p.column = a.column
+                    return ast.Stmt.AddAssign(p)
+                )
+                error _ => return @deref(stmt)
+            end
+        )
+        ast.Stmt.SubAssign(a) => (
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.StmtAssign) as usize)
+            match raw
+                ok m => (
+                    var p ref(ast.StmtAssign) = @bitcast(m, ref(ast.StmtAssign))
+                    p.target = substitute_expr(@addr(a.target), params, type_args, arena)
+                    p.value = substitute_expr(@addr(a.value), params, type_args, arena)
+                    p.line = a.line
+                    p.column = a.column
+                    return ast.Stmt.SubAssign(p)
+                )
+                error _ => return @deref(stmt)
+            end
+        )
+        ast.Stmt.MulAssign(a) => (
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.StmtAssign) as usize)
+            match raw
+                ok m => (
+                    var p ref(ast.StmtAssign) = @bitcast(m, ref(ast.StmtAssign))
+                    p.target = substitute_expr(@addr(a.target), params, type_args, arena)
+                    p.value = substitute_expr(@addr(a.value), params, type_args, arena)
+                    p.line = a.line
+                    p.column = a.column
+                    return ast.Stmt.MulAssign(p)
+                )
+                error _ => return @deref(stmt)
+            end
+        )
+        ast.Stmt.DivAssign(a) => (
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.StmtAssign) as usize)
+            match raw
+                ok m => (
+                    var p ref(ast.StmtAssign) = @bitcast(m, ref(ast.StmtAssign))
+                    p.target = substitute_expr(@addr(a.target), params, type_args, arena)
+                    p.value = substitute_expr(@addr(a.value), params, type_args, arena)
+                    p.line = a.line
+                    p.column = a.column
+                    return ast.Stmt.DivAssign(p)
+                )
+                error _ => return @deref(stmt)
+            end
+        )
+        ast.Stmt.BitAndAssign(a) => (
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.StmtAssign) as usize)
+            match raw
+                ok m => (
+                    var p ref(ast.StmtAssign) = @bitcast(m, ref(ast.StmtAssign))
+                    p.target = substitute_expr(@addr(a.target), params, type_args, arena)
+                    p.value = substitute_expr(@addr(a.value), params, type_args, arena)
+                    p.line = a.line
+                    p.column = a.column
+                    return ast.Stmt.BitAndAssign(p)
+                )
+                error _ => return @deref(stmt)
+            end
+        )
+        ast.Stmt.BitOrAssign(a) => (
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.StmtAssign) as usize)
+            match raw
+                ok m => (
+                    var p ref(ast.StmtAssign) = @bitcast(m, ref(ast.StmtAssign))
+                    p.target = substitute_expr(@addr(a.target), params, type_args, arena)
+                    p.value = substitute_expr(@addr(a.value), params, type_args, arena)
+                    p.line = a.line
+                    p.column = a.column
+                    return ast.Stmt.BitOrAssign(p)
+                )
+                error _ => return @deref(stmt)
+            end
+        )
+        ast.Stmt.BitXorAssign(a) => (
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.StmtAssign) as usize)
+            match raw
+                ok m => (
+                    var p ref(ast.StmtAssign) = @bitcast(m, ref(ast.StmtAssign))
+                    p.target = substitute_expr(@addr(a.target), params, type_args, arena)
+                    p.value = substitute_expr(@addr(a.value), params, type_args, arena)
+                    p.line = a.line
+                    p.column = a.column
+                    return ast.Stmt.BitXorAssign(p)
+                )
+                error _ => return @deref(stmt)
+            end
+        )
+        ast.Stmt.Return(r) => (
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.StmtReturn) as usize)
+            match raw
+                ok m => (
+                    var p ref(ast.StmtReturn) = @bitcast(m, ref(ast.StmtReturn))
+                    p.value = substitute_expr(@addr(r.value), params, type_args, arena)
+                    p.line = r.line
+                    p.column = r.column
+                    return ast.Stmt.Return(p)
+                )
+                error _ => return @deref(stmt)
+            end
+        )
+        ast.Stmt.If(if_stmt) => (
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.StmtIf) as usize)
+            match raw
+                ok m => (
+                    var p ref(ast.StmtIf) = @bitcast(m, ref(ast.StmtIf))
+                    p.condition = substitute_expr(@addr(if_stmt.condition), params, type_args, arena)
+                    p.line = if_stmt.line
+                    p.column = if_stmt.column
+                    var new_then list[ast.Stmt] = []
+                    var new_else list[ast.Stmt] = []
+                    var k usize = 0
+                    for k < @len(if_stmt.then_body)
+                        @append(new_then, substitute_stmt(@addr(if_stmt.then_body[k]), params, type_args, arena))
+                        k++
+                    end
+                    k = 0
+                    for k < @len(if_stmt.else_body)
+                        @append(new_else, substitute_stmt(@addr(if_stmt.else_body[k]), params, type_args, arena))
+                        k++
+                    end
+                    p.then_body = new_then
+                    p.else_body = new_else
+                    return ast.Stmt.If(p)
+                )
+                error _ => return @deref(stmt)
+            end
+        )
+        ast.Stmt.While(w) => (
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.StmtWhile) as usize)
+            match raw
+                ok m => (
+                    var p ref(ast.StmtWhile) = @bitcast(m, ref(ast.StmtWhile))
+                    p.condition = substitute_expr(@addr(w.condition), params, type_args, arena)
+                    p.line = w.line
+                    p.column = w.column
+                    var new_body list[ast.Stmt] = []
+                    var k usize = 0
+                    for k < @len(w.body)
+                        @append(new_body, substitute_stmt(@addr(w.body[k]), params, type_args, arena))
+                        k++
+                    end
+                    p.body = new_body
+                    return ast.Stmt.While(p)
+                )
+                error _ => return @deref(stmt)
+            end
+        )
+        ast.Stmt.ForRange(fr) => (
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.StmtForRange) as usize)
+            match raw
+                ok m => (
+                    var p ref(ast.StmtForRange) = @bitcast(m, ref(ast.StmtForRange))
+                    p.var_name = fr.var_name
+                    p.start = substitute_expr(@addr(fr.start), params, type_args, arena)
+                    p.End = substitute_expr(@addr(fr.End), params, type_args, arena)
+                    p.line = fr.line
+                    p.column = fr.column
+                    var new_body list[ast.Stmt] = []
+                    var k usize = 0
+                    for k < @len(fr.body)
+                        @append(new_body, substitute_stmt(@addr(fr.body[k]), params, type_args, arena))
+                        k++
+                    end
+                    p.body = new_body
+                    return ast.Stmt.ForRange(p)
+                )
+                error _ => return @deref(stmt)
+            end
+        )
+        ast.Stmt.ForEach(fe) => (
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.StmtForEach) as usize)
+            match raw
+                ok m => (
+                    var p ref(ast.StmtForEach) = @bitcast(m, ref(ast.StmtForEach))
+                    p.var_name = fe.var_name
+                    p.iterable = substitute_expr(@addr(fe.iterable), params, type_args, arena)
+                    p.line = fe.line
+                    p.column = fe.column
+                    var new_body list[ast.Stmt] = []
+                    var k usize = 0
+                    for k < @len(fe.body)
+                        @append(new_body, substitute_stmt(@addr(fe.body[k]), params, type_args, arena))
+                        k++
+                    end
+                    p.body = new_body
+                    return ast.Stmt.ForEach(p)
+                )
+                error _ => return @deref(stmt)
+            end
+        )
+        ast.Stmt.Match(m) => (
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.StmtMatch) as usize)
+            match raw
+                ok m2 => (
+                    var p ref(ast.StmtMatch) = @bitcast(m2, ref(ast.StmtMatch))
+                    p.expr = substitute_expr(@addr(m.expr), params, type_args, arena)
+                    p.line = m.line
+                    p.column = m.column
+                    var new_arms list[ast.MatchArm] = []
+                    var k usize = 0
+                    for k < @len(m.arms)
+                        var new_body list[ast.Stmt] = []
+                        var l usize = 0
+                        for l < @len(m.arms[k].body)
+                            @append(new_body, substitute_stmt(@addr(m.arms[k].body[l]), params, type_args, arena))
+                            l++
+                        end
+                        @append(new_arms, ast.MatchArm(
+                            kind: m.arms[k].kind,
+                            bindings: m.arms[k].bindings,
+                            body: new_body
+                        ))
+                        k++
+                    end
+                    p.arms = new_arms
+                    return ast.Stmt.Match(p)
+                )
+                error _ => return @deref(stmt)
+            end
+        )
+        ast.Stmt.ExprStmt(e) => (
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.Expr) as usize)
+            match raw
+                ok m => (
+                    var p ref(ast.Expr) = @bitcast(m, ref(ast.Expr))
+                    @deref(p) = substitute_expr(e, params, type_args, arena)
+                    return ast.Stmt.ExprStmt(p)
+                )
+                error _ => return @deref(stmt)
+            end
+        )
+        ast.Stmt.Increment(e) => (
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.Expr) as usize)
+            match raw
+                ok m => (
+                    var p ref(ast.Expr) = @bitcast(m, ref(ast.Expr))
+                    @deref(p) = substitute_expr(e, params, type_args, arena)
+                    return ast.Stmt.Increment(p)
+                )
+                error _ => return @deref(stmt)
+            end
+        )
+        ast.Stmt.Decrement(e) => (
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.Expr) as usize)
+            match raw
+                ok m => (
+                    var p ref(ast.Expr) = @bitcast(m, ref(ast.Expr))
+                    @deref(p) = substitute_expr(e, params, type_args, arena)
+                    return ast.Stmt.Decrement(p)
+                )
+                error _ => return @deref(stmt)
+            end
+        )
+        ast.Stmt.Assert(e) => (
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.Expr) as usize)
+            match raw
+                ok m => (
+                    var p ref(ast.Expr) = @bitcast(m, ref(ast.Expr))
+                    @deref(p) = substitute_expr(e, params, type_args, arena)
+                    return ast.Stmt.Assert(p)
+                )
+                error _ => return @deref(stmt)
+            end
+        )
+        ast.Stmt.Block(body) => (
+            var new_body list[ast.Stmt] = []
+            var k usize = 0
+            for k < @len(body)
+                @append(new_body, substitute_stmt(@addr(body[k]), params, type_args, arena))
+                k++
+            end
+            return ast.Stmt.Block(new_body)
+        )
+        ast.Stmt.Defer(body) => (
+            var new_body list[ast.Stmt] = []
+            var k usize = 0
+            for k < @len(body)
+                @append(new_body, substitute_stmt(@addr(body[k]), params, type_args, arena))
+                k++
+            end
+            return ast.Stmt.Defer(new_body)
+        )
+        _ => return @deref(stmt)
+    end
+end

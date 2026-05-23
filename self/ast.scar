@@ -136,6 +136,7 @@ pub type Function
 	is_pub bool
 	is_extern bool
 	extern_name ref(u8)
+	generic_params list[ref(u8)]
 	line usize
 	column usize
 end
