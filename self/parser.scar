@@ -694,7 +694,14 @@ def parse_match_stmt(p ref(ast.TokenList), arena ref(allocators.Arena)) ast.Stmt
         match p.tokens[p.pos].kind
             ast.TokenKind.LParen(_) => (
                 advance(p)
-                arm_body = parse_block_until(p, arena, [] as list[u8])
+                for !is_eof(p)
+                    match p.tokens[p.pos].kind
+                        ast.TokenKind.RParen(_) => break
+                        _ => ()
+                    end
+                    @append(arm_body, parse_stmt(p, arena))
+                    consume_newlines(p)
+                end
                 match p.tokens[p.pos].kind
                     ast.TokenKind.RParen(_) => advance(p)
                     _ => ()
@@ -723,7 +730,10 @@ end
 def parse_match_arm_kind(p ref(ast.TokenList), arena ref(allocators.Arena)) ast.MatchArmKind
     match p.tokens[p.pos].kind
         ast.TokenKind.Ident(name) => (
-            if str.eql(name, "ok")
+            if str.eql(name, "_")
+                advance(p)
+                return ast.MatchArmKind.Wild(0)
+            elif str.eql(name, "ok")
                 advance(p)
                 return ast.MatchArmKind.Ok(0)
             elif str.eql(name, "error")
