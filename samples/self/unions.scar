@@ -1,0 +1,22 @@
+pub union SomeUnion
+	Token(i32)
+	MultiPayload(i32, i32, f64)
+	StringPair(ref(u8), ref(u8))
+end
+
+pub def main()
+	val v = SomeUnion.StringPair("a", "b")
+
+	match v
+		Token (x) => (
+			@print("{d}", {x})
+		)
+		MultiPayload (_, _, _) => (
+			@puts("it was a multipayload")
+		)
+		StringPair (str, str2) => (
+			@print("{s} {s}", {str, str2})
+		)
+	end
+end
+
