@@ -1364,7 +1364,23 @@ def append_expr(expr ref(ast.Expr), fun ref(ast.Function), info ref(sema.Program
                         _ => ()
                     end
                 )
-                _ => ()
+                _ => (
+                    match @deref(f.base)
+                        ast.Expr.Ident(name) => (
+                            if is_ref_type_by_name(name, fun, info)
+                                use_arrow = true
+                            end
+                        )
+                        ast.Expr.Path(segments) => (
+                            if @len(segments) == 1
+                                if is_ref_type_by_name(segments[0], fun, info)
+                                    use_arrow = true
+                                end
+                            end
+                        )
+                        _ => ()
+                    end
+                )
             end
             if use_arrow
                 append_str(output, output_len, ")->")
@@ -2223,7 +2239,22 @@ end
 
 def get_expr_type(expr ref(ast.Expr), fun ref(ast.Function), info ref(sema.ProgramInfo)) ref(ast.Type)
     match @deref(expr)
-        ast.Expr.Ident(name) => return lookup_local_type(name, fun, info)
+        ast.Expr.Ident(name) => (
+            val ty ref(ast.Type) = lookup_local_type(name, fun, info)
+            match @deref(ty)
+                ast.Type.Void(_) => (
+                    var i usize = 0
+                    for i < @len(fun.params)
+                        if str.eql(fun.params[i].name, name)
+                            return @addr(fun.params[i].ty)
+                        end
+                        i++
+                    end
+                )
+                _ => ()
+            end
+            return ty
+        )
         ast.Expr.Field(f) => (
             val base_ty ref(ast.Type) = get_expr_type(f.base, fun, info)
             val base_ty_deref ref(ast.Type) = deref_type(base_ty)
@@ -2320,6 +2351,51 @@ def lookup_symbol(name ref(u8), info ref(sema.ProgramInfo), arena ref(allocators
         i++
     end
     return mangle_local_symbol(name, arena)
+end
+
+def is_ref_type_by_name(name ref(u8), fun ref(ast.Function), info ref(sema.ProgramInfo)) bool
+    var i usize = 0
+    for i < @len(fun.params)
+        if str.eql(fun.params[i].name, name)
+            match fun.params[i].ty
+                ast.Type.Ref(_) => return true
+                ast.Type.Mut(inner) => (
+                    match @deref(inner)
+                        ast.Type.Ref(_) => return true
+                        _ => ()
+                    end
+                )
+                _ => ()
+            end
+            return false
+        end
+        i++
+    end
+    i = 0
+    for i < @len(info.locals)
+        if str.eql(info.locals[i].function_name, fun.name)
+            var j usize = 0
+            for j < @len(info.locals[i].bindings)
+                if str.eql(info.locals[i].bindings[j].name, name)
+                    match info.locals[i].bindings[j].ty
+                        ast.Type.Ref(_) => return true
+                        ast.Type.Mut(inner) => (
+                            match @deref(inner)
+                                ast.Type.Ref(_) => return true
+                                _ => ()
+                            end
+                        )
+                        _ => ()
+                    end
+                    return false
+                end
+                j++
+            end
+            break
+        end
+        i++
+    end
+    return false
 end
 
 def lookup_local_type(name ref(u8), fun ref(ast.Function), info ref(sema.ProgramInfo)) ref(ast.Type)
