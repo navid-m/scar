@@ -1346,8 +1346,50 @@ def append_expr(expr ref(ast.Expr), fun ref(ast.Function), info ref(sema.Program
             if @len(segments) == 1
                 append_str(output, output_len, mangle_local_symbol(segments[0], arena))
             else
-                if is_local_variable(segments[0], fun, info)
-                    val use_arrow bool = is_ref_type_by_name(segments[0], fun, info)
+                var first_is_local bool = is_local_variable(segments[0], fun, info)
+                var first_is_match_binding bool = false
+                if !first_is_local
+                    var pi usize = 0
+                    for pi < @len(fun.params)
+                        if str.eql(fun.params[pi].name, segments[0])
+                            first_is_local = true
+                            break
+                        end
+                        pi++
+                    end
+                end
+                if !first_is_local
+                    var is_known_global bool = false
+                    var gi usize = 0
+                    for gi < @len(info.functions)
+                        if str.eql(info.functions[gi].name, segments[0])
+                            is_known_global = true
+                            break
+                        end
+                        gi++
+                    end
+                    if !is_known_global
+                        var ti usize = 0
+                        for ti < @len(info.types)
+                            if str.eql(info.types[ti].name, segments[0])
+                                is_known_global = true
+                                break
+                            end
+                            ti++
+                        end
+                    end
+                    if !is_known_global
+                        first_is_local = true
+                        first_is_match_binding = true
+                    end
+                end
+                if first_is_local
+                    val first_expr ast.Expr = ast.Expr.Ident(segments[0])
+                    val first_ty ref(ast.Type) = get_expr_type(@addr(first_expr), fun, info)
+                    var use_arrow bool = is_ref_type(first_ty)
+                    if !use_arrow && first_is_match_binding
+                        use_arrow = true
+                    end
                     append_str(output, output_len, "(")
                     append_str(output, output_len, mangle_local_symbol(segments[0], arena))
                     append_str(output, output_len, ")")
@@ -1415,12 +1457,13 @@ def append_expr(expr ref(ast.Expr), fun ref(ast.Function), info ref(sema.Program
                             ti++
                         end
                     elif @len(segments) == 3
+                        val prefixed_type_name ref(u8) = join_two_with_dunder(segments[0], segments[1], arena)
                         var ti usize = 0
                         for ti < @len(info.types)
-                            if str.eql(info.types[ti].name, segments[1])
+                            if str.eql(info.types[ti].name, prefixed_type_name) || str.eql(info.types[ti].name, segments[1])
                                 if info.types[ti].info.kind == sema.TypeDefKind.Union
                                     is_union_ctor = true
-                                    union_type_name = segments[1]
+                                    union_type_name = prefixed_type_name
                                     union_variant_name = segments[2]
                                 end
                                 break
@@ -2336,6 +2379,23 @@ def find_last_dot(s ref(u8)) usize
         end
     end
     return slen
+end
+
+def join_two_with_dunder(a ref(u8), b ref(u8), arena ref(allocators.Arena)) ref(u8)
+    val alen usize = str.len(a)
+    val blen usize = str.len(b)
+    val buf_res = allocators.Arena.alloc(arena, alen + 2 + blen + 1)
+    var buf ref(u8) = none
+    match buf_res
+        ok m => buf = m as ref(u8)
+        error _ => return b
+    end
+    @memcpy(buf, a, alen)
+    @deref(@as_mut(@add(buf, alen))) = '_'
+    @deref(@as_mut(@add(buf, alen + 1))) = '_'
+    @memcpy(@add(buf, alen + 2), b, blen)
+    @deref(@as_mut(@add(buf, alen + 2 + blen))) = 0
+    return buf
 end
 
 def join_segments_with_dunder(segments list[ref(u8)], arena ref(allocators.Arena)) ref(u8)
