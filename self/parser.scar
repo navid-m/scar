@@ -2050,7 +2050,6 @@ def parse_function(p ref(ast.TokenList), arena ref(allocators.Arena), is_pub boo
         )
     end
 
-    consume_newlines(p)
     var return_type ast.Type = @zeroed()
     if starts_type(p)
         return_type = parse_type_with_error_union(p, arena)
