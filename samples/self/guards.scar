@@ -7,4 +7,5 @@ def some_func()
 end
 
 pub def main()
+    some_func
 end

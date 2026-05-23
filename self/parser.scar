@@ -596,6 +596,43 @@ def parse_stmt(p ref(ast.TokenList), arena ref(allocators.Arena), current_platfo
         return parse_if_stmt(p, arena, current_platform)
     end
 
+    if is_keyword(p, KW_GUARD)
+        val line usize = p.tokens[p.pos].line
+        val column usize = p.tokens[p.pos].column
+        advance(p)
+        val condition ast.Expr = parse_expr(p, arena)
+        if is_keyword(p, KW_ELSE)
+            advance(p)
+        end
+        expect_newline(p)
+        val else_body list[ast.Stmt] = parse_block_until(p, arena, [KW_END], current_platform)
+        if is_keyword(p, KW_END)
+            advance(p)
+        end
+        val negated_raw = allocators.Arena.alloc(arena, @sizeof(ast.ExprUnary) as usize)
+        var negated_p ref(ast.ExprUnary) = none
+        match negated_raw
+            ok m => negated_p = @bitcast(m, ref(ast.ExprUnary))
+            error _ => ()
+        end
+        val cond_raw = allocators.Arena.alloc(arena, @sizeof(ast.Expr) as usize)
+        var cond_p ref(ast.Expr) = none
+        match cond_raw
+            ok m => cond_p = @bitcast(m, ref(ast.Expr))
+            error _ => ()
+        end
+        @deref(cond_p) = condition
+        negated_p.op = ast.UnaryOp.LogicalNot
+        negated_p.expr = cond_p
+        return ast.Stmt.If(@addr(ast.StmtIf(
+            condition: ast.Expr.Unary(negated_p),
+            then_body: else_body,
+            else_body: [] as list[ast.Stmt],
+            line: line,
+            column: column
+        )))
+    end
+
     if is_keyword(p, KW_FOR)
         return parse_for_stmt(p, arena, current_platform)
     end

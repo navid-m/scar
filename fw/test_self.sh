@@ -2,7 +2,7 @@
 
 set -uo pipefail
 
-PROGRAM="./scar-out/main"
+PROGRAM="./scar-dev"
 
 PASS_COUNT=0
 FAIL_COUNT=0
