@@ -2410,22 +2410,6 @@ def is_ref_type_by_name(name ref(u8), fun ref(ast.Function), info ref(sema.Progr
     return false
 end
 
-def debug_type_tag(ty ref(ast.Type))
-    match @deref(ty)
-        ast.Type.Void(_) => @puts("  tag=Void")
-        ast.Type.I32(_) => @puts("  tag=I32")
-        ast.Type.I64(_) => @puts("  tag=I64")
-        ast.Type.U8(_) => @puts("  tag=U8")
-        ast.Type.Ref(_) => @puts("  tag=Ref")
-        ast.Type.Mut(_) => @puts("  tag=Mut")
-        ast.Type.Named(n) => (
-            @print("  tag=Named({s})\n", {n})
-        )
-        ast.Type.List(_) => @puts("  tag=List")
-        _ => @puts("  tag=other")
-    end
-end
-
 def lookup_local_type(name ref(u8), fun ref(ast.Function), info ref(sema.ProgramInfo)) ref(ast.Type)
     var i usize = 0
     for i < @len(info.locals)
