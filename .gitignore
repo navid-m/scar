@@ -3,3 +3,4 @@
 *.c
 /target
 scar-out
+scar-dev
