@@ -2247,24 +2247,12 @@ end
 def get_expr_type(expr ref(ast.Expr), fun ref(ast.Function), info ref(sema.ProgramInfo)) ref(ast.Type)
     match @deref(expr)
         ast.Expr.Ident(name) => (
-            val debug bool = str.eql(fun.name, "fill_matrix") && str.eql(name, "m")
-            if debug
-                @puts("DBG get_expr_type: Ident(m) in fill_matrix")
-            end
             val ty ref(ast.Type) = lookup_local_type(name, fun, info)
-            if debug
-                @puts("DBG get_expr_type: after lookup_local_type:")
-                debug_type_tag(ty)
-            end
             match @deref(ty)
                 ast.Type.Void(_) => (
                     var i usize = 0
                     for i < @len(fun.params)
                         if str.eql(fun.params[i].name, name)
-                            if debug
-                                @puts("DBG get_expr_type: fallback found in params:")
-                                debug_type_tag(@addr(fun.params[i].ty))
-                            end
                             return @addr(fun.params[i].ty)
                         end
                         i++
@@ -2439,32 +2427,15 @@ def debug_type_tag(ty ref(ast.Type))
 end
 
 def lookup_local_type(name ref(u8), fun ref(ast.Function), info ref(sema.ProgramInfo)) ref(ast.Type)
-    val debug bool = str.eql(fun.name, "fill_matrix") && str.eql(name, "m")
-    if debug
-        @print("DBG lookup_local_type: name={s} fun={s} locals_count={d}\n", {name, fun.name, @len(info.locals) as i64})
-    end
     var i usize = 0
     for i < @len(info.locals)
         if str.eql(info.locals[i].function_name, fun.name)
-            if debug
-                @print("DBG   found locals entry, bindings_count={d}\n", {@len(info.locals[i].bindings) as i64})
-            end
             var j usize = 0
             for j < @len(info.locals[i].bindings)
-                if debug
-                    @print("DBG   binding[{d}]={s}\n", {j as i64, info.locals[i].bindings[j].name})
-                end
                 if str.eql(info.locals[i].bindings[j].name, name)
-                    if debug
-                        @puts("DBG   -> found in bindings")
-                        debug_type_tag(@addr(info.locals[i].bindings[j].ty))
-                    end
                     return @addr(info.locals[i].bindings[j].ty)
                 end
                 j++
-            end
-            if debug
-                @puts("DBG   -> not in bindings, checking params")
             end
             break
         end
@@ -2473,16 +2444,9 @@ def lookup_local_type(name ref(u8), fun ref(ast.Function), info ref(sema.Program
     i = 0
     for i < @len(fun.params)
         if str.eql(fun.params[i].name, name)
-            if debug
-                @puts("DBG   -> found in params")
-                debug_type_tag(@addr(fun.params[i].ty))
-            end
             return @addr(fun.params[i].ty)
         end
         i++
-    end
-    if debug
-        @puts("DBG   -> not found, returning Void")
     end
     return @addr(ast.Type.Void(0))
 end
