@@ -136,6 +136,25 @@ def next_is_keyword(p ref(ast.TokenList), id u8) bool
     return false
 end
 
+def peek_is_type_arg(p ref(ast.TokenList)) bool
+    val next_pos usize = p.pos + 1
+    if next_pos >= @len(p.tokens)
+        return false
+    end
+    match p.tokens[next_pos].kind
+        ast.TokenKind.Keyword(v) => (
+            return v == KW_VOID || v == KW_BOOL
+                || v == KW_I8 || v == KW_I16 || v == KW_I32 || v == KW_I64 || v == KW_ISIZE
+                || v == KW_U8 || v == KW_U16 || v == KW_U32 || v == KW_U64 || v == KW_USIZE
+                || v == KW_F32 || v == KW_F64
+                || v == KW_REF || v == KW_MUT || v == KW_LIST
+        )
+        ast.TokenKind.Ident(_) => return true
+        ast.TokenKind.RBracket(_) => return false
+        _ => return false
+    end
+end
+
 def next_non_newline_kind(p ref(ast.TokenList)) u8
     var i usize = p.pos
     for i < @len(p.tokens)
@@ -1583,16 +1602,46 @@ def parse_expr_postfix(p ref(ast.TokenList), arena ref(allocators.Arena)) ast.Ex
                 end
             )
             ast.TokenKind.LBracket(_) => (
-                advance(p)
-                val index ast.Expr = parse_expr(p, arena)
-                match p.tokens[p.pos].kind
-                    ast.TokenKind.RBracket(_) => advance(p)
-                    _ => ()
+                if peek_is_type_arg(p)
+                    advance(p)
+                    var type_args list[ast.Type] = []
+                    for !is_eof(p)
+                        match p.tokens[p.pos].kind
+                            ast.TokenKind.RBracket(_) => break
+                            _ => ()
+                        end
+                        @append(type_args, parse_type(p, arena))
+                        match p.tokens[p.pos].kind
+                            ast.TokenKind.Comma(_) => advance(p)
+                            _ => break
+                        end
+                    end
+                    match p.tokens[p.pos].kind
+                        ast.TokenKind.RBracket(_) => advance(p)
+                        _ => ()
+                    end
+                    val sp_res = allocators.Arena.alloc(arena, @sizeof(ast.ExprSpecialize) as usize)
+                    match sp_res
+                        ok m => (
+                            var sp_ptr ref(ast.ExprSpecialize) = @bitcast(m, ref(ast.ExprSpecialize))
+                            sp_ptr.callee = box_expr(arena, expr)
+                            sp_ptr.type_args = type_args
+                            expr = ast.Expr.Specialize(sp_ptr)
+                        )
+                        error _ => ()
+                    end
+                else
+                    advance(p)
+                    val index ast.Expr = parse_expr(p, arena)
+                    match p.tokens[p.pos].kind
+                        ast.TokenKind.RBracket(_) => advance(p)
+                        _ => ()
+                    end
+                    expr = ast.Expr.Index(@addr(ast.ExprIndex(
+                        base: box_expr(arena, expr),
+                        index: box_expr(arena, index)
+                    )))
                 end
-                expr = ast.Expr.Index(@addr(ast.ExprIndex(
-                    base: box_expr(arena, expr),
-                    index: box_expr(arena, index)
-                )))
             )
             ast.TokenKind.Keyword(v) => (
                 if v == KW_AS
