@@ -1,0 +1,10 @@
+def some_func()
+    if true
+        @puts("ok")
+    end
+end
+
+pub def main()
+    some_func()
+end
+
