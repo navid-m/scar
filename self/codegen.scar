@@ -114,29 +114,181 @@ def append_runtime_prelude(output ref(ref(u8)), output_len ref(usize))
 end
 
 def render_typedef(td ref(ast.TypeDef), arena ref(allocators.Arena), output ref(ref(u8)), output_len ref(usize))
-    append_str(output, output_len, "typedef struct ")
-    append_str(output, output_len, td.name)
-    append_str(output, output_len, "_scar_tag ")
-    append_str(output, output_len, td.name)
-    append_str(output, output_len, ";\n\n")
+    match td.kind
+        ast.TypeDefKind.Enum => (
+            val enum_c_prefix ref(u8) = make_enum_c_prefix(td.name, arena)
+            append_str(output, output_len, "typedef enum {\n")
+            var i usize = 0
+            for i < @len(td.variants)
+                append_str(output, output_len, "    ")
+                append_str(output, output_len, enum_c_prefix)
+                append_str(output, output_len, "_")
+                append_str(output, output_len, td.variants[i].name)
+                append_str(output, output_len, " = ")
+                append_usize(output, output_len, i, arena)
+                append_str(output, output_len, ",\n")
+                i++
+            end
+            append_str(output, output_len, "} ")
+            append_str(output, output_len, enum_c_prefix)
+            append_str(output, output_len, ";\n")
+            append_str(output, output_len, "typedef ")
+            append_str(output, output_len, enum_c_prefix)
+            append_str(output, output_len, " ")
+            append_str(output, output_len, td.name)
+            append_str(output, output_len, ";\n\n")
+        )
+        ast.TypeDefKind.Union => (
+            append_str(output, output_len, "enum {\n")
+            var i usize = 0
+            for i < @len(td.variants)
+                append_str(output, output_len, "    ")
+                append_str(output, output_len, td.name)
+                append_str(output, output_len, "__")
+                append_str(output, output_len, td.variants[i].name)
+                append_str(output, output_len, "_tag = ")
+                append_usize(output, output_len, i, arena)
+                append_str(output, output_len, ",\n")
+                i++
+            end
+            append_str(output, output_len, "};\n")
+            append_str(output, output_len, "typedef struct ")
+            append_str(output, output_len, td.name)
+            append_str(output, output_len, "_scar_tag ")
+            append_str(output, output_len, td.name)
+            append_str(output, output_len, ";\n")
+            append_str(output, output_len, "typedef struct ")
+            append_str(output, output_len, td.name)
+            append_str(output, output_len, "_scar_tag {\n")
+            append_str(output, output_len, "    int32_t tag;\n")
+            append_str(output, output_len, "    union {\n")
+            i = 0
+            for i < @len(td.variants)
+                append_str(output, output_len, "        struct {\n")
+                var j usize = 0
+                for j < @len(td.variants[i].payload_types)
+                    append_str(output, output_len, "            ")
+                    append_str(output, output_len, c_type(@addr(td.variants[i].payload_types[j]), arena))
+                    append_str(output, output_len, " _")
+                    append_usize(output, output_len, j, arena)
+                    append_str(output, output_len, ";\n")
+                    j++
+                end
+                append_str(output, output_len, "        } ")
+                append_str(output, output_len, td.variants[i].name)
+                append_str(output, output_len, ";\n")
+                i++
+            end
+            append_str(output, output_len, "    } data;\n")
+            append_str(output, output_len, "} ")
+            append_str(output, output_len, td.name)
+            append_str(output, output_len, ";\n\n")
+        )
+        ast.TypeDefKind.Struct => (
+            append_str(output, output_len, "typedef struct ")
+            append_str(output, output_len, td.name)
+            append_str(output, output_len, "_scar_tag ")
+            append_str(output, output_len, td.name)
+            append_str(output, output_len, ";\n")
+            append_str(output, output_len, "typedef struct ")
+            append_str(output, output_len, td.name)
+            append_str(output, output_len, "_scar_tag {\n")
+            var i usize = 0
+            for i < @len(td.fields)
+                val field ref(ast.FieldDef) = @addr(td.fields[i])
+                append_str(output, output_len, "    ")
+                append_str(output, output_len, c_type(@addr(field.ty), arena))
+                append_str(output, output_len, " ")
+                append_str(output, output_len, field.name)
+                append_str(output, output_len, ";\n")
+                i++
+            end
+            append_str(output, output_len, "} ")
+            append_str(output, output_len, td.name)
+            append_str(output, output_len, ";\n\n")
+        )
+    end
+end
 
-    append_str(output, output_len, "typedef struct ")
-    append_str(output, output_len, td.name)
-    append_str(output, output_len, "_scar_tag {\n")
-    
+def make_enum_c_prefix(name ref(u8), arena ref(allocators.Arena)) ref(u8)
+    val prefix ref(u8) = "scar__enum__"
+    val plen usize = str.len(prefix)
+    val nlen usize = str.len(name)
+    val res_res = allocators.Arena.alloc(arena, plen + nlen + 1)
+    var res ref(u8) = none
+    match res_res
+        ok m => res = m as ref(u8)
+        error _ => return name
+    end
+    @memcpy(res, prefix, plen)
+    @memcpy(@add(res, plen), name, nlen)
+    @deref(@as_mut(@add(res, plen + nlen))) = 0
+    return res
+end
+
+def is_integer_ast_type(ty ref(ast.Type)) bool
+    match @deref(ty)
+        ast.Type.I8(_) => return true
+        ast.Type.I16(_) => return true
+        ast.Type.I32(_) => return true
+        ast.Type.I64(_) => return true
+        ast.Type.Isize(_) => return true
+        ast.Type.U8(_) => return true
+        ast.Type.U16(_) => return true
+        ast.Type.U32(_) => return true
+        ast.Type.U64(_) => return true
+        ast.Type.Usize(_) => return true
+        ast.Type.Bool(_) => return true
+        _ => return false
+    end
+end
+
+def lookup_type_def(name ref(u8), info ref(sema.ProgramInfo)) ref(sema.TypeEntry)
     var i usize = 0
-    for i < @len(td.fields)
-        val field ref(ast.FieldDef) = @addr(td.fields[i])
-        append_str(output, output_len, "    ")
-        append_str(output, output_len, c_type(@addr(field.ty), arena))
-        append_str(output, output_len, " ")
-        append_str(output, output_len, field.name)
-        append_str(output, output_len, ";\n")
+    for i < @len(info.types)
+        if str.eql(info.types[i].name, name)
+            return @addr(info.types[i])
+        end
         i++
     end
-    append_str(output, output_len, "} ")
-    append_str(output, output_len, td.name)
-    append_str(output, output_len, ";\n\n")
+    return none
+end
+
+def is_enum_type_from_info(name ref(u8), info ref(sema.ProgramInfo)) bool
+    var i usize = 0
+    for i < @len(info.types)
+        if str.eql(info.types[i].name, name)
+            if @len(info.types[i].info.variant_map) == 0
+                return false
+            end
+            var j usize = 0
+            for j < @len(info.types[i].info.variant_map)
+                if @len(info.types[i].info.variant_map[j].payload_types) > 0
+                    return false
+                end
+                j++
+            end
+            return true
+        end
+        i++
+    end
+    return false
+end
+
+def infer_match_expr_type(expr ref(ast.Expr), fun ref(ast.Function), info ref(sema.ProgramInfo)) ast.Type
+    match @deref(expr)
+        ast.Expr.IntLit(_) => return ast.Type.I32(0)
+        ast.Expr.CharLit(_) => return ast.Type.U8(0)
+        ast.Expr.BoolLit(_) => return ast.Type.Bool(0)
+        ast.Expr.Ident(name) => return @deref(lookup_local_type(name, fun, info))
+        ast.Expr.Path(segments) => (
+            if @len(segments) == 1
+                return @deref(lookup_local_type(segments[0], fun, info))
+            end
+            return ast.Type.Void(0)
+        )
+        _ => return ast.Type.Void(0)
+    end
 end
 
 def render_function(fun ref(ast.Function), info ref(sema.ProgramInfo), arena ref(allocators.Arena), output ref(ref(u8)), output_len ref(usize))
@@ -292,58 +444,212 @@ def render_stmt(stmt ref(ast.Stmt), fun ref(ast.Function), info ref(sema.Program
             format_temp_name("__scar_match_", temp_id, @addr(temp_name_buf))
             val temp_name ref(u8) = @addr(temp_name_buf[0])
 
+            val matched_ty ast.Type = infer_match_expr_type(@addr(m.expr), fun, info)
+
             indent(output, output_len, level)
             append_str(output, output_len, "{\n")
             indent(output, output_len, level + 1)
-            append_str(output, output_len, "int32_t ")
+            append_str(output, output_len, c_type(@addr(matched_ty), arena))
+            append_str(output, output_len, " ")
             append_str(output, output_len, temp_name)
             append_str(output, output_len, " = ")
             append_expr(@addr(m.expr), fun, info, arena, output, output_len)
             append_str(output, output_len, ";\n")
 
-            var k usize = 0
-            for k < @len(m.arms)
-                indent(output, output_len, level + 1)
-                if k == 0
-                    append_str(output, output_len, "if (")
-                else
-                    append_str(output, output_len, "else if (")
-                end
-                append_str(output, output_len, temp_name)
-                append_str(output, output_len, ".tag == ")
-
-                match m.arms[k].kind
-                    ast.MatchArmKind.VariantName(vname) => (
-                        append_str(output, output_len, vname)
-                        append_str(output, output_len, "_tag\n")
-
-                        var l usize = 0
-                        for l < @len(m.arms[k].bindings)
-                            if str.len(m.arms[k].bindings[l]) > 0
-                                indent(output, output_len, level + 2)
-                                append_str(output, output_len, m.arms[k].bindings[l])
-                                append_str(output, output_len, " = ")
-                                append_str(output, output_len, temp_name)
-                                append_str(output, output_len, ".data.")
-                                append_str(output, output_len, vname)
-                                append_str(output, output_len, "._")
-                                append_usize(output, output_len, l, arena)
-                                append_str(output, output_len, ";\n")
+            if is_integer_ast_type(@addr(matched_ty))
+                var k usize = 0
+                var had_wildcard bool = false
+                for k < @len(m.arms) && !had_wildcard
+                    indent(output, output_len, level + 1)
+                    match m.arms[k].kind
+                        ast.MatchArmKind.Wild(_) => (
+                            had_wildcard = true
+                            if k == 0
+                                append_str(output, output_len, "{\n")
+                            else
+                                append_str(output, output_len, "else {\n")
                             end
-                            l++
+                        )
+                        ast.MatchArmKind.VariantName(vname) => (
+                            if k == 0
+                                append_str(output, output_len, "if (")
+                            else
+                                append_str(output, output_len, "else if (")
+                            end
+                            append_str(output, output_len, temp_name)
+                            append_str(output, output_len, " == ")
+                            append_str(output, output_len, vname)
+                            append_str(output, output_len, ") {\n")
+                        )
+                        _ => (
+                            if k == 0
+                                append_str(output, output_len, "{\n")
+                            else
+                                append_str(output, output_len, "else {\n")
+                            end
+                        )
+                    end
+                    var l usize = 0
+                    for l < @len(m.arms[k].body)
+                        render_stmt(@addr(m.arms[k].body[l]), fun, info, level + 2, next_temp_id, arena, output, output_len)
+                        l++
+                    end
+                    indent(output, output_len, level + 1)
+                    append_str(output, output_len, "}\n")
+                    k++
+                end
+            else
+                match matched_ty
+                    ast.Type.Named(type_name) => (
+                        var k usize = 0
+                        var had_wildcard bool = false
+                        for k < @len(m.arms) && !had_wildcard
+                            indent(output, output_len, level + 1)
+                            match m.arms[k].kind
+                                ast.MatchArmKind.Wild(_) => (
+                                    had_wildcard = true
+                                    if k == 0
+                                        append_str(output, output_len, "{\n")
+                                    else
+                                        append_str(output, output_len, "else {\n")
+                                    end
+                                )
+                                ast.MatchArmKind.VariantName(vname) => (
+                                    val dot_pos usize = find_last_dot(vname)
+                                    var bare_variant ref(u8) = vname
+                                    if dot_pos < str.len(vname)
+                                        bare_variant = @add(vname, dot_pos + 1)
+                                    end
+                                    if k == 0
+                                        append_str(output, output_len, "if (")
+                                    else
+                                        append_str(output, output_len, "else if (")
+                                    end
+                                    append_str(output, output_len, temp_name)
+                                    append_str(output, output_len, " == ")
+                                    val enum_prefix ref(u8) = make_enum_c_prefix(type_name, arena)
+                                    append_str(output, output_len, enum_prefix)
+                                    append_str(output, output_len, "_")
+                                    append_str(output, output_len, bare_variant)
+                                    append_str(output, output_len, ") {\n")
+                                )
+                                ast.MatchArmKind.Ok(_) => (
+                                    if k == 0
+                                        append_str(output, output_len, "if (!")
+                                    else
+                                        append_str(output, output_len, "else if (!")
+                                    end
+                                    append_str(output, output_len, temp_name)
+                                    append_str(output, output_len, ".is_error) {\n")
+                                )
+                                ast.MatchArmKind.Error(_) => (
+                                    if k == 0
+                                        append_str(output, output_len, "if (")
+                                    else
+                                        append_str(output, output_len, "else if (")
+                                    end
+                                    append_str(output, output_len, temp_name)
+                                    append_str(output, output_len, ".is_error) {\n")
+                                )
+                            end
+                            var l usize = 0
+                            for l < @len(m.arms[k].body)
+                                render_stmt(@addr(m.arms[k].body[l]), fun, info, level + 2, next_temp_id, arena, output, output_len)
+                                l++
+                            end
+                            indent(output, output_len, level + 1)
+                            append_str(output, output_len, "}\n")
+                            k++
                         end
                     )
-                    _ => ()
+                    ast.Type.Result(_) => (
+                        var k usize = 0
+                        for k < @len(m.arms)
+                            indent(output, output_len, level + 1)
+                            match m.arms[k].kind
+                                ast.MatchArmKind.Ok(_) => (
+                                    if k == 0
+                                        append_str(output, output_len, "if (!")
+                                    else
+                                        append_str(output, output_len, "else if (!")
+                                    end
+                                    append_str(output, output_len, temp_name)
+                                    append_str(output, output_len, ".is_error) {\n")
+                                    if @len(m.arms[k].bindings) > 0
+                                        if str.len(m.arms[k].bindings[0]) > 0
+                                            indent(output, output_len, level + 2)
+                                            append_str(output, output_len, "void *loc__")
+                                            append_str(output, output_len, m.arms[k].bindings[0])
+                                            append_str(output, output_len, " = ")
+                                            append_str(output, output_len, temp_name)
+                                            append_str(output, output_len, ".ok;\n")
+                                        end
+                                    end
+                                )
+                                ast.MatchArmKind.Error(_) => (
+                                    if k == 0
+                                        append_str(output, output_len, "if (")
+                                    else
+                                        append_str(output, output_len, "else if (")
+                                    end
+                                    append_str(output, output_len, temp_name)
+                                    append_str(output, output_len, ".is_error) {\n")
+                                    if @len(m.arms[k].bindings) > 0
+                                        if str.len(m.arms[k].bindings[0]) > 0
+                                            indent(output, output_len, level + 2)
+                                            append_str(output, output_len, "const char *loc__")
+                                            append_str(output, output_len, m.arms[k].bindings[0])
+                                            append_str(output, output_len, " = ")
+                                            append_str(output, output_len, temp_name)
+                                            append_str(output, output_len, ".error;\n")
+                                        end
+                                    end
+                                )
+                                ast.MatchArmKind.Wild(_) => (
+                                    if k == 0
+                                        append_str(output, output_len, "{\n")
+                                    else
+                                        append_str(output, output_len, "else {\n")
+                                    end
+                                )
+                                _ => (
+                                    if k == 0
+                                        append_str(output, output_len, "{\n")
+                                    else
+                                        append_str(output, output_len, "else {\n")
+                                    end
+                                )
+                            end
+                            var l usize = 0
+                            for l < @len(m.arms[k].body)
+                                render_stmt(@addr(m.arms[k].body[l]), fun, info, level + 2, next_temp_id, arena, output, output_len)
+                                l++
+                            end
+                            indent(output, output_len, level + 1)
+                            append_str(output, output_len, "}\n")
+                            k++
+                        end
+                    )
+                    _ => (
+                        var k usize = 0
+                        for k < @len(m.arms)
+                            indent(output, output_len, level + 1)
+                            if k == 0
+                                append_str(output, output_len, "{\n")
+                            else
+                                append_str(output, output_len, "else {\n")
+                            end
+                            var l usize = 0
+                            for l < @len(m.arms[k].body)
+                                render_stmt(@addr(m.arms[k].body[l]), fun, info, level + 2, next_temp_id, arena, output, output_len)
+                                l++
+                            end
+                            indent(output, output_len, level + 1)
+                            append_str(output, output_len, "}\n")
+                            k++
+                        end
+                    )
                 end
-
-                var l usize = 0
-                for l < @len(m.arms[k].body)
-                    render_stmt(@addr(m.arms[k].body[l]), fun, info, level + 2, next_temp_id, arena, output, output_len)
-                    l++
-                end
-                indent(output, output_len, level + 1)
-                append_str(output, output_len, "}\n")
-                k++
             end
             indent(output, output_len, level)
             append_str(output, output_len, "}\n")
@@ -960,6 +1266,18 @@ def mangle_local_symbol(name ref(u8), arena ref(allocators.Arena)) ref(u8)
     end
     @deref(@as_mut(@add(result, plen + nlen))) = 0
     return result
+end
+
+def find_last_dot(s ref(u8)) usize
+    val slen usize = str.len(s)
+    var i usize = slen
+    for i > 0
+        i--
+        if @deref(@add(s, i)) == '.'
+            return i
+        end
+    end
+    return slen
 end
 
 def lookup_symbol(name ref(u8), info ref(sema.ProgramInfo), arena ref(allocators.Arena)) ref(u8)

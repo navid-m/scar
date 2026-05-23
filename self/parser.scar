@@ -756,6 +756,25 @@ def parse_match_arm_kind(p ref(ast.TokenList), arena ref(allocators.Arena)) ast.
                 )
             end
         )
+        ast.TokenKind.Char(ch) => (
+            var buf_res = allocators.Arena.alloc(arena, 32)
+            var buf ref(u8) = none
+            match buf_res
+                ok m => (
+                    buf = m as ref(u8)
+                    var digits_buf list[u8] = []
+                    format_u64_for_str(ch as u64, @addr(digits_buf))
+                    @memcpy(buf, @addr(digits_buf[0]), @len(digits_buf))
+                    @deref(@as_mut(@add(buf, @len(digits_buf)))) = 0
+                    advance(p)
+                    return ast.MatchArmKind.VariantName(buf)
+                )
+                error _ => (
+                    advance(p)
+                    return ast.MatchArmKind.Wild(0)
+                )
+            end
+        )
         _ => (
             advance(p)
             return ast.MatchArmKind.Wild(0)
