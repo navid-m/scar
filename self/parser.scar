@@ -409,6 +409,35 @@ def parse_type(p ref(ast.TokenList), arena ref(allocators.Arena)) ast.Type
     end
 end
 
+def parse_type_with_error_union(p ref(ast.TokenList), arena ref(allocators.Arena)) ast.Type
+    val base ast.Type = parse_type(p, arena)
+    match p.tokens[p.pos].kind
+        ast.TokenKind.Pipe(_) => (
+            var i usize = p.pos + 1
+            match p.tokens[i].kind
+                ast.TokenKind.Ident(name) => (
+                    if str.eql(name, "error")
+                        advance(p)
+                        advance(p)
+                        val raw_res = allocators.Arena.alloc(arena, @sizeof(ast.Type) as usize)
+                        match raw_res
+                            ok raw => (
+                                var inner_ptr ref(ast.Type) = @bitcast(raw, ref(ast.Type))
+                                @deref(inner_ptr) = base
+                                return ast.Type.Result(inner_ptr)
+                            )
+                            error _ => return base
+                        end
+                    end
+                    return base
+                )
+                _ => return base
+            end
+        )
+        _ => return base
+    end
+end
+
 def parse_dotted_name(p ref(ast.TokenList), arena ref(allocators.Arena)) ref(u8)
     val first ref(u8) = expect_ident(p, arena)
     match p.tokens[p.pos].kind
@@ -1548,6 +1577,10 @@ def parse_expr_postfix(p ref(ast.TokenList), arena ref(allocators.Arena)) ast.Ex
                     break
                 end
             )
+            ast.TokenKind.Question(_) => (
+                advance(p)
+                expr = ast.Expr.Try(box_expr(arena, expr))
+            )
             _ => break
         end
     end
@@ -1902,7 +1935,7 @@ def parse_function(p ref(ast.TokenList), arena ref(allocators.Arena), is_pub boo
 
     var return_type ast.Type = @zeroed()
     if starts_type(p)
-        return_type = parse_type(p, arena)
+        return_type = parse_type_with_error_union(p, arena)
     else
         return_type = ast.Type.Void(0)
     end
@@ -1979,7 +2012,7 @@ def parse_extern_function(p ref(ast.TokenList), arena ref(allocators.Arena), is_
     if next_non_newline_kind(p) == 204
         return_type = ast.Type.Void(0)
     elif starts_type(p)
-        return_type = parse_type(p, arena)
+        return_type = parse_type_with_error_union(p, arena)
     else
         return_type = ast.Type.Void(0)
     end
