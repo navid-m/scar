@@ -2,6 +2,7 @@ val str = use("std/string")
 val ast = use("ast")
 val lxr = use("lexer")
 val allocators = use("std/allocators")
+val os = use("std/os")
 
 val KW_PUB    u8 = 1
 val KW_DEF    u8 = 2
@@ -51,6 +52,8 @@ val KW_WHEN   u8 = 45
 val KW_LINK   u8 = 46
 val KW_GUARD  u8 = 47
 val KW_ASSIGN u8 = 48
+
+var error_count usize = 0
 
 def box_expr(arena ref(allocators.Arena), e ast.Expr) ref(ast.Expr)
     val res = allocators.Arena.alloc(arena, @sizeof(ast.Expr) as usize)
@@ -1583,6 +1586,7 @@ def parse_primary(p ref(ast.TokenList), arena ref(allocators.Arena)) ast.Expr
             val tok_line usize = p.tokens[p.pos].line
             val tok_col usize = p.tokens[p.pos].column
             @print("{s}:{d}:{d}: parse error: unexpected keyword in expression\n", {p.source_file, tok_line, tok_col})
+            error_count++
             advance(p)
             return ast.Expr.None(0)
         )
@@ -1728,6 +1732,7 @@ def parse_primary(p ref(ast.TokenList), arena ref(allocators.Arena)) ast.Expr
             val tok_line usize = p.tokens[p.pos].line
             val tok_col usize = p.tokens[p.pos].column
             @print("{s}:{d}:{d}: parse error: unexpected token in expression\n", {p.source_file, tok_line, tok_col})
+            error_count++
             advance(p)
             return ast.Expr.None(0)
         )
@@ -2388,6 +2393,11 @@ pub def parse_program(tokens list[ast.Token], arena ref(allocators.Arena), curre
             skip_top_level_item(@addr(p))
         end
         consume_newlines(@addr(p))
+    end
+
+    if error_count > 0
+        @print("\nscar: compilation aborted with {d} errors\n", {error_count})
+        os.exit(1)
     end
 
     return ast.Program(
