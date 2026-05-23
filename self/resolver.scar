@@ -3,15 +3,20 @@ val allocators = use("std/allocators")
 val str = use("std/string")
 val lxr = use("lexer")
 val prs = use("parser")
+val reflection = use("std/reflection")
 
 extern "stdio.h"
 extern "sys/stat.h"
+extern "stdlib.h"
+extern "unistd.h"
 
 extern def fopen(path ref(u8), mode ref(u8)) ref(u8) :: "fopen"
 extern def fclose(f ref(u8)) i32 :: "fclose"
 extern def fread(buf ref(u8), size usize, count usize, f ref(u8)) usize :: "fread"
 extern def fseek(f ref(u8), offset i64, whence i32) i32 :: "fseek"
 extern def ftell(f ref(u8)) i64 :: "ftell"
+extern def getenv(name ref(u8)) ref(u8) :: "getenv"
+extern def getcwd(buf ref(u8), size usize) ref(u8) :: "getcwd"
 
 def read_file(path ref(u8), arena ref(allocators.Arena)) ref(u8)
     val f ref(u8) = fopen(path, "rb")
@@ -72,12 +77,232 @@ def get_dirname(path ref(u8), arena ref(allocators.Arena)) ref(u8)
     return buf
 end
 
+def path_exists(path ref(u8)) bool
+    val f ref(u8) = fopen(path, "rb")
+    if f == none
+        return false
+    end
+    fclose(f)
+    return true
+end
+
+def concat_path(a ref(u8), b ref(u8), arena ref(allocators.Arena)) ref(u8)
+    val alen usize = str.len(a)
+    val blen usize = str.len(b)
+    val total usize = alen + 1 + blen + 1
+    val buf_res = allocators.Arena.alloc(arena, total)
+    var buf ref(u8) = none
+    match buf_res
+        ok m => buf = m as ref(u8)
+        error _ => return none
+    end
+    @memcpy(buf, a, alen)
+    @deref(@as_mut(@add(buf, alen))) = '/'
+    @memcpy(@add(buf, alen + 1), b, blen)
+    @deref(@as_mut(@add(buf, alen + 1 + blen))) = 0
+    return buf
+end
+
+def find_std_root(arena ref(allocators.Arena)) ref(u8)
+    val cwd_buf_res = allocators.Arena.alloc(arena, 4096 as usize)
+    var cwd_buf ref(u8) = none
+    match cwd_buf_res
+        ok m => cwd_buf = m as ref(u8)
+        error _ => return none
+    end
+    val cwd_result ref(u8) = getcwd(cwd_buf, 4096 as usize)
+    if cwd_result != none
+        val local_std ref(u8) = concat_path(cwd_buf, "lib/std", arena)
+        if local_std != none
+            val check_file ref(u8) = concat_path(local_std, "string/mod.scar", arena)
+            if check_file != none && path_exists(check_file)
+                return local_std
+            end
+        end
+    end
+    val home ref(u8) = getenv("HOME")
+    if home != none
+        val home_std ref(u8) = concat_path(home, ".scar/lib/std", arena)
+        if home_std != none
+            val check_file ref(u8) = concat_path(home_std, "string/mod.scar", arena)
+            if check_file != none && path_exists(check_file)
+                return home_std
+            end
+        end
+    end
+    return none
+end
+
+def resolve_std_module_path(std_root ref(u8), std_path ref(u8), arena ref(allocators.Arena)) ref(u8)
+    val rest_len usize = str.len(std_path) - 4 as usize
+    val rest_res = allocators.Arena.alloc(arena, rest_len + 1)
+    var rest ref(u8) = none
+    match rest_res
+        ok m => rest = m as ref(u8)
+        error _ => return none
+    end
+    @memcpy(rest, @add(std_path, 4 as usize), rest_len)
+    @deref(@as_mut(@add(rest, rest_len))) = 0
+    val mod_scar ref(u8) = concat_path(std_root, concat_path(rest, "mod.scar", arena), arena)
+    if mod_scar != none && path_exists(mod_scar)
+        return mod_scar
+    end
+    val scar_len usize = rest_len + 5 as usize
+    val scar_res = allocators.Arena.alloc(arena, scar_len + 1)
+    var scar_path ref(u8) = none
+    match scar_res
+        ok m => scar_path = m as ref(u8)
+        error _ => return none
+    end
+    @memcpy(scar_path, rest, rest_len)
+    @memcpy(@add(scar_path, rest_len), ".scar", 5 as usize)
+    @deref(@as_mut(@add(scar_path, scar_len))) = 0
+    return concat_path(std_root, scar_path, arena)
+end
+
+def resolve_module_into(
+    mod_path ref(u8),
+    alias_name ref(u8),
+    std_root ref(u8),
+    resolved_type_defs ref(list[ast.TypeDef]),
+    resolved_functions ref(list[ast.Function]),
+    resolved_extern_headers ref(list[ref(u8)]),
+    visited ref(list[ref(u8)]),
+    arena ref(allocators.Arena)
+) void|error
+    var vi usize = 0
+    for vi < @len(@deref(visited))
+        if str.eql(@deref(visited)[vi], mod_path)
+            return
+        end
+        vi++
+    end
+    @append(@deref(visited), mod_path)
+
+    val mod_source ref(u8) = read_file(mod_path, arena)
+    if mod_source == none
+        return
+    end
+    val plat ref(u8) = reflection.current_platform_name[allocators.Arena](arena)?
+    val mod_tokens list[ast.Token] = lxr.lex(mod_source, arena)
+    val mod_prog ast.Program = prs.parse_program(mod_tokens, arena, plat, mod_path)
+    val mod_dir ref(u8) = get_dirname(mod_path, arena)
+
+    var smi usize = 0
+    for smi < @len(mod_prog.module_uses)
+        val smu ref(ast.ModuleUse) = @addr(mod_prog.module_uses[smi])
+        val spath_len usize = str.len(smu.path)
+        val sub_is_std bool = spath_len >= 4
+            && @deref(smu.path) == 's'
+            && @deref(@add(smu.path, 1)) == 't'
+            && @deref(@add(smu.path, 2)) == 'd'
+            && @deref(@add(smu.path, 3)) == '/'
+        if sub_is_std
+            if std_root != none
+                val sub_mod_path ref(u8) = resolve_std_module_path(std_root, smu.path, arena)
+                if sub_mod_path != none
+                    resolve_module_into(sub_mod_path, smu.name, std_root, resolved_type_defs, resolved_functions, resolved_extern_headers, visited, arena)?
+                end
+            end
+        else
+            val sub_mod_path ref(u8) = resolve_module_path(mod_dir, smu.path, arena)?
+            resolve_module_into(sub_mod_path, smu.name, std_root, resolved_type_defs, resolved_functions, resolved_extern_headers, visited, arena)?
+        end
+        smi++
+    end
+
+    var pub_type_names list[ref(u8)] = []
+    var ti usize = 0
+    for ti < @len(mod_prog.type_defs)
+        if mod_prog.type_defs[ti].is_pub
+            @append(pub_type_names, mod_prog.type_defs[ti].name)
+        end
+        ti++
+    end
+
+    ti = 0
+    for ti < @len(mod_prog.type_defs)
+        val td ref(ast.TypeDef) = @addr(mod_prog.type_defs[ti])
+        if td.is_pub
+            val prefixed_name ref(u8) = prefix_name(alias_name, td.name, arena)
+            var prefixed_fields list[ast.FieldDef] = []
+            var fi2 usize = 0
+            for fi2 < @len(td.fields)
+                val f ref(ast.FieldDef) = @addr(td.fields[fi2])
+                val rewritten_ty ast.Type = rewrite_type_with_prefix(@addr(f.ty), alias_name, @addr(pub_type_names), arena)
+                @append(prefixed_fields, ast.FieldDef(name: f.name, ty: rewritten_ty, line: f.line, column: f.column))
+                fi2++
+            end
+            var prefixed_variants list[ast.VariantDef] = []
+            var vi2 usize = 0
+            for vi2 < @len(td.variants)
+                val v ref(ast.VariantDef) = @addr(td.variants[vi2])
+                var rewritten_payloads list[ast.Type] = []
+                var pi usize = 0
+                for pi < @len(v.payload_types)
+                    @append(rewritten_payloads, rewrite_type_with_prefix(@addr(v.payload_types[pi]), alias_name, @addr(pub_type_names), arena))
+                    pi++
+                end
+                @append(prefixed_variants, ast.VariantDef(name: v.name, payload_types: rewritten_payloads))
+                vi2++
+            end
+            val prefixed_td ast.TypeDef = ast.TypeDef(
+                name: prefixed_name,
+                kind: td.kind,
+                fields: prefixed_fields,
+                variants: prefixed_variants,
+                is_pub: false
+            )
+            @append(@deref(resolved_type_defs), prefixed_td)
+        end
+        ti++
+    end
+
+    var fi usize = 0
+    for fi < @len(mod_prog.functions)
+        val fn_ref ref(ast.Function) = @addr(mod_prog.functions[fi])
+        if fn_ref.is_pub
+            val prefixed_name ref(u8) = prefix_name(alias_name, fn_ref.name, arena)
+            var prefixed_params list[ast.Param] = []
+            var pi usize = 0
+            for pi < @len(fn_ref.params)
+                val param ref(ast.Param) = @addr(fn_ref.params[pi])
+                val rewritten_ty ast.Type = rewrite_type_with_prefix(@addr(param.ty), alias_name, @addr(pub_type_names), arena)
+                @append(prefixed_params, ast.Param(name: param.name, ty: rewritten_ty, line: param.line, column: param.column))
+                pi++
+            end
+            val rewritten_ret ast.Type = rewrite_type_with_prefix(@addr(fn_ref.return_type), alias_name, @addr(pub_type_names), arena)
+            val prefixed_fn ast.Function = ast.Function(
+                name: prefixed_name,
+                params: prefixed_params,
+                return_type: rewritten_ret,
+                body: fn_ref.body,
+                is_pub: false,
+                is_extern: fn_ref.is_extern,
+                extern_name: fn_ref.extern_name,
+                line: fn_ref.line,
+                column: fn_ref.column
+            )
+            @append(@deref(resolved_functions), prefixed_fn)
+        end
+        fi++
+    end
+
+    var hi usize = 0
+    for hi < @len(mod_prog.extern_headers)
+        @append(@deref(resolved_extern_headers), mod_prog.extern_headers[hi])
+        hi++
+    end
+end
+
 pub def resolve(program ref(ast.Program), source_path ref(u8), arena ref(allocators.Arena)) ast.Program|error
     var resolved_type_defs list[ast.TypeDef] = []
     var resolved_functions list[ast.Function] = []
     var resolved_extern_headers list[ref(u8)] = []
 
     val source_dir ref(u8) = get_dirname(source_path, arena)
+    val std_root ref(u8) = find_std_root(arena)
+    var visited list[ref(u8)] = []
 
     var mi usize = 0
     for mi < @len(program.module_uses)
@@ -89,102 +314,17 @@ pub def resolve(program ref(ast.Program), source_path ref(u8), arena ref(allocat
             && @deref(@add(mu.path, 2)) == 'd'
             && @deref(@add(mu.path, 3)) == '/'
         if is_std
+            if std_root != none
+                val mod_path ref(u8) = resolve_std_module_path(std_root, mu.path, arena)
+                if mod_path != none
+                    resolve_module_into(mod_path, mu.name, std_root, @addr(resolved_type_defs), @addr(resolved_functions), @addr(resolved_extern_headers), @addr(visited), arena)?
+                end
+            end
             mi++
             continue
         end
         val mod_path ref(u8) = resolve_module_path(source_dir, mu.path, arena)?
-        val mod_source ref(u8) = read_file(mod_path, arena)
-        if mod_source == none
-            mi++
-            continue
-        end
-        val platform ref(u8) = "linux"
-        val mod_tokens list[ast.Token] = lxr.lex(mod_source, arena)
-        val mod_prog ast.Program = prs.parse_program(mod_tokens, arena, platform, mod_path)
-
-        var pub_type_names list[ref(u8)] = []
-        var ti usize = 0
-        for ti < @len(mod_prog.type_defs)
-            if mod_prog.type_defs[ti].is_pub
-                @append(pub_type_names, mod_prog.type_defs[ti].name)
-            end
-            ti++
-        end
-
-        ti = 0
-        for ti < @len(mod_prog.type_defs)
-            val td ref(ast.TypeDef) = @addr(mod_prog.type_defs[ti])
-            if td.is_pub
-                val prefixed_name ref(u8) = prefix_name(mu.name, td.name, arena)
-                var prefixed_fields list[ast.FieldDef] = []
-                var fi2 usize = 0
-                for fi2 < @len(td.fields)
-                    val f ref(ast.FieldDef) = @addr(td.fields[fi2])
-                    val rewritten_ty ast.Type = rewrite_type_with_prefix(@addr(f.ty), mu.name, @addr(pub_type_names), arena)
-                    @append(prefixed_fields, ast.FieldDef(name: f.name, ty: rewritten_ty, line: f.line, column: f.column))
-                    fi2++
-                end
-                var prefixed_variants list[ast.VariantDef] = []
-                var vi usize = 0
-                for vi < @len(td.variants)
-                    val v ref(ast.VariantDef) = @addr(td.variants[vi])
-                    var rewritten_payloads list[ast.Type] = []
-                    var pi usize = 0
-                    for pi < @len(v.payload_types)
-                        @append(rewritten_payloads, rewrite_type_with_prefix(@addr(v.payload_types[pi]), mu.name, @addr(pub_type_names), arena))
-                        pi++
-                    end
-                    @append(prefixed_variants, ast.VariantDef(name: v.name, payload_types: rewritten_payloads))
-                    vi++
-                end
-                val prefixed_td ast.TypeDef = ast.TypeDef(
-                    name: prefixed_name,
-                    kind: td.kind,
-                    fields: prefixed_fields,
-                    variants: prefixed_variants,
-                    is_pub: false
-                )
-                @append(resolved_type_defs, prefixed_td)
-            end
-            ti++
-        end
-
-        var fi usize = 0
-        for fi < @len(mod_prog.functions)
-            val fn_ref ref(ast.Function) = @addr(mod_prog.functions[fi])
-            if fn_ref.is_pub
-                val prefixed_name ref(u8) = prefix_name(mu.name, fn_ref.name, arena)
-                var prefixed_params list[ast.Param] = []
-                var pi usize = 0
-                for pi < @len(fn_ref.params)
-                    val param ref(ast.Param) = @addr(fn_ref.params[pi])
-                    val rewritten_ty ast.Type = rewrite_type_with_prefix(@addr(param.ty), mu.name, @addr(pub_type_names), arena)
-                    @append(prefixed_params, ast.Param(name: param.name, ty: rewritten_ty, line: param.line, column: param.column))
-                    pi++
-                end
-                val rewritten_ret ast.Type = rewrite_type_with_prefix(@addr(fn_ref.return_type), mu.name, @addr(pub_type_names), arena)
-                val prefixed_fn ast.Function = ast.Function(
-                    name: prefixed_name,
-                    params: prefixed_params,
-                    return_type: rewritten_ret,
-                    body: fn_ref.body,
-                    is_pub: false,
-                    is_extern: fn_ref.is_extern,
-                    extern_name: fn_ref.extern_name,
-                    line: fn_ref.line,
-                    column: fn_ref.column
-                )
-                @append(resolved_functions, prefixed_fn)
-            end
-            fi++
-        end
-
-        var hi usize = 0
-        for hi < @len(mod_prog.extern_headers)
-            @append(resolved_extern_headers, mod_prog.extern_headers[hi])
-            hi++
-        end
-
+        resolve_module_into(mod_path, mu.name, std_root, @addr(resolved_type_defs), @addr(resolved_functions), @addr(resolved_extern_headers), @addr(visited), arena)?
         mi++
     end
 
