@@ -1,0 +1,10 @@
+def fib(n i64) i64
+    if n <= 2
+        return 1
+    end
+    return fib(n - 1) + fib(n - 2)
+end
+
+pub def main()
+    @print("{d}", {fib(47)})
+end
