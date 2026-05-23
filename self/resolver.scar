@@ -215,22 +215,42 @@ def resolve_expr(expr ref(ast.Expr), arena ref(allocators.Arena)) ast.Expr|error
         ast.Expr.Binary(b) => (
             val raw = allocators.Arena.alloc(arena, @sizeof(ast.ExprBinary) as usize)?
             var p ref(ast.ExprBinary) = @bitcast(raw, ref(ast.ExprBinary))
-            p.lhs = @addr(resolve_expr(b.lhs, arena)?)
+            
+            val lhs_raw = allocators.Arena.alloc(arena, @sizeof(ast.Expr) as usize)?
+            var lhs_p ref(ast.Expr) = @bitcast(lhs_raw, ref(ast.Expr))
+            @deref(lhs_p) = resolve_expr(b.lhs, arena)?
+            p.lhs = lhs_p
+            
             p.op = b.op
-            p.rhs = @addr(resolve_expr(b.rhs, arena)?)
+            
+            val rhs_raw = allocators.Arena.alloc(arena, @sizeof(ast.Expr) as usize)?
+            var rhs_p ref(ast.Expr) = @bitcast(rhs_raw, ref(ast.Expr))
+            @deref(rhs_p) = resolve_expr(b.rhs, arena)?
+            p.rhs = rhs_p
+            
             return ast.Expr.Binary(p)
         )
         ast.Expr.Unary(u) => (
             val raw = allocators.Arena.alloc(arena, @sizeof(ast.ExprUnary) as usize)?
             var p ref(ast.ExprUnary) = @bitcast(raw, ref(ast.ExprUnary))
+            
+            val expr_raw = allocators.Arena.alloc(arena, @sizeof(ast.Expr) as usize)?
+            var expr_p ref(ast.Expr) = @bitcast(expr_raw, ref(ast.Expr))
+            @deref(expr_p) = resolve_expr(u.expr, arena)?
+            p.expr = expr_p
+            
             p.op = u.op
-            p.expr = @addr(resolve_expr(u.expr, arena)?)
             return ast.Expr.Unary(p)
         )
         ast.Expr.Call(c) => (
             val raw = allocators.Arena.alloc(arena, @sizeof(ast.ExprCall) as usize)?
             var p ref(ast.ExprCall) = @bitcast(raw, ref(ast.ExprCall))
-            p.callee = @addr(resolve_expr(c.callee, arena)?)
+            
+            val callee_raw = allocators.Arena.alloc(arena, @sizeof(ast.Expr) as usize)?
+            var callee_p ref(ast.Expr) = @bitcast(callee_raw, ref(ast.Expr))
+            @deref(callee_p) = resolve_expr(c.callee, arena)?
+            p.callee = callee_p
+            
             var resolved_args list[ast.Expr] = []
             var i usize = 0
             for i < @len(c.args)
@@ -243,28 +263,52 @@ def resolve_expr(expr ref(ast.Expr), arena ref(allocators.Arena)) ast.Expr|error
         ast.Expr.Index(idx) => (
             val raw = allocators.Arena.alloc(arena, @sizeof(ast.ExprIndex) as usize)?
             var p ref(ast.ExprIndex) = @bitcast(raw, ref(ast.ExprIndex))
-            p.base = @addr(resolve_expr(idx.base, arena)?)
-            p.index = @addr(resolve_expr(idx.index, arena)?)
+            
+            val base_raw = allocators.Arena.alloc(arena, @sizeof(ast.Expr) as usize)?
+            var base_p ref(ast.Expr) = @bitcast(base_raw, ref(ast.Expr))
+            @deref(base_p) = resolve_expr(idx.base, arena)?
+            p.base = base_p
+            
+            val index_raw = allocators.Arena.alloc(arena, @sizeof(ast.Expr) as usize)?
+            var index_p ref(ast.Expr) = @bitcast(index_raw, ref(ast.Expr))
+            @deref(index_p) = resolve_expr(idx.index, arena)?
+            p.index = index_p
+            
             return ast.Expr.Index(p)
         )
         ast.Expr.Field(f) => (
             val raw = allocators.Arena.alloc(arena, @sizeof(ast.ExprField) as usize)?
             var p ref(ast.ExprField) = @bitcast(raw, ref(ast.ExprField))
-            p.base = @addr(resolve_expr(f.base, arena)?)
+            
+            val base_raw = allocators.Arena.alloc(arena, @sizeof(ast.Expr) as usize)?
+            var base_p ref(ast.Expr) = @bitcast(base_raw, ref(ast.Expr))
+            @deref(base_p) = resolve_expr(f.base, arena)?
+            p.base = base_p
+            
             p.field = f.field
             return ast.Expr.Field(p)
         )
         ast.Expr.Cast(c) => (
             val raw = allocators.Arena.alloc(arena, @sizeof(ast.ExprCast) as usize)?
             var p ref(ast.ExprCast) = @bitcast(raw, ref(ast.ExprCast))
-            p.expr = @addr(resolve_expr(c.expr, arena)?)
+            
+            val expr_raw = allocators.Arena.alloc(arena, @sizeof(ast.Expr) as usize)?
+            var expr_p ref(ast.Expr) = @bitcast(expr_raw, ref(ast.Expr))
+            @deref(expr_p) = resolve_expr(c.expr, arena)?
+            p.expr = expr_p
+            
             p.ty = resolve_type(@addr(c.ty), arena)?
             return ast.Expr.Cast(p)
         )
         ast.Expr.BitCast(bc) => (
             val raw = allocators.Arena.alloc(arena, @sizeof(ast.ExprBitCast) as usize)?
             var p ref(ast.ExprBitCast) = @bitcast(raw, ref(ast.ExprBitCast))
-            p.expr = @addr(resolve_expr(bc.expr, arena)?)
+            
+            val expr_raw = allocators.Arena.alloc(arena, @sizeof(ast.Expr) as usize)?
+            var expr_p ref(ast.Expr) = @bitcast(expr_raw, ref(ast.Expr))
+            @deref(expr_p) = resolve_expr(bc.expr, arena)?
+            p.expr = expr_p
+            
             p.ty = resolve_type(@addr(bc.ty), arena)?
             return ast.Expr.BitCast(p)
         )
@@ -310,7 +354,12 @@ def resolve_expr(expr ref(ast.Expr), arena ref(allocators.Arena)) ast.Expr|error
         ast.Expr.MethodCall(mc) => (
             val raw = allocators.Arena.alloc(arena, @sizeof(ast.ExprMethodCall) as usize)?
             var p ref(ast.ExprMethodCall) = @bitcast(raw, ref(ast.ExprMethodCall))
-            p.receiver = @addr(resolve_expr(mc.receiver, arena)?)
+            
+            val receiver_raw = allocators.Arena.alloc(arena, @sizeof(ast.Expr) as usize)?
+            var receiver_p ref(ast.Expr) = @bitcast(receiver_raw, ref(ast.Expr))
+            @deref(receiver_p) = resolve_expr(mc.receiver, arena)?
+            p.receiver = receiver_p
+            
             p.method = mc.method
             var resolved_args list[ast.Expr] = []
             var i usize = 0
@@ -324,7 +373,12 @@ def resolve_expr(expr ref(ast.Expr), arena ref(allocators.Arena)) ast.Expr|error
         ast.Expr.Specialize(sp) => (
             val raw = allocators.Arena.alloc(arena, @sizeof(ast.ExprSpecialize) as usize)?
             var p ref(ast.ExprSpecialize) = @bitcast(raw, ref(ast.ExprSpecialize))
-            p.callee = @addr(resolve_expr(sp.callee, arena)?)
+            
+            val callee_raw = allocators.Arena.alloc(arena, @sizeof(ast.Expr) as usize)?
+            var callee_p ref(ast.Expr) = @bitcast(callee_raw, ref(ast.Expr))
+            @deref(callee_p) = resolve_expr(sp.callee, arena)?
+            p.callee = callee_p
+            
             var resolved_type_args list[ast.Type] = []
             var i usize = 0
             for i < @len(sp.type_args)
@@ -350,8 +404,12 @@ def resolve_expr(expr ref(ast.Expr), arena ref(allocators.Arena)) ast.Expr|error
         ast.Expr.Try(inner) => (
             val raw = allocators.Arena.alloc(arena, @sizeof(ast.Expr) as usize)?
             var p ref(ast.Expr) = @bitcast(raw, ref(ast.Expr))
-            @deref(p) = resolve_expr(inner, arena)?
-            return ast.Expr.Try(p)
+            
+            val inner_raw = allocators.Arena.alloc(arena, @sizeof(ast.Expr) as usize)?
+            var inner_p ref(ast.Expr) = @bitcast(inner_raw, ref(ast.Expr))
+            @deref(inner_p) = resolve_expr(inner, arena)?
+            @deref(p) = ast.Expr.Try(inner_p)
+            return @deref(p)
         )
         ast.Expr.Pack(elems) => (
             var resolved list[ast.Expr] = []
