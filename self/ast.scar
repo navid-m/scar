@@ -367,4 +367,5 @@ pub type Program
 	functions list[Function]
 	type_defs list[TypeDef]
 	tests list[TestBlock]
+	extern_headers list[ref(u8)]
 end

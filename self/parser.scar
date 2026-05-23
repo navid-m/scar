@@ -2074,6 +2074,7 @@ pub def parse_program(tokens list[ast.Token], arena ref(allocators.Arena), curre
     var functions list[ast.Function] = []
     var type_defs list[ast.TypeDef] = []
     var tests list[ast.TestBlock] = []
+    var extern_headers list[ref(u8)] = []
 
     consume_newlines(@addr(p))
 
@@ -2109,7 +2110,14 @@ pub def parse_program(tokens list[ast.Token], arena ref(allocators.Arena), curre
             if is_keyword(@addr(p), KW_DEF)
                 @append(functions, parse_extern_function(@addr(p), arena, false))
             else
-                skip_to_newline(@addr(p))
+                match p.tokens[p.pos].kind
+                    ast.TokenKind.Str(s) => (
+                        @append(extern_headers, s)
+                        advance(@addr(p))
+                        expect_newline(@addr(p))
+                    )
+                    _ => skip_to_newline(@addr(p))
+                end
             end
         elif is_keyword(@addr(p), KW_TYPE)
             @append(type_defs, parse_type_def(@addr(p), arena, false))
@@ -2161,7 +2169,14 @@ pub def parse_program(tokens list[ast.Token], arena ref(allocators.Arena), curre
                         if is_keyword(@addr(p), KW_DEF)
                             @append(functions, parse_extern_function(@addr(p), arena, false))
                         else
-                            skip_to_newline(@addr(p))
+                            match p.tokens[p.pos].kind
+                                ast.TokenKind.Str(s) => (
+                                    @append(extern_headers, s)
+                                    advance(@addr(p))
+                                    expect_newline(@addr(p))
+                                )
+                                _ => skip_to_newline(@addr(p))
+                            end
                         end
                     elif is_keyword(@addr(p), KW_TYPE)
                         @append(type_defs, parse_type_def(@addr(p), arena, false))
@@ -2213,7 +2228,14 @@ pub def parse_program(tokens list[ast.Token], arena ref(allocators.Arena), curre
                                     if is_keyword(@addr(p), KW_DEF)
                                         @append(functions, parse_extern_function(@addr(p), arena, false))
                                     else
-                                        skip_to_newline(@addr(p))
+                                        match p.tokens[p.pos].kind
+                                            ast.TokenKind.Str(s) => (
+                                                @append(extern_headers, s)
+                                                advance(@addr(p))
+                                                expect_newline(@addr(p))
+                                            )
+                                            _ => skip_to_newline(@addr(p))
+                                        end
                                     end
                                 elif is_keyword(@addr(p), KW_TYPE)
                                     @append(type_defs, parse_type_def(@addr(p), arena, false))
@@ -2259,6 +2281,7 @@ pub def parse_program(tokens list[ast.Token], arena ref(allocators.Arena), curre
         module_uses: module_uses,
         functions: functions,
         type_defs: type_defs,
-        tests: tests
+        tests: tests,
+        extern_headers: extern_headers
     )
 end

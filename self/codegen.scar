@@ -31,6 +31,17 @@ pub def generate_c(program ref(ast.Program), info ref(sema.ProgramInfo), arena r
     append_runtime_prelude(@addr(output), @addr(output_len))
 
     var j usize = 0
+    for j < @len(program.extern_headers)
+        append_str(@addr(output), @addr(output_len), "#include \"")
+        append_str(@addr(output), @addr(output_len), program.extern_headers[j])
+        append_str(@addr(output), @addr(output_len), "\"\n")
+        j++
+    end
+    if @len(program.extern_headers) > 0
+        append_str(@addr(output), @addr(output_len), "\n")
+    end
+
+    j = 0
     for j < @len(program.type_defs)
         val td ref(ast.TypeDef) = @addr(program.type_defs[j])
         render_typedef_forward(td, @addr(output), @addr(output_len))

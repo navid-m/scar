@@ -6,7 +6,8 @@ pub def resolve(program ref(ast.Program), arena ref(allocators.Arena)) ast.Progr
         module_uses: program.module_uses,
         functions: [] as list[ast.Function],
         type_defs: program.type_defs,
-        tests: program.tests
+        tests: program.tests,
+        extern_headers: program.extern_headers
     )
 
     var i usize = 0

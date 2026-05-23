@@ -101,9 +101,13 @@ pub def analyze(program ref(ast.Program), arena ref(allocators.Arena)) ProgramIn
                 return_type: fn_ref.return_type
             )
         ))
+        var fn_symbol ref(u8) = mangle_function_symbol(fn_ref.name, arena)
+        if fn_ref.is_extern && str.len(fn_ref.extern_name) > 0
+            fn_symbol = fn_ref.extern_name
+        end
         @append(function_symbols, SymbolEntry(
             name: fn_ref.name,
-            symbol: mangle_function_symbol(fn_ref.name, arena)
+            symbol: fn_symbol
         ))
         i++
     end
