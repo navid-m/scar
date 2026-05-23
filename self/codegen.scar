@@ -1305,7 +1305,7 @@ def append_expr(expr ref(ast.Expr), fun ref(ast.Function), info ref(sema.Program
         ast.Expr.CharLit(v) => append_u64(output, output_len, v as u64, arena)
         ast.Expr.StrLit(s) => (
             append_str(output, output_len, "\"")
-            append_str(output, output_len, s)
+            append_escaped_str(output, output_len, s)
             append_str(output, output_len, "\"")
         )
         ast.Expr.None(_) => append_str(output, output_len, "NULL")
@@ -1715,22 +1715,40 @@ def append_builtin_call(bc ref(ast.ExprBuiltinCall), fun ref(ast.Function), info
             val fmt_ch u8 = translated[fmt_idx]
             if fmt_ch == 0
                 break
+            elif fmt_ch == '\\'
+                append_str(output, output_len, "\\\\")
+            elif fmt_ch == '"'
+                append_str(output, output_len, "\\\"")
             elif fmt_ch == '\n'
                 append_str(output, output_len, "\\n")
             elif fmt_ch == '\t'
                 append_str(output, output_len, "\\t")
             elif fmt_ch == '\r'
                 append_str(output, output_len, "\\r")
-            else
-                val single_buf_res = allocators.Arena.alloc(arena, 2)
-                match single_buf_res
-                    ok m => (
-                        @deref(@as_mut(m as ref(u8))) = fmt_ch
-                        @deref(@as_mut(@add(m as ref(u8), 1))) = 0
-                        append_str(output, output_len, m as ref(u8))
-                    )
-                    error _ => ()
+            elif fmt_ch < 32 || fmt_ch > 126
+                append_str(output, output_len, "\\x")
+                val hi u8 = (fmt_ch >> 4) & 0xf
+                val lo u8 = fmt_ch & 0xf
+                var hi_ch u8 = 0
+                if hi < 10
+                    hi_ch = '0' + hi
+                else
+                    hi_ch = 'a' + hi - 10
                 end
+                var lo_ch u8 = 0
+                if lo < 10
+                    lo_ch = '0' + lo
+                else
+                    lo_ch = 'a' + lo - 10
+                end
+                val cur usize = @deref(output_len)
+                @deref(@as_mut(@add(@deref(output), cur))) = hi_ch
+                @deref(@as_mut(@add(@deref(output), cur + 1))) = lo_ch
+                @deref(output_len) = cur + 2
+            else
+                val cur usize = @deref(output_len)
+                @deref(@as_mut(@add(@deref(output), cur))) = fmt_ch
+                @deref(output_len) = cur + 1
             end
             fmt_idx++
         end
@@ -2599,6 +2617,50 @@ def append_str(output ref(ref(u8)), output_len ref(usize), s ref(u8))
     val current_len usize = @deref(output_len)
     @memcpy(@add(@deref(output), current_len), s, slen)
     @deref(output_len) = current_len + slen
+end
+
+def append_escaped_str(output ref(ref(u8)), output_len ref(usize), s ref(u8))
+    var i usize = 0
+    val slen usize = str.len(s)
+    for i < slen
+        val ch u8 = @deref(@add(s, i))
+        if ch == '\\'
+            append_str(output, output_len, "\\\\")
+        elif ch == '"'
+            append_str(output, output_len, "\\\"")
+        elif ch == '\n'
+            append_str(output, output_len, "\\n")
+        elif ch == '\r'
+            append_str(output, output_len, "\\r")
+        elif ch == '\t'
+            append_str(output, output_len, "\\t")
+        elif ch < 32 || ch > 126
+            append_str(output, output_len, "\\x")
+            val hi u8 = (ch >> 4) & 0xf
+            val lo u8 = ch & 0xf
+            var hi_ch u8 = 0
+            if hi < 10
+                hi_ch = '0' + hi
+            else
+                hi_ch = 'a' + hi - 10
+            end
+            var lo_ch u8 = 0
+            if lo < 10
+                lo_ch = '0' + lo
+            else
+                lo_ch = 'a' + lo - 10
+            end
+            val cur usize = @deref(output_len)
+            @deref(@as_mut(@add(@deref(output), cur))) = hi_ch
+            @deref(@as_mut(@add(@deref(output), cur + 1))) = lo_ch
+            @deref(output_len) = cur + 2
+        else
+            val current_len usize = @deref(output_len)
+            @deref(@as_mut(@add(@deref(output), current_len))) = ch
+            @deref(output_len) = current_len + 1
+        end
+        i++
+    end
 end
 
 def append_u64(output ref(ref(u8)), output_len ref(usize), v u64, arena ref(allocators.Arena))

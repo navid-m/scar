@@ -402,6 +402,31 @@ def lex_escape(l ref(ast.Lexer)) u8
 		'\\' => return '\\'
 		'"' => return '"'
 		'\'' => return '\''
+		'x' => (
+			val high u8 = @deref(@add(l.source, l.pos))
+			l.pos++
+			l.column++
+			val low u8 = @deref(@add(l.source, l.pos))
+			l.pos++
+			l.column++
+			var high_val u8 = 0
+			if high >= '0' && high <= '9'
+				high_val = high - '0'
+			elif high >= 'a' && high <= 'f'
+				high_val = high - 'a' + 10
+			elif high >= 'A' && high <= 'F'
+				high_val = high - 'A' + 10
+			end
+			var low_val u8 = 0
+			if low >= '0' && low <= '9'
+				low_val = low - '0'
+			elif low >= 'a' && low <= 'f'
+				low_val = low - 'a' + 10
+			elif low >= 'A' && low <= 'F'
+				low_val = low - 'A' + 10
+			end
+			return (high_val << 4) | low_val
+		)
 		_ => return ch
 	end
 end
