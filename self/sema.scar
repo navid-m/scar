@@ -551,7 +551,23 @@ def analyze_expr(expr ref(ast.Expr), bindings ref(list[BindingEntry]), functions
             end
             match callee_ty
                 ast.Type.FnPtr(_, ret) => return @deref(ret)
-                _ => return ast.Type.Void(0)
+                _ => (
+                    match @deref(c.callee)
+                        ast.Expr.Path(segments) => (
+                            if @len(segments) == 2
+                                var ti usize = 0
+                                for ti < @len(types)
+                                    if str.eql(types[ti].name, segments[0])
+                                        return ast.Type.Named(segments[0])
+                                    end
+                                    ti++
+                                end
+                            end
+                        )
+                        _ => ()
+                    end
+                    return ast.Type.Void(0)
+                )
             end
         )
         ast.Expr.Index(idx) => (

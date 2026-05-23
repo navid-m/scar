@@ -590,19 +590,14 @@ def render_typedef(td ref(ast.TypeDef), arena ref(allocators.Arena), output ref(
             for i < @len(td.variants)
                 append_str(output, output_len, "    ")
                 append_str(output, output_len, td.name)
-                append_str(output, output_len, "__")
+                append_str(output, output_len, "__tag__")
                 append_str(output, output_len, td.variants[i].name)
-                append_str(output, output_len, "_tag = ")
+                append_str(output, output_len, " = ")
                 append_usize(output, output_len, i, arena)
                 append_str(output, output_len, ",\n")
                 i++
             end
             append_str(output, output_len, "};\n")
-            append_str(output, output_len, "typedef struct ")
-            append_str(output, output_len, td.name)
-            append_str(output, output_len, "_scar_tag ")
-            append_str(output, output_len, td.name)
-            append_str(output, output_len, ";\n")
             append_str(output, output_len, "typedef struct ")
             append_str(output, output_len, td.name)
             append_str(output, output_len, "_scar_tag {\n")
@@ -721,7 +716,22 @@ def infer_match_expr_type(expr ref(ast.Expr), fun ref(ast.Function), info ref(se
         ast.Expr.IntLit(_) => return ast.Type.I32(0)
         ast.Expr.CharLit(_) => return ast.Type.U8(0)
         ast.Expr.BoolLit(_) => return ast.Type.Bool(0)
-        ast.Expr.Ident(name) => return @deref(lookup_local_type(name, fun, info))
+        ast.Expr.Ident(name) => (
+            val ty ref(ast.Type) = lookup_local_type(name, fun, info)
+            match @deref(ty)
+                ast.Type.Void(_) => (
+                    var i usize = 0
+                    for i < @len(fun.params)
+                        if str.eql(fun.params[i].name, name)
+                            return fun.params[i].ty
+                        end
+                        i++
+                    end
+                )
+                _ => ()
+            end
+            return @deref(ty)
+        )
         ast.Expr.Path(segments) => (
             if @len(segments) == 1
                 return @deref(lookup_local_type(segments[0], fun, info))
@@ -1024,12 +1034,47 @@ def render_stmt(stmt ref(ast.Stmt), fun ref(ast.Function), info ref(sema.Program
                                         append_str(output, output_len, "else if (")
                                     end
                                     append_str(output, output_len, temp_name)
-                                    append_str(output, output_len, " == ")
-                                    val enum_prefix ref(u8) = make_enum_c_prefix(type_name, arena)
-                                    append_str(output, output_len, enum_prefix)
-                                    append_str(output, output_len, "_")
+                                    append_str(output, output_len, ".tag == ")
+                                    append_str(output, output_len, type_name)
+                                    append_str(output, output_len, "__tag__")
                                     append_str(output, output_len, bare_variant)
                                     append_str(output, output_len, ") {\n")
+                                    var bi usize = 0
+                                    for bi < @len(m.arms[k].bindings)
+                                        val bname ref(u8) = m.arms[k].bindings[bi]
+                                        if str.len(bname) > 0 && !str.eql(bname, "_")
+                                            var payload_ty ref(u8) = "void *"
+                                            var ti usize = 0
+                                            for ti < @len(info.types)
+                                                if str.eql(info.types[ti].name, type_name)
+                                                    var vi usize = 0
+                                                    for vi < @len(info.types[ti].info.variant_map)
+                                                        if str.eql(info.types[ti].info.variant_map[vi].name, bare_variant)
+                                                            if bi < @len(info.types[ti].info.variant_map[vi].payload_types)
+                                                                payload_ty = c_type(@addr(info.types[ti].info.variant_map[vi].payload_types[bi]), arena)
+                                                            end
+                                                            break
+                                                        end
+                                                        vi++
+                                                    end
+                                                    break
+                                                end
+                                                ti++
+                                            end
+                                            indent(output, output_len, level + 2)
+                                            append_str(output, output_len, payload_ty)
+                                            append_str(output, output_len, " loc__")
+                                            append_str(output, output_len, bname)
+                                            append_str(output, output_len, " = ")
+                                            append_str(output, output_len, temp_name)
+                                            append_str(output, output_len, ".data.")
+                                            append_str(output, output_len, bare_variant)
+                                            append_str(output, output_len, "._")
+                                            append_usize(output, output_len, bi, arena)
+                                            append_str(output, output_len, ";\n")
+                                        end
+                                        bi++
+                                    end
                                 )
                                 ast.MatchArmKind.Ok(_) => (
                                     if k == 0
@@ -1320,22 +1365,68 @@ def append_expr(expr ref(ast.Expr), fun ref(ast.Function), info ref(sema.Program
             end
         )
         ast.Expr.Call(c) => (
-            append_expr(c.callee, fun, info, arena, output, output_len)
-            append_str(output, output_len, "(")
-            var i usize = 0
-            for i < @len(c.args)
-                if i > 0
-                    append_str(output, output_len, ", ")
-                end
-                if is_list_lit_expr(@addr(c.args[i]))
-                    val param_ty ref(ast.Type) = lookup_function_param_type(c.callee, i, info)
-                    append_list_literal_from_expr(@addr(c.args[i]), param_ty, fun, info, arena, output, output_len)
-                else
-                    append_expr(@addr(c.args[i]), fun, info, arena, output, output_len)
-                end
-                i++
+            var is_union_ctor bool = false
+            var union_type_name ref(u8) = ""
+            var union_variant_name ref(u8) = ""
+            match @deref(c.callee)
+                ast.Expr.Path(segments) => (
+                    if @len(segments) == 2
+                        var ti usize = 0
+                        for ti < @len(info.types)
+                            if str.eql(info.types[ti].name, segments[0])
+                                if info.types[ti].info.kind == sema.TypeDefKind.Union
+                                    is_union_ctor = true
+                                    union_type_name = segments[0]
+                                    union_variant_name = segments[1]
+                                end
+                                break
+                            end
+                            ti++
+                        end
+                    end
+                )
+                _ => ()
             end
-            append_str(output, output_len, ")")
+            if is_union_ctor
+                append_str(output, output_len, "((")
+                append_str(output, output_len, union_type_name)
+                append_str(output, output_len, "){ .tag = ")
+                append_str(output, output_len, union_type_name)
+                append_str(output, output_len, "__tag__")
+                append_str(output, output_len, union_variant_name)
+                append_str(output, output_len, ", .data.")
+                append_str(output, output_len, union_variant_name)
+                append_str(output, output_len, " = { ")
+                var i usize = 0
+                for i < @len(c.args)
+                    if i > 0
+                        append_str(output, output_len, ", ")
+                    end
+                    append_str(output, output_len, "._")
+                    append_usize(output, output_len, i, arena)
+                    append_str(output, output_len, " = ")
+                    append_expr(@addr(c.args[i]), fun, info, arena, output, output_len)
+                    i++
+                end
+                append_str(output, output_len, " } })")
+            else
+                append_expr(c.callee, fun, info, arena, output, output_len)
+                append_str(output, output_len, "(")
+                var i usize = 0
+                for i < @len(c.args)
+                    if i > 0
+                        append_str(output, output_len, ", ")
+                    end
+                    if is_list_lit_expr(@addr(c.args[i]))
+                        val param_ty ref(ast.Type) = lookup_function_param_type(c.callee, i, info)
+                        append_list_literal_from_expr(@addr(c.args[i]), param_ty, fun, info, arena, output, output_len)
+                    else
+                        append_expr(@addr(c.args[i]), fun, info, arena, output, output_len)
+                    end
+                    i++
+                end
+                append_str(output, output_len, ")")
+            end
         )
         ast.Expr.Index(idx) => (
             val base_ty ref(ast.Type) = get_expr_type(idx.base, fun, info)
