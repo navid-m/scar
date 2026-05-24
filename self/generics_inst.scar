@@ -8,6 +8,8 @@ pub type GenericState
     generated list[ast.Function]
     instantiated_keys list[ref(u8)]
     instantiated_names list[ref(u8)]
+    type_defs list[ast.TypeDef]
+    current_body list[ast.Stmt]
 end
 
 def find_template(state ref(GenericState), name ref(u8)) ref(ast.Function)
@@ -123,7 +125,12 @@ def rewrite_expr_calls(state ref(GenericState), expr ref(ast.Expr), arena ref(al
                         _ => ()
                     end
                     if fn_name != none
-                        val concrete_name ref(u8) = instantiate(state, fn_name, @addr(sp.type_args), arena)
+                        var resolved_type_args list[ast.Type] = sp.type_args
+                        val template_ref ref(ast.Function) = find_template(state, fn_name)
+                        if template_ref != none
+                            resolved_type_args = infer_type_args(template_ref, @addr(c.args), @addr(sp.type_args), state)
+                        end
+                        val concrete_name ref(u8) = instantiate(state, fn_name, @addr(resolved_type_args), arena)
                         var new_args list[ast.Expr] = []
                         var i usize = 0
                         for i < @len(c.args)
@@ -739,7 +746,87 @@ def rewrite_stmt_calls(state ref(GenericState), stmt ref(ast.Stmt), arena ref(al
     end
 end
 
+def infer_type_from_expr(expr ref(ast.Expr), state ref(GenericState)) ast.Type
+    match @deref(expr)
+        ast.Expr.Ident(name) => (
+            var i usize = 0
+            for i < @len(state.current_body)
+                match state.current_body[i]
+                    ast.Stmt.VarDecl(vd) => (
+                        if str.eql(vd.name, name)
+                            return infer_type_from_expr(@addr(vd.init), state)
+                        end
+                    )
+                    _ => ()
+                end
+                i++
+            end
+            return ast.Type.Named("_")
+        )
+        ast.Expr.Call(c) => (
+            match @deref(c.callee)
+                ast.Expr.Ident(callee_name) => (
+                    var i usize = 0
+                    for i < @len(state.type_defs)
+                        if str.eql(state.type_defs[i].name, callee_name)
+                            return ast.Type.Named(callee_name)
+                        end
+                        i++
+                    end
+                    return ast.Type.Named("_")
+                )
+                _ => return ast.Type.Named("_")
+            end
+        )
+        _ => return ast.Type.Named("_")
+    end
+end
+
+def infer_type_args(template ref(ast.Function), call_args ref(list[ast.Expr]), type_args ref(list[ast.Type]), state ref(GenericState)) list[ast.Type]
+    var result list[ast.Type] = []
+    var i usize = 0
+    for i < @len(@deref(type_args))
+        @append(result, @deref(type_args)[i])
+        i++
+    end
+    i = 0
+    for i < @len(template.params)
+        val param ref(ast.Param) = @addr(template.params[i])
+        match param.ty
+            ast.Type.Named(param_type_name) => (
+                var j usize = 0
+                for j < @len(template.generic_params)
+                    if str.eql(template.generic_params[j], param_type_name) && i < @len(@deref(call_args))
+                        match result[j]
+                            ast.Type.Named(name) => (
+                                if str.eql(name, "_")
+                                    val inferred ast.Type = infer_type_from_expr(@addr(@deref(call_args)[i]), state)
+                                    match inferred
+                                        ast.Type.Named(inferred_name) => (
+                                            if !str.eql(inferred_name, "_")
+                                                result[j] = inferred
+                                            end
+                                        )
+                                        _ => ()
+                                    end
+                                end
+                            )
+                            _ => ()
+                        end
+                        break
+                    end
+                    j++
+                end
+            )
+            _ => ()
+        end
+        i++
+    end
+    return result
+end
+
 def rewrite_function_calls(state ref(GenericState), fun ref(ast.Function), arena ref(allocators.Arena))
+    state.current_body = fun.body
     var new_body list[ast.Stmt] = []
     var i usize = 0
     for i < @len(fun.body)
@@ -754,7 +841,9 @@ pub def instantiate_generics(program ref(ast.Program), arena ref(allocators.Aren
         templates: [] as list[ast.Function],
         generated: [] as list[ast.Function],
         instantiated_keys: [] as list[ref(u8)],
-        instantiated_names: [] as list[ref(u8)]
+        instantiated_names: [] as list[ref(u8)],
+        type_defs: program.type_defs,
+        current_body: [] as list[ast.Stmt]
     )
 
     var concrete_functions list[ast.Function] = []

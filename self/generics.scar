@@ -543,6 +543,43 @@ pub def substitute_expr(expr ref(ast.Expr), params ref(list[ref(u8)]), type_args
                 error _ => return @deref(expr)
             end
         )
+        ast.Expr.Path(segs) => (
+            if @len(segs) > 0
+                var i usize = 0
+                for i < @len(@deref(params))
+                    if str.eql(@deref(params)[i], segs[0])
+                        match @deref(type_args)[i]
+                            ast.Type.Named(type_name) => (
+                                var new_segs list[ref(u8)] = []
+                                @append(new_segs, type_name)
+                                var j usize = 1
+                                for j < @len(segs)
+                                    @append(new_segs, segs[j])
+                                    j++
+                                end
+                                return ast.Expr.Path(new_segs)
+                            )
+                            _ => ()
+                        end
+                    end
+                    i++
+                end
+            end
+            return @deref(expr)
+        )
+        ast.Expr.Ident(name) => (
+            var i usize = 0
+            for i < @len(@deref(params))
+                if str.eql(@deref(params)[i], name)
+                    match @deref(type_args)[i]
+                        ast.Type.Named(type_name) => return ast.Expr.Ident(type_name)
+                        _ => return @deref(expr)
+                    end
+                end
+                i++
+            end
+            return @deref(expr)
+        )
         _ => return @deref(expr)
     end
 end
