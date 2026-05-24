@@ -1,0 +1,11 @@
+def add(x i32, y i32) i32
+    return x + y
+end
+
+pub def main()
+end
+
+test "add works"
+    assert add(1, 1) == 2
+end
+
