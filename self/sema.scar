@@ -591,6 +591,7 @@ def analyze_expr(expr ref(ast.Expr), bindings ref(list[BindingEntry]), functions
             end
             match callee_ty
                 ast.Type.FnPtr(_, ret) => return @deref(ret)
+                ast.Type.Named(_) => return callee_ty
                 _ => (
                     match @deref(c.callee)
                         ast.Expr.Path(segments) => (
@@ -687,6 +688,13 @@ def lookup_name(name ref(u8), bindings ref(list[BindingEntry]), functions ref(li
     for i < @len(functions)
         if str.eql(functions[i].name, name)
             return ast.Type.FnPtr(functions[i].sig.params, @addr(functions[i].sig.return_type))
+        end
+        i++
+    end
+    i = 0
+    for i < @len(types)
+        if str.eql(types[i].name, name)
+            return ast.Type.Named(name)
         end
         i++
     end
