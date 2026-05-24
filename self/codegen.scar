@@ -1193,31 +1193,41 @@ def render_stmt(stmt ref(ast.Stmt), fun ref(ast.Function), info ref(sema.Program
             if !is_void_type(@addr(fun.return_type))
                 match fun.return_type
                     ast.Type.Result(ok_ty) => (
-                        val result_c_type ref(u8) = c_type(@addr(ast.Type.Result(ok_ty)), arena)
-                        append_str(output, output_len, "__scar_return_value = ((")
-                        append_str(output, output_len, result_c_type)
-                        match r.value
-                            ast.Expr.ErrorLit(msg) => (
-                                append_str(output, output_len, "){ .is_error = 1, .ok = ")
-                                if is_void_type(ok_ty)
-                                    append_str(output, output_len, "0")
-                                else
-                                    append_str(output, output_len, "(")
-                                    append_str(output, output_len, c_type(ok_ty, arena))
-                                    append_str(output, output_len, "){0}")
-                                end
-                                append_str(output, output_len, ", .error = \"")
-                                append_str(output, output_len, msg)
-                                append_str(output, output_len, "\" });\n")
+                        val expr_ty ref(ast.Type) = get_expr_type(@addr(r.value), fun, info)
+                        match @deref(expr_ty)
+                            ast.Type.Result(_) => (
+                                append_str(output, output_len, "__scar_return_value = ")
+                                append_expr(@addr(r.value), fun, info, arena, output, output_len)
+                                append_str(output, output_len, ";\n")
                             )
                             _ => (
-                                append_str(output, output_len, "){ .is_error = 0, .ok = ")
-                                if is_void_type(ok_ty)
-                                    append_str(output, output_len, "0")
-                                else
-                                    append_expr(@addr(r.value), fun, info, arena, output, output_len)
+                                val result_c_type ref(u8) = c_type(@addr(ast.Type.Result(ok_ty)), arena)
+                                append_str(output, output_len, "__scar_return_value = ((")
+                                append_str(output, output_len, result_c_type)
+                                match r.value
+                                    ast.Expr.ErrorLit(msg) => (
+                                        append_str(output, output_len, "){ .is_error = 1, .ok = ")
+                                        if is_void_type(ok_ty)
+                                            append_str(output, output_len, "0")
+                                        else
+                                            append_str(output, output_len, "(")
+                                            append_str(output, output_len, c_type(ok_ty, arena))
+                                            append_str(output, output_len, "){0}")
+                                        end
+                                        append_str(output, output_len, ", .error = \"")
+                                        append_str(output, output_len, msg)
+                                        append_str(output, output_len, "\" });\n")
+                                    )
+                                    _ => (
+                                        append_str(output, output_len, "){ .is_error = 0, .ok = ")
+                                        if is_void_type(ok_ty)
+                                            append_str(output, output_len, "0")
+                                        else
+                                            append_expr(@addr(r.value), fun, info, arena, output, output_len)
+                                        end
+                                        append_str(output, output_len, ", .error = NULL });\n")
+                                    )
                                 end
-                                append_str(output, output_len, ", .error = NULL });\n")
                             )
                         end
                     )
@@ -3397,6 +3407,13 @@ def get_expr_type(expr ref(ast.Expr), fun ref(ast.Function), info ref(sema.Progr
                 end
             end
             return @addr(ast.Type.Void(0))
+        )
+        ast.Expr.Try(inner) => (
+            val inner_ty ref(ast.Type) = get_expr_type(inner, fun, info)
+            match @deref(inner_ty)
+                ast.Type.Result(ok_ty) => return ok_ty
+                _ => return @addr(ast.Type.Void(0))
+            end
         )
         _ => return @addr(ast.Type.Void(0))
     end
