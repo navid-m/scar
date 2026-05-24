@@ -51,7 +51,7 @@ val KW_DEFER  u8 = 44
 val KW_WHEN   u8 = 45
 val KW_LINK   u8 = 46
 val KW_GUARD  u8 = 47
-val KW_ASSIGN u8 = 48
+val KW_ASSERT u8 = 48
 
 var error_count usize = 0
 
@@ -712,6 +712,12 @@ def parse_stmt(p ref(ast.TokenList), arena ref(allocators.Arena), current_platfo
             line: line,
             column: column
         )))
+    end
+
+    if is_keyword(p, KW_ASSERT)
+        advance(p)
+        val condition ast.Expr = parse_expr(p, arena)
+        return ast.Stmt.Assert(box_expr(arena, condition))
     end
 
     if is_keyword(p, KW_FOR)

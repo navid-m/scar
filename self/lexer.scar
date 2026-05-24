@@ -680,6 +680,9 @@ def lex_ident(l ref(ast.Lexer), arena ref(allocators.Arena)) ast.Token
 			end
 		end
 		6 => match @deref(@add(name, 0))
+			'a' => if str.eql(name, "assert")
+				return ast.Token(kind: ast.TokenKind.Keyword(48), line: line, column: column)
+			end
 			'e' => if str.eql(name, "extern")
 				return ast.Token(kind: ast.TokenKind.Keyword(34), line: line, column: column)
 			end
