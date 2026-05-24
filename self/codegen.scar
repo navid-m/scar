@@ -341,6 +341,7 @@ def collect_list_types_from_type(ty ref(ast.Type), seen ref(list[ast.Type]), are
             end
             collect_list_types_from_type(ret, seen, arena)
         )
+        ast.Type.StaticArray(_, inner) => collect_list_types_from_type(inner, seen, arena)
         _ => ()
     end
 end
@@ -619,10 +620,23 @@ def render_typedef(td ref(ast.TypeDef), arena ref(allocators.Arena), output ref(
                 append_str(output, output_len, "        struct {\n")
                 var j usize = 0
                 for j < @len(td.variants[i].payload_types)
+                    val inner_ty ref(ast.Type) = @addr(td.variants[i].payload_types[j])
                     append_str(output, output_len, "            ")
-                    append_str(output, output_len, c_type(@addr(td.variants[i].payload_types[j]), arena))
-                    append_str(output, output_len, " _")
-                    append_usize(output, output_len, j, arena)
+                    match @deref(inner_ty)
+                        ast.Type.StaticArray(sa_size, sa_inner) => (
+                            append_str(output, output_len, c_type(sa_inner, arena))
+                            append_str(output, output_len, " _")
+                            append_usize(output, output_len, j, arena)
+                            append_str(output, output_len, "[")
+                            append_usize(output, output_len, sa_size as usize, arena)
+                            append_str(output, output_len, "]")
+                        )
+                        _ => (
+                            append_str(output, output_len, c_type(inner_ty, arena))
+                            append_str(output, output_len, " _")
+                            append_usize(output, output_len, j, arena)
+                        )
+                    end
                     append_str(output, output_len, ";\n")
                     j++
                 end
@@ -644,9 +658,7 @@ def render_typedef(td ref(ast.TypeDef), arena ref(allocators.Arena), output ref(
             for i < @len(td.fields)
                 val field ref(ast.FieldDef) = @addr(td.fields[i])
                 append_str(output, output_len, "    ")
-                append_str(output, output_len, c_type(@addr(field.ty), arena))
-                append_str(output, output_len, " ")
-                append_str(output, output_len, field.name)
+                append_str(output, output_len, c_type_decl(@addr(field.ty), field.name, arena))
                 append_str(output, output_len, ";\n")
                 i++
             end
@@ -1616,21 +1628,31 @@ def append_expr(expr ref(ast.Expr), fun ref(ast.Function), info ref(sema.Program
         ast.Expr.Index(idx) => (
             val base_ty ref(ast.Type) = get_expr_type(idx.base, fun, info)
             val base_ty_deref ref(ast.Type) = deref_type(base_ty)
-            val element_ty ref(ast.Type) = get_list_element_type(base_ty_deref)
-            val helper_prefix ref(u8) = list_helper_prefix(element_ty, arena)
-            append_str(output, output_len, "(*")
-            append_str(output, output_len, helper_prefix)
-            append_str(output, output_len, "_at(")
-            if is_ref_type(base_ty)
-                append_expr(idx.base, fun, info, arena, output, output_len)
-            else
-                append_str(output, output_len, "&(")
-                append_expr(idx.base, fun, info, arena, output, output_len)
-                append_str(output, output_len, ")")
+            match @deref(base_ty_deref)
+                ast.Type.StaticArray(_, _) => (
+                    append_expr(idx.base, fun, info, arena, output, output_len)
+                    append_str(output, output_len, "[")
+                    append_expr(idx.index, fun, info, arena, output, output_len)
+                    append_str(output, output_len, "]")
+                )
+                _ => (
+                    val element_ty ref(ast.Type) = get_list_element_type(base_ty_deref)
+                    val helper_prefix ref(u8) = list_helper_prefix(element_ty, arena)
+                    append_str(output, output_len, "(*")
+                    append_str(output, output_len, helper_prefix)
+                    append_str(output, output_len, "_at(")
+                    if is_ref_type(base_ty)
+                        append_expr(idx.base, fun, info, arena, output, output_len)
+                    else
+                        append_str(output, output_len, "&(")
+                        append_expr(idx.base, fun, info, arena, output, output_len)
+                        append_str(output, output_len, ")")
+                    end
+                    append_str(output, output_len, ", ")
+                    append_expr(idx.index, fun, info, arena, output, output_len)
+                    append_str(output, output_len, "))")
+                )
             end
-            append_str(output, output_len, ", ")
-            append_expr(idx.index, fun, info, arena, output, output_len)
-            append_str(output, output_len, "))")
         )
         ast.Expr.Field(f) => (
             append_str(output, output_len, "(")
@@ -2176,6 +2198,19 @@ def c_type(ty ref(ast.Type), arena ref(allocators.Arena)) ref(u8)
         ast.Type.Infer(_) => return "void"
         ast.Type.Error(_) => return "const char *"
         ast.Type.None(_) => return "NULL"
+        ast.Type.StaticArray(_, inner) => (
+            val inner_type ref(u8) = c_type(inner, arena)
+            val inner_len usize = str.len(inner_type)
+            val result_res = allocators.Arena.alloc(arena, inner_len + 1)
+            var result ref(u8) = none
+            match result_res
+                ok m => result = m as ref(u8)
+                error _ => return "void *"
+            end
+            @memcpy(result, inner_type, inner_len)
+            @deref(@as_mut(@add(result, inner_len))) = 0
+            return result
+        )
     end
     return "void"
 end
@@ -2223,22 +2258,61 @@ def mangle_type_name(name ref(u8), arena ref(allocators.Arena)) ref(u8)
     return result
 end
 
-def c_type_named(ty ref(ast.Type), name ref(u8), arena ref(allocators.Arena)) ref(u8)
-    val base ref(u8) = c_type_bare(ty, arena)
-    val base_len usize = str.len(base)
-    val mangled ref(u8) = mangle_local_symbol(name, arena)
-    val mangled_len usize = str.len(mangled)
-    val result_res = allocators.Arena.alloc(arena, base_len + 1 + mangled_len + 1)
-    var result ref(u8) = none
-    match result_res
-        ok m => result = m as ref(u8)
-        error _ => return "void error"
+def c_type_decl(ty ref(ast.Type), name ref(u8), arena ref(allocators.Arena)) ref(u8)
+    match @deref(ty)
+        ast.Type.StaticArray(size, inner) => (
+            val base ref(u8) = c_type_bare(inner, arena)
+            val base_len usize = str.len(base)
+            val name_len usize = str.len(name)
+            var size_buf list[u8] = []
+            format_u64_for_codegen(size, @addr(size_buf))
+            @append(size_buf, 0)
+            val size_str ref(u8) = @addr(size_buf[0])
+            val size_len usize = str.len(size_str)
+            val result_res = allocators.Arena.alloc(arena, base_len + 1 + name_len + 1 + size_len + 2)
+            var result ref(u8) = none
+            match result_res
+                ok m => result = m as ref(u8)
+                error _ => return "void error"
+            end
+            var off usize = 0
+            @memcpy(@add(result, off), base, base_len)
+            off = off + base_len
+            @deref(@as_mut(@add(result, off))) = ' '
+            off++
+            @memcpy(@add(result, off), name, name_len)
+            off = off + name_len
+            @deref(@as_mut(@add(result, off))) = '['
+            off++
+            @memcpy(@add(result, off), size_str, size_len)
+            off = off + size_len
+            @deref(@as_mut(@add(result, off))) = ']'
+            off++
+            @deref(@as_mut(@add(result, off))) = 0
+            return result
+        )
+        _ => (
+            val base ref(u8) = c_type_bare(ty, arena)
+            val base_len usize = str.len(base)
+            val name_len usize = str.len(name)
+            val result_res = allocators.Arena.alloc(arena, base_len + 1 + name_len + 1)
+            var result ref(u8) = none
+            match result_res
+                ok m => result = m as ref(u8)
+                error _ => return "void error"
+            end
+            @memcpy(result, base, base_len)
+            @deref(@as_mut(@add(result, base_len))) = ' '
+            @memcpy(@add(result, base_len + 1), name, name_len)
+            @deref(@as_mut(@add(result, base_len + 1 + name_len))) = 0
+            return result
+        )
     end
-    @memcpy(result, base, base_len)
-    @deref(@as_mut(@add(result, base_len))) = ' '
-    @memcpy(@add(result, base_len + 1), mangled, mangled_len)
-    @deref(@as_mut(@add(result, base_len + 1 + mangled_len))) = 0
-    return result
+end
+
+def c_type_named(ty ref(ast.Type), name ref(u8), arena ref(allocators.Arena)) ref(u8)
+    val mangled ref(u8) = mangle_local_symbol(name, arena)
+    return c_type_decl(ty, mangled, arena)
 end
 
 def type_suffix(ty ref(ast.Type), arena ref(allocators.Arena)) ref(u8)
@@ -2413,6 +2487,31 @@ def type_suffix(ty ref(ast.Type), arena ref(allocators.Arena)) ref(u8)
                 i++
             end
             @deref(@as_mut(@add(result, offset - 2))) = 0
+            return result
+        )
+        ast.Type.StaticArray(size, inner) => (
+            val inner_suffix ref(u8) = type_suffix(inner, arena)
+            val islen usize = str.len(inner_suffix)
+            var size_buf list[u8] = []
+            format_u64_for_codegen(size, @addr(size_buf))
+            @append(size_buf, 0)
+            val size_str ref(u8) = @addr(size_buf[0])
+            val size_len usize = str.len(size_str)
+            val prefix ref(u8) = "staticarr__"
+            val plen usize = str.len(prefix)
+            val total usize = plen + size_len + 2 + islen + 1
+            val result_res = allocators.Arena.alloc(arena, total)
+            var result ref(u8) = none
+            match result_res
+                ok m => result = m as ref(u8)
+                error _ => return "error"
+            end
+            @memcpy(result, prefix, plen)
+            @memcpy(@add(result, plen), size_str, size_len)
+            @deref(@as_mut(@add(result, plen + size_len))) = '_'
+            @deref(@as_mut(@add(result, plen + size_len + 1))) = '_'
+            @memcpy(@add(result, plen + size_len + 2), inner_suffix, islen)
+            @deref(@as_mut(@add(result, plen + size_len + 2 + islen))) = 0
             return result
         )
         _ => return "void"
@@ -2674,7 +2773,10 @@ def get_expr_type(expr ref(ast.Expr), fun ref(ast.Function), info ref(sema.Progr
         ast.Expr.Index(idx) => (
             val base_ty ref(ast.Type) = get_expr_type(idx.base, fun, info)
             val base_ty_deref ref(ast.Type) = deref_type(base_ty)
-            return get_list_element_type(base_ty_deref)
+            match @deref(base_ty_deref)
+                ast.Type.StaticArray(_, inner) => return inner
+                _ => return get_list_element_type(base_ty_deref)
+            end
         )
         ast.Expr.Path(segments) => (
             if @len(segments) == 1
@@ -2907,6 +3009,7 @@ def is_aggregate_type(ty ref(ast.Type)) bool
         ast.Type.Applied(_, _) => return true
         ast.Type.List(_) => return true
         ast.Type.Result(_) => return true
+        ast.Type.StaticArray(_, _) => return true
         _ => return false
     end
 end
@@ -3025,4 +3128,22 @@ def format_temp_name(prefix ref(u8), id usize, buf ref(list[u8]))
         end
     end
     @append(buf, 0)
+end
+
+def format_u64_for_codegen(v u64, buf ref(list[u8]))
+    var value u64 = v
+    if value == 0
+        @append(buf, '0')
+        return
+    end
+    var digits list[u8] = []
+    for value > 0
+        @append(digits, ((value % 10) as u8) + '0')
+        value = value / 10
+    end
+    var k usize = @len(digits)
+    for k > 0
+        k--
+        @append(buf, digits[k])
+    end
 end

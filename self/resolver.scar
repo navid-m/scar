@@ -1004,6 +1004,12 @@ def resolve_type(ty ref(ast.Type), arena ref(allocators.Arena)) ast.Type|error
             @deref(p) = resolve_type(ret, arena)?
             return ast.Type.FnPtr(resolved_params, p)
         )
+        ast.Type.StaticArray(size, inner) => (
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.Type) as usize)?
+            var p ref(ast.Type) = @bitcast(raw, ref(ast.Type))
+            @deref(p) = resolve_type(inner, arena)?
+            return ast.Type.StaticArray(size, p)
+        )
     end
 end
 
@@ -1048,6 +1054,17 @@ def rewrite_type_with_prefix(ty ref(ast.Type), module_prefix ref(u8), pub_names 
                     var p ref(ast.Type) = @bitcast(m, ref(ast.Type))
                     @deref(p) = rewrite_type_with_prefix(inner, module_prefix, pub_names, arena)
                     return ast.Type.List(p)
+                )
+                error _ => return @deref(ty)
+            end
+        )
+        ast.Type.StaticArray(size, inner) => (
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.Type) as usize)
+            match raw
+                ok m => (
+                    var p ref(ast.Type) = @bitcast(m, ref(ast.Type))
+                    @deref(p) = rewrite_type_with_prefix(inner, module_prefix, pub_names, arena)
+                    return ast.Type.StaticArray(size, p)
                 )
                 error _ => return @deref(ty)
             end

@@ -126,6 +126,7 @@ pub union Type
 	Error(u8)
 	None(u8)
 	FnPtr(list[Type], ref(Type))
+	StaticArray(u64, ref(Type))
 end
 
 pub type Function

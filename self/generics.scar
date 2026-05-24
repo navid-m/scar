@@ -58,6 +58,32 @@ pub def type_suffix(ty ref(ast.Type), arena ref(allocators.Arena)) ref(u8)
             val ret_suf ref(u8) = type_suffix(ret, arena)
             return concat3("fnptr__", ret_suf, "", arena)
         )
+        ast.Type.StaticArray(size, inner) => (
+            val inner_suf ref(u8) = type_suffix(inner, arena)
+            var size_buf ref(u8) = ""
+            var buf_res2 = allocators.Arena.alloc(arena, 32)
+            match buf_res2
+                ok m => (
+                    var p ref(u8) = m as ref(u8)
+                    var value u64 = size
+                    var k usize = 31
+                    @deref(@as_mut(@add(p, k))) = 0
+                    if value == 0
+                        k--
+                        @deref(@as_mut(@add(p, k))) = '0'
+                    else
+                        for value > 0
+                            k--
+                            @deref(@as_mut(@add(p, k))) = ((value % 10) as u8) + '0'
+                            value = value / 10
+                        end
+                    end
+                    size_buf = @add(p, k)
+                )
+                error _ => ()
+            end
+            return concat3("staticarr__", concat3(size_buf, "__", inner_suf, arena), "", arena)
+        )
     end
     return "unknown"
 end
@@ -194,6 +220,17 @@ pub def substitute_type(ty ref(ast.Type), params ref(list[ref(u8)]), type_args r
                     var p ref(ast.Type) = @bitcast(m, ref(ast.Type))
                     @deref(p) = substitute_type(ret, params, type_args, arena)
                     return ast.Type.FnPtr(new_params, p)
+                )
+                error _ => return @deref(ty)
+            end
+        )
+        ast.Type.StaticArray(size, inner) => (
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.Type) as usize)
+            match raw
+                ok m => (
+                    var p ref(ast.Type) = @bitcast(m, ref(ast.Type))
+                    @deref(p) = substitute_type(inner, params, type_args, arena)
+                    return ast.Type.StaticArray(size, p)
                 )
                 error _ => return @deref(ty)
             end

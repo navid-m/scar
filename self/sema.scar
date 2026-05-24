@@ -614,6 +614,7 @@ def analyze_expr(expr ref(ast.Expr), bindings ref(list[BindingEntry]), functions
             val base_ty ast.Type = analyze_expr(idx.base, bindings, functions, types)
             match base_ty
                 ast.Type.List(inner) => return @deref(inner)
+                ast.Type.StaticArray(_, inner) => return @deref(inner)
                 _ => return ast.Type.Void(0)
             end
         )
@@ -991,6 +992,17 @@ def types_equal(a ref(ast.Type), b ref(ast.Type)) bool
                         i++
                     end
                     return types_equal(a_ret, b_ret)
+                )
+                _ => return false
+            end
+        )
+        ast.Type.StaticArray(a_size, a_inner) => (
+            match @deref(b)
+                ast.Type.StaticArray(b_size, b_inner) => (
+                    if a_size != b_size
+                        return false
+                    end
+                    return types_equal(a_inner, b_inner)
                 )
                 _ => return false
             end

@@ -460,6 +460,31 @@ def parse_type(p ref(ast.TokenList), arena ref(allocators.Arena)) ast.Type
                 _ => return ast.Type.Named(type_name)
             end
         )
+        ast.TokenKind.LBracket(_) => (
+            advance(p)
+            var size u64 = 0
+            match p.tokens[p.pos].kind
+                ast.TokenKind.Int(v) => (
+                    size = v
+                    advance(p)
+                )
+                _ => ()
+            end
+            match p.tokens[p.pos].kind
+                ast.TokenKind.RBracket(_) => advance(p)
+                _ => ()
+            end
+            val inner ast.Type = parse_type(p, arena)
+            val raw_res = allocators.Arena.alloc(arena, @sizeof(ast.Type) as usize)
+            match raw_res
+                ok raw => (
+                    var inner_ptr ref(ast.Type) = @bitcast(raw, ref(ast.Type))
+                    @deref(inner_ptr) = inner
+                    return ast.Type.StaticArray(size, inner_ptr)
+                )
+                error _ => return ast.Type.Void(0)
+            end
+        )
         _ => return ast.Type.Void(0)
     
     end
