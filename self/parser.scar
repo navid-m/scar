@@ -155,6 +155,42 @@ def peek_is_type_arg(p ref(ast.TokenList)) bool
     end
 end
 
+def supports_specialization(expr ref(ast.Expr)) bool
+    match @deref(expr)
+        ast.Expr.Path(_) => return true
+        ast.Expr.Field(f) => return supports_specialization(f.base)
+        _ => return false
+    end
+end
+
+def is_type_arg_followed_by_call(p ref(ast.TokenList)) bool
+    var depth usize = 1
+    var i usize = p.pos + 1
+    for i < @len(p.tokens)
+        match p.tokens[i].kind
+            ast.TokenKind.LBracket(_) => depth++
+            ast.TokenKind.RBracket(_) => (
+                depth--
+                if depth == 0
+                    var j usize = i + 1
+                    for j < @len(p.tokens)
+                        match p.tokens[j].kind
+                            ast.TokenKind.Newline(_) => j++
+                            ast.TokenKind.LParen(_) => return true
+                            _ => return false
+                        end
+                        j++
+                    end
+                    return false
+                end
+            )
+            _ => ()
+        end
+        i++
+    end
+    return false
+end
+
 def next_non_newline_kind(p ref(ast.TokenList)) u8
     var i usize = p.pos
     for i < @len(p.tokens)
@@ -1602,7 +1638,7 @@ def parse_expr_postfix(p ref(ast.TokenList), arena ref(allocators.Arena)) ast.Ex
                 end
             )
             ast.TokenKind.LBracket(_) => (
-                if peek_is_type_arg(p)
+                if supports_specialization(@addr(expr)) && peek_is_type_arg(p) && is_type_arg_followed_by_call(p)
                     advance(p)
                     var type_args list[ast.Type] = []
                     for !is_eof(p)
