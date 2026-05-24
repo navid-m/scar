@@ -157,6 +157,7 @@ end
 
 def supports_specialization(expr ref(ast.Expr)) bool
     match @deref(expr)
+        ast.Expr.Ident(_) => return true
         ast.Expr.Path(_) => return true
         ast.Expr.Field(f) => return supports_specialization(f.base)
         _ => return false
