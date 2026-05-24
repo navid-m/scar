@@ -651,8 +651,46 @@ def analyze_expr(expr ref(ast.Expr), bindings ref(list[BindingEntry]), functions
                 "len" => return ast.Type.Usize(0)
                 "capacity" => return ast.Type.I32(0)
                 "append" | "reserve" | "set" | "insert" | "remove" | "clear" => return ast.Type.Void(0)
-                _ => return ast.Type.Void(0)
+                _ => ()
             end
+            val type_name ref(u8) = extract_type_name(@addr(receiver_ty))
+            val tname_len usize = str.len(type_name)
+            if tname_len > 0
+                val method_len usize = str.len(mc.method)
+                var fi usize = 0
+                for fi < @len(functions)
+                    val fname ref(u8) = functions[fi].name
+                    val flen usize = str.len(fname)
+                    if flen == tname_len + 1 + method_len
+                        if @deref(@add(fname, tname_len)) == '.'
+                            var matches bool = true
+                            var ci usize = 0
+                            for ci < tname_len
+                                if @deref(@add(fname, ci)) != @deref(@add(type_name, ci))
+                                    matches = false
+                                    break
+                                end
+                                ci++
+                            end
+                            if matches
+                                ci = 0
+                                for ci < method_len
+                                    if @deref(@add(fname, tname_len + 1 + ci)) != @deref(@add(mc.method, ci))
+                                        matches = false
+                                        break
+                                    end
+                                    ci++
+                                end
+                                if matches
+                                    return functions[fi].sig.return_type
+                                end
+                            end
+                        end
+                    end
+                    fi++
+                end
+            end
+            return ast.Type.Void(0)
         )
         ast.Expr.Specialize(sp) => (
             analyze_expr(sp.callee, bindings, functions, types)
@@ -699,6 +737,15 @@ def lookup_name(name ref(u8), bindings ref(list[BindingEntry]), functions ref(li
         i++
     end
     return ast.Type.Void(0)
+end
+
+def extract_type_name(ty ref(ast.Type)) ref(u8)
+    match @deref(ty)
+        ast.Type.Named(name) => return name
+        ast.Type.Ref(inner) => return extract_type_name(inner)
+        ast.Type.Mut(inner) => return extract_type_name(inner)
+        _ => return ""
+    end
 end
 
 def infer_field_type(base_ty ref(ast.Type), field ref(u8), types ref(list[TypeEntry])) ast.Type

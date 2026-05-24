@@ -80,6 +80,16 @@ pub def generate_c(program ref(ast.Program), info ref(sema.ProgramInfo), arena r
         end
     end
 
+    val result_types list[ast.Type] = collect_result_types(program, info, arena)
+    if @len(result_types) > 0
+        var ri usize = 0
+        for ri < @len(result_types)
+            render_result_typedef(@addr(result_types[ri]), arena, @addr(output), @addr(output_len))
+            ri++
+        end
+        append_str(@addr(output), @addr(output_len), "\n")
+    end
+
     var i usize = 0
     for i < @len(program.functions)
         val fn_ref ref(ast.Function) = @addr(program.functions[i])
@@ -557,6 +567,225 @@ def render_list_helpers(list_ty ref(ast.Type), arena ref(allocators.Arena), outp
     append_str(output, output_len, "}\n")
 end
 
+def collect_result_types(program ref(ast.Program), info ref(sema.ProgramInfo), arena ref(allocators.Arena)) list[ast.Type]
+    var seen list[ast.Type] = []
+    var i usize = 0
+    for i < @len(program.functions)
+        val fn_ref ref(ast.Function) = @addr(program.functions[i])
+        collect_result_types_from_type(@addr(fn_ref.return_type), @addr(seen), arena)
+        var j usize = 0
+        for j < @len(fn_ref.params)
+            collect_result_types_from_type(@addr(fn_ref.params[j].ty), @addr(seen), arena)
+            j++
+        end
+        i++
+    end
+    i = 0
+    for i < @len(info.locals)
+        var j usize = 0
+        for j < @len(info.locals[i].bindings)
+            collect_result_types_from_type(@addr(info.locals[i].bindings[j].ty), @addr(seen), arena)
+            j++
+        end
+        i++
+    end
+    return seen
+end
+
+def collect_result_types_from_type(ty ref(ast.Type), seen ref(list[ast.Type]), arena ref(allocators.Arena))
+    match @deref(ty)
+        ast.Type.Result(ok_ty) => (
+            if !result_type_in_list(ok_ty, seen)
+                @append(seen, @deref(ok_ty))
+            end
+            collect_result_types_from_type(ok_ty, seen, arena)
+        )
+        ast.Type.Ref(inner) => collect_result_types_from_type(inner, seen, arena)
+        ast.Type.Mut(inner) => collect_result_types_from_type(inner, seen, arena)
+        ast.Type.List(inner) => collect_result_types_from_type(inner, seen, arena)
+        _ => ()
+    end
+end
+
+def result_type_in_list(ty ref(ast.Type), result_list ref(list[ast.Type])) bool
+    var i usize = 0
+    for i < @len(result_list)
+        if types_equal(ty, @addr(result_list[i]))
+            return true
+        end
+        i++
+    end
+    return false
+end
+
+def types_equal(a ref(ast.Type), b ref(ast.Type)) bool
+    match @deref(a)
+        ast.Type.Void(_) => (
+            match @deref(b)
+                ast.Type.Void(_) => return true
+                _ => return false
+            end
+        )
+        ast.Type.Bool(_) => (
+            match @deref(b)
+                ast.Type.Bool(_) => return true
+                _ => return false
+            end
+        )
+        ast.Type.I8(_) => (
+            match @deref(b)
+                ast.Type.I8(_) => return true
+                _ => return false
+            end
+        )
+        ast.Type.I16(_) => (
+            match @deref(b)
+                ast.Type.I16(_) => return true
+                _ => return false
+            end
+        )
+        ast.Type.I32(_) => (
+            match @deref(b)
+                ast.Type.I32(_) => return true
+                _ => return false
+            end
+        )
+        ast.Type.I64(_) => (
+            match @deref(b)
+                ast.Type.I64(_) => return true
+                _ => return false
+            end
+        )
+        ast.Type.Isize(_) => (
+            match @deref(b)
+                ast.Type.Isize(_) => return true
+                _ => return false
+            end
+        )
+        ast.Type.U8(_) => (
+            match @deref(b)
+                ast.Type.U8(_) => return true
+                _ => return false
+            end
+        )
+        ast.Type.U16(_) => (
+            match @deref(b)
+                ast.Type.U16(_) => return true
+                _ => return false
+            end
+        )
+        ast.Type.U32(_) => (
+            match @deref(b)
+                ast.Type.U32(_) => return true
+                _ => return false
+            end
+        )
+        ast.Type.U64(_) => (
+            match @deref(b)
+                ast.Type.U64(_) => return true
+                _ => return false
+            end
+        )
+        ast.Type.Usize(_) => (
+            match @deref(b)
+                ast.Type.Usize(_) => return true
+                _ => return false
+            end
+        )
+        ast.Type.F32(_) => (
+            match @deref(b)
+                ast.Type.F32(_) => return true
+                _ => return false
+            end
+        )
+        ast.Type.F64(_) => (
+            match @deref(b)
+                ast.Type.F64(_) => return true
+                _ => return false
+            end
+        )
+        ast.Type.Ref(a_inner) => (
+            match @deref(b)
+                ast.Type.Ref(b_inner) => return types_equal(a_inner, b_inner)
+                _ => return false
+            end
+        )
+        ast.Type.Mut(a_inner) => (
+            match @deref(b)
+                ast.Type.Mut(b_inner) => return types_equal(a_inner, b_inner)
+                ast.Type.Ref(b_inner) => return types_equal(a_inner, b_inner)
+                _ => return false
+            end
+        )
+        ast.Type.Named(a_name) => (
+            match @deref(b)
+                ast.Type.Named(b_name) => return str.eql(a_name, b_name)
+                _ => return false
+            end
+        )
+        ast.Type.Applied(a_name, _) => (
+            match @deref(b)
+                ast.Type.Applied(b_name, _) => return str.eql(a_name, b_name)
+                _ => return false
+            end
+        )
+        ast.Type.List(a_inner) => (
+            match @deref(b)
+                ast.Type.List(b_inner) => return types_equal(a_inner, b_inner)
+                _ => return false
+            end
+        )
+        ast.Type.Result(a_inner) => (
+            match @deref(b)
+                ast.Type.Result(b_inner) => return types_equal(a_inner, b_inner)
+                _ => return false
+            end
+        )
+        ast.Type.StaticArray(a_size, a_inner) => (
+            match @deref(b)
+                ast.Type.StaticArray(b_size, b_inner) => (
+                    if a_size != b_size
+                        return false
+                    end
+                    return types_equal(a_inner, b_inner)
+                )
+                _ => return false
+            end
+        )
+        _ => return false
+    end
+end
+
+def render_result_typedef(ok_ty ref(ast.Type), arena ref(allocators.Arena), output ref(ref(u8)), output_len ref(usize))
+    var ok_c_type ref(u8) = c_type(ok_ty, arena)
+    if str.eql(ok_c_type, "void")
+        ok_c_type = "uint8_t"
+    end
+    val suffix ref(u8) = type_suffix(ok_ty, arena)
+    val slen usize = str.len(suffix)
+    val prefix ref(u8) = "scar_result__"
+    val plen usize = str.len(prefix)
+    val struct_name_res = allocators.Arena.alloc(arena, plen + slen + 1)
+    var struct_name ref(u8) = none
+    match struct_name_res
+        ok m => struct_name = m as ref(u8)
+        error _ => return
+    end
+    @memcpy(struct_name, prefix, plen)
+    @memcpy(@add(struct_name, plen), suffix, slen)
+    @deref(@as_mut(@add(struct_name, plen + slen))) = 0
+
+    append_str(output, output_len, "typedef struct {\n")
+    append_str(output, output_len, "    int32_t is_error;\n")
+    append_str(output, output_len, "    ")
+    append_str(output, output_len, ok_c_type)
+    append_str(output, output_len, " ok;\n")
+    append_str(output, output_len, "    const char *error;\n")
+    append_str(output, output_len, "} ")
+    append_str(output, output_len, struct_name)
+    append_str(output, output_len, ";\n")
+end
+
 def render_typedef_forward(td ref(ast.TypeDef), output ref(ref(u8)), output_len ref(usize))
     match td.kind
         ast.TypeDefKind.Struct => (
@@ -791,6 +1020,12 @@ def infer_match_expr_type(expr ref(ast.Expr), fun ref(ast.Function), info ref(se
         ast.Expr.Call(c) => (
             return @deref(get_expr_type(expr, fun, info))
         )
+        ast.Expr.MethodCall(mc) => (
+            return @deref(get_expr_type(expr, fun, info))
+        )
+        ast.Expr.Field(f) => (
+            return @deref(get_expr_type(expr, fun, info))
+        )
         _ => return ast.Type.Void(0)
     end
 end
@@ -803,6 +1038,16 @@ def render_function(fun ref(ast.Function), info ref(sema.ProgramInfo), arena ref
         indent(output, output_len, 1)
         append_str(output, output_len, c_type_bare(@addr(fun.return_type), arena))
         append_str(output, output_len, " __scar_return_value;\n")
+        match fun.return_type
+            ast.Type.Result(ok_ty) => (
+                if is_void_type(ok_ty)
+                    append_str(output, output_len, "    __scar_return_value = ((")
+                    append_str(output, output_len, c_type_bare(@addr(fun.return_type), arena))
+                    append_str(output, output_len, "){ .is_error = 0, .ok = 0, .error = NULL });\n")
+                end
+            )
+            _ => ()
+        end
     end
 
     var next_temp_id usize = 0
@@ -946,9 +1191,42 @@ def render_stmt(stmt ref(ast.Stmt), fun ref(ast.Function), info ref(sema.Program
         ast.Stmt.Return(r) => (
             indent(output, output_len, level)
             if !is_void_type(@addr(fun.return_type))
-                append_str(output, output_len, "__scar_return_value = ")
-                append_expr(@addr(r.value), fun, info, arena, output, output_len)
-                append_str(output, output_len, ";\n")
+                match fun.return_type
+                    ast.Type.Result(ok_ty) => (
+                        val result_c_type ref(u8) = c_type(@addr(ast.Type.Result(ok_ty)), arena)
+                        append_str(output, output_len, "__scar_return_value = ((")
+                        append_str(output, output_len, result_c_type)
+                        match r.value
+                            ast.Expr.ErrorLit(msg) => (
+                                append_str(output, output_len, "){ .is_error = 1, .ok = ")
+                                if is_void_type(ok_ty)
+                                    append_str(output, output_len, "0")
+                                else
+                                    append_str(output, output_len, "(")
+                                    append_str(output, output_len, c_type(ok_ty, arena))
+                                    append_str(output, output_len, "){0}")
+                                end
+                                append_str(output, output_len, ", .error = \"")
+                                append_str(output, output_len, msg)
+                                append_str(output, output_len, "\" });\n")
+                            )
+                            _ => (
+                                append_str(output, output_len, "){ .is_error = 0, .ok = ")
+                                if is_void_type(ok_ty)
+                                    append_str(output, output_len, "0")
+                                else
+                                    append_expr(@addr(r.value), fun, info, arena, output, output_len)
+                                end
+                                append_str(output, output_len, ", .error = NULL });\n")
+                            )
+                        end
+                    )
+                    _ => (
+                        append_str(output, output_len, "__scar_return_value = ")
+                        append_expr(@addr(r.value), fun, info, arena, output, output_len)
+                        append_str(output, output_len, ";\n")
+                    )
+                end
             end
             render_defers(defers, 0, fun, info, level, next_temp_id, arena, output, output_len)
             append_str(output, output_len, "    goto __scar_return;\n")
@@ -1235,7 +1513,7 @@ def render_stmt(stmt ref(ast.Stmt), fun ref(ast.Function), info ref(sema.Program
                             k++
                         end
                     )
-                    ast.Type.Result(_) => (
+                    ast.Type.Result(ok_ty) => (
                         var k usize = 0
                         for k < @len(m.arms)
                             indent(output, output_len, level + 1)
@@ -1251,7 +1529,8 @@ def render_stmt(stmt ref(ast.Stmt), fun ref(ast.Function), info ref(sema.Program
                                     if @len(m.arms[k].bindings) > 0
                                         if str.len(m.arms[k].bindings[0]) > 0
                                             indent(output, output_len, level + 2)
-                                            append_str(output, output_len, "void *loc__")
+                                            append_str(output, output_len, c_type(ok_ty, arena))
+                                            append_str(output, output_len, " loc__")
                                             append_str(output, output_len, m.arms[k].bindings[0])
                                             append_str(output, output_len, " = ")
                                             append_str(output, output_len, temp_name)
@@ -2320,19 +2599,7 @@ def c_type(ty ref(ast.Type), arena ref(allocators.Arena)) ref(u8)
             return result
         )
         ast.Type.Mut(inner) => (
-            val inner_type ref(u8) = c_type(inner, arena)
-            val inner_len usize = str.len(inner_type)
-            val result_res = allocators.Arena.alloc(arena, inner_len + 3)
-            var result ref(u8) = none
-            match result_res
-                ok m => result = m as ref(u8)
-                error _ => return "void *"
-            end
-            @memcpy(result, inner_type, inner_len)
-            @deref(@as_mut(@add(result, inner_len))) = ' '
-            @deref(@as_mut(@add(result, inner_len + 1))) = '*'
-            @deref(@as_mut(@add(result, inner_len + 2))) = 0
-            return result
+            return c_type(inner, arena)
         )
         ast.Type.List(inner) => (
             val suffix ref(u8) = type_suffix(inner, arena)
@@ -2350,7 +2617,22 @@ def c_type(ty ref(ast.Type), arena ref(allocators.Arena)) ref(u8)
             @deref(@as_mut(@add(result, plen + slen))) = 0
             return result
         )
-        ast.Type.Result(_) => return "scar_result"
+        ast.Type.Result(inner) => (
+            val inner_suffix ref(u8) = type_suffix(inner, arena)
+            val islen usize = str.len(inner_suffix)
+            val prefix ref(u8) = "scar_result__"
+            val plen usize = str.len(prefix)
+            val result_res = allocators.Arena.alloc(arena, plen + islen + 1)
+            var result ref(u8) = none
+            match result_res
+                ok m => result = m as ref(u8)
+                error _ => return "scar_result"
+            end
+            @memcpy(result, prefix, plen)
+            @memcpy(@add(result, plen), inner_suffix, islen)
+            @deref(@as_mut(@add(result, plen + islen))) = 0
+            return result
+        )
         ast.Type.Named(name) => return name
         ast.Type.Applied(name, _) => return name
         ast.Type.FnPtr(_, _) => return "void *"
@@ -3035,12 +3317,98 @@ def get_expr_type(expr ref(ast.Expr), fun ref(ast.Function), info ref(sema.Progr
                             end
                             ti++
                         end
+                    elif @len(segments) == 2
+                        val tname_len usize = str.len(segments[0])
+                        val method_len usize = str.len(segments[1])
+                        var fi usize = 0
+                        for fi < @len(info.functions)
+                            val fname ref(u8) = info.functions[fi].name
+                            val flen usize = str.len(fname)
+                            if flen == tname_len + 1 + method_len
+                                if @deref(@add(fname, tname_len)) == '.'
+                                    var matches bool = true
+                                    var ci usize = 0
+                                    for ci < tname_len
+                                        if @deref(@add(fname, ci)) != @deref(@add(segments[0], ci))
+                                            matches = false
+                                            break
+                                        end
+                                        ci++
+                                    end
+                                    if matches
+                                        ci = 0
+                                        for ci < method_len
+                                            if @deref(@add(fname, tname_len + 1 + ci)) != @deref(@add(segments[1], ci))
+                                                matches = false
+                                                break
+                                            end
+                                            ci++
+                                        end
+                                        if matches
+                                            return @addr(info.functions[fi].sig.return_type)
+                                        end
+                                    end
+                                end
+                            end
+                            fi++
+                        end
                     end
                 )
                 _ => ()
             end
         )
+        ast.Expr.MethodCall(mc) => (
+            val receiver_ty ref(ast.Type) = get_expr_type(mc.receiver, fun, info)
+            val type_name ref(u8) = extract_type_name(receiver_ty)
+            val tname_len usize = str.len(type_name)
+            if tname_len > 0
+                val method_len usize = str.len(mc.method)
+                var fi usize = 0
+                for fi < @len(info.functions)
+                    val fname ref(u8) = info.functions[fi].name
+                    val flen usize = str.len(fname)
+                    if flen == tname_len + 1 + method_len
+                        if @deref(@add(fname, tname_len)) == '.'
+                            var matches bool = true
+                            var ci usize = 0
+                            for ci < tname_len
+                                if @deref(@add(fname, ci)) != @deref(@add(type_name, ci))
+                                    matches = false
+                                    break
+                                end
+                                ci++
+                            end
+                            if matches
+                                ci = 0
+                                for ci < method_len
+                                    if @deref(@add(fname, tname_len + 1 + ci)) != @deref(@add(mc.method, ci))
+                                        matches = false
+                                        break
+                                    end
+                                    ci++
+                                end
+                                if matches
+                                    return @addr(info.functions[fi].sig.return_type)
+                                end
+                            end
+                        end
+                    end
+                    fi++
+                end
+            end
+            return @addr(ast.Type.Void(0))
+        )
         _ => return @addr(ast.Type.Void(0))
+    end
+end
+
+def extract_type_name(ty ref(ast.Type)) ref(u8)
+    match @deref(ty)
+        ast.Type.Named(name) => return name
+        ast.Type.Applied(name, _) => return name
+        ast.Type.Ref(inner) => return extract_type_name(inner)
+        ast.Type.Mut(inner) => return extract_type_name(inner)
+        _ => return ""
     end
 end
 
