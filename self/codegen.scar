@@ -1575,9 +1575,36 @@ def append_expr(expr ref(ast.Expr), fun ref(ast.Function), info ref(sema.Program
             var is_union_ctor bool = false
             var union_type_name ref(u8) = ""
             var union_variant_name ref(u8) = ""
+            var is_struct_ctor bool = false
+            var struct_type_name ref(u8) = ""
             match @deref(c.callee)
+                ast.Expr.Ident(name) => (
+                    var ti usize = 0
+                    for ti < @len(info.types)
+                        if str.eql(info.types[ti].name, name)
+                            if info.types[ti].info.kind == sema.TypeDefKind.Struct
+                                is_struct_ctor = true
+                                struct_type_name = name
+                            end
+                            break
+                        end
+                        ti++
+                    end
+                )
                 ast.Expr.Path(segments) => (
-                    if @len(segments) == 2
+                    if @len(segments) == 1
+                        var ti usize = 0
+                        for ti < @len(info.types)
+                            if str.eql(info.types[ti].name, segments[0])
+                                if info.types[ti].info.kind == sema.TypeDefKind.Struct
+                                    is_struct_ctor = true
+                                    struct_type_name = segments[0]
+                                end
+                                break
+                            end
+                            ti++
+                        end
+                    elif @len(segments) == 2
                         var ti usize = 0
                         for ti < @len(info.types)
                             if str.eql(info.types[ti].name, segments[0])
@@ -1630,6 +1657,19 @@ def append_expr(expr ref(ast.Expr), fun ref(ast.Function), info ref(sema.Program
                     i++
                 end
                 append_str(output, output_len, " } })")
+            elif is_struct_ctor
+                append_str(output, output_len, "(")
+                append_str(output, output_len, struct_type_name)
+                append_str(output, output_len, "){ ")
+                var i usize = 0
+                for i < @len(c.args)
+                    if i > 0
+                        append_str(output, output_len, ", ")
+                    end
+                    append_expr(@addr(c.args[i]), fun, info, arena, output, output_len)
+                    i++
+                end
+                append_str(output, output_len, " }")
             else
                 append_expr(c.callee, fun, info, arena, output, output_len)
                 append_str(output, output_len, "(")
@@ -2971,6 +3011,13 @@ def get_expr_type(expr ref(ast.Expr), fun ref(ast.Function), info ref(sema.Progr
                         end
                         i++
                     end
+                    var ti usize = 0
+                    for ti < @len(info.types)
+                        if str.eql(info.types[ti].name, name)
+                            return @addr(ast.Type.Named(name))
+                        end
+                        ti++
+                    end
                 )
                 ast.Expr.Path(segments) => (
                     if @len(segments) == 1
@@ -2980,6 +3027,13 @@ def get_expr_type(expr ref(ast.Expr), fun ref(ast.Function), info ref(sema.Progr
                                 return @addr(info.functions[i].sig.return_type)
                             end
                             i++
+                        end
+                        var ti usize = 0
+                        for ti < @len(info.types)
+                            if str.eql(info.types[ti].name, segments[0])
+                                return @addr(ast.Type.Named(segments[0]))
+                            end
+                            ti++
                         end
                     end
                 )
