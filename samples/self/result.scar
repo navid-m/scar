@@ -1,0 +1,16 @@
+pub def some_func() i32|error
+    return error("this failed")
+end
+
+pub def main()
+    match some_func()
+        ok v => (
+            @print("{d}", {v})
+        )
+        error v => (
+            @print("error: {s}", {v})
+        )
+    end
+end
+
+
