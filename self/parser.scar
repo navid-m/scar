@@ -1058,6 +1058,18 @@ def parse_match_stmt(p ref(ast.TokenList), arena ref(allocators.Arena), current_
     for !is_eof(p) && !is_keyword(p, KW_END)
         val kind ast.MatchArmKind = parse_match_arm_kind(p, arena)
         var bindings list[ref(u8)] = []
+        match kind
+            ast.MatchArmKind.Ok(_) | ast.MatchArmKind.Error(_) => (
+                match p.tokens[p.pos].kind
+                    ast.TokenKind.Ident(name) => (
+                        advance(p)
+                        @append(bindings, name)
+                    )
+                    _ => ()
+                end
+            )
+            _ => ()
+        end
         match p.tokens[p.pos].kind
             ast.TokenKind.LParen(_) => (
                 advance(p)
@@ -1131,10 +1143,16 @@ def parse_match_arm_kind(p ref(ast.TokenList), arena ref(allocators.Arena)) ast.
                 return ast.MatchArmKind.Wild(0)
             elif str.eql(name, "ok")
                 advance(p)
-                return ast.MatchArmKind.Ok(0)
+                match p.tokens[p.pos].kind
+                    ast.TokenKind.LParen(_) => return ast.MatchArmKind.VariantName(name)
+                    _ => return ast.MatchArmKind.Ok(0)
+                end
             elif str.eql(name, "error")
                 advance(p)
-                return ast.MatchArmKind.Error(0)
+                match p.tokens[p.pos].kind
+                    ast.TokenKind.LParen(_) => return ast.MatchArmKind.VariantName(name)
+                    _ => return ast.MatchArmKind.Error(0)
+                end
             else
                 advance(p)
                 match p.tokens[p.pos].kind
