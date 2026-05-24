@@ -1,0 +1,20 @@
+pub interface SomeInterface
+    pub def some_function() void
+end
+
+pub type SomeType : SomeInterface
+end
+
+pub def SomeType.some_function()
+    @puts("doing stuff")
+end
+
+pub def takes_some[S: SomeInterface](sf S)
+    S.some_function()
+end
+
+pub def main()
+    val st = SomeType()
+    takes_some[_](st)
+end
+
