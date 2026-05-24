@@ -28,6 +28,12 @@ pub def generate_c(program ref(ast.Program), info ref(sema.ProgramInfo), arena r
     append_str(@addr(output), @addr(output_len), "#include <unistd.h>\n")
     append_str(@addr(output), @addr(output_len), "#endif\n\n")
 
+    append_str(@addr(output), @addr(output_len), "typedef struct {\n")
+    append_str(@addr(output), @addr(output_len), "    int32_t is_error;\n")
+    append_str(@addr(output), @addr(output_len), "    void *ok;\n")
+    append_str(@addr(output), @addr(output_len), "    const char *error;\n")
+    append_str(@addr(output), @addr(output_len), "} scar_result;\n\n")
+
     append_runtime_prelude(@addr(output), @addr(output_len))
 
     var j usize = 0
@@ -781,6 +787,9 @@ def infer_match_expr_type(expr ref(ast.Expr), fun ref(ast.Function), info ref(se
                 end
             end
             return ast.Type.Void(0)
+        )
+        ast.Expr.Call(c) => (
+            return @deref(get_expr_type(expr, fun, info))
         )
         _ => return ast.Type.Void(0)
     end
@@ -1916,7 +1925,9 @@ def append_expr(expr ref(ast.Expr), fun ref(ast.Function), info ref(sema.Program
             end
         )
         ast.Expr.ErrorLit(msg) => (
+            append_str(output, output_len, "((scar_result){ .is_error = 1, .ok = NULL, .error = \"")
             append_str(output, output_len, msg)
+            append_str(output, output_len, "\" })")
         )
         ast.Expr.Specialize(sp) => (
             append_expr(sp.callee, fun, info, arena, output, output_len)

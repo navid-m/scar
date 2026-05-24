@@ -1641,10 +1641,30 @@ def parse_expr_postfix(p ref(ast.TokenList), arena ref(allocators.Arena)) ast.Ex
                         ast.TokenKind.RParen(_) => advance(p)
                         _ => ()
                     end
-                    expr = ast.Expr.Call(@addr(ast.ExprCall(
-                        callee: box_expr(arena, expr),
-                        args: args
-                    )))
+                    var is_error_ctor bool = false
+                    var error_msg ref(u8) = none
+                    match expr
+                        ast.Expr.Ident(name) => (
+                            if @len(args) == 1 && str.eql(name, "error")
+                                match @deref(@addr(args[0]))
+                                    ast.Expr.StrLit(msg) => (
+                                        is_error_ctor = true
+                                        error_msg = msg
+                                    )
+                                    _ => ()
+                                end
+                            end
+                        )
+                        _ => ()
+                    end
+                    if is_error_ctor
+                        expr = ast.Expr.ErrorLit(error_msg)
+                    else
+                        expr = ast.Expr.Call(@addr(ast.ExprCall(
+                            callee: box_expr(arena, expr),
+                            args: args
+                        )))
+                    end
                 end
             )
             ast.TokenKind.Dot(_) => (
