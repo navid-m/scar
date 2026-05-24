@@ -3328,6 +3328,20 @@ def get_expr_type(expr ref(ast.Expr), fun ref(ast.Function), info ref(sema.Progr
                             ti++
                         end
                     elif @len(segments) == 2
+                        var is_union_ctor bool = false
+                        var ti2 usize = 0
+                        for ti2 < @len(info.types)
+                            if str.eql(info.types[ti2].name, segments[0])
+                                if info.types[ti2].info.kind == sema.TypeDefKind.Union
+                                    is_union_ctor = true
+                                end
+                                break
+                            end
+                            ti2++
+                        end
+                        if is_union_ctor
+                            return @addr(ast.Type.Named(segments[0]))
+                        end
                         val tname_len usize = str.len(segments[0])
                         val method_len usize = str.len(segments[1])
                         var fi usize = 0

@@ -596,6 +596,20 @@ def analyze_expr(expr ref(ast.Expr), bindings ref(list[BindingEntry]), functions
                     match @deref(c.callee)
                         ast.Expr.Path(segments) => (
                             if @len(segments) == 2
+                                var is_union_ctor bool = false
+                                var ti usize = 0
+                                for ti < @len(types)
+                                    if str.eql(types[ti].name, segments[0])
+                                        if types[ti].info.kind == TypeDefKind.Union
+                                            is_union_ctor = true
+                                        end
+                                        break
+                                    end
+                                    ti++
+                                end
+                                if is_union_ctor
+                                    return ast.Type.Named(segments[0])
+                                end
                                 val tname_len usize = str.len(segments[0])
                                 val method_len usize = str.len(segments[1])
                                 var fi usize = 0
