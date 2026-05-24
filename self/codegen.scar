@@ -1776,17 +1776,110 @@ def append_expr(expr ref(ast.Expr), fun ref(ast.Function), info ref(sema.Program
                 end
                 append_str(output, output_len, ")")
             else
-                append_str(output, output_len, "list_")
-                append_str(output, output_len, mc.method)
-                append_str(output, output_len, "(")
-                append_expr(mc.receiver, fun, info, arena, output, output_len)
-                var i usize = 0
-                for i < @len(mc.args)
-                    append_str(output, output_len, ", ")
-                    append_expr(@addr(mc.args[i]), fun, info, arena, output, output_len)
-                    i++
+                match @deref(receiver_ty)
+                    ast.Type.Void(_) => (
+                        match @deref(mc.receiver)
+                            ast.Expr.Ident(type_name) => (
+                                var found_type bool = false
+                                var ti usize = 0
+                                for ti < @len(info.types)
+                                    if str.eql(info.types[ti].name, type_name)
+                                        found_type = true
+                                        break
+                                    end
+                                    ti++
+                                end
+                                if found_type
+                                    val dotted_name ref(u8) = join_two_with_dot(type_name, mc.method, arena)
+                                    var sym_i usize = 0
+                                    var found_sym bool = false
+                                    for sym_i < @len(info.function_symbols)
+                                        if str.eql(info.function_symbols[sym_i].name, dotted_name)
+                                            append_str(output, output_len, info.function_symbols[sym_i].symbol)
+                                            found_sym = true
+                                            break
+                                        end
+                                        sym_i++
+                                    end
+                                    if found_sym
+                                        append_str(output, output_len, "(")
+                                        var arg_i usize = 0
+                                        for arg_i < @len(mc.args)
+                                            if arg_i > 0
+                                                append_str(output, output_len, ", ")
+                                            end
+                                            append_expr(@addr(mc.args[arg_i]), fun, info, arena, output, output_len)
+                                            arg_i++
+                                        end
+                                        append_str(output, output_len, ")")
+                                    else
+                                        append_str(output, output_len, "(")
+                                        append_str(output, output_len, type_name)
+                                        append_str(output, output_len, ")->")
+                                        append_str(output, output_len, mc.method)
+                                        append_str(output, output_len, "(")
+                                        var arg_i usize = 0
+                                        for arg_i < @len(mc.args)
+                                            if arg_i > 0
+                                                append_str(output, output_len, ", ")
+                                            end
+                                            append_expr(@addr(mc.args[arg_i]), fun, info, arena, output, output_len)
+                                            arg_i++
+                                        end
+                                        append_str(output, output_len, ")")
+                                    end
+                                else
+                                    append_str(output, output_len, "(")
+                                    append_expr(mc.receiver, fun, info, arena, output, output_len)
+                                    append_str(output, output_len, ")->")
+                                    append_str(output, output_len, mc.method)
+                                    append_str(output, output_len, "(")
+                                    var arg_i usize = 0
+                                    for arg_i < @len(mc.args)
+                                        if arg_i > 0
+                                            append_str(output, output_len, ", ")
+                                        end
+                                        append_expr(@addr(mc.args[arg_i]), fun, info, arena, output, output_len)
+                                        arg_i++
+                                    end
+                                    append_str(output, output_len, ")")
+                                end
+                            )
+                            _ => (
+                                append_str(output, output_len, "(")
+                                append_expr(mc.receiver, fun, info, arena, output, output_len)
+                                append_str(output, output_len, ")->")
+                                append_str(output, output_len, mc.method)
+                                append_str(output, output_len, "(")
+                                var arg_i usize = 0
+                                for arg_i < @len(mc.args)
+                                    if arg_i > 0
+                                        append_str(output, output_len, ", ")
+                                    end
+                                    append_expr(@addr(mc.args[arg_i]), fun, info, arena, output, output_len)
+                                    arg_i++
+                                end
+                                append_str(output, output_len, ")")
+                            )
+                        end
+                    )
+                    _ => (
+                        append_str(output, output_len, "(")
+                        append_expr(mc.receiver, fun, info, arena, output, output_len)
+                        append_str(output, output_len, ")->")
+                        append_str(output, output_len, mc.method)
+                        append_str(output, output_len, "(")
+                        var arg_i usize = 0
+                        for arg_i < @len(mc.args)
+                            if arg_i > 0
+                                append_str(output, output_len, ", ")
+                            end
+                            append_expr(@addr(mc.args[arg_i]), fun, info, arena, output, output_len)
+                            arg_i++
+                        end
+                        append_str(output, output_len, ")")
+                    )
                 end
-                append_str(output, output_len, ")")
             end
         )
         ast.Expr.BuiltinCall(bc) => (
@@ -2592,6 +2685,22 @@ def join_two_with_dunder(a ref(u8), b ref(u8), arena ref(allocators.Arena)) ref(
     @deref(@as_mut(@add(buf, alen + 1))) = '_'
     @memcpy(@add(buf, alen + 2), b, blen)
     @deref(@as_mut(@add(buf, alen + 2 + blen))) = 0
+    return buf
+end
+
+def join_two_with_dot(a ref(u8), b ref(u8), arena ref(allocators.Arena)) ref(u8)
+    val alen usize = str.len(a)
+    val blen usize = str.len(b)
+    val buf_res = allocators.Arena.alloc(arena, alen + 1 + blen + 1)
+    var buf ref(u8) = none
+    match buf_res
+        ok m => buf = m as ref(u8)
+        error _ => return b
+    end
+    @memcpy(buf, a, alen)
+    @deref(@as_mut(@add(buf, alen))) = '.'
+    @memcpy(@add(buf, alen + 1), b, blen)
+    @deref(@as_mut(@add(buf, alen + 1 + blen))) = 0
     return buf
 end
 

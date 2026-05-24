@@ -367,18 +367,33 @@ pub type VariantDef
 	payload_types list[Type]
 end
 
+pub type InterfaceMethod
+	is_pub bool
+	name ref(u8)
+	params list[Param]
+	return_type Type
+end
+
+pub type InterfaceDef
+	is_pub bool
+	name ref(u8)
+	methods list[InterfaceMethod]
+end
+
 pub type TypeDef
 	name ref(u8)
 	kind TypeDefKind
 	fields list[FieldDef]
 	variants list[VariantDef]
 	is_pub bool
+	derives list[ref(u8)]
 end
 
 pub type Program
 	module_uses list[ModuleUse]
 	functions list[Function]
 	type_defs list[TypeDef]
+	interface_defs list[InterfaceDef]
 	tests list[TestBlock]
 	extern_headers list[ref(u8)]
 end

@@ -241,7 +241,8 @@ def resolve_module_into(
                 kind: td.kind,
                 fields: prefixed_fields,
                 variants: prefixed_variants,
-                is_pub: false
+                is_pub: false,
+                derives: ([] as list[ref(u8)])
             )
             @append(@deref(resolved_type_defs), prefixed_td)
         end
@@ -335,6 +336,7 @@ pub def resolve(program ref(ast.Program), source_path ref(u8), arena ref(allocat
         module_uses: program.module_uses,
         functions: [] as list[ast.Function],
         type_defs: resolved_type_defs,
+        interface_defs: program.interface_defs,
         tests: program.tests,
         extern_headers: resolved_extern_headers
     )

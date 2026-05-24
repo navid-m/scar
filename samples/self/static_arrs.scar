@@ -1,0 +1,6 @@
+pub def main()
+    var array [1]u32 = @zeroed()
+    array[0] = 12
+    @print("{d}", {array[0]})
+end
+

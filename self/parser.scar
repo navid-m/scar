@@ -2289,9 +2289,87 @@ def skip_top_level_item(p ref(ast.TokenList))
     end
 end
 
+def parse_interface_def(p ref(ast.TokenList), arena ref(allocators.Arena), is_pub_val bool) ast.InterfaceDef
+    advance(p)
+    val name ref(u8) = expect_ident(p, arena)
+    expect_newline(p)
+    var methods list[ast.InterfaceMethod] = []
+    for !is_keyword(p, KW_END) && !is_eof(p)
+        var method_is_pub bool = false
+        if is_keyword(p, KW_PUB)
+            advance(p)
+            method_is_pub = true
+        end
+        if is_keyword(p, KW_DEF)
+            advance(p)
+        end
+        val method_name ref(u8) = expect_ident(p, arena)
+        match p.tokens[p.pos].kind
+            ast.TokenKind.LParen(_) => advance(p)
+            _ => ()
+        end
+        consume_newlines(p)
+        var params list[ast.Param] = []
+        match p.tokens[p.pos].kind
+            ast.TokenKind.RParen(_) => advance(p)
+            _ => (
+                for
+                    val pline usize = p.tokens[p.pos].line
+                    val pcol usize = p.tokens[p.pos].column
+                    val pname ref(u8) = expect_ident(p, arena)
+                    val ptype ast.Type = parse_type(p, arena)
+                    @append(params, ast.Param(name: pname, ty: ptype, line: pline, column: pcol))
+                    match p.tokens[p.pos].kind
+                        ast.TokenKind.Comma(_) => (
+                            advance(p)
+                            consume_newlines(p)
+                        )
+                        _ => break
+                    end
+                end
+                consume_newlines(p)
+                match p.tokens[p.pos].kind
+                    ast.TokenKind.RParen(_) => advance(p)
+                    _ => ()
+                end
+            )
+        end
+        var return_type ast.Type = ast.Type.Void(0)
+        if starts_type(p)
+            return_type = parse_type_with_error_union(p, arena)
+        end
+        expect_newline(p)
+        @append(methods, ast.InterfaceMethod(
+            is_pub: method_is_pub,
+            name: method_name,
+            params: params,
+            return_type: return_type
+        ))
+        consume_newlines(p)
+    end
+    if !is_eof(p)
+        advance(p)
+    end
+    consume_newlines(p)
+    return ast.InterfaceDef(
+        is_pub: is_pub_val,
+        name: name,
+        methods: methods
+    )
+end
+
 def parse_type_def(p ref(ast.TokenList), arena ref(allocators.Arena), is_pub_val bool) ast.TypeDef
     advance(p)
     val name ref(u8) = expect_ident(p, arena)
+    var derives list[ref(u8)] = []
+    match p.tokens[p.pos].kind
+        ast.TokenKind.Colon(_) => (
+            advance(p)
+            val iface_name ref(u8) = expect_ident(p, arena)
+            @append(derives, iface_name)
+        )
+        _ => ()
+    end
     consume_newlines(p)
     var fields list[ast.FieldDef] = []
     for !is_keyword(p, KW_END) && !is_eof(p)
@@ -2316,7 +2394,8 @@ def parse_type_def(p ref(ast.TokenList), arena ref(allocators.Arena), is_pub_val
         kind: ast.TypeDefKind.Struct,
         fields: fields,
         variants: ([] as list[ast.VariantDef]),
-        is_pub: is_pub_val
+        is_pub: is_pub_val,
+        derives: derives
     )
 end
 
@@ -2368,7 +2447,8 @@ def parse_union_def(p ref(ast.TokenList), arena ref(allocators.Arena), is_pub_va
         kind: ast.TypeDefKind.Union,
         fields: ([] as list[ast.FieldDef]),
         variants: variants,
-        is_pub: is_pub_val
+        is_pub: is_pub_val,
+        derives: ([] as list[ref(u8)])
     )
 end
 
@@ -2396,7 +2476,8 @@ def parse_enum_def(p ref(ast.TokenList), arena ref(allocators.Arena), is_pub_val
         kind: ast.TypeDefKind.Enum,
         fields: ([] as list[ast.FieldDef]),
         variants: variants,
-        is_pub: is_pub_val
+        is_pub: is_pub_val,
+        derives: ([] as list[ref(u8)])
     )
 end
 
@@ -2405,6 +2486,7 @@ pub def parse_program(tokens list[ast.Token], arena ref(allocators.Arena), curre
     var module_uses list[ast.ModuleUse] = []
     var functions list[ast.Function] = []
     var type_defs list[ast.TypeDef] = []
+    var interface_defs list[ast.InterfaceDef] = []
     var tests list[ast.TestBlock] = []
     var extern_headers list[ref(u8)] = []
 
@@ -2434,6 +2516,11 @@ pub def parse_program(tokens list[ast.Token], arena ref(allocators.Arena), curre
         elif is_keyword(@addr(p), KW_PUB) && next_is_keyword(@addr(p), KW_ENUM)
             advance(@addr(p))
             @append(type_defs, parse_enum_def(@addr(p), arena, true))
+        elif is_keyword(@addr(p), KW_PUB) && next_is_keyword(@addr(p), KW_IFACE)
+            advance(@addr(p))
+            @append(interface_defs, parse_interface_def(@addr(p), arena, true))
+        elif is_keyword(@addr(p), KW_IFACE)
+            @append(interface_defs, parse_interface_def(@addr(p), arena, false))
         elif is_keyword(@addr(p), KW_PUB)
             advance(@addr(p))
             skip_top_level_item(@addr(p))
@@ -2493,6 +2580,11 @@ pub def parse_program(tokens list[ast.Token], arena ref(allocators.Arena), curre
                     elif is_keyword(@addr(p), KW_PUB) && next_is_keyword(@addr(p), KW_ENUM)
                         advance(@addr(p))
                         @append(type_defs, parse_enum_def(@addr(p), arena, true))
+                    elif is_keyword(@addr(p), KW_PUB) && next_is_keyword(@addr(p), KW_IFACE)
+                        advance(@addr(p))
+                        @append(interface_defs, parse_interface_def(@addr(p), arena, true))
+                    elif is_keyword(@addr(p), KW_IFACE)
+                        @append(interface_defs, parse_interface_def(@addr(p), arena, false))
                     elif is_keyword(@addr(p), KW_PUB)
                         advance(@addr(p))
                         skip_top_level_item(@addr(p))
@@ -2552,6 +2644,11 @@ pub def parse_program(tokens list[ast.Token], arena ref(allocators.Arena), curre
                                 elif is_keyword(@addr(p), KW_PUB) && next_is_keyword(@addr(p), KW_ENUM)
                                     advance(@addr(p))
                                     @append(type_defs, parse_enum_def(@addr(p), arena, true))
+                                elif is_keyword(@addr(p), KW_PUB) && next_is_keyword(@addr(p), KW_IFACE)
+                                    advance(@addr(p))
+                                    @append(interface_defs, parse_interface_def(@addr(p), arena, true))
+                                elif is_keyword(@addr(p), KW_IFACE)
+                                    @append(interface_defs, parse_interface_def(@addr(p), arena, false))
                                 elif is_keyword(@addr(p), KW_PUB)
                                     advance(@addr(p))
                                     skip_top_level_item(@addr(p))
@@ -2618,6 +2715,7 @@ pub def parse_program(tokens list[ast.Token], arena ref(allocators.Arena), curre
         module_uses: module_uses,
         functions: functions,
         type_defs: type_defs,
+        interface_defs: interface_defs,
         tests: tests,
         extern_headers: extern_headers
     )

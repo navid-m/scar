@@ -791,6 +791,7 @@ pub def instantiate_generics(program ref(ast.Program), arena ref(allocators.Aren
         module_uses: program.module_uses,
         functions: all_functions,
         type_defs: program.type_defs,
+        interface_defs: program.interface_defs,
         tests: program.tests,
         extern_headers: program.extern_headers
     )
