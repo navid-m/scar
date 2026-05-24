@@ -1514,8 +1514,23 @@ def append_expr(expr ref(ast.Expr), fun ref(ast.Function), info ref(sema.Program
                         i++
                     end
                 else
-                    val joined ref(u8) = join_segments_with_dunder(segments, arena)
-                    append_str(output, output_len, lookup_symbol(joined, info, arena))
+                    var found_sym bool = false
+                    if @len(segments) >= 2
+                        val dotted ref(u8) = join_segments_with_dots(segments, arena)
+                        var si usize = 0
+                        for si < @len(info.function_symbols)
+                            if str.eql(info.function_symbols[si].name, dotted)
+                                append_str(output, output_len, info.function_symbols[si].symbol)
+                                found_sym = true
+                                break
+                            end
+                            si++
+                        end
+                    end
+                    if !found_sym
+                        val joined ref(u8) = join_segments_with_dunder(segments, arena)
+                        append_str(output, output_len, lookup_symbol(joined, info, arena))
+                    end
                 end
             end
         )
@@ -2727,6 +2742,38 @@ def join_segments_with_dunder(segments list[ref(u8)], arena ref(allocators.Arena
             @deref(@as_mut(@add(buf, offset))) = '_'
             offset++
             @deref(@as_mut(@add(buf, offset))) = '_'
+            offset++
+        end
+        val slen usize = str.len(segments[i])
+        @memcpy(@add(buf, offset), segments[i], slen)
+        offset = offset + slen
+        i++
+    end
+    @deref(@as_mut(@add(buf, offset))) = 0
+    return buf
+end
+
+def join_segments_with_dots(segments list[ref(u8)], arena ref(allocators.Arena)) ref(u8)
+    var total usize = 1
+    var i usize = 0
+    for i < @len(segments)
+        total = total + str.len(segments[i])
+        if i > 0
+            total = total + 1
+        end
+        i++
+    end
+    val buf_res = allocators.Arena.alloc(arena, total)
+    var buf ref(u8) = none
+    match buf_res
+        ok m => buf = m as ref(u8)
+        error _ => return ""
+    end
+    var offset usize = 0
+    i = 0
+    for i < @len(segments)
+        if i > 0
+            @deref(@as_mut(@add(buf, offset))) = '.'
             offset++
         end
         val slen usize = str.len(segments[i])
