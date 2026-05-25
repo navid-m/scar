@@ -1,6 +1,6 @@
 ## Scar
 
-General purpose systems programming language with a simple high-level syntax.
+General purpose systems programming language with a high-level, ruby-like syntax. Aims to achieve low-level control while still being readable and concise.
 
 Prioritizes:
 
@@ -27,9 +27,9 @@ end
 
 #### Resources
 
-Documentation is [here](https://scarlang-docs.pages.dev).
+[Documentation](https://scarlang-docs.pages.dev).
 
-VSCode extension is [here](https://marketplace.visualstudio.com/items?itemName=NavidM.scar).
+[VSCode Extension](https://marketplace.visualstudio.com/items?itemName=NavidM.scar).
 
 ---
 
