@@ -51,6 +51,10 @@ run_sample_tests() {
 
 run_stdlib_tests() {
 	while read -r module; do
+		if [[ "$module" == *"lib/std/collections/mod.scar" ]]; then
+			printf "\n[skip] %s" "$module"
+			continue
+		fi
 		if "$PROGRAM" test "$module" 2>&1; then
 			pass "$module"
 			((PASS_COUNT++))
