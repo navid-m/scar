@@ -15,8 +15,8 @@ val usage_message ref(u8) = \\ usage:
                             \\   scar [-emit] <source.scar> [-o <output>]
                             \\   scar test <source.scar> [-emit] [-o <output>]
                             \\
-                            \\ -emit       Emit the generated IR
-                            \\ -o          Choose output file (for -emit or binary)
+                            \\   -emit       Emit the generated IR
+                            \\   -o          Choose output file (for -emit or binary)
     
 pub def compile(source_path ref(u8), output_path ref(u8)) i32|error
     guard source_path != none && !str.eql(source_path, "") else
