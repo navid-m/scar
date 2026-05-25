@@ -637,7 +637,7 @@ def parse_stmt(p ref(ast.TokenList), arena ref(allocators.Arena), current_platfo
             ast.TokenKind.Assign(_) => ()
             _ => (
                 if starts_type(p)
-                    declared_type = parse_type(p, arena)
+                    declared_type = parse_type_with_error_union(p, arena)
                 end
             )
         end
@@ -986,6 +986,66 @@ def parse_for_stmt(p ref(ast.TokenList), arena ref(allocators.Arena), current_pl
                             line: line,
                             column: column
                         )))
+                    )
+                    ast.TokenKind.Comma(_) => (
+                        advance(p)
+                        consume_newlines(p)
+                        val condition ast.Expr = parse_expr(p, arena)
+                        consume_newlines(p)
+                        match p.tokens[p.pos].kind
+                            ast.TokenKind.Comma(_) => advance(p)
+                            _ => ()
+                        end
+                        consume_newlines(p)
+                        val inc_expr ast.Expr = parse_expr(p, arena)
+                        var inc_stmt ast.Stmt = ast.Stmt.ExprStmt(box_expr(arena, inc_expr))
+                        match p.tokens[p.pos].kind
+                            ast.TokenKind.MinusMinus(_) => (
+                                advance(p)
+                                inc_stmt = ast.Stmt.Decrement(box_expr(arena, inc_expr))
+                            )
+                            ast.TokenKind.PlusPlus(_) => (
+                                advance(p)
+                                inc_stmt = ast.Stmt.Increment(box_expr(arena, inc_expr))
+                            )
+                            _ => ()
+                        end
+                        expect_newline(p)
+                        val body list[ast.Stmt] = parse_block(p, arena, current_platform)
+                        if !is_eof(p) && is_keyword(p, KW_END)
+                            advance(p)
+                        end
+                        @append(body, inc_stmt)
+                        val var_decl_raw = allocators.Arena.alloc(arena, @sizeof(ast.StmtVarDecl) as usize)
+                        match var_decl_raw
+                            ok vdm => (
+                                var var_decl_ptr ref(ast.StmtVarDecl) = @bitcast(vdm, ref(ast.StmtVarDecl))
+                                @deref(var_decl_ptr) = ast.StmtVarDecl(
+                                    name: var_name,
+                                    mutable: true,
+                                    declared_type: ast.Type.Infer(0),
+                                    init: start,
+                                    line: line,
+                                    column: column
+                                )
+                                val while_raw = allocators.Arena.alloc(arena, @sizeof(ast.StmtWhile) as usize)
+                                match while_raw
+                                    ok wm => (
+                                        var while_ptr ref(ast.StmtWhile) = @bitcast(wm, ref(ast.StmtWhile))
+                                        @deref(while_ptr) = ast.StmtWhile(
+                                            condition: condition,
+                                            body: body,
+                                            line: line,
+                                            column: column
+                                        )
+                                        return ast.Stmt.Block([ast.Stmt.VarDecl(var_decl_ptr), ast.Stmt.While(while_ptr)])
+                                    )
+                                    error _ => ()
+                                end
+                            )
+                            error _ => ()
+                        end
+                        return ast.Stmt.Block([] as list[ast.Stmt])
                     )
                     _ => ()
                 end
@@ -1818,39 +1878,91 @@ def parse_primary(p ref(ast.TokenList), arena ref(allocators.Arena)) ast.Expr
         ast.TokenKind.At(_) => (
             advance(p)
             val name ref(u8) = expect_ident(p, arena)
-            var args list[ast.Expr] = []
-            match p.tokens[p.pos].kind
-                ast.TokenKind.LParen(_) => (
-                    advance(p)
-                    consume_newlines(p)
-                    for !is_eof(p)
+            if str.eql(name, "sizeof")
+                match p.tokens[p.pos].kind
+                    ast.TokenKind.LParen(_) => advance(p)
+                    _ => ()
+                end
+                consume_newlines(p)
+                val ty ast.Type = parse_type(p, arena)
+                consume_newlines(p)
+                match p.tokens[p.pos].kind
+                    ast.TokenKind.RParen(_) => advance(p)
+                    _ => ()
+                end
+                val type_raw_res = allocators.Arena.alloc(arena, @sizeof(ast.Type) as usize)
+                match type_raw_res
+                    ok m => (
+                        var type_ptr ref(ast.Type) = @bitcast(m, ref(ast.Type))
+                        @deref(type_ptr) = ty
+                        return ast.Expr.SizeOf(type_ptr)
+                    )
+                    error _ => return ast.Expr.None(0)
+                end
+            elif str.eql(name, "bitcast")
+                match p.tokens[p.pos].kind
+                    ast.TokenKind.LParen(_) => advance(p)
+                    _ => ()
+                end
+                consume_newlines(p)
+                val expr ast.Expr = parse_expr(p, arena)
+                consume_newlines(p)
+                match p.tokens[p.pos].kind
+                    ast.TokenKind.Comma(_) => advance(p)
+                    _ => ()
+                end
+                consume_newlines(p)
+                val ty ast.Type = parse_type(p, arena)
+                consume_newlines(p)
+                match p.tokens[p.pos].kind
+                    ast.TokenKind.RParen(_) => advance(p)
+                    _ => ()
+                end
+                val bitcast_raw_res = allocators.Arena.alloc(arena, @sizeof(ast.ExprBitCast) as usize)
+                match bitcast_raw_res
+                    ok m => (
+                        var bitcast_ptr ref(ast.ExprBitCast) = @bitcast(m, ref(ast.ExprBitCast))
+                        bitcast_ptr.expr = box_expr(arena, expr)
+                        bitcast_ptr.ty = ty
+                        return ast.Expr.BitCast(bitcast_ptr)
+                    )
+                    error _ => return ast.Expr.None(0)
+                end
+            else
+                var args list[ast.Expr] = []
+                match p.tokens[p.pos].kind
+                    ast.TokenKind.LParen(_) => (
+                        advance(p)
+                        consume_newlines(p)
+                        for !is_eof(p)
+                            consume_newlines(p)
+                            match p.tokens[p.pos].kind
+                                ast.TokenKind.RParen(_) => break
+                                _ => ()
+                            end
+                            @append(args, parse_expr(p, arena))
+                            consume_newlines(p)
+                            match p.tokens[p.pos].kind
+                                ast.TokenKind.Comma(_) => (
+                                    advance(p)
+                                    consume_newlines(p)
+                                )
+                                _ => break
+                            end
+                        end
                         consume_newlines(p)
                         match p.tokens[p.pos].kind
-                            ast.TokenKind.RParen(_) => break
+                            ast.TokenKind.RParen(_) => advance(p)
                             _ => ()
                         end
-                        @append(args, parse_expr(p, arena))
-                        consume_newlines(p)
-                        match p.tokens[p.pos].kind
-                            ast.TokenKind.Comma(_) => (
-                                advance(p)
-                                consume_newlines(p)
-                            )
-                            _ => break
-                        end
-                    end
-                    consume_newlines(p)
-                    match p.tokens[p.pos].kind
-                        ast.TokenKind.RParen(_) => advance(p)
-                        _ => ()
-                    end
-                )
-                _ => ()
+                    )
+                    _ => ()
+                end
+                return ast.Expr.BuiltinCall(@addr(ast.ExprBuiltinCall(
+                    name: name,
+                    args: args
+                )))
             end
-            return ast.Expr.BuiltinCall(@addr(ast.ExprBuiltinCall(
-                name: name,
-                args: args
-            )))
         )
         ast.TokenKind.Bang(_) => (
             advance(p)
