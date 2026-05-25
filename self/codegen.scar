@@ -1972,12 +1972,16 @@ def append_expr(expr ref(ast.Expr), fun ref(ast.Function), info ref(sema.Program
                             ti++
                         end
                     elif @len(segments) == 2
+                        val prefixed_type_name ref(u8) = join_two_with_dunder(segments[0], segments[1], arena)
                         var ti usize = 0
                         for ti < @len(info.types)
-                            if str.eql(info.types[ti].name, segments[0])
-                                if info.types[ti].info.kind == sema.TypeDefKind.Union
+                            if str.eql(info.types[ti].name, prefixed_type_name) || str.eql(info.types[ti].name, segments[1])
+                                if info.types[ti].info.kind == sema.TypeDefKind.Struct
+                                    is_struct_ctor = true
+                                    struct_type_name = prefixed_type_name
+                                elif info.types[ti].info.kind == sema.TypeDefKind.Union
                                     is_union_ctor = true
-                                    union_type_name = segments[0]
+                                    union_type_name = prefixed_type_name
                                     union_variant_name = segments[1]
                                 end
                                 break
@@ -2579,14 +2583,27 @@ def append_builtin_call(bc ref(ast.ExprBuiltinCall), fun ref(ast.Function), info
     elif str.eql(bc.name, "add")
         append_str(output, output_len, "(")
         val add_base_ty ref(ast.Type) = get_expr_type(@addr(bc.args[0]), fun, info)
-        if is_void_ptr_type(add_base_ty)
+        var is_list_ref bool = false
+        match @deref(add_base_ty)
+            ast.Type.Ref(inner) => (
+                match @deref(inner)
+                    ast.Type.List(_) => is_list_ref = true
+                    _ => ()
+                end
+            )
+            _ => ()
+        end
+        if is_list_ref
+            append_expr(@addr(bc.args[0]), fun, info, arena, output, output_len)
+            append_str(output, output_len, "->data + ")
+        elif is_void_ptr_type(add_base_ty)
             append_str(output, output_len, "((uint8_t *)(")
             append_expr(@addr(bc.args[0]), fun, info, arena, output, output_len)
-            append_str(output, output_len, "))")
+            append_str(output, output_len, ")) + ")
         else
             append_expr(@addr(bc.args[0]), fun, info, arena, output, output_len)
+            append_str(output, output_len, " + ")
         end
-        append_str(output, output_len, " + ")
         append_expr(@addr(bc.args[1]), fun, info, arena, output, output_len)
         append_str(output, output_len, ")")
     elif str.eql(bc.name, "call")
@@ -4014,6 +4031,7 @@ def is_zero_param_function(name ref(u8), info ref(sema.ProgramInfo)) bool
         end
         i++
     end
+    i = 0
     for i < @len(info.functions)
         if name_matches_suffix(info.functions[i].name, name)
             return @len(info.functions[i].sig.params) == 0

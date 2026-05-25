@@ -423,6 +423,7 @@ def analyze_stmt(stmt ref(ast.Stmt), bindings ref(list[BindingEntry]), functions
             var ty ast.Type = vd.declared_type
             match ty
                 ast.Type.Void(_) => ty = infer_expr_type(@addr(vd.init), bindings, functions, types)
+                ast.Type.Infer(_) => ty = infer_expr_type(@addr(vd.init), bindings, functions, types)
                 _ => ()
             end
             @append(bindings, BindingEntry(
@@ -597,18 +598,39 @@ def analyze_expr(expr ref(ast.Expr), bindings ref(list[BindingEntry]), functions
                         ast.Expr.Path(segments) => (
                             if @len(segments) == 2
                                 var is_union_ctor bool = false
+                                var is_struct_ctor bool = false
                                 var ti usize = 0
                                 for ti < @len(types)
-                                    if str.eql(types[ti].name, segments[0])
-                                        if types[ti].info.kind == TypeDefKind.Union
-                                            is_union_ctor = true
+                                    val tname ref(u8) = types[ti].name
+                                    val tlen usize = str.len(tname)
+                                    val seg0_len usize = str.len(segments[0])
+                                    val seg1_len usize = str.len(segments[1])
+                                    if seg0_len + 2 + seg1_len == tlen
+                                        if str.eql(@add(tname, seg0_len + 2), segments[1])
+                                            var match_prefix bool = true
+                                            var ci usize = 0
+                                            for ci < seg0_len
+                                                if @deref(@add(tname, ci)) != @deref(@add(segments[0], ci))
+                                                    match_prefix = false
+                                                    break
+                                                end
+                                                ci++
+                                            end
+                                            if match_prefix && @deref(@add(tname, seg0_len)) == '_' && @deref(@add(tname, seg0_len + 1)) == '_'
+                                                if types[ti].info.kind == TypeDefKind.Union
+                                                    is_union_ctor = true
+                                                    ti = @len(types)
+                                                elif types[ti].info.kind == TypeDefKind.Struct
+                                                    is_struct_ctor = true
+                                                    ti = @len(types)
+                                                end
+                                            end
                                         end
-                                        break
                                     end
                                     ti++
                                 end
-                                if is_union_ctor
-                                    return ast.Type.Named(segments[0])
+                                if is_union_ctor || is_struct_ctor
+                                    return ast.Type.Named(segments[1])
                                 end
                                 val tname_len usize = str.len(segments[0])
                                 val method_len usize = str.len(segments[1])
@@ -869,7 +891,27 @@ def infer_builtin_type(name ref(u8), args ref(list[ast.Expr]), bindings ref(list
         end
     elif str.eql(name, "add")
         if @len(args) > 0
-            return analyze_expr(@addr(args[0]), bindings, functions, types)
+            val base_ty ast.Type = analyze_expr(@addr(args[0]), bindings, functions, types)
+            match base_ty
+                ast.Type.Ref(inner) => (
+                    match @deref(inner)
+                        ast.Type.List(elem) => return ast.Type.Ref(elem)
+                        _ => return base_ty
+                    end
+                )
+                ast.Type.Mut(mut_inner) => (
+                    match @deref(mut_inner)
+                        ast.Type.Ref(inner2) => (
+                            match @deref(inner2)
+                                ast.Type.List(elem) => return ast.Type.Mut(inner2)
+                                _ => return base_ty
+                            end
+                        )
+                        _ => return base_ty
+                    end
+                )
+                _ => return base_ty
+            end
         end
     elif str.eql(name, "neg")
         if @len(args) > 0
