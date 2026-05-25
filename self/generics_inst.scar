@@ -863,7 +863,7 @@ def infer_type_from_expr(expr ref(ast.Expr), state ref(GenericState), arena ref(
                     if @len(segments) >= 2
                         var type_name ref(u8) = segments[0]
                         var i usize = 1
-                        for i < @len(segments) - 1
+                        for i < @len(segments)
                             type_name = gen.concat3(type_name, "__", segments[i], arena)
                             i++
                         end

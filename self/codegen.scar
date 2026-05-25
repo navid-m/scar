@@ -1903,6 +1903,9 @@ def append_expr(expr ref(ast.Expr), fun ref(ast.Function), info ref(sema.Program
                         val joined ref(u8) = join_segments_with_dunder(segments, arena)
                         val sym ref(u8) = lookup_symbol(joined, info, arena)
                         append_str(output, output_len, sym)
+                        if is_zero_param_function(joined, info)
+                            append_str(output, output_len, "()")
+                        end
                     end
                 end
             end
@@ -2041,6 +2044,15 @@ def append_expr(expr ref(ast.Expr), fun ref(ast.Function), info ref(sema.Program
                         if is_zero_param_function(name, info)
                             callee_is_zero_param_fn = true
                             append_str(output, output_len, lookup_symbol(name, info, arena))
+                        end
+                    )
+                    ast.Expr.Path(segments) => (
+                        if @len(segments) >= 2
+                            val joined ref(u8) = join_segments_with_dunder(segments, arena)
+                            if is_zero_param_function(joined, info)
+                                callee_is_zero_param_fn = true
+                                append_str(output, output_len, lookup_symbol(joined, info, arena))
+                            end
                         end
                     )
                     _ => ()
