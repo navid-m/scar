@@ -2608,11 +2608,19 @@ fn render_list_literal(
         .iter()
         .map(|value| render_expr(value, function, info, deref_locals))
         .collect::<Result<Vec<_>, _>>()?;
+    let mut code = format!("({helper_prefix}_new()");
+    for rv in &rendered_values {
+        code.push_str(&format!(
+            ", ({helper_prefix}_append(&__l, {}), __l)",
+            rv
+        ));
+    }
+    code.push(')');
     Ok(format!(
-        "{helper_prefix}_from_array(({}[]){{ {} }}, {})",
-        c_type(element_ty),
-        rendered_values.join(", "),
-        values.len()
+        "({{\n    {0} __l = {1}_new();\n    __l = {2};\n    __l;\n}})",
+        c_type(ty),
+        helper_prefix,
+        code
     ))
 }
 

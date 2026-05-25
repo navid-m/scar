@@ -4014,5 +4014,11 @@ def is_zero_param_function(name ref(u8), info ref(sema.ProgramInfo)) bool
         end
         i++
     end
+    for i < @len(info.functions)
+        if name_matches_suffix(info.functions[i].name, name)
+            return @len(info.functions[i].sig.params) == 0
+        end
+        i++
+    end
     return false
 end
