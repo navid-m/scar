@@ -2,12 +2,6 @@
 
 General purpose systems programming language with a high-level, ruby-like syntax. Aims to achieve low-level control while still being readable and concise.
 
-Prioritizes:
-
--  immutability
--  minimalism
--  readability
-
 #### Example
 
 ```scar
