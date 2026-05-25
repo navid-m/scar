@@ -2551,7 +2551,14 @@ def append_builtin_call(bc ref(ast.ExprBuiltinCall), fun ref(ast.Function), info
         append_expr(@addr(bc.args[0]), fun, info, arena, output, output_len)
     elif str.eql(bc.name, "add")
         append_str(output, output_len, "(")
-        append_expr(@addr(bc.args[0]), fun, info, arena, output, output_len)
+        val add_base_ty ref(ast.Type) = get_expr_type(@addr(bc.args[0]), fun, info)
+        if is_void_ptr_type(add_base_ty)
+            append_str(output, output_len, "((uint8_t *)(")
+            append_expr(@addr(bc.args[0]), fun, info, arena, output, output_len)
+            append_str(output, output_len, "))")
+        else
+            append_expr(@addr(bc.args[0]), fun, info, arena, output, output_len)
+        end
         append_str(output, output_len, " + ")
         append_expr(@addr(bc.args[1]), fun, info, arena, output, output_len)
         append_str(output, output_len, ")")
@@ -3322,6 +3329,29 @@ def deref_type(ty ref(ast.Type)) ref(ast.Type)
         ast.Type.Ref(inner) => return deref_type(inner)
         ast.Type.Mut(inner) => return deref_type(inner)
         _ => return ty
+    end
+end
+
+def is_void_ptr_type(ty ref(ast.Type)) bool
+    match @deref(ty)
+        ast.Type.Ref(inner) => (
+            match @deref(inner)
+                ast.Type.Void(_) => return true
+                _ => return false
+            end
+        )
+        ast.Type.Mut(inner) => (
+            match @deref(inner)
+                ast.Type.Ref(inner2) => (
+                    match @deref(inner2)
+                        ast.Type.Void(_) => return true
+                        _ => return false
+                    end
+                )
+                _ => return false
+            end
+        )
+        _ => return false
     end
 end
 
