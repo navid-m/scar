@@ -252,31 +252,29 @@ def resolve_module_into(
     var fi usize = 0
     for fi < @len(mod_prog.functions)
         val fn_ref ref(ast.Function) = @addr(mod_prog.functions[fi])
-        if fn_ref.is_pub
-            val prefixed_name ref(u8) = prefix_name(alias_name, fn_ref.name, arena)
-            var prefixed_params list[ast.Param] = []
-            var pi usize = 0
-            for pi < @len(fn_ref.params)
-                val param ref(ast.Param) = @addr(fn_ref.params[pi])
-                val rewritten_ty ast.Type = rewrite_type_with_prefix(@addr(param.ty), alias_name, @addr(pub_type_names), arena)
-                @append(prefixed_params, ast.Param(name: param.name, ty: rewritten_ty, line: param.line, column: param.column))
-                pi++
-            end
-            val rewritten_ret ast.Type = rewrite_type_with_prefix(@addr(fn_ref.return_type), alias_name, @addr(pub_type_names), arena)
-            val prefixed_fn ast.Function = ast.Function(
-                name: prefixed_name,
-                params: prefixed_params,
-                return_type: rewritten_ret,
-                body: fn_ref.body,
-                is_pub: false,
-                is_extern: fn_ref.is_extern,
-                extern_name: fn_ref.extern_name,
-                generic_params: fn_ref.generic_params,
-                line: fn_ref.line,
-                column: fn_ref.column
-            )
-            @append(@deref(resolved_functions), prefixed_fn)
+        val prefixed_name ref(u8) = prefix_name(alias_name, fn_ref.name, arena)
+        var prefixed_params list[ast.Param] = []
+        var pi usize = 0
+        for pi < @len(fn_ref.params)
+            val param ref(ast.Param) = @addr(fn_ref.params[pi])
+            val rewritten_ty ast.Type = rewrite_type_with_prefix(@addr(param.ty), alias_name, @addr(pub_type_names), arena)
+            @append(prefixed_params, ast.Param(name: param.name, ty: rewritten_ty, line: param.line, column: param.column))
+            pi++
         end
+        val rewritten_ret ast.Type = rewrite_type_with_prefix(@addr(fn_ref.return_type), alias_name, @addr(pub_type_names), arena)
+        val prefixed_fn ast.Function = ast.Function(
+            name: prefixed_name,
+            params: prefixed_params,
+            return_type: rewritten_ret,
+            body: fn_ref.body,
+            is_pub: false,
+            is_extern: fn_ref.is_extern,
+            extern_name: fn_ref.extern_name,
+            generic_params: fn_ref.generic_params,
+            line: fn_ref.line,
+            column: fn_ref.column
+        )
+        @append(@deref(resolved_functions), prefixed_fn)
         fi++
     end
 
