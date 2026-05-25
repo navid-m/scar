@@ -27,9 +27,8 @@ end
 
 #### Resources
 
-[Documentation](https://scarlang-docs.pages.dev).
-
-[VSCode Extension](https://marketplace.visualstudio.com/items?itemName=NavidM.scar).
+- [Documentation](https://scarlang-docs.pages.dev)
+- [VSCode Extension](https://marketplace.visualstudio.com/items?itemName=NavidM.scar)
 
 ---
 
