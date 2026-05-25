@@ -599,38 +599,51 @@ def analyze_expr(expr ref(ast.Expr), bindings ref(list[BindingEntry]), functions
                             if @len(segments) == 2
                                 var is_union_ctor bool = false
                                 var is_struct_ctor bool = false
+                                var ctor_type_name ref(u8) = segments[0]
                                 var ti usize = 0
+                                var seg0_is_type bool = false
                                 for ti < @len(types)
-                                    val tname ref(u8) = types[ti].name
-                                    val tlen usize = str.len(tname)
-                                    val seg0_len usize = str.len(segments[0])
-                                    val seg1_len usize = str.len(segments[1])
-                                    if seg0_len + 2 + seg1_len == tlen
-                                        if str.eql(@add(tname, seg0_len + 2), segments[1])
-                                            var match_prefix bool = true
-                                            var ci usize = 0
-                                            for ci < seg0_len
-                                                if @deref(@add(tname, ci)) != @deref(@add(segments[0], ci))
-                                                    match_prefix = false
-                                                    break
-                                                end
-                                                ci++
-                                            end
-                                            if match_prefix && @deref(@add(tname, seg0_len)) == '_' && @deref(@add(tname, seg0_len + 1)) == '_'
-                                                if types[ti].info.kind == TypeDefKind.Union
-                                                    is_union_ctor = true
-                                                    ti = @len(types)
-                                                elif types[ti].info.kind == TypeDefKind.Struct
-                                                    is_struct_ctor = true
-                                                    ti = @len(types)
-                                                end
-                                            end
+                                    if str.eql(types[ti].name, segments[0])
+                                        seg0_is_type = true
+                                        if types[ti].info.kind == TypeDefKind.Union
+                                            is_union_ctor = true
+                                            ti = @len(types)
                                         end
                                     end
                                     ti++
                                 end
+                                if !seg0_is_type
+                                    ti = 0
+                                    for ti < @len(types)
+                                        val tname ref(u8) = types[ti].name
+                                        val tlen usize = str.len(tname)
+                                        val seg0_len usize = str.len(segments[0])
+                                        val seg1_len usize = str.len(segments[1])
+                                        if seg0_len + 2 + seg1_len == tlen
+                                            if str.eql(@add(tname, seg0_len + 2), segments[1])
+                                                var match_prefix bool = true
+                                                var ci usize = 0
+                                                for ci < seg0_len
+                                                    if @deref(@add(tname, ci)) != @deref(@add(segments[0], ci))
+                                                        match_prefix = false
+                                                        break
+                                                    end
+                                                    ci++
+                                                end
+                                                if match_prefix && @deref(@add(tname, seg0_len)) == '_' && @deref(@add(tname, seg0_len + 1)) == '_'
+                                                    if types[ti].info.kind == TypeDefKind.Struct
+                                                        is_struct_ctor = true
+                                                        ctor_type_name = tname
+                                                        ti = @len(types)
+                                                    end
+                                                end
+                                            end
+                                        end
+                                        ti++
+                                    end
+                                end
                                 if is_union_ctor || is_struct_ctor
-                                    return ast.Type.Named(segments[1])
+                                    return ast.Type.Named(ctor_type_name)
                                 end
                                 val tname_len usize = str.len(segments[0])
                                 val method_len usize = str.len(segments[1])

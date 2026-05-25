@@ -1972,21 +1972,32 @@ def append_expr(expr ref(ast.Expr), fun ref(ast.Function), info ref(sema.Program
                             ti++
                         end
                     elif @len(segments) == 2
-                        val prefixed_type_name ref(u8) = join_two_with_dunder(segments[0], segments[1], arena)
+                        var seg0_is_type bool = false
                         var ti usize = 0
                         for ti < @len(info.types)
-                            if str.eql(info.types[ti].name, prefixed_type_name) || str.eql(info.types[ti].name, segments[1])
-                                if info.types[ti].info.kind == sema.TypeDefKind.Struct
-                                    is_struct_ctor = true
-                                    struct_type_name = prefixed_type_name
-                                elif info.types[ti].info.kind == sema.TypeDefKind.Union
+                            if str.eql(info.types[ti].name, segments[0])
+                                seg0_is_type = true
+                                if info.types[ti].info.kind == sema.TypeDefKind.Union
                                     is_union_ctor = true
-                                    union_type_name = prefixed_type_name
+                                    union_type_name = segments[0]
                                     union_variant_name = segments[1]
                                 end
-                                break
                             end
                             ti++
+                        end
+                        if !seg0_is_type
+                            val prefixed_type_name ref(u8) = join_two_with_dunder(segments[0], segments[1], arena)
+                            ti = 0
+                            for ti < @len(info.types)
+                                if str.eql(info.types[ti].name, prefixed_type_name)
+                                    if info.types[ti].info.kind == sema.TypeDefKind.Struct
+                                        is_struct_ctor = true
+                                        struct_type_name = prefixed_type_name
+                                    end
+                                    break
+                                end
+                                ti++
+                            end
                         end
                     elif @len(segments) == 3
                         val prefixed_type_name ref(u8) = join_two_with_dunder(segments[0], segments[1], arena)
