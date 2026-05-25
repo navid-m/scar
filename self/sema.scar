@@ -644,6 +644,22 @@ def analyze_expr(expr ref(ast.Expr), bindings ref(list[BindingEntry]), functions
                                     end
                                     fi++
                                 end
+                            else
+                                val method_name ref(u8) = segments[@len(segments) - 1]
+                                val method_len usize = str.len(method_name)
+                                var fi usize = 0
+                                for fi < @len(functions)
+                                    val fname ref(u8) = functions[fi].name
+                                    val flen usize = str.len(fname)
+                                    if flen > method_len + 1
+                                        val offset usize = flen - method_len - 1
+                                        val sep u8 = @deref(@add(fname, offset))
+                                        if (sep == '.' || (sep == '_' && offset > 0 && @deref(@add(fname, offset - 1)) == '_')) && str.eql(@add(fname, offset + 1), method_name)
+                                            return functions[fi].sig.return_type
+                                        end
+                                    end
+                                    fi++
+                                end
                             end
                         )
                         _ => ()

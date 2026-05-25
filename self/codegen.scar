@@ -1888,6 +1888,14 @@ def append_expr(expr ref(ast.Expr), fun ref(ast.Function), info ref(sema.Program
                             found_sym = true
                         end
                     end
+                    if !found_sym && @len(segments) >= 3
+                        val mixed ref(u8) = join_segments_mixed(segments, arena)
+                        val sym_mixed ref(u8) = find_symbol_in_list(mixed, info)
+                        if sym_mixed != none
+                            append_str(output, output_len, sym_mixed)
+                            found_sym = true
+                        end
+                    end
                     if !found_sym
                         val joined ref(u8) = join_segments_with_dunder(segments, arena)
                         val sym ref(u8) = lookup_symbol(joined, info, arena)
@@ -3239,6 +3247,47 @@ def join_segments_with_dots(segments list[ref(u8)], arena ref(allocators.Arena))
     return buf
 end
 
+def join_segments_mixed(segments list[ref(u8)], arena ref(allocators.Arena)) ref(u8)
+    var total usize = str.len(segments[0])
+    var i usize = 1
+    for i < @len(segments)
+        total = total + str.len(segments[i])
+        if i == 1
+            total = total + 2
+        else
+            total = total + 1
+        end
+        i++
+    end
+    val buf_res = allocators.Arena.alloc(arena, total + 1)
+    var buf ref(u8) = none
+    match buf_res
+        ok m => buf = m as ref(u8)
+        error _ => return ""
+    end
+    var offset usize = 0
+    i = 0
+    for i < @len(segments)
+        val slen usize = str.len(segments[i])
+        @memcpy(@add(buf, offset), segments[i], slen)
+        offset = offset + slen
+        if i + 1 < @len(segments)
+            if i == 0
+                @deref(@as_mut(@add(buf, offset))) = '_'
+                offset++
+                @deref(@as_mut(@add(buf, offset))) = '_'
+                offset++
+            else
+                @deref(@as_mut(@add(buf, offset))) = '.'
+                offset++
+            end
+        end
+        i++
+    end
+    @deref(@as_mut(@add(buf, offset))) = 0
+    return buf
+end
+
 def strip_module_prefix(name ref(u8)) ref(u8)
     val nlen usize = str.len(name)
     var last_sep usize = nlen
@@ -3457,6 +3506,22 @@ def get_expr_type(expr ref(ast.Expr), fun ref(ast.Function), info ref(sema.Progr
                                     if name_matches_suffix_components(fname, segments[0], tname_len, segments[1], mname_len, dot_pos)
                                         return @addr(info.functions[fi].sig.return_type)
                                     end
+                                end
+                            end
+                            fi++
+                        end
+                    else
+                        val method_name ref(u8) = segments[@len(segments) - 1]
+                        var fi usize = 0
+                        for fi < @len(info.functions)
+                            val fname ref(u8) = info.functions[fi].name
+                            val flen usize = str.len(fname)
+                            val slen usize = str.len(method_name)
+                            if flen > slen + 1
+                                val offset usize = flen - slen - 1
+                                val sep u8 = @deref(@add(fname, offset))
+                                if (sep == '.' || (sep == '_' && offset > 0 && @deref(@add(fname, offset - 1)) == '_')) && str.eql(@add(fname, offset + 1), method_name)
+                                    return @addr(info.functions[fi].sig.return_type)
                                 end
                             end
                             fi++

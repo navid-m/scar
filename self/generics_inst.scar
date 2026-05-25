@@ -117,8 +117,22 @@ def rewrite_expr_calls(state ref(GenericState), expr ref(ast.Expr), arena ref(al
                             if @len(segs) > 0
                                 fn_name = segs[@len(segs) - 1]
                                 if @len(segs) > 1
-                                    val joined ref(u8) = join_segs(segs, arena)
-                                    fn_name = joined
+                                    val joined_dunder ref(u8) = join_segs(segs, arena)
+                                    fn_name = joined_dunder
+                                    var tpl ref(ast.Function) = find_template(state, fn_name)
+                                    if tpl == none
+                                        val joined_dot ref(u8) = join_segs_with_dots(segs, arena)
+                                        tpl = find_template(state, joined_dot)
+                                        if tpl != none
+                                            fn_name = joined_dot
+                                        elif @len(segs) >= 3
+                                            val joined_mixed ref(u8) = join_segs_mixed(segs, arena)
+                                            tpl = find_template(state, joined_mixed)
+                                            if tpl != none
+                                                fn_name = joined_mixed
+                                            end
+                                        end
+                                    end
                                 end
                             end
                         )
@@ -128,7 +142,7 @@ def rewrite_expr_calls(state ref(GenericState), expr ref(ast.Expr), arena ref(al
                         var resolved_type_args list[ast.Type] = sp.type_args
                         val template_ref ref(ast.Function) = find_template(state, fn_name)
                         if template_ref != none
-                            resolved_type_args = infer_type_args(template_ref, @addr(c.args), @addr(sp.type_args), state)
+                            resolved_type_args = infer_type_args(template_ref, @addr(c.args), @addr(sp.type_args), state, arena)
                         end
                         val concrete_name ref(u8) = instantiate(state, fn_name, @addr(resolved_type_args), arena)
                         var new_args list[ast.Expr] = []
@@ -415,6 +429,52 @@ def join_segs(segs list[ref(u8)], arena ref(allocators.Arena)) ref(u8)
     end
     @deref(@as_mut(@add(buf, pos))) = 0
     return buf
+end
+
+def join_segs_with_dots(segs list[ref(u8)], arena ref(allocators.Arena)) ref(u8)
+    var total usize = 0
+    var i usize = 0
+    for i < @len(segs)
+        total += str.len(segs[i])
+        if i + 1 < @len(segs)
+            total++
+        end
+        i++
+    end
+    val buf_res = allocators.Arena.alloc(arena, total + 1)
+    var buf ref(u8) = none
+    match buf_res
+        ok m => buf = m as ref(u8)
+        error _ => return segs[0]
+    end
+    var pos usize = 0
+    i = 0
+    for i < @len(segs)
+        val slen usize = str.len(segs[i])
+        @memcpy(@add(buf, pos), segs[i], slen)
+        pos += slen
+        if i + 1 < @len(segs)
+            @deref(@as_mut(@add(buf, pos))) = 46
+            pos++
+        end
+        i++
+    end
+    @deref(@as_mut(@add(buf, pos))) = 0
+    return buf
+end
+
+def join_segs_mixed(segs list[ref(u8)], arena ref(allocators.Arena)) ref(u8)
+    var result ref(u8) = segs[0]
+    var i usize = 1
+    for i < @len(segs)
+        if i == 1
+            result = gen.concat3(result, "__", segs[i], arena)
+        else
+            result = gen.concat3(result, ".", segs[i], arena)
+        end
+        i++
+    end
+    return result
 end
 
 def rewrite_stmt_calls(state ref(GenericState), stmt ref(ast.Stmt), arena ref(allocators.Arena)) ast.Stmt
@@ -746,7 +806,7 @@ def rewrite_stmt_calls(state ref(GenericState), stmt ref(ast.Stmt), arena ref(al
     end
 end
 
-def infer_type_from_expr(expr ref(ast.Expr), state ref(GenericState)) ast.Type
+def infer_type_from_expr(expr ref(ast.Expr), state ref(GenericState), arena ref(allocators.Arena)) ast.Type
     match @deref(expr)
         ast.Expr.Ident(name) => (
             var i usize = 0
@@ -754,7 +814,7 @@ def infer_type_from_expr(expr ref(ast.Expr), state ref(GenericState)) ast.Type
                 match state.current_body[i]
                     ast.Stmt.VarDecl(vd) => (
                         if str.eql(vd.name, name)
-                            return infer_type_from_expr(@addr(vd.init), state)
+                            return infer_type_from_expr(@addr(vd.init), state, arena)
                         end
                     )
                     _ => ()
@@ -762,6 +822,24 @@ def infer_type_from_expr(expr ref(ast.Expr), state ref(GenericState)) ast.Type
                 i++
             end
             return ast.Type.Named("_")
+        )
+        ast.Expr.Try(inner) => (
+            return infer_type_from_expr(inner, state, arena)
+        )
+        ast.Expr.IntLit(_) => return ast.Type.I32(0)
+        ast.Expr.FloatLit(_) => return ast.Type.F64(0)
+        ast.Expr.BoolLit(_) => return ast.Type.Bool(0)
+        ast.Expr.CharLit(_) => return ast.Type.U8(0)
+        ast.Expr.StrLit(_) => (
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.Type) as usize)
+            match raw
+                ok m => (
+                    var p ref(ast.Type) = @bitcast(m, ref(ast.Type))
+                    @deref(p) = ast.Type.U8(0)
+                    return ast.Type.Ref(p)
+                )
+                error _ => return ast.Type.Named("_")
+            end
         )
         ast.Expr.Call(c) => (
             match @deref(c.callee)
@@ -775,6 +853,24 @@ def infer_type_from_expr(expr ref(ast.Expr), state ref(GenericState)) ast.Type
                     end
                     return ast.Type.Named("_")
                 )
+                ast.Expr.Path(segments) => (
+                    if @len(segments) >= 2
+                        var type_name ref(u8) = segments[0]
+                        var i usize = 1
+                        for i < @len(segments) - 1
+                            type_name = gen.concat3(type_name, "__", segments[i], arena)
+                            i++
+                        end
+                        var i2 usize = 0
+                        for i2 < @len(state.type_defs)
+                            if str.eql(state.type_defs[i2].name, type_name)
+                                return ast.Type.Named(type_name)
+                            end
+                            i2++
+                        end
+                    end
+                    return ast.Type.Named("_")
+                )
                 _ => return ast.Type.Named("_")
             end
         )
@@ -782,7 +878,7 @@ def infer_type_from_expr(expr ref(ast.Expr), state ref(GenericState)) ast.Type
     end
 end
 
-def infer_type_args(template ref(ast.Function), call_args ref(list[ast.Expr]), type_args ref(list[ast.Type]), state ref(GenericState)) list[ast.Type]
+def infer_type_args(template ref(ast.Function), call_args ref(list[ast.Expr]), type_args ref(list[ast.Type]), state ref(GenericState), arena ref(allocators.Arena)) list[ast.Type]
     var result list[ast.Type] = []
     var i usize = 0
     for i < @len(@deref(type_args))
@@ -800,7 +896,7 @@ def infer_type_args(template ref(ast.Function), call_args ref(list[ast.Expr]), t
                         match result[j]
                             ast.Type.Named(name) => (
                                 if str.eql(name, "_")
-                                    val inferred ast.Type = infer_type_from_expr(@addr(@deref(call_args)[i]), state)
+                                    val inferred ast.Type = infer_type_from_expr(@addr(@deref(call_args)[i]), state, arena)
                                     match inferred
                                         ast.Type.Named(inferred_name) => (
                                             if !str.eql(inferred_name, "_")
@@ -826,6 +922,7 @@ def infer_type_args(template ref(ast.Function), call_args ref(list[ast.Expr]), t
 end
 
 def rewrite_function_calls(state ref(GenericState), fun ref(ast.Function), arena ref(allocators.Arena))
+    val saved_body list[ast.Stmt] = state.current_body
     state.current_body = fun.body
     var new_body list[ast.Stmt] = []
     var i usize = 0
@@ -834,6 +931,7 @@ def rewrite_function_calls(state ref(GenericState), fun ref(ast.Function), arena
         i++
     end
     fun.body = new_body
+    state.current_body = saved_body
 end
 
 pub def instantiate_generics(program ref(ast.Program), arena ref(allocators.Arena)) ast.Program
