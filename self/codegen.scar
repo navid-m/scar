@@ -58,7 +58,7 @@ pub def generate_c(program ref(ast.Program), info ref(sema.ProgramInfo), arena r
     if @len(list_types) > 0
         j = 0
         for j < @len(list_types)
-            render_list_typedef(@addr(list_types[j]), arena, @addr(output), @addr(output_len))
+            render_list_typedef(@addr(list_types[j]), info, arena, @addr(output), @addr(output_len))
             j++
         end
         append_str(@addr(output), @addr(output_len), "\n")
@@ -67,14 +67,14 @@ pub def generate_c(program ref(ast.Program), info ref(sema.ProgramInfo), arena r
     j = 0
     for j < @len(program.type_defs)
         val td ref(ast.TypeDef) = @addr(program.type_defs[j])
-        render_typedef(td, arena, @addr(output), @addr(output_len))
+        render_typedef(td, info, arena, @addr(output), @addr(output_len))
         j++
     end
 
     if @len(list_types) > 0
         j = 0
         for j < @len(list_types)
-            render_list_helpers(@addr(list_types[j]), arena, @addr(output), @addr(output_len))
+            render_list_helpers(@addr(list_types[j]), info, arena, @addr(output), @addr(output_len))
             append_str(@addr(output), @addr(output_len), "\n")
             j++
         end
@@ -84,7 +84,7 @@ pub def generate_c(program ref(ast.Program), info ref(sema.ProgramInfo), arena r
     if @len(result_types) > 0
         var ri usize = 0
         for ri < @len(result_types)
-            render_result_typedef(@addr(result_types[ri]), arena, @addr(output), @addr(output_len))
+            render_result_typedef(@addr(result_types[ri]), info, arena, @addr(output), @addr(output_len))
             ri++
         end
         append_str(@addr(output), @addr(output_len), "\n")
@@ -362,10 +362,10 @@ def collect_list_types_from_type(ty ref(ast.Type), seen ref(list[ast.Type]), are
     end
 end
 
-def render_list_typedef(list_ty ref(ast.Type), arena ref(allocators.Arena), output ref(ref(u8)), output_len ref(usize))
+def render_list_typedef(list_ty ref(ast.Type), info ref(sema.ProgramInfo), arena ref(allocators.Arena), output ref(ref(u8)), output_len ref(usize))
     val element_ty ref(ast.Type) = get_list_element_type(list_ty)
-    val list_name ref(u8) = c_type(list_ty, arena)
-    val element_c_type ref(u8) = c_type(element_ty, arena)
+    val list_name ref(u8) = c_type(list_ty, info, arena)
+    val element_c_type ref(u8) = c_type(element_ty, info, arena)
     append_str(output, output_len, "typedef struct {\n")
     append_str(output, output_len, "    ")
     append_str(output, output_len, element_c_type)
@@ -377,10 +377,10 @@ def render_list_typedef(list_ty ref(ast.Type), arena ref(allocators.Arena), outp
     append_str(output, output_len, ";\n")
 end
 
-def render_list_helpers(list_ty ref(ast.Type), arena ref(allocators.Arena), output ref(ref(u8)), output_len ref(usize))
+def render_list_helpers(list_ty ref(ast.Type), info ref(sema.ProgramInfo), arena ref(allocators.Arena), output ref(ref(u8)), output_len ref(usize))
     val element_ty ref(ast.Type) = get_list_element_type(list_ty)
-    val list_name ref(u8) = c_type(list_ty, arena)
-    val element_c_type ref(u8) = c_type(element_ty, arena)
+    val list_name ref(u8) = c_type(list_ty, info, arena)
+    val element_c_type ref(u8) = c_type(element_ty, info, arena)
     val helper_prefix ref(u8) = list_helper_prefix(element_ty, arena)
 
     append_str(output, output_len, "static ")
@@ -756,8 +756,8 @@ def types_equal(a ref(ast.Type), b ref(ast.Type)) bool
     end
 end
 
-def render_result_typedef(ok_ty ref(ast.Type), arena ref(allocators.Arena), output ref(ref(u8)), output_len ref(usize))
-    var ok_c_type ref(u8) = c_type(ok_ty, arena)
+def render_result_typedef(ok_ty ref(ast.Type), info ref(sema.ProgramInfo), arena ref(allocators.Arena), output ref(ref(u8)), output_len ref(usize))
+    var ok_c_type ref(u8) = c_type(ok_ty, info, arena)
     if str.eql(ok_c_type, "void")
         ok_c_type = "uint8_t"
     end
@@ -806,7 +806,7 @@ def render_typedef_forward(td ref(ast.TypeDef), output ref(ref(u8)), output_len 
     end
 end
 
-def render_typedef(td ref(ast.TypeDef), arena ref(allocators.Arena), output ref(ref(u8)), output_len ref(usize))
+def render_typedef(td ref(ast.TypeDef), info ref(sema.ProgramInfo), arena ref(allocators.Arena), output ref(ref(u8)), output_len ref(usize))
     match td.kind
         ast.TypeDefKind.Enum => (
             val enum_c_prefix ref(u8) = make_enum_c_prefix(td.name, arena)
@@ -859,7 +859,7 @@ def render_typedef(td ref(ast.TypeDef), arena ref(allocators.Arena), output ref(
                     append_str(output, output_len, "            ")
                     match @deref(inner_ty)
                         ast.Type.StaticArray(sa_size, sa_inner) => (
-                            append_str(output, output_len, c_type(sa_inner, arena))
+                            append_str(output, output_len, c_type(sa_inner, info, arena))
                             append_str(output, output_len, " _")
                             append_usize(output, output_len, j, arena)
                             append_str(output, output_len, "[")
@@ -867,7 +867,7 @@ def render_typedef(td ref(ast.TypeDef), arena ref(allocators.Arena), output ref(
                             append_str(output, output_len, "]")
                         )
                         _ => (
-                            append_str(output, output_len, c_type(inner_ty, arena))
+                            append_str(output, output_len, c_type(inner_ty, info, arena))
                             append_str(output, output_len, " _")
                             append_usize(output, output_len, j, arena)
                         )
@@ -893,7 +893,7 @@ def render_typedef(td ref(ast.TypeDef), arena ref(allocators.Arena), output ref(
             for i < @len(td.fields)
                 val field ref(ast.FieldDef) = @addr(td.fields[i])
                 append_str(output, output_len, "    ")
-                append_str(output, output_len, c_type_decl(@addr(field.ty), field.name, arena))
+                append_str(output, output_len, c_type_decl(@addr(field.ty), field.name, info, arena))
                 append_str(output, output_len, ";\n")
                 i++
             end
@@ -1036,13 +1036,13 @@ def render_function(fun ref(ast.Function), info ref(sema.ProgramInfo), arena ref
 
     if !is_void_type(@addr(fun.return_type))
         indent(output, output_len, 1)
-        append_str(output, output_len, c_type_bare(@addr(fun.return_type), arena))
+        append_str(output, output_len, c_type_bare(@addr(fun.return_type), info, arena))
         append_str(output, output_len, " __scar_return_value;\n")
         match fun.return_type
             ast.Type.Result(ok_ty) => (
                 if is_void_type(ok_ty)
                     append_str(output, output_len, "    __scar_return_value = ((")
-                    append_str(output, output_len, c_type_bare(@addr(fun.return_type), arena))
+                    append_str(output, output_len, c_type_bare(@addr(fun.return_type), info, arena))
                     append_str(output, output_len, "){ .is_error = 0, .ok = 0, .error = NULL });\n")
                 end
             )
@@ -1083,7 +1083,7 @@ def render_defers(defers ref(list[list[ast.Stmt]]), from_level usize, fun ref(as
 end
 
 def render_signature(fun ref(ast.Function), info ref(sema.ProgramInfo), arena ref(allocators.Arena), output ref(ref(u8)), output_len ref(usize))
-    val return_type ref(u8) = c_type_bare(@addr(fun.return_type), arena)
+    val return_type ref(u8) = c_type_bare(@addr(fun.return_type), info, arena)
     val symbol ref(u8) = lookup_symbol(fun.name, info, arena)
 
     if fun.is_extern
@@ -1102,7 +1102,7 @@ def render_signature(fun ref(ast.Function), info ref(sema.ProgramInfo), arena re
             if i > 0
                 append_str(output, output_len, ", ")
             end
-            append_str(output, output_len, c_type_bare(@addr(fun.params[i].ty), arena))
+            append_str(output, output_len, c_type_bare(@addr(fun.params[i].ty), info, arena))
             append_str(output, output_len, " ")
             append_str(output, output_len, mangle_local_symbol(fun.params[i].name, arena))
             i++
@@ -1111,22 +1111,87 @@ def render_signature(fun ref(ast.Function), info ref(sema.ProgramInfo), arena re
     append_str(output, output_len, ")")
 end
 
+def render_try_temp(inner ref(ast.Expr), fun ref(ast.Function), info ref(sema.ProgramInfo), level usize, next_temp_id ref(usize), defers ref(list[list[ast.Stmt]]), arena ref(allocators.Arena), output ref(ref(u8)), output_len ref(usize))
+    val temp_id usize = @deref(next_temp_id)
+    @deref(next_temp_id) = temp_id + 1
+    val inner_result_ty ref(ast.Type) = get_expr_type(inner, fun, info)
+
+    indent(output, output_len, level)
+    append_str(output, output_len, c_type(inner_result_ty, info, arena))
+    append_str(output, output_len, " __scar_try_")
+    append_usize(output, output_len, temp_id, arena)
+    append_str(output, output_len, " = ")
+    append_expr(inner, fun, info, arena, output, output_len)
+    append_str(output, output_len, ";\n")
+
+    indent(output, output_len, level)
+    append_str(output, output_len, "if (__scar_try_")
+    append_usize(output, output_len, temp_id, arena)
+    append_str(output, output_len, ".is_error) {\n")
+
+    match fun.return_type
+        ast.Type.Result(ok_ty) => (
+            indent(output, output_len, level + 1)
+            append_str(output, output_len, "__scar_return_value = ((")
+            append_str(output, output_len, c_type(@addr(ast.Type.Result(ok_ty)), info, arena))
+            append_str(output, output_len, "){ .is_error = 1, .ok = ")
+            if is_void_type(ok_ty)
+                append_str(output, output_len, "0")
+            else
+                append_str(output, output_len, "(")
+                append_str(output, output_len, c_type(ok_ty, info, arena))
+                append_str(output, output_len, "){0}")
+            end
+            append_str(output, output_len, ", .error = __scar_try_")
+            append_usize(output, output_len, temp_id, arena)
+            append_str(output, output_len, ".error });\n")
+            render_defers(defers, 0, fun, info, level + 1, next_temp_id, arena, output, output_len)
+            indent(output, output_len, level + 1)
+            append_str(output, output_len, "goto __scar_return;\n")
+        )
+        _ => ()
+    end
+
+    indent(output, output_len, level)
+    append_str(output, output_len, "}\n")
+end
+
+def render_try_var_decl(vd ref(ast.StmtVarDecl), inner ref(ast.Expr), fun ref(ast.Function), info ref(sema.ProgramInfo), level usize, next_temp_id ref(usize), defers ref(list[list[ast.Stmt]]), arena ref(allocators.Arena), output ref(ref(u8)), output_len ref(usize))
+    render_try_temp(inner, fun, info, level, next_temp_id, defers, arena, output, output_len)
+    val ty ref(ast.Type) = lookup_local_type(vd.name, fun, info)
+    indent(output, output_len, level)
+    if !vd.mutable && !is_aggregate_type(ty)
+        append_str(output, output_len, "const ")
+    end
+    append_str(output, output_len, c_type_named(ty, vd.name, info, arena))
+    append_str(output, output_len, " = __scar_try_")
+    append_usize(output, output_len, (@deref(next_temp_id) - 1), arena)
+    append_str(output, output_len, ".ok;\n")
+end
+
 def render_stmt(stmt ref(ast.Stmt), fun ref(ast.Function), info ref(sema.ProgramInfo), level usize, next_temp_id ref(usize), defers ref(list[list[ast.Stmt]]), arena ref(allocators.Arena), output ref(ref(u8)), output_len ref(usize))
     match @deref(stmt)
         ast.Stmt.VarDecl(vd) => (
-            val ty ref(ast.Type) = lookup_local_type(vd.name, fun, info)
-            indent(output, output_len, level)
-            if !vd.mutable && !is_aggregate_type(ty)
-                append_str(output, output_len, "const ")
+            match vd.init
+                ast.Expr.Try(inner) => (
+                    render_try_var_decl(vd, inner, fun, info, level, next_temp_id, defers, arena, output, output_len)
+                )
+                _ => (
+                    val ty ref(ast.Type) = lookup_local_type(vd.name, fun, info)
+                    indent(output, output_len, level)
+                    if !vd.mutable && !is_aggregate_type(ty)
+                        append_str(output, output_len, "const ")
+                    end
+                    append_str(output, output_len, c_type_named(ty, vd.name, info, arena))
+                    append_str(output, output_len, " = ")
+                    if is_list_lit_expr(@addr(vd.init))
+                        append_list_literal_from_expr(@addr(vd.init), ty, fun, info, arena, output, output_len)
+                    else
+                        append_expr(@addr(vd.init), fun, info, arena, output, output_len)
+                    end
+                    append_str(output, output_len, ";\n")
+                )
             end
-            append_str(output, output_len, c_type_named(ty, vd.name, arena))
-            append_str(output, output_len, " = ")
-            if is_list_lit_expr(@addr(vd.init))
-                append_list_literal_from_expr(@addr(vd.init), ty, fun, info, arena, output, output_len)
-            else
-                append_expr(@addr(vd.init), fun, info, arena, output, output_len)
-            end
-            append_str(output, output_len, ";\n")
         )
         ast.Stmt.Assign(a) => (
             indent(output, output_len, level)
@@ -1201,7 +1266,7 @@ def render_stmt(stmt ref(ast.Stmt), fun ref(ast.Function), info ref(sema.Program
                                 append_str(output, output_len, ";\n")
                             )
                             _ => (
-                                val result_c_type ref(u8) = c_type(@addr(ast.Type.Result(ok_ty)), arena)
+                                val result_c_type ref(u8) = c_type(@addr(ast.Type.Result(ok_ty)), info, arena)
                                 append_str(output, output_len, "__scar_return_value = ((")
                                 append_str(output, output_len, result_c_type)
                                 match r.value
@@ -1211,7 +1276,7 @@ def render_stmt(stmt ref(ast.Stmt), fun ref(ast.Function), info ref(sema.Program
                                             append_str(output, output_len, "0")
                                         else
                                             append_str(output, output_len, "(")
-                                            append_str(output, output_len, c_type(ok_ty, arena))
+                                            append_str(output, output_len, c_type(ok_ty, info, arena))
                                             append_str(output, output_len, "){0}")
                                         end
                                         append_str(output, output_len, ", .error = \"")
@@ -1291,7 +1356,7 @@ def render_stmt(stmt ref(ast.Stmt), fun ref(ast.Function), info ref(sema.Program
             val var_ty ref(ast.Type) = lookup_local_type(fr.var_name, fun, info)
             indent(output, output_len, level)
             append_str(output, output_len, "for (")
-            append_str(output, output_len, c_type(var_ty, arena))
+            append_str(output, output_len, c_type(var_ty, info, arena))
             append_str(output, output_len, " ")
             append_str(output, output_len, mangle_local_symbol(fr.var_name, arena))
             append_str(output, output_len, " = ")
@@ -1325,7 +1390,7 @@ def render_stmt(stmt ref(ast.Stmt), fun ref(ast.Function), info ref(sema.Program
             indent(output, output_len, level)
             append_str(output, output_len, "{\n")
             indent(output, output_len, level + 1)
-            append_str(output, output_len, c_type(iter_ty, arena))
+            append_str(output, output_len, c_type(iter_ty, info, arena))
             append_str(output, output_len, " ")
             append_str(output, output_len, iter_name)
             append_str(output, output_len, " = ")
@@ -1342,7 +1407,7 @@ def render_stmt(stmt ref(ast.Stmt), fun ref(ast.Function), info ref(sema.Program
             append_str(output, output_len, index_name)
             append_str(output, output_len, ") {\n")
             indent(output, output_len, level + 2)
-            append_str(output, output_len, c_type_named(elem_ty, fe.var_name, arena))
+            append_str(output, output_len, c_type_named(elem_ty, fe.var_name, info, arena))
             append_str(output, output_len, " = ")
             append_str(output, output_len, iter_name)
             append_str(output, output_len, ".data[")
@@ -1370,7 +1435,7 @@ def render_stmt(stmt ref(ast.Stmt), fun ref(ast.Function), info ref(sema.Program
             indent(output, output_len, level)
             append_str(output, output_len, "{\n")
             indent(output, output_len, level + 1)
-            append_str(output, output_len, c_type_bare(@addr(matched_ty), arena))
+            append_str(output, output_len, c_type_bare(@addr(matched_ty), info, arena))
             append_str(output, output_len, " ")
             append_str(output, output_len, temp_name)
             append_str(output, output_len, " = ")
@@ -1469,7 +1534,7 @@ def render_stmt(stmt ref(ast.Stmt), fun ref(ast.Function), info ref(sema.Program
                                                     for vi < @len(info.types[ti].info.variant_map)
                                                         if str.eql(info.types[ti].info.variant_map[vi].name, bare_variant)
                                                             if bi < @len(info.types[ti].info.variant_map[vi].payload_types)
-                                                                payload_ty = c_type(@addr(info.types[ti].info.variant_map[vi].payload_types[bi]), arena)
+                                                                payload_ty = c_type(@addr(info.types[ti].info.variant_map[vi].payload_types[bi]), info, arena)
                                                             end
                                                             break
                                                         end
@@ -1539,7 +1604,7 @@ def render_stmt(stmt ref(ast.Stmt), fun ref(ast.Function), info ref(sema.Program
                                     if @len(m.arms[k].bindings) > 0
                                         if str.len(m.arms[k].bindings[0]) > 0
                                             indent(output, output_len, level + 2)
-                                            append_str(output, output_len, c_type(ok_ty, arena))
+                                            append_str(output, output_len, c_type(ok_ty, info, arena))
                                             append_str(output, output_len, " loc__")
                                             append_str(output, output_len, m.arms[k].bindings[0])
                                             append_str(output, output_len, " = ")
@@ -1617,9 +1682,16 @@ def render_stmt(stmt ref(ast.Stmt), fun ref(ast.Function), info ref(sema.Program
             append_str(output, output_len, "}\n")
         )
         ast.Stmt.ExprStmt(e) => (
-            indent(output, output_len, level)
-            append_expr(e, fun, info, arena, output, output_len)
-            append_str(output, output_len, ";\n")
+            match @deref(e)
+                ast.Expr.Try(inner) => (
+                    render_try_temp(inner, fun, info, level, next_temp_id, defers, arena, output, output_len)
+                )
+                _ => (
+                    indent(output, output_len, level)
+                    append_expr(e, fun, info, arena, output, output_len)
+                    append_str(output, output_len, ";\n")
+                )
+            end
         )
         ast.Stmt.Increment(e) => (
             indent(output, output_len, level)
@@ -1744,46 +1816,16 @@ def append_expr(expr ref(ast.Expr), fun ref(ast.Function), info ref(sema.Program
                     var is_known_global bool = false
                     var gi usize = 0
                     for gi < @len(info.functions)
-                        if str.eql(info.functions[gi].name, segments[0])
+                        if str.eql(info.functions[gi].name, segments[0]) || name_matches_suffix(info.functions[gi].name, segments[0])
                             is_known_global = true
                             break
                         end
                         gi++
                     end
                     if !is_known_global
-                        var ti usize = 0
-                        for ti < @len(info.types)
-                            if str.eql(info.types[ti].name, segments[0])
-                                is_known_global = true
-                                break
-                            end
-                            ti++
-                        end
-                    end
-                    if !is_known_global
-                        val prefix_len usize = str.len(segments[0])
-                        var gi2 usize = 0
-                        for gi2 < @len(info.functions)
-                            val fname ref(u8) = info.functions[gi2].name
-                            val flen usize = str.len(fname)
-                            if flen > prefix_len + 2
-                                if @deref(@add(fname, prefix_len)) == '_' && @deref(@add(fname, prefix_len + 1)) == '_'
-                                    var match_prefix bool = true
-                                    var ci usize = 0
-                                    for ci < prefix_len
-                                        if @deref(@add(fname, ci)) != @deref(@add(segments[0], ci))
-                                            match_prefix = false
-                                            break
-                                        end
-                                        ci++
-                                    end
-                                    if match_prefix
-                                        is_known_global = true
-                                        break
-                                    end
-                                end
-                            end
-                            gi2++
+                        val resolved_type ref(u8) = resolve_type_name(segments[0], info)
+                        if !str.eql(resolved_type, segments[0])
+                            is_known_global = true
                         end
                     end
                     if !is_known_global
@@ -1815,19 +1857,16 @@ def append_expr(expr ref(ast.Expr), fun ref(ast.Function), info ref(sema.Program
                     var found_sym bool = false
                     if @len(segments) >= 2
                         val dotted ref(u8) = join_segments_with_dots(segments, arena)
-                        var si usize = 0
-                        for si < @len(info.function_symbols)
-                            if str.eql(info.function_symbols[si].name, dotted)
-                                append_str(output, output_len, info.function_symbols[si].symbol)
-                                found_sym = true
-                                break
-                            end
-                            si++
+                        val sym ref(u8) = find_symbol_in_list(dotted, info)
+                        if sym != none
+                            append_str(output, output_len, sym)
+                            found_sym = true
                         end
                     end
                     if !found_sym
                         val joined ref(u8) = join_segments_with_dunder(segments, arena)
-                        append_str(output, output_len, lookup_symbol(joined, info, arena))
+                        val sym ref(u8) = lookup_symbol(joined, info, arena)
+                        append_str(output, output_len, sym)
                     end
                 end
             end
@@ -2049,21 +2088,21 @@ def append_expr(expr ref(ast.Expr), fun ref(ast.Function), info ref(sema.Program
         )
         ast.Expr.Cast(c) => (
             append_str(output, output_len, "((")
-            append_str(output, output_len, c_type(@addr(c.ty), arena))
+            append_str(output, output_len, c_type(@addr(c.ty), info, arena))
             append_str(output, output_len, ")(")
             append_expr(c.expr, fun, info, arena, output, output_len)
             append_str(output, output_len, "))")
         )
         ast.Expr.BitCast(bc) => (
             append_str(output, output_len, "((")
-            append_str(output, output_len, c_type(@addr(bc.ty), arena))
+            append_str(output, output_len, c_type(@addr(bc.ty), info, arena))
             append_str(output, output_len, ")(")
             append_expr(bc.expr, fun, info, arena, output, output_len)
             append_str(output, output_len, "))")
         )
         ast.Expr.SizeOf(ty) => (
             append_str(output, output_len, "((size_t)sizeof(")
-            append_str(output, output_len, c_type(ty, arena))
+            append_str(output, output_len, c_type(ty, info, arena))
             append_str(output, output_len, "))")
         )
         ast.Expr.ListLit(elems) => (
@@ -2083,8 +2122,9 @@ def append_expr(expr ref(ast.Expr), fun ref(ast.Function), info ref(sema.Program
             end
         )
         ast.Expr.StructInit(si) => (
+            val struct_type_name ref(u8) = resolve_struct_name(si.name, info)
             append_str(output, output_len, "(")
-            append_str(output, output_len, si.name)
+            append_str(output, output_len, struct_type_name)
             append_str(output, output_len, "){ ")
             var i usize = 0
             for i < @len(si.fields)
@@ -2144,15 +2184,11 @@ def append_expr(expr ref(ast.Expr), fun ref(ast.Function), info ref(sema.Program
                                 end
                                 if found_type
                                     val dotted_name ref(u8) = join_two_with_dot(type_name, mc.method, arena)
-                                    var sym_i usize = 0
                                     var found_sym bool = false
-                                    for sym_i < @len(info.function_symbols)
-                                        if str.eql(info.function_symbols[sym_i].name, dotted_name)
-                                            append_str(output, output_len, info.function_symbols[sym_i].symbol)
-                                            found_sym = true
-                                            break
-                                        end
-                                        sym_i++
+                                    val sym ref(u8) = find_symbol_in_list(dotted_name, info)
+                                    if sym != none
+                                        append_str(output, output_len, sym)
+                                        found_sym = true
                                     end
                                     if found_sym
                                         append_str(output, output_len, "(")
@@ -2577,7 +2613,7 @@ def render_entrypoint(fun ref(ast.Function), info ref(sema.ProgramInfo), arena r
     append_str(output, output_len, "}\n")
 end
 
-def c_type(ty ref(ast.Type), arena ref(allocators.Arena)) ref(u8)
+def c_type(ty ref(ast.Type), info ref(sema.ProgramInfo), arena ref(allocators.Arena)) ref(u8)
     match @deref(ty)
         ast.Type.Void(_) => return "void"
         ast.Type.Bool(_) => return "int32_t"
@@ -2594,7 +2630,7 @@ def c_type(ty ref(ast.Type), arena ref(allocators.Arena)) ref(u8)
         ast.Type.F32(_) => return "float"
         ast.Type.F64(_) => return "double"
         ast.Type.Ref(inner) => (
-            val inner_type ref(u8) = c_type(inner, arena)
+            val inner_type ref(u8) = c_type(inner, info, arena)
             val inner_len usize = str.len(inner_type)
             val result_res = allocators.Arena.alloc(arena, inner_len + 3)
             var result ref(u8) = none
@@ -2609,7 +2645,7 @@ def c_type(ty ref(ast.Type), arena ref(allocators.Arena)) ref(u8)
             return result
         )
         ast.Type.Mut(inner) => (
-            return c_type(inner, arena)
+            return c_type(inner, info, arena)
         )
         ast.Type.List(inner) => (
             val suffix ref(u8) = type_suffix(inner, arena)
@@ -2643,14 +2679,14 @@ def c_type(ty ref(ast.Type), arena ref(allocators.Arena)) ref(u8)
             @deref(@as_mut(@add(result, plen + islen))) = 0
             return result
         )
-        ast.Type.Named(name) => return name
-        ast.Type.Applied(name, _) => return name
+        ast.Type.Named(name) => return resolve_type_name(name, info)
+        ast.Type.Applied(name, _) => return resolve_type_name(name, info)
         ast.Type.FnPtr(_, _) => return "void *"
         ast.Type.Infer(_) => return "void"
         ast.Type.Error(_) => return "const char *"
         ast.Type.None(_) => return "NULL"
         ast.Type.StaticArray(_, inner) => (
-            val inner_type ref(u8) = c_type(inner, arena)
+            val inner_type ref(u8) = c_type(inner, info, arena)
             val inner_len usize = str.len(inner_type)
             val result_res = allocators.Arena.alloc(arena, inner_len + 1)
             var result ref(u8) = none
@@ -2666,8 +2702,8 @@ def c_type(ty ref(ast.Type), arena ref(allocators.Arena)) ref(u8)
     return "void"
 end
 
-def c_type_bare(ty ref(ast.Type), arena ref(allocators.Arena)) ref(u8)
-    return c_type(ty, arena)
+def c_type_bare(ty ref(ast.Type), info ref(sema.ProgramInfo), arena ref(allocators.Arena)) ref(u8)
+    return c_type(ty, info, arena)
 end
 
 def mangle_type_name(name ref(u8), arena ref(allocators.Arena)) ref(u8)
@@ -2709,10 +2745,10 @@ def mangle_type_name(name ref(u8), arena ref(allocators.Arena)) ref(u8)
     return result
 end
 
-def c_type_decl(ty ref(ast.Type), name ref(u8), arena ref(allocators.Arena)) ref(u8)
+def c_type_decl(ty ref(ast.Type), name ref(u8), info ref(sema.ProgramInfo), arena ref(allocators.Arena)) ref(u8)
     match @deref(ty)
         ast.Type.StaticArray(size, inner) => (
-            val base ref(u8) = c_type_bare(inner, arena)
+            val base ref(u8) = c_type_bare(inner, info, arena)
             val base_len usize = str.len(base)
             val name_len usize = str.len(name)
             var size_buf list[u8] = []
@@ -2743,7 +2779,7 @@ def c_type_decl(ty ref(ast.Type), name ref(u8), arena ref(allocators.Arena)) ref
             return result
         )
         _ => (
-            val base ref(u8) = c_type_bare(ty, arena)
+            val base ref(u8) = c_type_bare(ty, info, arena)
             val base_len usize = str.len(base)
             val name_len usize = str.len(name)
             val result_res = allocators.Arena.alloc(arena, base_len + 1 + name_len + 1)
@@ -2761,9 +2797,9 @@ def c_type_decl(ty ref(ast.Type), name ref(u8), arena ref(allocators.Arena)) ref
     end
 end
 
-def c_type_named(ty ref(ast.Type), name ref(u8), arena ref(allocators.Arena)) ref(u8)
+def c_type_named(ty ref(ast.Type), name ref(u8), info ref(sema.ProgramInfo), arena ref(allocators.Arena)) ref(u8)
     val mangled ref(u8) = mangle_local_symbol(name, arena)
-    return c_type_decl(ty, mangled, arena)
+    return c_type_decl(ty, mangled, info, arena)
 end
 
 def type_suffix(ty ref(ast.Type), arena ref(allocators.Arena)) ref(u8)
@@ -3017,6 +3053,33 @@ def mangle_local_symbol(name ref(u8), arena ref(allocators.Arena)) ref(u8)
     return result
 end
 
+def resolve_type_name(name ref(u8), info ref(sema.ProgramInfo)) ref(u8)
+    var i usize = 0
+    val name_len usize = str.len(name)
+    for i < @len(info.types)
+        val full_name ref(u8) = info.types[i].name
+        if str.eql(full_name, name)
+            return full_name
+        end
+        val full_len usize = str.len(full_name)
+        if full_len > name_len + 1
+            val offset usize = full_len - name_len - 1
+            val sep u8 = @deref(@add(full_name, offset))
+            if sep == '_' && offset > 0 && @deref(@add(full_name, offset - 1)) == '_'
+                if str.eql(@add(full_name, offset + 1), name)
+                    return full_name
+                end
+            end
+        end
+        i++
+    end
+    return name
+end
+
+def resolve_struct_name(name ref(u8), info ref(sema.ProgramInfo)) ref(u8)
+    return resolve_type_name(name, info)
+end
+
 def find_last_dot(s ref(u8)) usize
     val slen usize = str.len(s)
     var i usize = slen
@@ -3192,7 +3255,7 @@ def append_list_literal_from_expr(expr ref(ast.Expr), hint ref(ast.Type), fun re
             else
                 append_str(output, output_len, helper_prefix)
                 append_str(output, output_len, "_from_array((")
-                append_str(output, output_len, c_type(element_ty, arena))
+                append_str(output, output_len, c_type(element_ty, info, arena))
                 append_str(output, output_len, " const []){")
                 var i usize = 0
                 for i < @len(elems)
@@ -3298,34 +3361,26 @@ def get_expr_type(expr ref(ast.Expr), fun ref(ast.Function), info ref(sema.Progr
                 ast.Expr.Ident(name) => (
                     var i usize = 0
                     for i < @len(info.functions)
-                        if str.eql(info.functions[i].name, name)
+                        if str.eql(info.functions[i].name, name) || name_matches_suffix(info.functions[i].name, name)
                             return @addr(info.functions[i].sig.return_type)
                         end
                         i++
                     end
-                    var ti usize = 0
-                    for ti < @len(info.types)
-                        if str.eql(info.types[ti].name, name)
-                            return @addr(ast.Type.Named(name))
-                        end
-                        ti++
+                    if !str.eql(resolve_type_name(name, info), name)
+                        return @addr(ast.Type.Named(name))
                     end
                 )
                 ast.Expr.Path(segments) => (
                     if @len(segments) == 1
                         var i usize = 0
                         for i < @len(info.functions)
-                            if str.eql(info.functions[i].name, segments[0])
+                            if str.eql(info.functions[i].name, segments[0]) || name_matches_suffix(info.functions[i].name, segments[0])
                                 return @addr(info.functions[i].sig.return_type)
                             end
                             i++
                         end
-                        var ti usize = 0
-                        for ti < @len(info.types)
-                            if str.eql(info.types[ti].name, segments[0])
-                                return @addr(ast.Type.Named(segments[0]))
-                            end
-                            ti++
+                        if !str.eql(resolve_type_name(segments[0], info), segments[0])
+                            return @addr(ast.Type.Named(segments[0]))
                         end
                     elif @len(segments) == 2
                         var is_union_ctor bool = false
@@ -3342,35 +3397,17 @@ def get_expr_type(expr ref(ast.Expr), fun ref(ast.Function), info ref(sema.Progr
                         if is_union_ctor
                             return @addr(ast.Type.Named(segments[0]))
                         end
-                        val tname_len usize = str.len(segments[0])
-                        val method_len usize = str.len(segments[1])
                         var fi usize = 0
+                        val tname_len usize = str.len(segments[0])
+                        val mname_len usize = str.len(segments[1])
                         for fi < @len(info.functions)
                             val fname ref(u8) = info.functions[fi].name
                             val flen usize = str.len(fname)
-                            if flen == tname_len + 1 + method_len
-                                if @deref(@add(fname, tname_len)) == '.'
-                                    var matches bool = true
-                                    var ci usize = 0
-                                    for ci < tname_len
-                                        if @deref(@add(fname, ci)) != @deref(@add(segments[0], ci))
-                                            matches = false
-                                            break
-                                        end
-                                        ci++
-                                    end
-                                    if matches
-                                        ci = 0
-                                        for ci < method_len
-                                            if @deref(@add(fname, tname_len + 1 + ci)) != @deref(@add(segments[1], ci))
-                                                matches = false
-                                                break
-                                            end
-                                            ci++
-                                        end
-                                        if matches
-                                            return @addr(info.functions[fi].sig.return_type)
-                                        end
+                            if flen >= tname_len + 1 + mname_len
+                                val dot_pos = flen - mname_len - 1
+                                if @deref(@add(fname, dot_pos)) == '.'
+                                    if name_matches_suffix_components(fname, segments[0], tname_len, segments[1], mname_len, dot_pos)
+                                        return @addr(info.functions[fi].sig.return_type)
                                     end
                                 end
                             end
@@ -3380,40 +3417,23 @@ def get_expr_type(expr ref(ast.Expr), fun ref(ast.Function), info ref(sema.Progr
                 )
                 _ => ()
             end
+            return @addr(ast.Type.Void(0))
         )
         ast.Expr.MethodCall(mc) => (
             val receiver_ty ref(ast.Type) = get_expr_type(mc.receiver, fun, info)
             val type_name ref(u8) = extract_type_name(receiver_ty)
             val tname_len usize = str.len(type_name)
+            val mname_len usize = str.len(mc.method)
             if tname_len > 0
-                val method_len usize = str.len(mc.method)
                 var fi usize = 0
                 for fi < @len(info.functions)
                     val fname ref(u8) = info.functions[fi].name
                     val flen usize = str.len(fname)
-                    if flen == tname_len + 1 + method_len
-                        if @deref(@add(fname, tname_len)) == '.'
-                            var matches bool = true
-                            var ci usize = 0
-                            for ci < tname_len
-                                if @deref(@add(fname, ci)) != @deref(@add(type_name, ci))
-                                    matches = false
-                                    break
-                                end
-                                ci++
-                            end
-                            if matches
-                                ci = 0
-                                for ci < method_len
-                                    if @deref(@add(fname, tname_len + 1 + ci)) != @deref(@add(mc.method, ci))
-                                        matches = false
-                                        break
-                                    end
-                                    ci++
-                                end
-                                if matches
-                                    return @addr(info.functions[fi].sig.return_type)
-                                end
+                    if flen >= tname_len + 1 + mname_len
+                        val dot_pos = flen - mname_len - 1
+                        if @deref(@add(fname, dot_pos)) == '.'
+                            if name_matches_suffix_components(fname, type_name, tname_len, mc.method, mname_len, dot_pos)
+                                return @addr(info.functions[fi].sig.return_type)
                             end
                         end
                     end
@@ -3485,13 +3505,61 @@ def is_list_type(ty ref(ast.Type)) bool
     end
 end
 
-def lookup_symbol(name ref(u8), info ref(sema.ProgramInfo), arena ref(allocators.Arena)) ref(u8)
+def name_matches_suffix_components(full_name ref(u8), type_name ref(u8), tname_len usize, method_name ref(u8), mname_len usize, dot_pos usize) bool
+    if @deref(@add(full_name, dot_pos)) != '.'
+        return false
+    end
+    var ci usize = 0
+    for ci < tname_len
+        if @deref(@add(full_name, dot_pos - tname_len + ci)) != @deref(@add(type_name, ci))
+            return false
+        end
+        ci++
+    end
+    for ci < mname_len
+        if @deref(@add(full_name, dot_pos + 1 + ci)) != @deref(@add(method_name, ci))
+            return false
+        end
+        ci++
+    end
+    return true
+end
+
+def name_matches_suffix(full_name ref(u8), short_name ref(u8)) bool
+    val flen usize = str.len(full_name)
+    val slen usize = str.len(short_name)
+    if flen > slen + 1
+        val offset usize = flen - slen - 1
+        val sep u8 = @deref(@add(full_name, offset))
+        if sep == '.' || (sep == '_' && offset > 0 && @deref(@add(full_name, offset - 1)) == '_')
+            return str.eql(@add(full_name, offset + 1), short_name)
+        end
+    end
+    return false
+end
+
+def find_symbol_in_list(name ref(u8), info ref(sema.ProgramInfo)) ref(u8)
     var i usize = 0
     for i < @len(info.function_symbols)
         if str.eql(info.function_symbols[i].name, name)
             return info.function_symbols[i].symbol
         end
         i++
+    end
+    i = 0
+    for i < @len(info.function_symbols)
+        if name_matches_suffix(info.function_symbols[i].name, name)
+            return info.function_symbols[i].symbol
+        end
+        i++
+    end
+    return none
+end
+
+def lookup_symbol(name ref(u8), info ref(sema.ProgramInfo), arena ref(allocators.Arena)) ref(u8)
+    val found ref(u8) = find_symbol_in_list(name, info)
+    if found != none
+        return found
     end
     return mangle_local_symbol(name, arena)
 end
