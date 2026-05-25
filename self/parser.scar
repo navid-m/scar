@@ -2565,6 +2565,49 @@ pub def parse_program(tokens list[ast.Token], arena ref(allocators.Arena), curre
             @append(interface_defs, parse_interface_def(@addr(p), arena, true))
         elif is_keyword(@addr(p), KW_IFACE)
             @append(interface_defs, parse_interface_def(@addr(p), arena, false))
+        elif is_keyword(@addr(p), KW_PUB) && next_is_keyword(@addr(p), KW_VAL)
+            advance(@addr(p))
+            advance(@addr(p))
+            val line usize = p.tokens[p.pos].line
+            val column usize = p.tokens[p.pos].column
+            val name ref(u8) = expect_ident(@addr(p), arena)
+            consume_newlines(@addr(p))
+            val declared_type ast.Type = parse_type(@addr(p), arena)
+            match p.tokens[p.pos].kind
+                ast.TokenKind.Assign(_) => advance(@addr(p))
+                _ => ()
+            end
+            val init ast.Expr = parse_expr(@addr(p), arena)
+            val return_stmt_raw = allocators.Arena.alloc(arena, @sizeof(ast.StmtReturn) as usize)
+            match return_stmt_raw
+                ok m => (
+                    var return_stmt ref(ast.StmtReturn) = @bitcast(m, ref(ast.StmtReturn))
+                    return_stmt.value = init
+                    return_stmt.line = line
+                    return_stmt.column = column
+                    val body_raw = allocators.Arena.alloc(arena, @sizeof(ast.Stmt) as usize)
+                    match body_raw
+                        ok bm => (
+                            var body_stmt ref(ast.Stmt) = @bitcast(bm, ref(ast.Stmt))
+                            @deref(body_stmt) = ast.Stmt.Return(return_stmt)
+                            @append(functions, ast.Function(
+                                name: name,
+                                params: [] as list[ast.Param],
+                                return_type: declared_type,
+                                body: [@deref(body_stmt)],
+                                is_pub: true,
+                                is_extern: false,
+                                extern_name: "",
+                                generic_params: [] as list[ref(u8)],
+                                line: line,
+                                column: column
+                            ))
+                        )
+                        error _ => ()
+                    end
+                )
+                error _ => ()
+            end
         elif is_keyword(@addr(p), KW_PUB)
             advance(@addr(p))
             skip_top_level_item(@addr(p))
@@ -2629,6 +2672,49 @@ pub def parse_program(tokens list[ast.Token], arena ref(allocators.Arena), curre
                         @append(interface_defs, parse_interface_def(@addr(p), arena, true))
                     elif is_keyword(@addr(p), KW_IFACE)
                         @append(interface_defs, parse_interface_def(@addr(p), arena, false))
+                    elif is_keyword(@addr(p), KW_PUB) && next_is_keyword(@addr(p), KW_VAL)
+                        advance(@addr(p))
+                        advance(@addr(p))
+                        val line2 usize = p.tokens[p.pos].line
+                        val column2 usize = p.tokens[p.pos].column
+                        val name2 ref(u8) = expect_ident(@addr(p), arena)
+                        consume_newlines(@addr(p))
+                        val declared_type2 ast.Type = parse_type(@addr(p), arena)
+                        match p.tokens[p.pos].kind
+                            ast.TokenKind.Assign(_) => advance(@addr(p))
+                            _ => ()
+                        end
+                        val init2 ast.Expr = parse_expr(@addr(p), arena)
+                        val return_stmt_raw2 = allocators.Arena.alloc(arena, @sizeof(ast.StmtReturn) as usize)
+                        match return_stmt_raw2
+                            ok m2 => (
+                                var return_stmt2 ref(ast.StmtReturn) = @bitcast(m2, ref(ast.StmtReturn))
+                                return_stmt2.value = init2
+                                return_stmt2.line = line2
+                                return_stmt2.column = column2
+                                val body_raw2 = allocators.Arena.alloc(arena, @sizeof(ast.Stmt) as usize)
+                                match body_raw2
+                                    ok bm2 => (
+                                        var body_stmt2 ref(ast.Stmt) = @bitcast(bm2, ref(ast.Stmt))
+                                        @deref(body_stmt2) = ast.Stmt.Return(return_stmt2)
+                                        @append(functions, ast.Function(
+                                            name: name2,
+                                            params: [] as list[ast.Param],
+                                            return_type: declared_type2,
+                                            body: [@deref(body_stmt2)],
+                                            is_pub: true,
+                                            is_extern: false,
+                                            extern_name: "",
+                                            generic_params: [] as list[ref(u8)],
+                                            line: line2,
+                                            column: column2
+                                        ))
+                                    )
+                                    error _ => ()
+                                end
+                            )
+                            error _ => ()
+                        end
                     elif is_keyword(@addr(p), KW_PUB)
                         advance(@addr(p))
                         skip_top_level_item(@addr(p))
@@ -2693,6 +2779,49 @@ pub def parse_program(tokens list[ast.Token], arena ref(allocators.Arena), curre
                                     @append(interface_defs, parse_interface_def(@addr(p), arena, true))
                                 elif is_keyword(@addr(p), KW_IFACE)
                                     @append(interface_defs, parse_interface_def(@addr(p), arena, false))
+                                elif is_keyword(@addr(p), KW_PUB) && next_is_keyword(@addr(p), KW_VAL)
+                                    advance(@addr(p))
+                                    advance(@addr(p))
+                                    val line3 usize = p.tokens[p.pos].line
+                                    val column3 usize = p.tokens[p.pos].column
+                                    val name3 ref(u8) = expect_ident(@addr(p), arena)
+                                    consume_newlines(@addr(p))
+                                    val declared_type3 ast.Type = parse_type(@addr(p), arena)
+                                    match p.tokens[p.pos].kind
+                                        ast.TokenKind.Assign(_) => advance(@addr(p))
+                                        _ => ()
+                                    end
+                                    val init3 ast.Expr = parse_expr(@addr(p), arena)
+                                    val return_stmt_raw3 = allocators.Arena.alloc(arena, @sizeof(ast.StmtReturn) as usize)
+                                    match return_stmt_raw3
+                                        ok m3 => (
+                                            var return_stmt3 ref(ast.StmtReturn) = @bitcast(m3, ref(ast.StmtReturn))
+                                            return_stmt3.value = init3
+                                            return_stmt3.line = line3
+                                            return_stmt3.column = column3
+                                            val body_raw3 = allocators.Arena.alloc(arena, @sizeof(ast.Stmt) as usize)
+                                            match body_raw3
+                                                ok bm3 => (
+                                                    var body_stmt3 ref(ast.Stmt) = @bitcast(bm3, ref(ast.Stmt))
+                                                    @deref(body_stmt3) = ast.Stmt.Return(return_stmt3)
+                                                    @append(functions, ast.Function(
+                                                        name: name3,
+                                                        params: [] as list[ast.Param],
+                                                        return_type: declared_type3,
+                                                        body: [@deref(body_stmt3)],
+                                                        is_pub: true,
+                                                        is_extern: false,
+                                                        extern_name: "",
+                                                        generic_params: [] as list[ref(u8)],
+                                                        line: line3,
+                                                        column: column3
+                                                    ))
+                                                )
+                                                error _ => ()
+                                            end
+                                        )
+                                        error _ => ()
+                                    end
                                 elif is_keyword(@addr(p), KW_PUB)
                                     advance(@addr(p))
                                     skip_top_level_item(@addr(p))

@@ -5,6 +5,14 @@ set -uo pipefail
 PROGRAM="./scar-dev"
 PASS_COUNT=0
 FAIL_COUNT=0
+EXHAUSTIVE=false
+
+for arg in "$@"; do
+	case "$arg" in
+		-exhaustive|-e) EXHAUSTIVE=true ;;
+		*) echo "unknown flag: $arg"; exit 1 ;;
+	esac
+done
 
 pass() {
 	printf "\n[pass] %s" "$1"
@@ -41,7 +49,25 @@ run_sample_tests() {
 	)
 }
 
+run_stdlib_tests() {
+	while read -r module; do
+		if "$PROGRAM" test "$module" 2>&1; then
+			pass "$module"
+			((PASS_COUNT++))
+		else
+			fail "$module"
+			((FAIL_COUNT++))
+		fi
+	done < <(
+		find ./lib/std -mindepth 2 -maxdepth 2 -name "mod.scar" | sort
+	)
+}
+
 run_sample_tests
+
+if $EXHAUSTIVE; then
+	run_stdlib_tests
+fi
 
 echo
 echo "passed: $PASS_COUNT"

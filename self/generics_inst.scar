@@ -830,6 +830,12 @@ def infer_type_from_expr(expr ref(ast.Expr), state ref(GenericState), arena ref(
         ast.Expr.FloatLit(_) => return ast.Type.F64(0)
         ast.Expr.BoolLit(_) => return ast.Type.Bool(0)
         ast.Expr.CharLit(_) => return ast.Type.U8(0)
+        ast.Expr.Unary(u) => (
+            match u.op
+                ast.UnaryOp.Neg => return infer_type_from_expr(u.expr, state, arena)
+                _ => return ast.Type.Named("_")
+            end
+        )
         ast.Expr.StrLit(_) => (
             val raw = allocators.Arena.alloc(arena, @sizeof(ast.Type) as usize)
             match raw
@@ -897,14 +903,28 @@ def infer_type_args(template ref(ast.Function), call_args ref(list[ast.Expr]), t
                             ast.Type.Named(name) => (
                                 if str.eql(name, "_")
                                     val inferred ast.Type = infer_type_from_expr(@addr(@deref(call_args)[i]), state, arena)
-                                    match inferred
-                                        ast.Type.Named(inferred_name) => (
-                                            if !str.eql(inferred_name, "_")
-                                                result[j] = inferred
-                                            end
-                                        )
-                                        _ => ()
-                                    end
+                    match inferred
+                        ast.Type.Named(inferred_name) => (
+                            if !str.eql(inferred_name, "_")
+                                result[j] = inferred
+                            end
+                        )
+                        ast.Type.Void(_) => result[j] = inferred
+                        ast.Type.Bool(_) => result[j] = inferred
+                        ast.Type.I8(_) => result[j] = inferred
+                        ast.Type.I16(_) => result[j] = inferred
+                        ast.Type.I32(_) => result[j] = inferred
+                        ast.Type.I64(_) => result[j] = inferred
+                        ast.Type.Isize(_) => result[j] = inferred
+                        ast.Type.U8(_) => result[j] = inferred
+                        ast.Type.U16(_) => result[j] = inferred
+                        ast.Type.U32(_) => result[j] = inferred
+                        ast.Type.U64(_) => result[j] = inferred
+                        ast.Type.Usize(_) => result[j] = inferred
+                        ast.Type.F32(_) => result[j] = inferred
+                        ast.Type.F64(_) => result[j] = inferred
+                        _ => ()
+                    end
                                 end
                             )
                             _ => ()
