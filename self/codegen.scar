@@ -1823,9 +1823,34 @@ def append_expr(expr ref(ast.Expr), fun ref(ast.Function), info ref(sema.Program
                         gi++
                     end
                     if !is_known_global
-                        val resolved_type ref(u8) = resolve_type_name(segments[0], info)
-                        if !str.eql(resolved_type, segments[0])
+                        if is_known_type(segments[0], info)
                             is_known_global = true
+                        end
+                    end
+                    if !is_known_global
+                        val prefix_len usize = str.len(segments[0])
+                        var gi2 usize = 0
+                        for gi2 < @len(info.functions)
+                            val fname ref(u8) = info.functions[gi2].name
+                            val flen usize = str.len(fname)
+                            if flen > prefix_len + 2
+                                if @deref(@add(fname, prefix_len)) == '_' && @deref(@add(fname, prefix_len + 1)) == '_'
+                                    var match_prefix bool = true
+                                    var ci usize = 0
+                                    for ci < prefix_len
+                                        if @deref(@add(fname, ci)) != @deref(@add(segments[0], ci))
+                                            match_prefix = false
+                                            break
+                                        end
+                                        ci++
+                                    end
+                                    if match_prefix
+                                        is_known_global = true
+                                        break
+                                    end
+                                end
+                            end
+                            gi2++
                         end
                     end
                     if !is_known_global
@@ -3076,6 +3101,29 @@ def resolve_type_name(name ref(u8), info ref(sema.ProgramInfo)) ref(u8)
     return name
 end
 
+def is_known_type(name ref(u8), info ref(sema.ProgramInfo)) bool
+    var i usize = 0
+    val name_len usize = str.len(name)
+    for i < @len(info.types)
+        val full_name ref(u8) = info.types[i].name
+        if str.eql(full_name, name)
+            return true
+        end
+        val full_len usize = str.len(full_name)
+        if full_len > name_len + 1
+            val offset usize = full_len - name_len - 1
+            val sep u8 = @deref(@add(full_name, offset))
+            if sep == '_' && offset > 0 && @deref(@add(full_name, offset - 1)) == '_'
+                if str.eql(@add(full_name, offset + 1), name)
+                    return true
+                end
+            end
+        end
+        i++
+    end
+    return false
+end
+
 def resolve_struct_name(name ref(u8), info ref(sema.ProgramInfo)) ref(u8)
     return resolve_type_name(name, info)
 end
@@ -3366,7 +3414,7 @@ def get_expr_type(expr ref(ast.Expr), fun ref(ast.Function), info ref(sema.Progr
                         end
                         i++
                     end
-                    if !str.eql(resolve_type_name(name, info), name)
+                    if is_known_type(name, info)
                         return @addr(ast.Type.Named(name))
                     end
                 )
@@ -3379,7 +3427,7 @@ def get_expr_type(expr ref(ast.Expr), fun ref(ast.Function), info ref(sema.Progr
                             end
                             i++
                         end
-                        if !str.eql(resolve_type_name(segments[0], info), segments[0])
+                        if is_known_type(segments[0], info)
                             return @addr(ast.Type.Named(segments[0]))
                         end
                     elif @len(segments) == 2
