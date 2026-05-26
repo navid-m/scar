@@ -880,12 +880,17 @@ pub def substitute_stmt(stmt ref(ast.Stmt), params ref(list[ref(u8)]), type_args
                 error _ => return @deref(stmt)
             end
         )
-        ast.Stmt.Assert(e) => (
-            val raw = allocators.Arena.alloc(arena, @sizeof(ast.Expr) as usize)
+        ast.Stmt.Assert(a) => (
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.StmtAssert) as usize)
             match raw
                 ok m => (
-                    var p ref(ast.Expr) = @bitcast(m, ref(ast.Expr))
-                    @deref(p) = substitute_expr(e, params, type_args, arena)
+                    var p ref(ast.StmtAssert) = @bitcast(m, ref(ast.StmtAssert))
+                    @deref(p) = ast.StmtAssert(
+                        condition: substitute_expr(@addr(a.condition), params, type_args, arena),
+                        line: a.line,
+                        column: a.column,
+                        filename: a.filename
+                    )
                     return ast.Stmt.Assert(p)
                 )
                 error _ => return @deref(stmt)

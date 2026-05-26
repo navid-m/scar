@@ -298,7 +298,7 @@ def collect_types_from_stmt(stmt ref(ast.Stmt), types ref(list[TypeEntry]))
         ast.Stmt.ExprStmt(e) => collect_type_from_expr(e, types)
         ast.Stmt.Increment(e) => collect_type_from_expr(e, types)
         ast.Stmt.Decrement(e) => collect_type_from_expr(e, types)
-        ast.Stmt.Assert(e) => collect_type_from_expr(e, types)
+        ast.Stmt.Assert(a) => collect_type_from_expr(@addr(a.condition), types)
         ast.Stmt.Block(body) => (
             var k usize = 0
             for k < @len(body)
@@ -543,7 +543,7 @@ def analyze_stmt(stmt ref(ast.Stmt), bindings ref(list[BindingEntry]), functions
         ast.Stmt.ExprStmt(e) => analyze_expr(e, bindings, functions, types)
         ast.Stmt.Increment(e) => analyze_expr(e, bindings, functions, types)
         ast.Stmt.Decrement(e) => analyze_expr(e, bindings, functions, types)
-        ast.Stmt.Assert(e) => analyze_expr(e, bindings, functions, types)
+        ast.Stmt.Assert(a) => analyze_expr(@addr(a.condition), bindings, functions, types)
         ast.Stmt.Block(body) => (
             var k usize = 0
             for k < @len(body)

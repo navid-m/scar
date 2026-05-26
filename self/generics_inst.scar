@@ -773,12 +773,17 @@ def rewrite_stmt_calls(state ref(GenericState), stmt ref(ast.Stmt), arena ref(al
                 error _ => return @deref(stmt)
             end
         )
-        ast.Stmt.Assert(e) => (
-            val raw = allocators.Arena.alloc(arena, @sizeof(ast.Expr) as usize)
+        ast.Stmt.Assert(a) => (
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.StmtAssert) as usize)
             match raw
                 ok m => (
-                    var p ref(ast.Expr) = @bitcast(m, ref(ast.Expr))
-                    @deref(p) = rewrite_expr_calls(state, e, arena)
+                    var p ref(ast.StmtAssert) = @bitcast(m, ref(ast.StmtAssert))
+                    @deref(p) = ast.StmtAssert(
+                        condition: rewrite_expr_calls(state, @addr(a.condition), arena),
+                        line: a.line,
+                        column: a.column,
+                        filename: a.filename
+                    )
                     return ast.Stmt.Assert(p)
                 )
                 error _ => return @deref(stmt)

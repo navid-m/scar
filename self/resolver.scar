@@ -676,10 +676,15 @@ def resolve_stmt(stmt ref(ast.Stmt), arena ref(allocators.Arena)) ast.Stmt|error
             @deref(p) = resolve_expr(e, arena)?
             return ast.Stmt.Decrement(p)
         )
-        ast.Stmt.Assert(e) => (
-            val raw = allocators.Arena.alloc(arena, @sizeof(ast.Expr) as usize)?
-            var p ref(ast.Expr) = @bitcast(raw, ref(ast.Expr))
-            @deref(p) = resolve_expr(e, arena)?
+        ast.Stmt.Assert(a) => (
+            val raw = allocators.Arena.alloc(arena, @sizeof(ast.StmtAssert) as usize)?
+            var p ref(ast.StmtAssert) = @bitcast(raw, ref(ast.StmtAssert))
+            @deref(p) = ast.StmtAssert(
+                condition: resolve_expr(@addr(a.condition), arena)?,
+                line: a.line,
+                column: a.column,
+                filename: a.filename
+            )
             return ast.Stmt.Assert(p)
         )
         ast.Stmt.Block(body) => (

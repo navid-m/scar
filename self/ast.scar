@@ -282,7 +282,7 @@ pub union Stmt
 	Continue(u8)
 	Increment(ref(Expr))
 	Decrement(ref(Expr))
-	Assert(ref(Expr))
+	Assert(ref(StmtAssert))
 end
 
 pub type StmtVarDecl
@@ -344,6 +344,13 @@ pub type StmtMatch
 	arms list[MatchArm]
 	line usize
 	column usize
+end
+
+pub type StmtAssert
+	condition Expr
+	line usize
+	column usize
+	filename ref(u8)
 end
 
 pub type TestBlock

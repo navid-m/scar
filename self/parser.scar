@@ -718,9 +718,16 @@ def parse_stmt(p ref(ast.TokenList), arena ref(allocators.Arena), current_platfo
     end
 
     if is_keyword(p, KW_ASSERT)
+        val line usize = p.tokens[p.pos].line
+        val column usize = p.tokens[p.pos].column
         advance(p)
         val condition ast.Expr = parse_expr(p, arena)
-        return ast.Stmt.Assert(box_expr(arena, condition))
+        return ast.Stmt.Assert(@addr(ast.StmtAssert(
+            condition: condition,
+            line: line,
+            column: column,
+            filename: p.source_file
+        )))
     end
 
     if is_keyword(p, KW_FOR)
