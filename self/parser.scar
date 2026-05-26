@@ -52,6 +52,7 @@ val KW_WHEN   u8 = 45
 val KW_LINK   u8 = 46
 val KW_GUARD  u8 = 47
 val KW_ASSERT u8 = 48
+val KW_FN     u8 = 49
 
 var error_count usize = 0
 
@@ -147,7 +148,7 @@ def peek_is_type_arg(p ref(ast.TokenList)) bool
                 || v == KW_I8 || v == KW_I16 || v == KW_I32 || v == KW_I64 || v == KW_ISIZE
                 || v == KW_U8 || v == KW_U16 || v == KW_U32 || v == KW_U64 || v == KW_USIZE
                 || v == KW_F32 || v == KW_F64
-                || v == KW_REF || v == KW_MUT || v == KW_LIST
+                || v == KW_REF || v == KW_MUT || v == KW_LIST || v == KW_FN
         )
         ast.TokenKind.Ident(_) => return true
         ast.TokenKind.RBracket(_) => return false
@@ -300,7 +301,7 @@ def starts_type(tokens_val ref(ast.TokenList)) bool
             || v == KW_BOOL || v == KW_I8 || v == KW_I16 
             || v == KW_I32 || v == KW_I64 || v == KW_ISIZE || v == KW_U8 || v == KW_U16 || v == KW_U32 
             || v == KW_U64 || v == KW_USIZE || v == KW_F32 || v == KW_F64 || v == KW_MUT 
-            || v == KW_REF || v == KW_LIST
+            || v == KW_REF || v == KW_LIST || v == KW_FN
         ast.TokenKind.Ident(_) => return true
         ast.TokenKind.LParen(_) => return true
         ast.TokenKind.LBracket(_) => return true
@@ -413,9 +414,51 @@ def parse_type(p ref(ast.TokenList), arena ref(allocators.Arena)) ast.Type
                     )
                     error _ => return ast.Type.Void(0)
                 end
+            elif v == KW_FN
+                advance(p)
+                match p.tokens[p.pos].kind
+                    ast.TokenKind.LParen(_) => advance(p)
+                    _ => ()
+                end
+                var param_types list[ast.Type] = []
+                match p.tokens[p.pos].kind
+                    ast.TokenKind.RParen(_) => ()
+                    _ => (
+                        for
+                            @append(param_types, parse_type(p, arena))
+                            match p.tokens[p.pos].kind
+                                ast.TokenKind.Comma(_) => advance(p)
+                                _ => break
+                            end
+                        end
+                    )
+                end
+                match p.tokens[p.pos].kind
+                    ast.TokenKind.RParen(_) => advance(p)
+                    _ => ()
+                end
+                val ret ast.Type = parse_type(p, arena)
+                val raw_res = allocators.Arena.alloc(arena, @sizeof(ast.Type) as usize)
+                match raw_res
+                    ok raw => (
+                        var ret_ptr ref(ast.Type) = @bitcast(raw, ref(ast.Type))
+                        @deref(ret_ptr) = ret
+                        return ast.Type.FnPtr(param_types, ret_ptr)
+                    )
+                    error _ => return ast.Type.Void(0)
+                end
             end
             advance(p)
             return ast.Type.Void(0)
+        )
+        ast.TokenKind.LParen(_) => (
+            advance(p)
+            val inner ast.Type = parse_type(p, arena)
+            match p.tokens[p.pos].kind
+                ast.TokenKind.RParen(_) => advance(p)
+                _ => ()
+            end
+            return inner
         )
         ast.TokenKind.Ident(name) => (
             advance(p)

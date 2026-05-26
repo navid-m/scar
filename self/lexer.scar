@@ -648,6 +648,9 @@ def lex_ident(l ref(ast.Lexer), arena ref(allocators.Arena)) ast.Token
 			'a' => if str.eql(name, "as")
 				return ast.Token(kind: ast.TokenKind.Keyword(32), line: line, column: column)
 			end
+			'f' => if str.eql(name, "fn")
+				return ast.Token(kind: ast.TokenKind.Keyword(49), line: line, column: column)
+			end
 			'i' => if str.eql(name, "if")
 				return ast.Token(kind: ast.TokenKind.Keyword(7), line: line, column: column)
 			elif str.eql(name, "in")
