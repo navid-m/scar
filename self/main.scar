@@ -31,13 +31,13 @@ pub def compile(source_path ref(u8), output_path ref(u8)) i32|error
     val platform = reflection.current_platform_name[_](@addr(arena))?
 
     val (
-        tokens list[ast.Token] = lxr.lex(source, @addr(arena))
-        prog ast.Program       = prs.parse_program(tokens, @addr(arena), platform, source_path)
-        resolved ast.Program   = rslv.resolve(@addr(prog), source_path, @addr(arena))?
+        tokens list[ast.Token]   = lxr.lex(source, @addr(arena))
+        prog ast.Program         = prs.parse_program(tokens, @addr(arena), platform, source_path)
+        resolved ast.Program     = rslv.resolve(@addr(prog), source_path, @addr(arena))?
         instantiated ast.Program = ginst.instantiate_generics(@addr(resolved), @addr(arena))
-        info sema.ProgramInfo  = sema.analyze(@addr(instantiated), @addr(arena))
-        c_code ref(u8)         = cgen.generate_c(@addr(instantiated), @addr(info), @addr(arena))
-        c_path ref(u8)         = "/tmp/scar-compile.c"
+        info sema.ProgramInfo    = sema.analyze(@addr(instantiated), @addr(arena))
+        c_code ref(u8)           = cgen.generate_c(@addr(instantiated), @addr(info), @addr(arena))
+        c_path ref(u8)           = "/tmp/scar-compile.c"
     )
 
     fs.write_text(c_path, c_code)?
