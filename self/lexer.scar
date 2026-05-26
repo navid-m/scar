@@ -319,6 +319,90 @@ pub def lex(source ref(u8), arena ref(allocators.Arena)) list[ast.Token]
 				l.column++
 				@append(l.tokens, lex_string_lit(@addr(l), arena))
 			)
+			'\\' => (
+				l.pos++
+				l.column++
+				if l.pos < l.len && @deref(@add(l.source, l.pos)) == '\\'
+					l.pos++
+					l.column++
+					val sl_line usize = l.line
+					val sl_column usize = l.column
+					val buf_res = allocators.Arena.alloc(arena, 256)
+					var buf ref(u8) = none
+					match buf_res
+						ok m => buf = m as ref(u8)
+						error _ => @append(l.tokens, ast.Token(kind: ast.TokenKind.Str(none), line: sl_line, column: sl_column))
+					end
+					if buf != none
+						var buf_len usize = 0
+						for l.pos < l.len
+							val sl_ch u8 = @deref(@add(l.source, l.pos))
+							if sl_ch == '\n'
+								l.pos++
+								l.line++
+								l.column = 1
+								for l.pos < l.len
+									val ws u8 = @deref(@add(l.source, l.pos))
+									if ws == ' ' || ws == '\t'
+										l.pos++
+										l.column++
+									else
+										break
+									end
+								end
+								if l.pos + 1 < l.len && @deref(@add(l.source, l.pos)) == '\\' && @deref(@add(l.source, l.pos + 1)) == '\\'
+									l.pos = l.pos + 2
+									l.column = l.column + 2
+									@deref(@as_mut(@add(buf, buf_len))) = '\n'
+									buf_len = buf_len + 1
+								else
+									break
+								end
+							elif sl_ch == '\\'
+								l.pos++
+								l.column++
+								if l.pos < l.len
+									val esc u8 = @deref(@add(l.source, l.pos))
+									if esc == 'n'
+										l.pos++
+										l.column++
+										@deref(@as_mut(@add(buf, buf_len))) = '\n'
+									elif esc == 't'
+										l.pos++
+										l.column++
+										@deref(@as_mut(@add(buf, buf_len))) = '\t'
+									elif esc == 'r'
+										l.pos++
+										l.column++
+										@deref(@as_mut(@add(buf, buf_len))) = '\r'
+									elif esc == '"'
+										l.pos++
+										l.column++
+										@deref(@as_mut(@add(buf, buf_len))) = '"'
+									elif esc == '\\'
+										l.pos++
+										l.column++
+										@deref(@as_mut(@add(buf, buf_len))) = '\\'
+									else
+										@deref(@as_mut(@add(buf, buf_len))) = '\\'
+									end
+									buf_len = buf_len + 1
+								else
+									@deref(@as_mut(@add(buf, buf_len))) = '\\'
+									buf_len = buf_len + 1
+								end
+							else
+								l.pos++
+								l.column++
+								@deref(@as_mut(@add(buf, buf_len))) = sl_ch
+								buf_len = buf_len + 1
+							end
+						end
+						@deref(@as_mut(@add(buf, buf_len))) = 0
+						@append(l.tokens, ast.Token(kind: ast.TokenKind.Str(buf), line: sl_line, column: sl_column))
+					end
+				end
+			)
 			_ => (
 				if ch >= '0' && ch <= '9'
 					@append(l.tokens, lex_number(@addr(l)))
