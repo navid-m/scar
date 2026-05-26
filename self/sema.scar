@@ -577,7 +577,16 @@ def analyze_expr(expr ref(ast.Expr), bindings ref(list[BindingEntry]), functions
             if @len(segments) == 1
                 return lookup_name(segments[0], bindings, functions, types)
             end
-            return ast.Type.Void(0)
+            var ty ast.Type = lookup_name(segments[0], bindings, functions, types)
+            var i usize = 1
+            for i < @len(segments)
+                match ty
+                    ast.Type.Void(_) => return ast.Type.Void(0)
+                    _ => ty = infer_field_type(@addr(ty), segments[i], types)
+                end
+                i++
+            end
+            return ty
         )
         ast.Expr.Binary(b) => (
             val lhs_ty ast.Type = analyze_expr(b.lhs, bindings, functions, types)
@@ -698,6 +707,23 @@ def analyze_expr(expr ref(ast.Expr), bindings ref(list[BindingEntry]), functions
                                     end
                                     fi++
                                 end
+                                if @len(segments) == 2
+                                    val method_name2 ref(u8) = segments[1]
+                                    val method_len2 usize = str.len(method_name2)
+                                    fi = 0
+                                    for fi < @len(functions)
+                                        val fname ref(u8) = functions[fi].name
+                                        val flen usize = str.len(fname)
+                                        if flen > method_len2 + 1
+                                            val offset usize = flen - method_len2 - 1
+                                            val sep u8 = @deref(@add(fname, offset))
+                                            if (sep == '.' || (sep == '_' && offset > 0 && @deref(@add(fname, offset - 1)) == '_')) && str.eql(@add(fname, offset + 1), method_name2)
+                                                return functions[fi].sig.return_type
+                                            end
+                                        end
+                                        fi++
+                                    end
+                                end
                             else
                                 val method_name ref(u8) = segments[@len(segments) - 1]
                                 val method_len usize = str.len(method_name)
@@ -727,6 +753,27 @@ def analyze_expr(expr ref(ast.Expr), bindings ref(list[BindingEntry]), functions
             match base_ty
                 ast.Type.List(inner) => return @deref(inner)
                 ast.Type.StaticArray(_, inner) => return @deref(inner)
+                ast.Type.Ref(inner) => (
+                    match @deref(inner)
+                        ast.Type.List(elem) => return @deref(elem)
+                        ast.Type.StaticArray(_, elem) => return @deref(elem)
+                        _ => return ast.Type.Void(0)
+                    end
+                )
+                ast.Type.Mut(inner) => (
+                    match @deref(inner)
+                        ast.Type.List(elem) => return @deref(elem)
+                        ast.Type.StaticArray(_, elem) => return @deref(elem)
+                        ast.Type.Ref(inner2) => (
+                            match @deref(inner2)
+                                ast.Type.List(elem) => return @deref(elem)
+                                ast.Type.StaticArray(_, elem) => return @deref(elem)
+                                _ => return ast.Type.Void(0)
+                            end
+                        )
+                        _ => return ast.Type.Void(0)
+                    end
+                )
                 _ => return ast.Type.Void(0)
             end
         )
@@ -877,6 +924,8 @@ def infer_field_type(base_ty ref(ast.Type), field ref(u8), types ref(list[TypeEn
                 i++
             end
         )
+        ast.Type.Ref(inner) => return infer_field_type(inner, field, types)
+        ast.Type.Mut(inner) => return infer_field_type(inner, field, types)
         _ => ()
     end
     return ast.Type.Void(0)
