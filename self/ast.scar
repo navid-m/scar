@@ -389,6 +389,16 @@ pub type TypeDef
 	derives list[ref(u8)]
 end
 
+pub type GlobalVar
+	name ref(u8)
+	mutable bool
+	ty Type
+	init Expr
+	is_pub bool
+	line usize
+	column usize
+end
+
 pub type Program
 	module_uses list[ModuleUse]
 	functions list[Function]
@@ -396,4 +406,5 @@ pub type Program
 	interface_defs list[InterfaceDef]
 	tests list[TestBlock]
 	extern_headers list[ref(u8)]
+	globals list[GlobalVar]
 end

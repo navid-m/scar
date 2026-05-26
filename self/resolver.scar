@@ -157,6 +157,7 @@ def resolve_module_into(
     resolved_type_defs ref(list[ast.TypeDef]),
     resolved_functions ref(list[ast.Function]),
     resolved_extern_headers ref(list[ref(u8)]),
+    resolved_globals ref(list[ast.GlobalVar]),
     visited ref(list[ref(u8)]),
     arena ref(allocators.Arena)
 ) void|error
@@ -191,12 +192,12 @@ def resolve_module_into(
             if std_root != none
                 val sub_mod_path ref(u8) = resolve_std_module_path(std_root, smu.path, arena)
                 if sub_mod_path != none
-                    resolve_module_into(sub_mod_path, smu.name, std_root, resolved_type_defs, resolved_functions, resolved_extern_headers, visited, arena)?
+                    resolve_module_into(sub_mod_path, smu.name, std_root, resolved_type_defs, resolved_functions, resolved_extern_headers, resolved_globals, visited, arena)?
                 end
             end
         else
             val sub_mod_path ref(u8) = resolve_module_path(mod_dir, smu.path, arena)?
-            resolve_module_into(sub_mod_path, smu.name, std_root, resolved_type_defs, resolved_functions, resolved_extern_headers, visited, arena)?
+            resolve_module_into(sub_mod_path, smu.name, std_root, resolved_type_defs, resolved_functions, resolved_extern_headers, resolved_globals, visited, arena)?
         end
         smi++
     end
@@ -283,12 +284,29 @@ def resolve_module_into(
         @append(@deref(resolved_extern_headers), mod_prog.extern_headers[hi])
         hi++
     end
+
+    var pgi usize = 0
+    for pgi < @len(mod_prog.globals)
+        val pg ref(ast.GlobalVar) = @addr(mod_prog.globals[pgi])
+        val prefixed_name ref(u8) = prefix_name(alias_name, pg.name, arena)
+        @append(@deref(resolved_globals), ast.GlobalVar(
+            name: prefixed_name,
+            mutable: pg.mutable,
+            ty: pg.ty,
+            init: pg.init,
+            is_pub: false,
+            line: pg.line,
+            column: pg.column
+        ))
+        pgi++
+    end
 end
 
 pub def resolve(program ref(ast.Program), source_path ref(u8), arena ref(allocators.Arena)) ast.Program|error
     var resolved_type_defs list[ast.TypeDef] = []
     var resolved_functions list[ast.Function] = []
     var resolved_extern_headers list[ref(u8)] = []
+    var resolved_globals list[ast.GlobalVar] = []
 
     val source_dir ref(u8) = get_dirname(source_path, arena)
     val std_root ref(u8) = find_std_root(arena)
@@ -307,14 +325,14 @@ pub def resolve(program ref(ast.Program), source_path ref(u8), arena ref(allocat
             if std_root != none
                 val mod_path ref(u8) = resolve_std_module_path(std_root, mu.path, arena)
                 if mod_path != none
-                    resolve_module_into(mod_path, mu.name, std_root, @addr(resolved_type_defs), @addr(resolved_functions), @addr(resolved_extern_headers), @addr(visited), arena)?
+                    resolve_module_into(mod_path, mu.name, std_root, @addr(resolved_type_defs), @addr(resolved_functions), @addr(resolved_extern_headers), @addr(resolved_globals), @addr(visited), arena)?
                 end
             end
             mi++
             continue
         end
         val mod_path ref(u8) = resolve_module_path(source_dir, mu.path, arena)?
-        resolve_module_into(mod_path, mu.name, std_root, @addr(resolved_type_defs), @addr(resolved_functions), @addr(resolved_extern_headers), @addr(visited), arena)?
+        resolve_module_into(mod_path, mu.name, std_root, @addr(resolved_type_defs), @addr(resolved_functions), @addr(resolved_extern_headers), @addr(resolved_globals), @addr(visited), arena)?
         mi++
     end
 
@@ -330,13 +348,20 @@ pub def resolve(program ref(ast.Program), source_path ref(u8), arena ref(allocat
         hi++
     end
 
+    hi = 0
+    for hi < @len(program.globals)
+        @append(resolved_globals, program.globals[hi])
+        hi++
+    end
+
     val result ast.Program = ast.Program(
         module_uses: program.module_uses,
         functions: [] as list[ast.Function],
         type_defs: resolved_type_defs,
         interface_defs: program.interface_defs,
         tests: program.tests,
-        extern_headers: resolved_extern_headers
+        extern_headers: resolved_extern_headers,
+        globals: resolved_globals
     )
 
     var i usize = 0

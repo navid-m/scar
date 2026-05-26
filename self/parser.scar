@@ -2640,6 +2640,35 @@ def parse_enum_def(p ref(ast.TokenList), arena ref(allocators.Arena), is_pub_val
     )
 end
 
+def parse_global_var(p ref(ast.TokenList), arena ref(allocators.Arena), mutable bool, is_pub bool) ast.GlobalVar
+    val line usize = p.tokens[p.pos].line
+    val column usize = p.tokens[p.pos].column
+    val name ref(u8) = expect_ident(p, arena)
+    var declared_type ast.Type = ast.Type.Void(0)
+    match p.tokens[p.pos].kind
+        ast.TokenKind.Assign(_) => ()
+        _ => (
+            if starts_type(p)
+                declared_type = parse_type(p, arena)
+            end
+        )
+    end
+    match p.tokens[p.pos].kind
+        ast.TokenKind.Assign(_) => advance(p)
+        _ => ()
+    end
+    val init ast.Expr = parse_expr(p, arena)
+    return ast.GlobalVar(
+        name: name,
+        mutable: mutable,
+        ty: declared_type,
+        init: init,
+        is_pub: is_pub,
+        line: line,
+        column: column
+    )
+end
+
 pub def parse_program(tokens list[ast.Token], arena ref(allocators.Arena), current_platform ref(u8), source_file ref(u8)) ast.Program
     var p ast.TokenList = ast.TokenList(tokens: tokens, pos: 0, source_file: source_file)
     var module_uses list[ast.ModuleUse] = []
@@ -2648,6 +2677,7 @@ pub def parse_program(tokens list[ast.Token], arena ref(allocators.Arena), curre
     var interface_defs list[ast.InterfaceDef] = []
     var tests list[ast.TestBlock] = []
     var extern_headers list[ref(u8)] = []
+    var globals list[ast.GlobalVar] = []
 
     consume_newlines(@addr(p))
 
@@ -2680,6 +2710,10 @@ pub def parse_program(tokens list[ast.Token], arena ref(allocators.Arena), curre
             @append(interface_defs, parse_interface_def(@addr(p), arena, true))
         elif is_keyword(@addr(p), KW_IFACE)
             @append(interface_defs, parse_interface_def(@addr(p), arena, false))
+        elif is_keyword(@addr(p), KW_PUB) && next_is_keyword(@addr(p), KW_VAR)
+            advance(@addr(p))
+            advance(@addr(p))
+            @append(globals, parse_global_var(@addr(p), arena, true, true))
         elif is_keyword(@addr(p), KW_PUB) && next_is_keyword(@addr(p), KW_VAL)
             advance(@addr(p))
             advance(@addr(p))
@@ -2751,7 +2785,9 @@ pub def parse_program(tokens list[ast.Token], arena ref(allocators.Arena), curre
         elif is_keyword(@addr(p), KW_VAL) && is_module_use(@addr(p))
             @append(module_uses, parse_module_use(@addr(p), arena))
         elif is_keyword(@addr(p), KW_VAL) || is_keyword(@addr(p), KW_VAR)
-            skip_to_newline(@addr(p))
+            val g_mutable bool = is_keyword(@addr(p), KW_VAR)
+            advance(@addr(p))
+            @append(globals, parse_global_var(@addr(p), arena, g_mutable, false))
         elif is_keyword(@addr(p), KW_WHEN)
             advance(@addr(p))
             val matches bool = parse_when_condition(@addr(p), arena, current_platform)
@@ -2787,6 +2823,10 @@ pub def parse_program(tokens list[ast.Token], arena ref(allocators.Arena), curre
                         @append(interface_defs, parse_interface_def(@addr(p), arena, true))
                     elif is_keyword(@addr(p), KW_IFACE)
                         @append(interface_defs, parse_interface_def(@addr(p), arena, false))
+                    elif is_keyword(@addr(p), KW_PUB) && next_is_keyword(@addr(p), KW_VAR)
+                        advance(@addr(p))
+                        advance(@addr(p))
+                        @append(globals, parse_global_var(@addr(p), arena, true, true))
                     elif is_keyword(@addr(p), KW_PUB) && next_is_keyword(@addr(p), KW_VAL)
                         advance(@addr(p))
                         advance(@addr(p))
@@ -2858,7 +2898,9 @@ pub def parse_program(tokens list[ast.Token], arena ref(allocators.Arena), curre
                     elif is_keyword(@addr(p), KW_VAL) && is_module_use(@addr(p))
                         @append(module_uses, parse_module_use(@addr(p), arena))
                     elif is_keyword(@addr(p), KW_VAL) || is_keyword(@addr(p), KW_VAR)
-                        skip_to_newline(@addr(p))
+                        val g_mutable2 bool = is_keyword(@addr(p), KW_VAR)
+                        advance(@addr(p))
+                        @append(globals, parse_global_var(@addr(p), arena, g_mutable2, false))
                     elif is_keyword(@addr(p), KW_WHEN)
                         advance(@addr(p))
                         val inner_matches bool = parse_when_condition(@addr(p), arena, current_platform)
@@ -2894,6 +2936,10 @@ pub def parse_program(tokens list[ast.Token], arena ref(allocators.Arena), curre
                                     @append(interface_defs, parse_interface_def(@addr(p), arena, true))
                                 elif is_keyword(@addr(p), KW_IFACE)
                                     @append(interface_defs, parse_interface_def(@addr(p), arena, false))
+                                elif is_keyword(@addr(p), KW_PUB) && next_is_keyword(@addr(p), KW_VAR)
+                                    advance(@addr(p))
+                                    advance(@addr(p))
+                                    @append(globals, parse_global_var(@addr(p), arena, true, true))
                                 elif is_keyword(@addr(p), KW_PUB) && next_is_keyword(@addr(p), KW_VAL)
                                     advance(@addr(p))
                                     advance(@addr(p))
@@ -2965,7 +3011,9 @@ pub def parse_program(tokens list[ast.Token], arena ref(allocators.Arena), curre
                                 elif is_keyword(@addr(p), KW_VAL) && is_module_use(@addr(p))
                                     @append(module_uses, parse_module_use(@addr(p), arena))
                                 elif is_keyword(@addr(p), KW_VAL) || is_keyword(@addr(p), KW_VAR)
-                                    skip_to_newline(@addr(p))
+                                    val g_mutable3 bool = is_keyword(@addr(p), KW_VAR)
+                                    advance(@addr(p))
+                                    @append(globals, parse_global_var(@addr(p), arena, g_mutable3, false))
                                 else
                                     skip_top_level_item(@addr(p))
                                 end
@@ -3005,6 +3053,7 @@ pub def parse_program(tokens list[ast.Token], arena ref(allocators.Arena), curre
         type_defs: type_defs,
         interface_defs: interface_defs,
         tests: tests,
-        extern_headers: extern_headers
+        extern_headers: extern_headers,
+        globals: globals
     )
 end

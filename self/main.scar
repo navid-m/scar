@@ -247,7 +247,8 @@ def build_test_program(program ref(ast.Program), arena ref(allocators.Arena)) as
         type_defs: program.type_defs,
         interface_defs: program.interface_defs,
         tests: ([] as list[ast.TestBlock]),
-        extern_headers: program.extern_headers
+        extern_headers: program.extern_headers,
+        globals: program.globals
     )
 end
 

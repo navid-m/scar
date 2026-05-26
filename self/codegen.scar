@@ -90,6 +90,40 @@ pub def generate_c(program ref(ast.Program), info ref(sema.ProgramInfo), arena r
         append_str(@addr(output), @addr(output_len), "\n")
     end
 
+    var global_dummy_fn ast.Function = ast.Function(
+        name: "",
+        params: [] as list[ast.Param],
+        return_type: ast.Type.Void(0),
+        body: [] as list[ast.Stmt],
+        is_pub: false,
+        is_extern: false,
+        extern_name: "",
+        generic_params: [] as list[ref(u8)],
+        line: 0,
+        column: 0
+    )
+    if @len(program.functions) > 0
+        global_dummy_fn = program.functions[0]
+    end
+    var gi2 usize = 0
+    for gi2 < @len(program.globals)
+        val gv ref(ast.GlobalVar) = @addr(program.globals[gi2])
+        if !gv.mutable
+            append_str(@addr(output), @addr(output_len), "const ")
+        end
+        append_str(@addr(output), @addr(output_len), c_type_bare(@addr(gv.ty), info, arena))
+        append_str(@addr(output), @addr(output_len), " scar__glob__")
+        append_str(@addr(output), @addr(output_len), gv.name)
+        append_str(@addr(output), @addr(output_len), render_global_dims(@addr(gv.ty), arena))
+        append_str(@addr(output), @addr(output_len), " = ")
+        append_expr(@addr(gv.init), @addr(global_dummy_fn), info, arena, @addr(output), @addr(output_len))
+        append_str(@addr(output), @addr(output_len), ";\n")
+        gi2++
+    end
+    if @len(program.globals) > 0
+        append_str(@addr(output), @addr(output_len), "\n")
+    end
+
     var i usize = 0
     for i < @len(program.functions)
         val fn_ref ref(ast.Function) = @addr(program.functions[i])
@@ -1516,47 +1550,57 @@ def render_stmt(stmt ref(ast.Stmt), fun ref(ast.Function), info ref(sema.Program
                                     else
                                         append_str(output, output_len, "else if (")
                                     end
-                                    append_str(output, output_len, temp_name)
-                                    append_str(output, output_len, ".tag == ")
-                                    append_str(output, output_len, bare_type_name)
-                                    append_str(output, output_len, "__tag__")
-                                    append_str(output, output_len, bare_variant)
-                                    append_str(output, output_len, ") {\n")
-                                    var bi usize = 0
-                                    for bi < @len(m.arms[k].bindings)
-                                        val bname ref(u8) = m.arms[k].bindings[bi]
-                                        if str.len(bname) > 0 && !str.eql(bname, "_")
-                                            var payload_ty ref(u8) = "void *"
-                                            var ti usize = 0
-                                            for ti < @len(info.types)
-                                                if str.eql(info.types[ti].name, bare_type_name)
-                                                    var vi usize = 0
-                                                    for vi < @len(info.types[ti].info.variant_map)
-                                                        if str.eql(info.types[ti].info.variant_map[vi].name, bare_variant)
-                                                            if bi < @len(info.types[ti].info.variant_map[vi].payload_types)
-                                                                payload_ty = c_type(@addr(info.types[ti].info.variant_map[vi].payload_types[bi]), info, arena)
+                                    if is_enum_type_from_info(bare_type_name, info)
+                                        append_str(output, output_len, temp_name)
+                                        append_str(output, output_len, " == ")
+                                        val enum_prefix ref(u8) = make_enum_c_prefix(bare_type_name, arena)
+                                        append_str(output, output_len, enum_prefix)
+                                        append_str(output, output_len, "_")
+                                        append_str(output, output_len, bare_variant)
+                                        append_str(output, output_len, ") {\n")
+                                    else
+                                        append_str(output, output_len, temp_name)
+                                        append_str(output, output_len, ".tag == ")
+                                        append_str(output, output_len, bare_type_name)
+                                        append_str(output, output_len, "__tag__")
+                                        append_str(output, output_len, bare_variant)
+                                        append_str(output, output_len, ") {\n")
+                                        var bi usize = 0
+                                        for bi < @len(m.arms[k].bindings)
+                                            val bname ref(u8) = m.arms[k].bindings[bi]
+                                            if str.len(bname) > 0 && !str.eql(bname, "_")
+                                                var payload_ty ref(u8) = "void *"
+                                                var ti usize = 0
+                                                for ti < @len(info.types)
+                                                    if str.eql(info.types[ti].name, bare_type_name)
+                                                        var vi usize = 0
+                                                        for vi < @len(info.types[ti].info.variant_map)
+                                                            if str.eql(info.types[ti].info.variant_map[vi].name, bare_variant)
+                                                                if bi < @len(info.types[ti].info.variant_map[vi].payload_types)
+                                                                    payload_ty = c_type(@addr(info.types[ti].info.variant_map[vi].payload_types[bi]), info, arena)
+                                                                end
+                                                                break
                                                             end
-                                                            break
+                                                            vi++
                                                         end
-                                                        vi++
+                                                        break
                                                     end
-                                                    break
+                                                    ti++
                                                 end
-                                                ti++
+                                                indent(output, output_len, level + 2)
+                                                append_str(output, output_len, payload_ty)
+                                                append_str(output, output_len, " loc__")
+                                                append_str(output, output_len, bname)
+                                                append_str(output, output_len, " = ")
+                                                append_str(output, output_len, temp_name)
+                                                append_str(output, output_len, ".data.")
+                                                append_str(output, output_len, bare_variant)
+                                                append_str(output, output_len, "._")
+                                                append_usize(output, output_len, bi, arena)
+                                                append_str(output, output_len, ";\n")
                                             end
-                                            indent(output, output_len, level + 2)
-                                            append_str(output, output_len, payload_ty)
-                                            append_str(output, output_len, " loc__")
-                                            append_str(output, output_len, bname)
-                                            append_str(output, output_len, " = ")
-                                            append_str(output, output_len, temp_name)
-                                            append_str(output, output_len, ".data.")
-                                            append_str(output, output_len, bare_variant)
-                                            append_str(output, output_len, "._")
-                                            append_usize(output, output_len, bi, arena)
-                                            append_str(output, output_len, ";\n")
+                                            bi++
                                         end
-                                        bi++
                                     end
                                 )
                                 ast.MatchArmKind.Ok(_) => (
@@ -1897,6 +1941,22 @@ def append_expr(expr ref(ast.Expr), fun ref(ast.Function), info ref(sema.Program
                         if sym_mixed != none
                             append_str(output, output_len, sym_mixed)
                             found_sym = true
+                        end
+                    end
+                    if !found_sym && @len(segments) == 2
+                        var ti usize = 0
+                        for ti < @len(info.types)
+                            if str.eql(info.types[ti].name, segments[0])
+                                if is_enum_type_from_info(segments[0], info)
+                                    val enum_prefix ref(u8) = make_enum_c_prefix(segments[0], arena)
+                                    append_str(output, output_len, enum_prefix)
+                                    append_str(output, output_len, "_")
+                                    append_str(output, output_len, segments[1])
+                                    found_sym = true
+                                end
+                                break
+                            end
+                            ti++
                         end
                     end
                     if !found_sym
@@ -3350,6 +3410,33 @@ def join_segments_mixed(segments list[ref(u8)], arena ref(allocators.Arena)) ref
     return buf
 end
 
+def render_global_dims(ty ref(ast.Type), arena ref(allocators.Arena)) ref(u8)
+    match @deref(ty)
+        ast.Type.StaticArray(size, inner) => (
+            val inner_dims ref(u8) = render_global_dims(inner, arena)
+            val inner_len usize = str.len(inner_dims)
+            var size_buf list[u8] = []
+            format_u64_for_codegen(size, @addr(size_buf))
+            @append(size_buf, 0)
+            val size_str ref(u8) = @addr(size_buf[0])
+            val size_len usize = str.len(size_str)
+            val result_res = allocators.Arena.alloc(arena, 1 + size_len + 1 + inner_len + 1)
+            var result ref(u8) = none
+            match result_res
+                ok m => result = m as ref(u8)
+                error _ => return ""
+            end
+            @deref(@as_mut(@add(result, 0))) = '['
+            @memcpy(@add(result, 1), size_str, size_len)
+            @deref(@as_mut(@add(result, 1 + size_len))) = ']'
+            @memcpy(@add(result, 2 + size_len), inner_dims, inner_len)
+            @deref(@as_mut(@add(result, 2 + size_len + inner_len))) = 0
+            return result
+        )
+        _ => return ""
+    end
+end
+
 def strip_module_prefix(name ref(u8)) ref(u8)
     val nlen usize = str.len(name)
     var last_sep usize = nlen
@@ -3503,6 +3590,16 @@ def get_expr_type(expr ref(ast.Expr), fun ref(ast.Function), info ref(sema.Progr
                             return @addr(fun.params[i].ty)
                         end
                         i++
+                    end
+                    val global_match_nm ref(u8) = lookup_global_name(name, info)
+                    if global_match_nm != none
+                        var gi2 usize = 0
+                        for gi2 < @len(info.globals)
+                            if str.eql(info.globals[gi2].name, global_match_nm)
+                                return @addr(info.globals[gi2].ty)
+                            end
+                            gi2++
+                        end
                     end
                 )
                 _ => ()
@@ -3754,10 +3851,44 @@ def find_symbol_in_list(name ref(u8), info ref(sema.ProgramInfo)) ref(u8)
     return none
 end
 
+def lookup_global_name(name ref(u8), info ref(sema.ProgramInfo)) ref(u8)
+    var gi usize = 0
+    for gi < @len(info.globals)
+        if str.eql(info.globals[gi].name, name)
+            return info.globals[gi].name
+        end
+        gi++
+    end
+    gi = 0
+    for gi < @len(info.globals)
+        if name_matches_suffix(info.globals[gi].name, name)
+            return info.globals[gi].name
+        end
+        gi++
+    end
+    return none
+end
+
 def lookup_symbol(name ref(u8), info ref(sema.ProgramInfo), arena ref(allocators.Arena)) ref(u8)
     val found ref(u8) = find_symbol_in_list(name, info)
     if found != none
         return found
+    end
+    val global_match ref(u8) = lookup_global_name(name, info)
+    if global_match != none
+        val prefix ref(u8) = "scar__glob__"
+        val plen usize = str.len(prefix)
+        val nlen usize = str.len(global_match)
+        val res_res = allocators.Arena.alloc(arena, plen + nlen + 1)
+        var res ref(u8) = none
+        match res_res
+            ok m => res = m as ref(u8)
+            error _ => return mangle_local_symbol(name, arena)
+        end
+        @memcpy(res, prefix, plen)
+        @memcpy(@add(res, plen), global_match, nlen)
+        @deref(@as_mut(@add(res, plen + nlen))) = 0
+        return res
     end
     return mangle_local_symbol(name, arena)
 end

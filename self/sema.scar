@@ -40,11 +40,18 @@ pub type UnionVariantDef
     payload_types list[ast.Type]
 end
 
+pub type GlobalEntry
+    name ref(u8)
+    ty ast.Type
+    mutable bool
+end
+
 pub type ProgramInfo
     functions list[FunctionEntry]
     function_symbols list[SymbolEntry]
     types list[TypeEntry]
     locals list[LocalEntry]
+    globals list[GlobalEntry]
 end
 
 pub type FunctionEntry
@@ -112,6 +119,17 @@ pub def analyze(program ref(ast.Program), arena ref(allocators.Arena)) ProgramIn
         i++
     end
 
+    var globals list[GlobalEntry] = []
+    i = 0
+    for i < @len(program.globals)
+        @append(globals, GlobalEntry(
+            name: program.globals[i].name,
+            ty: program.globals[i].ty,
+            mutable: program.globals[i].mutable
+        ))
+        i++
+    end
+
     var locals list[LocalEntry] = []
     i = 0
     for i < @len(program.functions)
@@ -128,7 +146,8 @@ pub def analyze(program ref(ast.Program), arena ref(allocators.Arena)) ProgramIn
         functions: functions,
         function_symbols: function_symbols,
         types: types,
-        locals: locals
+        locals: locals,
+        globals: globals
     )
 end
 
