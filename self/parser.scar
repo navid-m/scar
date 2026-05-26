@@ -2518,6 +2518,14 @@ def parse_interface_def(p ref(ast.TokenList), arena ref(allocators.Arena), is_pu
 end
 
 def parse_type_def(p ref(ast.TokenList), arena ref(allocators.Arena), is_pub_val bool) ast.TypeDef
+    return parse_type_def_with_extern(p, arena, is_pub_val, false)
+end
+
+def parse_type_def_extern(p ref(ast.TokenList), arena ref(allocators.Arena), is_pub_val bool) ast.TypeDef
+    return parse_type_def_with_extern(p, arena, is_pub_val, true)
+end
+
+def parse_type_def_with_extern(p ref(ast.TokenList), arena ref(allocators.Arena), is_pub_val bool, is_extern_val bool) ast.TypeDef
     advance(p)
     val name ref(u8) = expect_ident(p, arena)
     var derives list[ref(u8)] = []
@@ -2554,11 +2562,20 @@ def parse_type_def(p ref(ast.TokenList), arena ref(allocators.Arena), is_pub_val
         fields: fields,
         variants: ([] as list[ast.VariantDef]),
         is_pub: is_pub_val,
+        is_extern: is_extern_val,
         derives: derives
     )
 end
 
 def parse_union_def(p ref(ast.TokenList), arena ref(allocators.Arena), is_pub_val bool) ast.TypeDef
+    return parse_union_def_inner(p, arena, is_pub_val, false)
+end
+
+def parse_union_def_extern(p ref(ast.TokenList), arena ref(allocators.Arena), is_pub_val bool) ast.TypeDef
+    return parse_union_def_inner(p, arena, is_pub_val, true)
+end
+
+def parse_union_def_inner(p ref(ast.TokenList), arena ref(allocators.Arena), is_pub_val bool, is_extern_val bool) ast.TypeDef
     advance(p)
     val name ref(u8) = expect_ident(p, arena)
     consume_newlines(p)
@@ -2607,6 +2624,7 @@ def parse_union_def(p ref(ast.TokenList), arena ref(allocators.Arena), is_pub_va
         fields: ([] as list[ast.FieldDef]),
         variants: variants,
         is_pub: is_pub_val,
+        is_extern: is_extern_val,
         derives: ([] as list[ref(u8)])
     )
 end
@@ -2636,6 +2654,7 @@ def parse_enum_def(p ref(ast.TokenList), arena ref(allocators.Arena), is_pub_val
         fields: ([] as list[ast.FieldDef]),
         variants: variants,
         is_pub: is_pub_val,
+        is_extern: false,
         derives: ([] as list[ref(u8)])
     )
 end
@@ -2688,7 +2707,9 @@ pub def parse_program(tokens list[ast.Token], arena ref(allocators.Arena), curre
         elif is_keyword(@addr(p), KW_PUB) && next_is_keyword(@addr(p), KW_EXTERN)
             advance(@addr(p))
             advance(@addr(p))
-            if is_keyword(@addr(p), KW_DEF)
+            if is_keyword(@addr(p), KW_TYPE)
+                @append(type_defs, parse_type_def_extern(@addr(p), arena, true))
+            elif is_keyword(@addr(p), KW_DEF)
                 @append(functions, parse_extern_function(@addr(p), arena, true))
             else
                 skip_to_newline(@addr(p))
@@ -2762,7 +2783,9 @@ pub def parse_program(tokens list[ast.Token], arena ref(allocators.Arena), curre
             skip_top_level_item(@addr(p))
         elif is_keyword(@addr(p), KW_EXTERN)
             advance(@addr(p))
-            if is_keyword(@addr(p), KW_DEF)
+            if is_keyword(@addr(p), KW_TYPE)
+                @append(type_defs, parse_type_def_extern(@addr(p), arena, false))
+            elif is_keyword(@addr(p), KW_DEF)
                 @append(functions, parse_extern_function(@addr(p), arena, false))
             else
                 match p.tokens[p.pos].kind
@@ -2801,7 +2824,9 @@ pub def parse_program(tokens list[ast.Token], arena ref(allocators.Arena), curre
                     elif is_keyword(@addr(p), KW_PUB) && next_is_keyword(@addr(p), KW_EXTERN)
                         advance(@addr(p))
                         advance(@addr(p))
-                        if is_keyword(@addr(p), KW_DEF)
+                        if is_keyword(@addr(p), KW_TYPE)
+                            @append(type_defs, parse_type_def_extern(@addr(p), arena, true))
+                        elif is_keyword(@addr(p), KW_DEF)
                             @append(functions, parse_extern_function(@addr(p), arena, true))
                         else
                             skip_to_newline(@addr(p))
@@ -2875,7 +2900,9 @@ pub def parse_program(tokens list[ast.Token], arena ref(allocators.Arena), curre
                         skip_top_level_item(@addr(p))
                     elif is_keyword(@addr(p), KW_EXTERN)
                         advance(@addr(p))
-                        if is_keyword(@addr(p), KW_DEF)
+                        if is_keyword(@addr(p), KW_TYPE)
+                            @append(type_defs, parse_type_def_extern(@addr(p), arena, false))
+                        elif is_keyword(@addr(p), KW_DEF)
                             @append(functions, parse_extern_function(@addr(p), arena, false))
                         else
                             match p.tokens[p.pos].kind
@@ -2914,7 +2941,9 @@ pub def parse_program(tokens list[ast.Token], arena ref(allocators.Arena), curre
                                 elif is_keyword(@addr(p), KW_PUB) && next_is_keyword(@addr(p), KW_EXTERN)
                                     advance(@addr(p))
                                     advance(@addr(p))
-                                    if is_keyword(@addr(p), KW_DEF)
+                                    if is_keyword(@addr(p), KW_TYPE)
+                                        @append(type_defs, parse_type_def_extern(@addr(p), arena, true))
+                                    elif is_keyword(@addr(p), KW_DEF)
                                         @append(functions, parse_extern_function(@addr(p), arena, true))
                                     else
                                         skip_to_newline(@addr(p))
@@ -2988,7 +3017,9 @@ pub def parse_program(tokens list[ast.Token], arena ref(allocators.Arena), curre
                                     skip_top_level_item(@addr(p))
                                 elif is_keyword(@addr(p), KW_EXTERN)
                                     advance(@addr(p))
-                                    if is_keyword(@addr(p), KW_DEF)
+                                    if is_keyword(@addr(p), KW_TYPE)
+                                        @append(type_defs, parse_type_def_extern(@addr(p), arena, false))
+                                    elif is_keyword(@addr(p), KW_DEF)
                                         @append(functions, parse_extern_function(@addr(p), arena, false))
                                     else
                                         match p.tokens[p.pos].kind

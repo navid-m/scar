@@ -214,39 +214,38 @@ def resolve_module_into(
     ti = 0
     for ti < @len(mod_prog.type_defs)
         val td ref(ast.TypeDef) = @addr(mod_prog.type_defs[ti])
-        if td.is_pub
-            val prefixed_name ref(u8) = prefix_name(alias_name, td.name, arena)
-            var prefixed_fields list[ast.FieldDef] = []
-            var fi2 usize = 0
-            for fi2 < @len(td.fields)
-                val f ref(ast.FieldDef) = @addr(td.fields[fi2])
-                val rewritten_ty ast.Type = rewrite_type_with_prefix(@addr(f.ty), alias_name, @addr(pub_type_names), arena)
-                @append(prefixed_fields, ast.FieldDef(name: f.name, ty: rewritten_ty, line: f.line, column: f.column))
-                fi2++
-            end
-            var prefixed_variants list[ast.VariantDef] = []
-            var vi2 usize = 0
-            for vi2 < @len(td.variants)
-                val v ref(ast.VariantDef) = @addr(td.variants[vi2])
-                var rewritten_payloads list[ast.Type] = []
-                var pi usize = 0
-                for pi < @len(v.payload_types)
-                    @append(rewritten_payloads, rewrite_type_with_prefix(@addr(v.payload_types[pi]), alias_name, @addr(pub_type_names), arena))
-                    pi++
-                end
-                @append(prefixed_variants, ast.VariantDef(name: v.name, payload_types: rewritten_payloads))
-                vi2++
-            end
-            val prefixed_td ast.TypeDef = ast.TypeDef(
-                name: prefixed_name,
-                kind: td.kind,
-                fields: prefixed_fields,
-                variants: prefixed_variants,
-                is_pub: false,
-                derives: ([] as list[ref(u8)])
-            )
-            @append(@deref(resolved_type_defs), prefixed_td)
+        val prefixed_name ref(u8) = prefix_name(alias_name, td.name, arena)
+        var prefixed_fields list[ast.FieldDef] = []
+        var fi2 usize = 0
+        for fi2 < @len(td.fields)
+            val f ref(ast.FieldDef) = @addr(td.fields[fi2])
+            val rewritten_ty ast.Type = rewrite_type_with_prefix(@addr(f.ty), alias_name, @addr(pub_type_names), arena)
+            @append(prefixed_fields, ast.FieldDef(name: f.name, ty: rewritten_ty, line: f.line, column: f.column))
+            fi2++
         end
+        var prefixed_variants list[ast.VariantDef] = []
+        var vi2 usize = 0
+        for vi2 < @len(td.variants)
+            val v ref(ast.VariantDef) = @addr(td.variants[vi2])
+            var rewritten_payloads list[ast.Type] = []
+            var pi usize = 0
+            for pi < @len(v.payload_types)
+                @append(rewritten_payloads, rewrite_type_with_prefix(@addr(v.payload_types[pi]), alias_name, @addr(pub_type_names), arena))
+                pi++
+            end
+            @append(prefixed_variants, ast.VariantDef(name: v.name, payload_types: rewritten_payloads))
+            vi2++
+        end
+        val prefixed_td ast.TypeDef = ast.TypeDef(
+            name: prefixed_name,
+            kind: td.kind,
+            fields: prefixed_fields,
+            variants: prefixed_variants,
+            is_pub: false,
+            is_extern: td.is_extern,
+            derives: ([] as list[ref(u8)])
+        )
+        @append(@deref(resolved_type_defs), prefixed_td)
         ti++
     end
 

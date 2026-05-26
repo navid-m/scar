@@ -381,12 +381,13 @@ pub type InterfaceDef
 end
 
 pub type TypeDef
-	name ref(u8)
-	kind TypeDefKind
-	fields list[FieldDef]
-	variants list[VariantDef]
-	is_pub bool
-	derives list[ref(u8)]
+    name ref(u8)
+    kind TypeDefKind
+    fields list[FieldDef]
+    variants list[VariantDef]
+    is_pub bool
+    is_extern bool
+    derives list[ref(u8)]
 end
 
 pub type GlobalVar
