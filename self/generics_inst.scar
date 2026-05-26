@@ -880,7 +880,54 @@ def infer_type_from_expr(expr ref(ast.Expr), state ref(GenericState), arena ref(
                 _ => return ast.Type.Named("_")
             end
         )
+        ast.Expr.BuiltinCall(_) => (
+            return ast.Type.Named("_")
+        )
         _ => return ast.Type.Named("_")
+    end
+end
+
+def needs_inference(ty ref(ast.Type)) bool
+    match @deref(ty)
+        ast.Type.Named(name) => return str.eql(name, "_")
+        ast.Type.Infer(_) => return true
+        _ => return false
+    end
+end
+
+def is_inferred_type(ty ref(ast.Type)) bool
+    match @deref(ty)
+        ast.Type.Named(name) => return !str.eql(name, "_")
+        _ => return false
+    end
+end
+
+def param_type_to_generic_name(ty ref(ast.Type)) ref(u8)
+    match @deref(ty)
+        ast.Type.Named(name) => return name
+        ast.Type.Ref(inner) => return param_type_to_generic_name(inner)
+        ast.Type.Mut(inner) => return param_type_to_generic_name(inner)
+        _ => return ""
+    end
+end
+
+def try_infer_param(template ref(ast.Function), call_args ref(list[ast.Expr]), result ref(list[ast.Type]), param_idx usize, state ref(GenericState), arena ref(allocators.Arena))
+    val param_type_name ref(u8) = param_type_to_generic_name(@addr(template.params[param_idx].ty))
+    if str.eql(param_type_name, "")
+        return
+    end
+    var j usize = 0
+    for j < @len(template.generic_params)
+        if str.eql(template.generic_params[j], param_type_name) && param_idx < @len(@deref(call_args))
+            if needs_inference(@addr(@deref(result)[j]))
+                val inferred ast.Type = infer_type_from_expr(@addr(@deref(call_args)[param_idx]), state, arena)
+                if is_inferred_type(@addr(inferred))
+                    @deref(result)[j] = inferred
+                end
+            end
+            break
+        end
+        j++
     end
 end
 
@@ -893,49 +940,7 @@ def infer_type_args(template ref(ast.Function), call_args ref(list[ast.Expr]), t
     end
     i = 0
     for i < @len(template.params)
-        val param ref(ast.Param) = @addr(template.params[i])
-        match param.ty
-            ast.Type.Named(param_type_name) => (
-                var j usize = 0
-                for j < @len(template.generic_params)
-                    if str.eql(template.generic_params[j], param_type_name) && i < @len(@deref(call_args))
-                        match result[j]
-                            ast.Type.Named(name) => (
-                                if str.eql(name, "_")
-                                    val inferred ast.Type = infer_type_from_expr(@addr(@deref(call_args)[i]), state, arena)
-                    match inferred
-                        ast.Type.Named(inferred_name) => (
-                            if !str.eql(inferred_name, "_")
-                                result[j] = inferred
-                            end
-                        )
-                        ast.Type.Void(_) => result[j] = inferred
-                        ast.Type.Bool(_) => result[j] = inferred
-                        ast.Type.I8(_) => result[j] = inferred
-                        ast.Type.I16(_) => result[j] = inferred
-                        ast.Type.I32(_) => result[j] = inferred
-                        ast.Type.I64(_) => result[j] = inferred
-                        ast.Type.Isize(_) => result[j] = inferred
-                        ast.Type.U8(_) => result[j] = inferred
-                        ast.Type.U16(_) => result[j] = inferred
-                        ast.Type.U32(_) => result[j] = inferred
-                        ast.Type.U64(_) => result[j] = inferred
-                        ast.Type.Usize(_) => result[j] = inferred
-                        ast.Type.F32(_) => result[j] = inferred
-                        ast.Type.F64(_) => result[j] = inferred
-                        _ => ()
-                    end
-                                end
-                            )
-                            _ => ()
-                        end
-                        break
-                    end
-                    j++
-                end
-            )
-            _ => ()
-        end
+        try_infer_param(template, call_args, @addr(result), i, state, arena)
         i++
     end
     return result

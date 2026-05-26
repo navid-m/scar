@@ -419,6 +419,9 @@ def parse_type(p ref(ast.TokenList), arena ref(allocators.Arena)) ast.Type
         )
         ast.TokenKind.Ident(name) => (
             advance(p)
+            if str.eql(name, "_")
+                return ast.Type.Infer(0)
+            end
             var type_name ref(u8) = name
             match p.tokens[p.pos].kind
                 ast.TokenKind.Dot(_) => (
