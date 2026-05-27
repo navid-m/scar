@@ -92,9 +92,7 @@ impl CompileErrors {
     const MAX: usize = 50;
 
     pub fn new() -> Self {
-        CompileErrors {
-            errors: Vec::new(),
-        }
+        CompileErrors { errors: Vec::new() }
     }
 
     pub fn single(error: CompileError) -> Self {
@@ -301,7 +299,7 @@ impl TestCli {
 
             match arg.as_str() {
                 "-o" | "--output" => pending_output = true,
-                "--emit" => emit_c = true,
+                "--emit" | "-emit" => emit_c = true,
                 "-opt" | "--opt" => optimize = true,
                 _ if arg.starts_with('-') => {
                     return Err(CompileError::new(format!("unknown flag: {arg}")));
@@ -574,11 +572,12 @@ fn build_test_program(program: &Program) -> Program {
         file_path: None,
     });
 
-Program {
-    module_uses: Vec::new(),
-    extern_headers: program.extern_headers.clone(),
-    link_flags: program.link_flags.clone(),
-    interface_defs: program.interface_defs.clone(),        type_defs: program.type_defs.clone(),
+    Program {
+        module_uses: Vec::new(),
+        extern_headers: program.extern_headers.clone(),
+        link_flags: program.link_flags.clone(),
+        interface_defs: program.interface_defs.clone(),
+        type_defs: program.type_defs.clone(),
         typesets: program.typesets.clone(),
         enum_defs: program.enum_defs.clone(),
         functions,
