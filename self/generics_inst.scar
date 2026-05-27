@@ -930,7 +930,11 @@ end
 def is_inferred_type(ty ref(ast.Type)) bool
     match @deref(ty)
         ast.Type.Named(name) => return !str.eql(name, "_")
-        _ => return false
+        ast.Type.Infer(_) => return false
+        ast.Type.Void(_) => return false
+        ast.Type.None(_) => return false
+        ast.Type.Error(_) => return false
+        _ => return true
     end
 end
 
