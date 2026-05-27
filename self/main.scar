@@ -18,10 +18,10 @@ val usage_message ref(u8) = \\usage: scar [subcommand] <source.scar> [options]
 pub def main() void
     val args list[ref(u8)] = @args()
     if @len(args) == 1
-        print_usage_message()
+        print_usage_message_and_exit()
     end
     if str.eql(args[1], "help")
-        print_usage_message()
+        print_usage_message_and_exit()
     end
 
     if @len(args) >= 2 && str.eql(args[1], "-v") || str.eql(args[1], "-version")
@@ -171,7 +171,7 @@ pub def main() void
     end
 end
 
-def print_usage_message()
+def print_usage_message_and_exit()
     @print("{s}\n", {usage_message})
     os.exit(0)
 end
