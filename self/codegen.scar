@@ -1193,11 +1193,12 @@ end
 def render_try_var_decl(vd ref(ast.StmtVarDecl), inner ref(ast.Expr), fun ref(ast.Function), info ref(sema.ProgramInfo), level usize, next_temp_id ref(usize), defers ref(list[list[ast.Stmt]]), arena ref(allocators.Arena), output ref(ref(u8)), output_len ref(usize))
     render_try_temp(inner, fun, info, level, next_temp_id, defers, arena, output, output_len)
     val ty ref(ast.Type) = lookup_local_type(vd.name, fun, info)
+    val c_ty_str ref(u8) = c_type_named(ty, vd.name, info, arena)
     indent(output, output_len, level)
-    if !vd.mutable && !is_aggregate_type(ty)
+    if !vd.mutable && !is_aggregate_type(ty) && !str.starts_with(c_ty_str, "const ")
         append_str(output, output_len, "const ")
     end
-    append_str(output, output_len, c_type_named(ty, vd.name, info, arena))
+    append_str(output, output_len, c_ty_str)
     append_str(output, output_len, " = __scar_try_")
     append_usize(output, output_len, (@deref(next_temp_id) - 1), arena)
     append_str(output, output_len, ".ok;\n")
@@ -1212,11 +1213,12 @@ def render_stmt(stmt ref(ast.Stmt), fun ref(ast.Function), info ref(sema.Program
                 )
                 _ => (
                     val ty ref(ast.Type) = lookup_local_type(vd.name, fun, info)
+                    val c_ty_str2 ref(u8) = c_type_named(ty, vd.name, info, arena)
                     indent(output, output_len, level)
-                    if !vd.mutable && !is_aggregate_type(ty)
+                    if !vd.mutable && !is_aggregate_type(ty) && !str.starts_with(c_ty_str2, "const ")
                         append_str(output, output_len, "const ")
                     end
-                    append_str(output, output_len, c_type_named(ty, vd.name, info, arena))
+                    append_str(output, output_len, c_ty_str2)
                     append_str(output, output_len, " = ")
                     if is_list_lit_expr(@addr(vd.init))
                         append_list_literal_from_expr(@addr(vd.init), ty, fun, info, arena, output, output_len)
@@ -1498,7 +1500,12 @@ def render_stmt(stmt ref(ast.Stmt), fun ref(ast.Function), info ref(sema.Program
                             end
                             append_str(output, output_len, temp_name)
                             append_str(output, output_len, " == ")
-                            append_str(output, output_len, vname)
+                            val first_ch u8 = @deref(vname)
+                            if (first_ch >= 'a' && first_ch <= 'z') || (first_ch >= 'A' && first_ch <= 'Z') || first_ch == '_'
+                                append_str(output, output_len, lookup_symbol(vname, info, arena))
+                            else
+                                append_str(output, output_len, vname)
+                            end
                             append_str(output, output_len, ") {\n")
                         )
                         _ => (
@@ -1855,7 +1862,15 @@ def append_expr(expr ref(ast.Expr), fun ref(ast.Function), info ref(sema.Program
         )
         ast.Expr.Path(segments) => (
             if @len(segments) == 1
-                append_str(output, output_len, mangle_local_symbol(segments[0], arena))
+                if is_local_variable(segments[0], fun, info)
+                    append_str(output, output_len, mangle_local_symbol(segments[0], arena))
+                else
+                    val sym ref(u8) = lookup_symbol(segments[0], info, arena)
+                    append_str(output, output_len, sym)
+                    if is_zero_param_function(segments[0], info)
+                        append_str(output, output_len, "()")
+                    end
+                end
             else
                 var first_is_local bool = is_local_variable(segments[0], fun, info)
                 var first_is_match_binding bool = false
@@ -2347,8 +2362,17 @@ def append_expr(expr ref(ast.Expr), fun ref(ast.Function), info ref(sema.Program
                                         end
                                         append_str(output, output_len, ")")
                                     else
+                                        var param_name ref(u8) = type_name
+                                        var pi usize = 0
+                                        for pi < @len(fun.params)
+                                            if param_type_references_name(@addr(fun.params[pi].ty), type_name)
+                                                param_name = fun.params[pi].name
+                                                break
+                                            end
+                                            pi++
+                                        end
                                         append_str(output, output_len, "(")
-                                        append_str(output, output_len, type_name)
+                                        append_str(output, output_len, mangle_local_symbol(param_name, arena))
                                         append_str(output, output_len, ")->")
                                         append_str(output, output_len, mc.method)
                                         append_str(output, output_len, "(")
@@ -2847,9 +2871,9 @@ def c_type(ty ref(ast.Type), info ref(sema.ProgramInfo), arena ref(allocators.Ar
         ast.Type.Named(name) => return resolve_type_name(name, info)
         ast.Type.Applied(name, _) => return resolve_type_name(name, info)
         ast.Type.FnPtr(_, _) => return "void *"
-        ast.Type.Infer(_) => return "void"
+        ast.Type.Infer(_) => return "void *"
         ast.Type.Error(_) => return "const char *"
-        ast.Type.None(_) => return "NULL"
+        ast.Type.None(_) => return "void *"
         ast.Type.StaticArray(_, inner) => (
             val inner_type ref(u8) = c_type(inner, info, arena)
             val inner_len usize = str.len(inner_type)
@@ -2983,6 +3007,9 @@ def type_suffix(ty ref(ast.Type), arena ref(allocators.Arena)) ref(u8)
         ast.Type.Usize(_) => return "usize"
         ast.Type.F32(_) => return "f32"
         ast.Type.F64(_) => return "f64"
+        ast.Type.Infer(_) => return "infer"
+        ast.Type.Error(_) => return "error"
+        ast.Type.None(_) => return "none"
         ast.Type.Named(name) => (
             val nlen usize = str.len(name)
             val result_res = allocators.Arena.alloc(arena, nlen + 1)
@@ -4030,13 +4057,21 @@ def is_void_type(ty ref(ast.Type)) bool
     end
 end
 
+def param_type_references_name(ty ref(ast.Type), name ref(u8)) bool
+    match @deref(ty)
+        ast.Type.Named(n) => return str.eql(n, name)
+        ast.Type.Ref(inner) => return param_type_references_name(inner, name)
+        ast.Type.Mut(inner) => return param_type_references_name(inner, name)
+        _ => return false
+    end
+end
+
 def is_aggregate_type(ty ref(ast.Type)) bool
     match @deref(ty)
         ast.Type.Named(_) => return true
         ast.Type.Applied(_, _) => return true
-        ast.Type.List(_) => return true
-        ast.Type.Result(_) => return true
-        ast.Type.StaticArray(_, _) => return true
+        ast.Type.Ref(_) => return true
+        ast.Type.Mut(_) => return true
         _ => return false
     end
 end

@@ -1381,6 +1381,7 @@ end
 def parse_expr_or(p ref(ast.TokenList), arena ref(allocators.Arena), min_prec usize) ast.Expr
     var left ast.Expr = parse_expr_and(p, arena, min_prec)
     for
+        consume_newlines(p)
         match p.tokens[p.pos].kind
             ast.TokenKind.PipePipe(_) => ()
             _ => break
@@ -1405,6 +1406,7 @@ end
 def parse_expr_and(p ref(ast.TokenList), arena ref(allocators.Arena), min_prec usize) ast.Expr
     var left ast.Expr = parse_expr_bitor(p, arena, min_prec)
     for
+        consume_newlines(p)
         match p.tokens[p.pos].kind
             ast.TokenKind.AmpAmp(_) => ()
             _ => break
@@ -1429,6 +1431,7 @@ end
 def parse_expr_bitor(p ref(ast.TokenList), arena ref(allocators.Arena), min_prec usize) ast.Expr
     var left ast.Expr = parse_expr_bitxor(p, arena, min_prec)
     for
+        consume_newlines(p)
         match p.tokens[p.pos].kind
             ast.TokenKind.Pipe(_) => ()
             _ => break
@@ -1453,6 +1456,7 @@ end
 def parse_expr_bitxor(p ref(ast.TokenList), arena ref(allocators.Arena), min_prec usize) ast.Expr
     var left ast.Expr = parse_expr_bitand(p, arena, min_prec)
     for
+        consume_newlines(p)
         match p.tokens[p.pos].kind
             ast.TokenKind.Caret(_) => ()
             _ => break
@@ -1477,6 +1481,7 @@ end
 def parse_expr_bitand(p ref(ast.TokenList), arena ref(allocators.Arena), min_prec usize) ast.Expr
     var left ast.Expr = parse_expr_comparison(p, arena, min_prec)
     for
+        consume_newlines(p)
         match p.tokens[p.pos].kind
             ast.TokenKind.Amp(_) => ()
             _ => break
@@ -1501,6 +1506,7 @@ end
 def parse_expr_comparison(p ref(ast.TokenList), arena ref(allocators.Arena), min_prec usize) ast.Expr
     var left ast.Expr = parse_expr_shift(p, arena, min_prec)
     for
+        consume_newlines(p)
         match p.tokens[p.pos].kind
             ast.TokenKind.Less(_) => ()
             ast.TokenKind.LessEqual(_) => ()
@@ -1530,6 +1536,7 @@ end
 def parse_expr_shift(p ref(ast.TokenList), arena ref(allocators.Arena), min_prec usize) ast.Expr
     var left ast.Expr = parse_expr_additive(p, arena, min_prec)
     for
+        consume_newlines(p)
         match p.tokens[p.pos].kind
             ast.TokenKind.ShiftLeft(_) => ()
             ast.TokenKind.ShiftRight(_) => ()
@@ -1555,6 +1562,7 @@ end
 def parse_expr_additive(p ref(ast.TokenList), arena ref(allocators.Arena), min_prec usize) ast.Expr
     var left ast.Expr = parse_expr_multiplicative(p, arena, min_prec)
     for
+        consume_newlines(p)
         match p.tokens[p.pos].kind
             ast.TokenKind.Plus(_) => ()
             ast.TokenKind.Minus(_) => ()
@@ -1580,6 +1588,7 @@ end
 def parse_expr_multiplicative(p ref(ast.TokenList), arena ref(allocators.Arena), min_prec usize) ast.Expr
     var left ast.Expr = parse_expr_postfix(p, arena)
     for
+        consume_newlines(p)
         match p.tokens[p.pos].kind
             ast.TokenKind.Star(_) => ()
             ast.TokenKind.Slash(_) => ()
