@@ -11,12 +11,12 @@ val rslv       = use("resolver")
 val reflection = use("std/reflection")
 val ginst      = use("generics_inst")
 
-val usage_message ref(u8) = \\ usage:
-                            \\   scar [-emit] <source.scar> [-o <output>]
-                            \\   scar test <source.scar> [-emit] [-o <output>]
+val usage_message ref(u8) = \\usage: scar [subcommand] <source.scar> [options]
                             \\
-                            \\   -emit       Emit the generated IR
-                            \\   -o          Choose output file (for -emit or binary)
+                            \\  test        Run the test suite for some given file or directory
+                            \\
+                            \\  -emit, -e   Emit the generated IR
+                            \\  -o          Choose output file (for -emit or binary)
     
 pub def compile(source_path ref(u8), output_path ref(u8)) i32|error
     guard source_path != none && !str.eql(source_path, "") else
@@ -328,7 +328,7 @@ pub def main() void
         )
         for i < @len(args)
             val arg ref(u8) = args[i]
-            if str.eql(arg, "-emit")
+            if str.eql(arg, "-emit") || str.eql(arg, "-e")
                 emit_mode = true
             elif str.eql(arg, "-o")
                 if i + 1 >= @len(args)
@@ -378,7 +378,7 @@ pub def main() void
     )
     for i < @len(args)
         val arg ref(u8) = args[i]
-        if str.eql(arg, "-emit")
+        if str.eql(arg, "-emit") || str.eql(arg, "-e")
             emit_mode = true
         elif str.eql(arg, "-o")
             if i + 1 >= @len(args)
