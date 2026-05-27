@@ -1,0 +1,15 @@
+val os = use("std/os")
+
+pub val usage_message ref(u8) = \\usage: scar [subcommand] <source.scar> [options]
+                                \\
+                                \\  test         Run the test suite for some given file or directory
+                                \\  help         Print this help message
+                                \\
+                                \\  -emit, -e    Emit the generated IR
+                                \\  -o           Choose output file (for -emit or binary)
+                                \\  -version, -v Print version of the installed scar compiler
+
+pub def print_usage_message_and_exit()
+    @print("{s}\n", {usage_message})
+    os.exit(0)
+end
