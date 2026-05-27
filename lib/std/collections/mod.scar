@@ -603,6 +603,15 @@ pub def Set.len[T](s ref(Set[T])) usize
     return s.len
 end
 
+pub def append_str(buf ref(list[u8]), s ref(u8))
+    val slen usize = str.len(s)
+    var i usize = 0
+    for i < slen
+        @append(buf, @deref(@add(s, i)))
+        i++
+    end
+end
+
 test "Array basic operations"
     var ac = allocators.Arena.new(4096 as usize)?
     var a = Array.new[i32, _](ac, 8)?

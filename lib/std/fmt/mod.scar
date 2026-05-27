@@ -1,0 +1,17 @@
+pub def format_usize(vv usize, buf ref(list[u8]))
+    if vv == 0
+        @append(buf, '0')
+        return
+    end
+    var digits list[u8] = []
+    var vv2 usize = vv
+    for vv2 > 0
+        @append(digits, ((vv2 % 10) as u8) + '0')
+        vv2 = vv2 / 10
+    end
+    var k usize = @len(digits)
+    for k > 0
+        k--
+        @append(buf, digits[k])
+    end
+end

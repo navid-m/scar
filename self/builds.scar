@@ -1,0 +1,287 @@
+val str        = use("std/string")
+val fs         = use("std/fs")
+val os         = use("std/os")
+val allocators = use("std/allocators")
+val fmt        = use("std/fmt")
+val collect    = use("std/collections")
+val ast        = use("ast")
+val lxr        = use("lexer")
+val prs        = use("parser")
+val sema       = use("sema")
+val cgen       = use("codegen")
+val rslv       = use("resolver")
+val reflection = use("std/reflection")
+val ginst      = use("generics_inst")
+
+pub def compile(source_path ref(u8), output_path ref(u8)) i32|error
+    guard source_path != none && !str.eql(source_path, "") else
+        return error("scar: source path was empty")
+    end
+    var arena = allocators.Arena.new(2097152 as usize)?
+    val source = fs.read_text[_](@addr(arena), source_path)?
+    if source == none
+        return error("scar: cannot read file")
+    end
+
+    val platform = reflection.current_platform_name[_](@addr(arena))?
+
+    val (
+        tokens list[ast.Token]   = lxr.lex(source, @addr(arena))
+        prog ast.Program         = prs.parse_program(tokens, @addr(arena), platform, source_path)
+        resolved ast.Program     = rslv.resolve(@addr(prog), source_path, @addr(arena))?
+        instantiated ast.Program = ginst.instantiate_generics(@addr(resolved), @addr(arena))
+        info sema.ProgramInfo    = sema.analyze(@addr(instantiated), @addr(arena))
+        c_code ref(u8)           = cgen.generate_c(@addr(instantiated), @addr(info), @addr(arena))
+        c_path ref(u8)           = "/tmp/scar-compile.c"
+    )
+
+    fs.write_text(c_path, c_code)?
+
+    val cmd_buf list[u8] = []
+    collect.append_str(@addr(cmd_buf), "tcc -O0 ")
+    collect.append_str(@addr(cmd_buf), c_path)
+    collect.append_str(@addr(cmd_buf), " -o ")
+    collect.append_str(@addr(cmd_buf), output_path)
+    collect.append_str(@addr(cmd_buf), " 2>/dev/null")
+    @append(cmd_buf, 0)
+
+    val (
+        cmd_str ref(u8) = @addr(cmd_buf[0])
+        rc i32          = os.exec(cmd_str)?
+    )
+    
+    if rc != 0
+        fs.remove_file(c_path)
+        return error("scar: tcc failed to link")
+    end
+
+    fs.remove_file(c_path)
+    return 0
+end
+
+pub def emit(source_path ref(u8), output_path ref(u8)) i32|error
+    var arena = allocators.Arena.new(2097152 as usize)?
+
+    val source = fs.read_text[_](@addr(arena), source_path)?
+    if source == none
+        return error("scar: cannot read file")
+    end
+
+    val platform = reflection.current_platform_name[_](@addr(arena))?
+
+    val (
+        tokens list[ast.Token] = lxr.lex(source, @addr(arena))
+        prog ast.Program       = prs.parse_program(tokens, @addr(arena), platform, source_path)
+        resolved ast.Program   = rslv.resolve(@addr(prog), source_path, @addr(arena))?
+        instantiated ast.Program = ginst.instantiate_generics(@addr(resolved), @addr(arena))
+        info sema.ProgramInfo  = sema.analyze(@addr(instantiated), @addr(arena))
+        c_code ref(u8)         = cgen.generate_c(@addr(instantiated), @addr(info), @addr(arena))
+    )
+    
+    if output_path == none
+        @puts(c_code)
+        return 0
+    else
+        fs.write_text(output_path, c_code)?
+    end
+
+    allocators.Arena.destroy(@addr(arena))
+    return 0
+end
+
+def compile_to_c_and_binary(program ref(ast.Program), binary_output_path ref(u8), arena ref(allocators.Arena)) i32|error
+    val instantiated ast.Program = ginst.instantiate_generics(program, arena)
+    val info sema.ProgramInfo = sema.analyze(@addr(instantiated), arena)
+    val c_code ref(u8) = cgen.generate_c(@addr(instantiated), @addr(info), arena)
+    val c_path ref(u8) = "/tmp/scar-test-compile.c"
+    fs.write_text(c_path, c_code)?
+    val cmd_buf list[u8] = []
+    collect.append_str(@addr(cmd_buf), "tcc -O0 ")
+    collect.append_str(@addr(cmd_buf), c_path)
+    collect.append_str(@addr(cmd_buf), " -o ")
+    collect.append_str(@addr(cmd_buf), binary_output_path)
+    collect.append_str(@addr(cmd_buf), " 2>/dev/null")
+    @append(cmd_buf, 0)
+    val cmd_str ref(u8) = @addr(cmd_buf[0])
+    val rc i32 = os.exec(cmd_str)?
+    if rc != 0
+        fs.remove_file(c_path)
+        return error("scar: tcc failed to link")
+    end
+    fs.remove_file(c_path)
+    return 0
+end
+
+def emit_c_from_program(program ref(ast.Program), output_path ref(u8), arena ref(allocators.Arena)) i32|error
+    val instantiated ast.Program = ginst.instantiate_generics(program, arena)
+    val info sema.ProgramInfo = sema.analyze(@addr(instantiated), arena)
+    val c_code ref(u8) = cgen.generate_c(@addr(instantiated), @addr(info), arena)
+    if output_path == none
+        @puts(c_code)
+    else
+        fs.write_text(output_path, c_code)?
+    end
+    return 0
+end
+
+def build_test_program(program ref(ast.Program), arena ref(allocators.Arena)) ast.Program
+    var functions list[ast.Function] = []
+    var i usize = 0
+    for i < @len(program.functions)
+        if !str.eql(program.functions[i].name, "main")
+            @append(functions, program.functions[i])
+        end
+        i++
+    end
+    var main_body list[ast.Stmt] = []
+    i = 0
+    for i < @len(program.tests)
+        val fn_name_buf list[u8] = []
+        collect.append_str(@addr(fn_name_buf), "__scar_test_case_")
+        fmt.format_usize(i, @addr(fn_name_buf))
+        @append(fn_name_buf, 0)
+        val fn_name ref(u8) = @addr(fn_name_buf[0])
+        val fn_name_dup_res = allocators.Arena.alloc(arena, str.len(fn_name) + 1)
+        var fn_name_dup ref(u8) = none
+        match fn_name_dup_res
+            ok m => (
+                fn_name_dup = m as ref(u8)
+                @memcpy(fn_name_dup, fn_name, str.len(fn_name))
+                @deref(@as_mut(@add(fn_name_dup, str.len(fn_name)))) = 0
+            )
+            error _ => fn_name_dup = fn_name
+        end
+        val test_fn ast.Function = ast.Function(
+            name: fn_name_dup,
+            params: ([] as list[ast.Param]),
+            return_type: ast.Type.Void(0),
+            body: program.tests[i].body,
+            is_pub: false,
+            is_extern: false,
+            extern_name: ("" as ref(u8)),
+            generic_params: ([] as list[ref(u8)]),
+            line: 0,
+            column: 0
+        )
+        @append(functions, test_fn)
+        val call_raw = allocators.Arena.alloc(arena, @sizeof(ast.ExprCall) as usize)
+        match call_raw
+            ok cr => (
+                var call_p ref(ast.ExprCall) = @bitcast(cr, ref(ast.ExprCall))
+                val ident_raw = allocators.Arena.alloc(arena, @sizeof(ast.Expr) as usize)
+                match ident_raw
+                    ok ir => (
+                        var ident_p ref(ast.Expr) = @bitcast(ir, ref(ast.Expr))
+                        @deref(ident_p) = ast.Expr.Ident(fn_name_dup)
+                        call_p.callee = ident_p
+                        call_p.args = ([] as list[ast.Expr])
+                        val call_expr_raw = allocators.Arena.alloc(arena, @sizeof(ast.Expr) as usize)
+                        match call_expr_raw
+                            ok cer => (
+                                var call_expr_p ref(ast.Expr) = @bitcast(cer, ref(ast.Expr))
+                                @deref(call_expr_p) = ast.Expr.Call(call_p)
+                                @append(main_body, ast.Stmt.ExprStmt(call_expr_p))
+                            )
+                            error _ => ()
+                        end
+                    )
+                    error _ => ()
+                end
+            )
+            error _ => ()
+        end
+        val test_name_len usize = str.len(program.tests[i].name)
+        val pass_prefix ref(u8) = "[pass] "
+        val pass_prefix_len usize = str.len(pass_prefix)
+        val pass_msg_res = allocators.Arena.alloc(arena, pass_prefix_len + test_name_len + 1)
+        match pass_msg_res
+            ok pmr => (
+                var pass_msg ref(u8) = pmr as ref(u8)
+                @memcpy(pass_msg, pass_prefix, pass_prefix_len)
+                @memcpy(@add(pass_msg, pass_prefix_len), program.tests[i].name, test_name_len)
+                @deref(@as_mut(@add(pass_msg, pass_prefix_len + test_name_len))) = 0
+                val puts_raw = allocators.Arena.alloc(arena, @sizeof(ast.ExprBuiltinCall) as usize)
+                match puts_raw
+                    ok pr => (
+                        var puts_p ref(ast.ExprBuiltinCall) = @bitcast(pr, ref(ast.ExprBuiltinCall))
+                        puts_p.name = "puts"
+                        puts_p.args = [ast.Expr.StrLit(pass_msg)]
+                        val puts_expr_raw = allocators.Arena.alloc(arena, @sizeof(ast.Expr) as usize)
+                        match puts_expr_raw
+                            ok per => (
+                                var puts_expr_p ref(ast.Expr) = @bitcast(per, ref(ast.Expr))
+                                @deref(puts_expr_p) = ast.Expr.BuiltinCall(puts_p)
+                                @append(main_body, ast.Stmt.ExprStmt(puts_expr_p))
+                            )
+                            error _ => ()
+                        end
+                    )
+                    error _ => ()
+                end
+            )
+            error _ => ()
+        end
+        i++
+    end
+    val main_fn ast.Function = ast.Function(
+        name: "main",
+        params: ([] as list[ast.Param]),
+        return_type: ast.Type.Void(0),
+        body: main_body,
+        is_pub: true,
+        is_extern: false,
+        extern_name: ("" as ref(u8)),
+        generic_params: ([] as list[ref(u8)]),
+        line: 0,
+        column: 0
+    )
+    @append(functions, main_fn)
+    return ast.Program(
+        module_uses: program.module_uses,
+        functions: functions,
+        type_defs: program.type_defs,
+        interface_defs: program.interface_defs,
+        tests: ([] as list[ast.TestBlock]),
+        extern_headers: program.extern_headers,
+        globals: program.globals
+    )
+end
+
+pub def run_test_on_file(source_path ref(u8), emit_mode bool, output_path ref(u8), arena_ref ref(allocators.Arena)) i32|error
+    val arena_inner = allocators.Arena.new(2097152 as usize)?
+    val source = fs.read_text[_](@addr(arena_inner), source_path)?
+    if source == none
+        allocators.Arena.destroy(@addr(arena_inner))
+        return error("scar: cannot read file")
+    end
+    val platform = reflection.current_platform_name[_](@addr(arena_inner))?
+    val tokens list[ast.Token] = lxr.lex(source, @addr(arena_inner))
+    val prog ast.Program = prs.parse_program(tokens, @addr(arena_inner), platform, source_path)
+    val resolved ast.Program = rslv.resolve(@addr(prog), source_path, @addr(arena_inner))?
+    val test_count usize = @len(resolved.tests)
+    if test_count == 0
+        @print("scar: {s} (0 tests)\n", {source_path})
+        allocators.Arena.destroy(@addr(arena_inner))
+        return 0
+    end
+    val test_prog ast.Program = build_test_program(@addr(resolved), @addr(arena_inner))
+    if emit_mode
+        emit_c_from_program(@addr(test_prog), output_path, @addr(arena_inner))?
+    else
+        compile_to_c_and_binary(@addr(test_prog), "/tmp/scar-test-runner", @addr(arena_inner))?
+        val run_cmd_buf list[u8] = []
+        collect.append_str(@addr(run_cmd_buf), "/tmp/scar-test-runner")
+        @append(run_cmd_buf, 0)
+        val run_cmd ref(u8) = @addr(run_cmd_buf[0])
+        val run_rc i32 = os.exec(run_cmd)?
+        fs.remove_file("/tmp/scar-test-runner")
+        if run_rc != 0
+            allocators.Arena.destroy(@addr(arena_inner))
+            return error("scar: tests failed")
+        end
+        @print("scar: {s} ({d} tests)\n", {source_path, test_count})
+    end
+    allocators.Arena.destroy(@addr(arena_inner))
+    return 0
+end
+
