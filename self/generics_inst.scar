@@ -98,9 +98,9 @@ def instantiate(state ref(GenericState), name ref(u8), type_args ref(list[ast.Ty
         line: template.line,
         column: template.column
     )
-    @append(state.generated, specialized)
+    rewrite_function_calls(state, @addr(specialized), arena)
 
-    rewrite_function_calls(state, @addr(state.generated[@len(state.generated) - 1]), arena)
+    @append(state.generated, specialized)
 
     return specialized_name
 end
