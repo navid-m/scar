@@ -868,7 +868,7 @@ def infer_type_from_expr(expr ref(ast.Expr), state ref(GenericState), arena ref(
                     if @len(segments) >= 2
                         var type_name ref(u8) = segments[0]
                         var i usize = 1
-                        for i < @len(segments)
+                        for i < @len(segments) - 1
                             type_name = gen.concat3(type_name, "__", segments[i], arena)
                             i++
                         end
@@ -885,10 +885,37 @@ def infer_type_from_expr(expr ref(ast.Expr), state ref(GenericState), arena ref(
                 _ => return ast.Type.Named("_")
             end
         )
+        ast.Expr.MethodCall(mc) => (
+            val type_name ref(u8) = type_name_from_receiver(mc.receiver, arena)
+            if !str.eql(type_name, "")
+                var i usize = 0
+                for i < @len(state.type_defs)
+                    if str.eql(state.type_defs[i].name, type_name)
+                        return ast.Type.Named(type_name)
+                    end
+                    i++
+                end
+            end
+            return ast.Type.Named("_")
+        )
         ast.Expr.BuiltinCall(_) => (
             return ast.Type.Named("_")
         )
         _ => return ast.Type.Named("_")
+    end
+end
+
+def type_name_from_receiver(expr ref(ast.Expr), arena ref(allocators.Arena)) ref(u8)
+    match @deref(expr)
+        ast.Expr.Ident(name) => return name
+        ast.Expr.Field(f) => (
+            val base ref(u8) = type_name_from_receiver(f.base, arena)
+            if str.eql(base, "")
+                return ""
+            end
+            return gen.concat3(base, "__", f.field, arena)
+        )
+        _ => return ""
     end
 end
 

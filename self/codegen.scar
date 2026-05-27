@@ -1763,6 +1763,10 @@ def render_stmt(stmt ref(ast.Stmt), fun ref(ast.Function), info ref(sema.Program
             indent(output, output_len, level)
             append_str(output, output_len, "}\n")
         )
+        ast.Stmt.Break(_) => (
+            indent(output, output_len, level)
+            append_str(output, output_len, "break;\n")
+        )
         ast.Stmt.Block(body) => (
             var k usize = 0
             for k < @len(body)
