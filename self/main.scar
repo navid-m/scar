@@ -11,14 +11,16 @@ val rslv       = use("resolver")
 val reflection = use("std/reflection")
 val ginst      = use("generics_inst")
 
+val scar_version  ref(u8) = "v0.0.1"
 val usage_message ref(u8) = \\usage: scar [subcommand] <source.scar> [options]
                             \\
-                            \\  test        Run the test suite for some given file or directory
-                            \\  help        Print this help message
+                            \\  test         Run the test suite for some given file or directory
+                            \\  help         Print this help message
                             \\
-                            \\  -emit, -e   Emit the generated IR
-                            \\  -o          Choose output file (for -emit or binary)
-    
+                            \\  -emit, -e    Emit the generated IR
+                            \\  -o           Choose output file (for -emit or binary)
+                            \\  -version, -v Print version of the installed scar compiler
+
 pub def compile(source_path ref(u8), output_path ref(u8)) i32|error
     guard source_path != none && !str.eql(source_path, "") else
         return error("scar: source path was empty")
@@ -321,7 +323,12 @@ end
 pub def main() void
     val args list[ref(u8)] = @args()
     if @len(args) >= 2 && str.eql(args[1], "help")
-        @print("{s}", {usage_message})
+        @print("{s}\n", {usage_message})
+        os.exit(0)
+    end
+
+    if @len(args) >= 2 && str.eql(args[1], "-v") || str.eql(args[1], "-version")
+        @print("{s}\n", {scar_version})
         os.exit(0)
     end
     
