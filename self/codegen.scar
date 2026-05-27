@@ -1854,15 +1854,9 @@ def append_expr(expr ref(ast.Expr), fun ref(ast.Function), info ref(sema.Program
             if is_local_variable(name, fun, info)
                 append_str(output, output_len, mangle_local_symbol(name, arena))
             else
-                val sym ref(u8) = lookup_symbol(name, info, arena)
-                val mangled ref(u8) = mangle_local_symbol(name, arena)
-                if str.eql(sym, mangled) && !is_local_variable(name, fun, info) && @len(fun.params) > 0
-                    append_str(output, output_len, mangle_local_symbol(fun.params[0].name, arena))
-                else
-                    append_str(output, output_len, sym)
-                    if is_zero_param_function(name, info)
-                        append_str(output, output_len, "()")
-                    end
+                append_str(output, output_len, lookup_symbol(name, info, arena))
+                if is_zero_param_function(name, info)
+                    append_str(output, output_len, "()")
                 end
             end
         )
