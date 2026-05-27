@@ -888,6 +888,21 @@ def infer_type_from_expr(expr ref(ast.Expr), state ref(GenericState), arena ref(
                             end
                             i2++
                         end
+                        if @len(segments) >= 2
+                            var base_name ref(u8) = segments[0]
+                            i = 1
+                            for i < @len(segments) - 1
+                                base_name = gen.concat3(base_name, "__", segments[i], arena)
+                                i++
+                            end
+                            i2 = 0
+                            for i2 < @len(state.type_defs)
+                                if str.eql(state.type_defs[i2].name, base_name)
+                                    return ast.Type.Named(base_name)
+                                end
+                                i2++
+                            end
+                        end
                     end
                     return ast.Type.Named("_")
                 )
