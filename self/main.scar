@@ -2,26 +2,19 @@ val str        = use("std/string")
 val fs         = use("std/fs")
 val os         = use("std/os")
 val allocators = use("std/allocators")
-val builds     = use("builds")
 val collect    = use("std/collections")
+val meta       = use("meta")
+val builds     = use("builds")
 
 val scar_version  ref(u8) = "v0.0.1"
-val usage_message ref(u8) = \\usage: scar [subcommand] <source.scar> [options]
-                            \\
-                            \\  test         Run the test suite for some given file or directory
-                            \\  help         Print this help message
-                            \\
-                            \\  -emit, -e    Emit the generated IR
-                            \\  -o           Choose output file (for -emit or binary)
-                            \\  -version, -v Print version of the installed scar compiler
 
 pub def main() void
     val args list[ref(u8)] = @args()
     if @len(args) == 1
-        print_usage_message_and_exit()
+        meta.print_usage_message_and_exit()
     end
     if str.eql(args[1], "help")
-        print_usage_message_and_exit()
+        meta.print_usage_message_and_exit()
     end
 
     if @len(args) >= 2 && str.eql(args[1], "-v") || str.eql(args[1], "-version")
@@ -42,7 +35,7 @@ pub def main() void
                 emit_mode = true
             elif str.eql(arg, "-o")
                 if i + 1 >= @len(args)
-                    @puts(usage_message)
+                    @puts(meta.usage_message)
                     return
                 end
                 i++
@@ -51,14 +44,14 @@ pub def main() void
                 if source_path == none
                     source_path = arg
                 else
-                    @puts(usage_message)
+                    @puts(meta.usage_message)
                     return
                 end
             end
             i++
         end
         if source_path == none
-            @puts(usage_message)
+            @puts(meta.usage_message)
             return
         end
         var test_arena = allocators.Arena.new(4096 as usize)?
@@ -92,7 +85,7 @@ pub def main() void
             emit_mode = true
         elif str.eql(arg, "-o")
             if i + 1 >= @len(args)
-                @puts(usage_message)
+                @puts(meta.usage_message)
                 return
             end
             i++
@@ -102,14 +95,14 @@ pub def main() void
             elif source_path != none && binary_output_path == none
                 binary_output_path = next_arg
             else
-                @puts(usage_message)
+                @puts(meta.usage_message)
                 return
             end
         else
             if source_path == none
                 source_path = arg
             else
-                @puts(usage_message)
+                @puts(meta.usage_message)
                 return
             end
         end
@@ -117,7 +110,7 @@ pub def main() void
     end
     
     if source_path == none
-        @puts(usage_message)
+        @puts(meta.usage_message)
         return
     end
 
@@ -171,7 +164,3 @@ pub def main() void
     end
 end
 
-def print_usage_message_and_exit()
-    @print("{s}\n", {usage_message})
-    os.exit(0)
-end
