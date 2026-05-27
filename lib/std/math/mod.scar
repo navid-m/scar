@@ -445,9 +445,15 @@ pub def next_power_of_two[T: Integer](x T) T
     n = n | (n >> (1 as T))
     n = n | (n >> (2 as T))
     n = n | (n >> (4 as T))
-    n = n | (n >> (8 as T))
-    n = n | (n >> (16 as T))
-    n = n | (n >> (32 as T))
+    if @sizeof(T) >= 2 as usize
+        n = n | (n >> (8 as T))
+    end
+    if @sizeof(T) >= 4 as usize
+        n = n | (n >> (16 as T))
+    end
+    if @sizeof(T) >= 8 as usize
+        n = n | (n >> (32 as T))
+    end
     return n + 1 as T
 end
 

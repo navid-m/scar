@@ -4191,7 +4191,195 @@ def append_usize(output ref(ref(u8)), output_len ref(usize), v usize, arena ref(
 end
 
 def append_f64(output ref(ref(u8)), output_len ref(usize), v f64, arena ref(allocators.Arena))
-    append_str(output, output_len, "0.0")
+    if v != v
+        append_str(output, output_len, "NAN")
+        return
+    end
+    if v == 0 as f64
+        append_str(output, output_len, "0.0")
+        return
+    end
+    if v < 0 as f64
+        append_str(output, output_len, "-")
+        append_f64(output, output_len, -v, arena)
+        return
+    end
+
+    var temp f64 = v
+    var exponent i32 = 0
+
+    if temp >= 10000000000000000.0
+        for temp >= 10.0
+            temp = temp / 10.0
+            exponent++
+        end
+    elif temp < 0.0001 as f64 && temp != 0 as f64
+        for temp < 1.0
+            temp = temp * 10.0
+            exponent--
+        end
+    end
+
+    if exponent != 0
+        val buf_res = allocators.Arena.alloc(arena, 64)
+        var buf ref(u8) = none
+        match buf_res
+            ok m => buf = m as ref(u8)
+            error _ => return
+        end
+        var buf_pos usize = 0
+
+        val int_part u64 = temp as u64
+        val int_as_f64 f64 = int_part as f64
+        var frac f64 = temp - int_as_f64
+
+        if int_part == 0
+            @deref(@as_mut(@add(buf, buf_pos))) = '0'
+            buf_pos++
+        else
+            var int_digits list[u8] = []
+            var tmp_u64 u64 = int_part
+            for tmp_u64 > 0
+                @append(int_digits, ((tmp_u64 % 10) as u8) + '0')
+                tmp_u64 /= 10
+            end
+            var di usize = @len(int_digits)
+            for di > 0
+                di--
+                @deref(@as_mut(@add(buf, buf_pos))) = int_digits[di]
+                buf_pos++
+            end
+        end
+
+        if frac != 0 as f64
+            @deref(@as_mut(@add(buf, buf_pos))) = '.'
+            buf_pos++
+
+            var remaining i32 = 15
+            var frac_digits list[u8] = []
+            for remaining > 0 && frac != 0 as f64
+                frac = frac * 10 as f64
+                val digit u64 = frac as u64
+                @append(frac_digits, (digit as u8) + 48)
+                frac = frac - (digit as f64)
+                remaining--
+            end
+
+            var idx usize = @len(frac_digits)
+            for idx > 0
+                idx--
+                if frac_digits[idx] != '0'
+                    idx++
+                    break
+                end
+            end
+
+            if idx > 0
+                var k usize = 0
+                for k < idx
+                    @deref(@as_mut(@add(buf, buf_pos))) = frac_digits[k]
+                    buf_pos++
+                    k++
+                end
+            else
+                buf_pos--
+            end
+        end
+
+        @deref(@as_mut(@add(buf, buf_pos))) = 'e'
+        buf_pos++
+        if exponent < 0
+            @deref(@as_mut(@add(buf, buf_pos))) = '-'
+            buf_pos++
+            exponent = -exponent
+        end
+        var exp_digits list[u8] = []
+        var exp_val i32 = exponent
+        for exp_val > 0
+            @append(exp_digits, ((exp_val % 10) as u8) + '0')
+            exp_val /= 10
+        end
+        if @len(exp_digits) == 0
+            @append(exp_digits, '0')
+        end
+        var ei usize = @len(exp_digits)
+        for ei > 0
+            ei--
+            @deref(@as_mut(@add(buf, buf_pos))) = exp_digits[ei]
+            buf_pos++
+        end
+        @deref(@as_mut(@add(buf, buf_pos))) = 0
+        append_str(output, output_len, buf)
+        return
+    end
+
+    val int_part u64 = v as u64
+    val int_as_f64 f64 = int_part as f64
+    var frac f64 = v - int_as_f64
+
+    val buf_res = allocators.Arena.alloc(arena, 64)
+    var buf ref(u8) = none
+    match buf_res
+        ok m => buf = m as ref(u8)
+        error _ => return
+    end
+    var buf_pos usize = 0
+
+    if int_part == 0
+        @deref(@as_mut(@add(buf, buf_pos))) = '0'
+        buf_pos++
+    else
+        var int_digits list[u8] = []
+        var tmp_u64 u64 = int_part
+        for tmp_u64 > 0
+            @append(int_digits, ((tmp_u64 % 10) as u8) + '0')
+            tmp_u64 /= 10
+        end
+        var di usize = @len(int_digits)
+        for di > 0
+            di--
+            @deref(@as_mut(@add(buf, buf_pos))) = int_digits[di]
+            buf_pos++
+        end
+    end
+
+    if frac != 0 as f64
+        @deref(@as_mut(@add(buf, buf_pos))) = '.'
+        buf_pos++
+
+        var remaining i32 = 30
+        var frac_digits list[u8] = []
+        for remaining > 0 && frac != 0 as f64
+            frac = frac * 10 as f64
+            val digit u64 = frac as u64
+            @append(frac_digits, (digit as u8) + 48)
+            frac = frac - (digit as f64)
+            remaining--
+        end
+
+        var idx usize = @len(frac_digits)
+        for idx > 0
+            idx--
+            if frac_digits[idx] != '0'
+                idx++
+                break
+            end
+        end
+
+        if idx > 0
+            var k usize = 0
+            for k < idx
+                @deref(@as_mut(@add(buf, buf_pos))) = frac_digits[k]
+                buf_pos++
+                k++
+            end
+        else
+            buf_pos--
+        end
+    end
+
+    @deref(@as_mut(@add(buf, buf_pos))) = 0
+    append_str(output, output_len, buf)
 end
 
 def format_temp_name(prefix ref(u8), id usize, buf ref(list[u8]))

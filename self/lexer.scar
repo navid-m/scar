@@ -603,7 +603,72 @@ def lex_number(l ref(ast.Lexer)) ast.Token
 	end
 
 	if is_float
-		return ast.Token(kind: ast.TokenKind.Float(0.0), line: line, column: column)
+		var fv f64 = 0.0
+		var i usize = start_pos
+
+		for i < l.pos
+			val ch u8 = @deref(@add(l.source, i))
+			if ch >= '0' && ch <= '9'
+				fv = fv * 10.0 + ((ch - '0') as f64)
+			elif ch == '.' || ch == 'e' || ch == 'E'
+				break
+			end
+			i++
+		end
+
+		if i < l.pos && @deref(@add(l.source, i)) == '.'
+			i++
+			var divisor f64 = 10.0
+			for i < l.pos
+				val ch u8 = @deref(@add(l.source, i))
+				if ch >= '0' && ch <= '9'
+					fv = fv + (((ch - '0') as f64) / divisor)
+					divisor = divisor * 10.0
+				elif ch == 'e' || ch == 'E' || ch == '_'
+					if ch == 'e' || ch == 'E'
+						break
+					end
+				end
+				i++
+			end
+		end
+
+		if i < l.pos && (@deref(@add(l.source, i)) == 'e' || @deref(@add(l.source, i)) == 'E')
+			i++
+			var exp_sign i32 = 1
+			if i < l.pos && @deref(@add(l.source, i)) == '+'
+				i++
+			elif i < l.pos && @deref(@add(l.source, i)) == '-'
+				exp_sign = -1
+				i++
+			end
+			var exp_val i32 = 0
+			for i < l.pos
+				val ch u8 = @deref(@add(l.source, i))
+				if ch >= '0' && ch <= '9'
+					exp_val = exp_val * 10 + ((ch - '0') as i32)
+				elif ch == '_'
+				else
+					break
+				end
+				i++
+			end
+			if exp_sign > 0
+				var j i32 = 0
+				for j < exp_val
+					fv = fv * 10.0
+					j++
+				end
+			else
+				var j i32 = 0
+				for j < exp_val
+					fv = fv / 10.0
+					j++
+				end
+			end
+		end
+
+		return ast.Token(kind: ast.TokenKind.Float(fv), line: line, column: column)
 	end
 
 	var value u64 = 0
