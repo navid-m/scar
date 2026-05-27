@@ -1854,9 +1854,15 @@ def append_expr(expr ref(ast.Expr), fun ref(ast.Function), info ref(sema.Program
             if is_local_variable(name, fun, info)
                 append_str(output, output_len, mangle_local_symbol(name, arena))
             else
-                append_str(output, output_len, lookup_symbol(name, info, arena))
-                if is_zero_param_function(name, info)
-                    append_str(output, output_len, "()")
+                val sym ref(u8) = lookup_symbol(name, info, arena)
+                val mangled ref(u8) = mangle_local_symbol(name, arena)
+                if str.eql(sym, mangled) && !is_local_variable(name, fun, info) && @len(fun.params) > 0
+                    append_str(output, output_len, mangle_local_symbol(fun.params[0].name, arena))
+                else
+                    append_str(output, output_len, sym)
+                    if is_zero_param_function(name, info)
+                        append_str(output, output_len, "()")
+                    end
                 end
             end
         )
@@ -2371,6 +2377,9 @@ def append_expr(expr ref(ast.Expr), fun ref(ast.Function), info ref(sema.Program
                                             end
                                             pi++
                                         end
+                                        if str.eql(param_name, type_name) && @len(fun.params) > 0
+                                            param_name = fun.params[0].name
+                                        end
                                         append_str(output, output_len, "(")
                                         append_str(output, output_len, mangle_local_symbol(param_name, arena))
                                         append_str(output, output_len, ")->")
@@ -2387,8 +2396,16 @@ def append_expr(expr ref(ast.Expr), fun ref(ast.Function), info ref(sema.Program
                                         append_str(output, output_len, ")")
                                     end
                                 else
+                                    var param_name2 ref(u8) = ""
+                                    if @len(fun.params) > 0
+                                        param_name2 = fun.params[0].name
+                                    end
                                     append_str(output, output_len, "(")
-                                    append_expr(mc.receiver, fun, info, arena, output, output_len)
+                                    if !str.eql(param_name2, "")
+                                        append_str(output, output_len, mangle_local_symbol(param_name2, arena))
+                                    else
+                                        append_expr(mc.receiver, fun, info, arena, output, output_len)
+                                    end
                                     append_str(output, output_len, ")->")
                                     append_str(output, output_len, mc.method)
                                     append_str(output, output_len, "(")
@@ -2404,8 +2421,16 @@ def append_expr(expr ref(ast.Expr), fun ref(ast.Function), info ref(sema.Program
                                 end
                             )
                             _ => (
+                                var param_name2 ref(u8) = ""
+                                if @len(fun.params) > 0
+                                    param_name2 = fun.params[0].name
+                                end
                                 append_str(output, output_len, "(")
-                                append_expr(mc.receiver, fun, info, arena, output, output_len)
+                                if !str.eql(param_name2, "")
+                                    append_str(output, output_len, mangle_local_symbol(param_name2, arena))
+                                else
+                                    append_expr(mc.receiver, fun, info, arena, output, output_len)
+                                end
                                 append_str(output, output_len, ")->")
                                 append_str(output, output_len, mc.method)
                                 append_str(output, output_len, "(")
@@ -2422,8 +2447,16 @@ def append_expr(expr ref(ast.Expr), fun ref(ast.Function), info ref(sema.Program
                         end
                     )
                     _ => (
+                        var param_name3 ref(u8) = ""
+                        if @len(fun.params) > 0
+                            param_name3 = fun.params[0].name
+                        end
                         append_str(output, output_len, "(")
-                        append_expr(mc.receiver, fun, info, arena, output, output_len)
+                        if !str.eql(param_name3, "")
+                            append_str(output, output_len, mangle_local_symbol(param_name3, arena))
+                        else
+                            append_expr(mc.receiver, fun, info, arena, output, output_len)
+                        end
                         append_str(output, output_len, ")->")
                         append_str(output, output_len, mc.method)
                         append_str(output, output_len, "(")

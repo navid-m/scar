@@ -10,6 +10,7 @@ pub type GenericState
     instantiated_names list[ref(u8)]
     type_defs list[ast.TypeDef]
     current_body list[ast.Stmt]
+    current_params list[ast.Param]
 end
 
 def find_template(state ref(GenericState), name ref(u8)) ref(ast.Function)
@@ -826,6 +827,13 @@ def infer_type_from_expr(expr ref(ast.Expr), state ref(GenericState), arena ref(
                 end
                 i++
             end
+            i = 0
+            for i < @len(state.current_params)
+                if str.eql(state.current_params[i].name, name)
+                    return state.current_params[i].ty
+                end
+                i++
+            end
             return ast.Type.Named("_")
         )
         ast.Expr.Try(inner) => (
@@ -872,6 +880,7 @@ def infer_type_from_expr(expr ref(ast.Expr), state ref(GenericState), arena ref(
                             type_name = gen.concat3(type_name, "__", segments[i], arena)
                             i++
                         end
+                        type_name = gen.concat3(type_name, "__", segments[@len(segments) - 1], arena)
                         var i2 usize = 0
                         for i2 < @len(state.type_defs)
                             if str.eql(state.type_defs[i2].name, type_name)
@@ -898,7 +907,26 @@ def infer_type_from_expr(expr ref(ast.Expr), state ref(GenericState), arena ref(
             end
             return ast.Type.Named("_")
         )
-        ast.Expr.BuiltinCall(_) => (
+        ast.Expr.BuiltinCall(bc) => (
+            if str.eql(bc.name, "@addr") && @len(bc.args) >= 1
+                val inner_raw = allocators.Arena.alloc(arena, @sizeof(ast.Type) as usize)
+                match inner_raw
+                    ok inner_m => (
+                        var inner_p ref(ast.Type) = @bitcast(inner_m, ref(ast.Type))
+                        @deref(inner_p) = infer_type_from_expr(@addr(bc.args[0]), state, arena)
+                        val ref_raw = allocators.Arena.alloc(arena, @sizeof(ast.Type) as usize)
+                        match ref_raw
+                            ok ref_m => (
+                                var ref_p ref(ast.Type) = @bitcast(ref_m, ref(ast.Type))
+                                @deref(ref_p) = ast.Type.Ref(inner_p)
+                                return @deref(ref_p)
+                            )
+                            error _ => return ast.Type.Ref(inner_p)
+                        end
+                    )
+                    error _ => return ast.Type.Named("_")
+                end
+            end
             return ast.Type.Named("_")
         )
         _ => return ast.Type.Named("_")
@@ -947,6 +975,25 @@ def param_type_to_generic_name(ty ref(ast.Type)) ref(u8)
     end
 end
 
+def strip_to_match(param_ty ref(ast.Type), inferred_ty ref(ast.Type)) ast.Type
+    match @deref(param_ty)
+        ast.Type.Ref(_) => (
+            match @deref(inferred_ty)
+                ast.Type.Ref(inner) => return @deref(inner)
+                _ => return @deref(inferred_ty)
+            end
+        )
+        ast.Type.Mut(_) => (
+            match @deref(inferred_ty)
+                ast.Type.Mut(inner) => return @deref(inner)
+                ast.Type.Ref(inner) => return @deref(inner)
+                _ => return @deref(inferred_ty)
+            end
+        )
+        _ => return @deref(inferred_ty)
+    end
+end
+
 def try_infer_param(template ref(ast.Function), call_args ref(list[ast.Expr]), result ref(list[ast.Type]), param_idx usize, state ref(GenericState), arena ref(allocators.Arena))
     val param_type_name ref(u8) = param_type_to_generic_name(@addr(template.params[param_idx].ty))
     if str.eql(param_type_name, "")
@@ -958,7 +1005,7 @@ def try_infer_param(template ref(ast.Function), call_args ref(list[ast.Expr]), r
             if needs_inference(@addr(@deref(result)[j]))
                 val inferred ast.Type = infer_type_from_expr(@addr(@deref(call_args)[param_idx]), state, arena)
                 if is_inferred_type(@addr(inferred))
-                    @deref(result)[j] = inferred
+                    @deref(result)[j] = strip_to_match(@addr(template.params[param_idx].ty), @addr(inferred))
                 end
             end
             break
@@ -984,7 +1031,9 @@ end
 
 def rewrite_function_calls(state ref(GenericState), fun ref(ast.Function), arena ref(allocators.Arena))
     val saved_body list[ast.Stmt] = state.current_body
+    val saved_params list[ast.Param] = state.current_params
     state.current_body = fun.body
+    state.current_params = fun.params
     var new_body list[ast.Stmt] = []
     var i usize = 0
     for i < @len(fun.body)
@@ -993,6 +1042,7 @@ def rewrite_function_calls(state ref(GenericState), fun ref(ast.Function), arena
     end
     fun.body = new_body
     state.current_body = saved_body
+    state.current_params = saved_params
 end
 
 pub def instantiate_generics(program ref(ast.Program), arena ref(allocators.Arena)) ast.Program
@@ -1002,7 +1052,8 @@ pub def instantiate_generics(program ref(ast.Program), arena ref(allocators.Aren
         instantiated_keys: [] as list[ref(u8)],
         instantiated_names: [] as list[ref(u8)],
         type_defs: program.type_defs,
-        current_body: [] as list[ast.Stmt]
+        current_body: [] as list[ast.Stmt],
+        current_params: [] as list[ast.Param]
     )
 
     var concrete_functions list[ast.Function] = []
