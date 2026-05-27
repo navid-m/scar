@@ -1212,7 +1212,14 @@ def render_stmt(stmt ref(ast.Stmt), fun ref(ast.Function), info ref(sema.Program
                     render_try_var_decl(vd, inner, fun, info, level, next_temp_id, defers, arena, output, output_len)
                 )
                 _ => (
-                    val ty ref(ast.Type) = lookup_local_type(vd.name, fun, info)
+                    var ty ref(ast.Type) = lookup_local_type(vd.name, fun, info)
+                    if !is_void_type(@addr(vd.declared_type))
+                        match @deref(@addr(vd.declared_type))
+                            ast.Type.Infer(_) => ()
+                            ast.Type.Void(_) => ()
+                            _ => ty = @addr(vd.declared_type)
+                        end
+                    end
                     val c_ty_str2 ref(u8) = c_type_named(ty, vd.name, info, arena)
                     indent(output, output_len, level)
                     if !vd.mutable && !is_aggregate_type(ty) && !str.starts_with(c_ty_str2, "const ")
@@ -1996,12 +2003,20 @@ def append_expr(expr ref(ast.Expr), fun ref(ast.Function), info ref(sema.Program
             end
         )
         ast.Expr.Binary(b) => (
+            val lhs_ty ref(ast.Type) = get_expr_type(b.lhs, fun, info)
+            val is_lhs_f32 bool = is_f32_type(lhs_ty)
             append_str(output, output_len, "(")
             append_expr(b.lhs, fun, info, arena, output, output_len)
             append_str(output, output_len, " ")
             append_str(output, output_len, binary_op_str(b.op))
             append_str(output, output_len, " ")
+            if is_lhs_f32
+                append_str(output, output_len, "(float)(")
+            end
             append_expr(b.rhs, fun, info, arena, output, output_len)
+            if is_lhs_f32
+                append_str(output, output_len, ")")
+            end
             append_str(output, output_len, ")")
         )
         ast.Expr.Unary(u) => (
@@ -2254,11 +2269,22 @@ def append_expr(expr ref(ast.Expr), fun ref(ast.Function), info ref(sema.Program
             append_str(output, output_len, "))")
         )
         ast.Expr.BitCast(bc) => (
-            append_str(output, output_len, "((")
-            append_str(output, output_len, c_type(@addr(bc.ty), info, arena))
-            append_str(output, output_len, ")(")
-            append_expr(bc.expr, fun, info, arena, output, output_len)
-            append_str(output, output_len, "))")
+            val src_ty ref(ast.Type) = get_expr_type(bc.expr, fun, info)
+            val src_is_ptr_or_fn bool = is_ref_type(src_ty) || is_fn_ptr_type(src_ty)
+            if src_is_ptr_or_fn
+                append_str(output, output_len, "((")
+                append_str(output, output_len, c_type(@addr(bc.ty), info, arena))
+                append_str(output, output_len, ")(")
+                append_expr(bc.expr, fun, info, arena, output, output_len)
+                append_str(output, output_len, "))")
+            else
+                val ty_str ref(u8) = c_type_bare(@addr(bc.ty), info, arena)
+                append_str(output, output_len, "({ ")
+                append_str(output, output_len, ty_str)
+                append_str(output, output_len, " __scar_bc; memcpy(&__scar_bc, &(")
+                append_expr(bc.expr, fun, info, arena, output, output_len)
+                append_str(output, output_len, "), sizeof(__scar_bc)); __scar_bc; })")
+            end
         )
         ast.Expr.SizeOf(ty) => (
             append_str(output, output_len, "((size_t)sizeof(")
@@ -3598,7 +3624,14 @@ def append_list_literal_from_expr(expr ref(ast.Expr), hint ref(ast.Type), fun re
                     if is_list_lit_expr(@addr(elems[i]))
                         append_list_literal_from_expr(@addr(elems[i]), element_ty, fun, info, arena, output, output_len)
                     else
+                        val is_f32_elem bool = is_f32_type(element_ty)
+                        if is_f32_elem
+                            append_str(output, output_len, "(float)(")
+                        end
                         append_expr(@addr(elems[i]), fun, info, arena, output, output_len)
+                        if is_f32_elem
+                            append_str(output, output_len, ")")
+                        end
                     end
                     i++
                 end
@@ -3807,6 +3840,13 @@ def get_expr_type(expr ref(ast.Expr), fun ref(ast.Function), info ref(sema.Progr
                 ast.Type.Result(ok_ty) => return ok_ty
                 _ => return @addr(ast.Type.Void(0))
             end
+        )
+        ast.Expr.BuiltinCall(bc) => (
+            if str.eql(bc.name, "addr") && @len(bc.args) == 1
+                val inner_ty ref(ast.Type) = get_expr_type(@addr(bc.args[0]), fun, info)
+                return @addr(ast.Type.Ref(@addr(ast.Type.Void(0))))
+            end
+            return @addr(ast.Type.Void(0))
         )
         _ => return @addr(ast.Type.Void(0))
     end
@@ -4084,6 +4124,20 @@ def is_void_type(ty ref(ast.Type)) bool
     end
 end
 
+def is_f32_type(ty ref(ast.Type)) bool
+    match @deref(ty)
+        ast.Type.F32(_) => return true
+        _ => return false
+    end
+end
+
+def is_fn_ptr_type(ty ref(ast.Type)) bool
+    match @deref(ty)
+        ast.Type.FnPtr(_, _) => return true
+        _ => return false
+    end
+end
+
 def param_type_references_name(ty ref(ast.Type), name ref(u8)) bool
     match @deref(ty)
         ast.Type.Named(n) => return str.eql(n, name)
@@ -4255,7 +4309,7 @@ def append_f64(output ref(ref(u8)), output_len ref(usize), v f64, arena ref(allo
             @deref(@as_mut(@add(buf, buf_pos))) = '.'
             buf_pos++
 
-            var remaining i32 = 15
+            var remaining i32 = 17
             var frac_digits list[u8] = []
             for remaining > 0 && frac != 0 as f64
                 frac = frac * 10 as f64
@@ -4343,40 +4397,40 @@ def append_f64(output ref(ref(u8)), output_len ref(usize), v f64, arena ref(allo
         end
     end
 
-    if frac != 0 as f64
-        @deref(@as_mut(@add(buf, buf_pos))) = '.'
-        buf_pos++
+        if frac != 0 as f64
+            @deref(@as_mut(@add(buf, buf_pos))) = '.'
+            buf_pos++
 
-        var remaining i32 = 30
-        var frac_digits list[u8] = []
-        for remaining > 0 && frac != 0 as f64
-            frac = frac * 10 as f64
-            val digit u64 = frac as u64
-            @append(frac_digits, (digit as u8) + 48)
-            frac = frac - (digit as f64)
-            remaining--
-        end
+            var remaining i32 = 17
+            var frac_digits list[u8] = []
+            for remaining > 0 && frac != 0 as f64
+                frac = frac * 10 as f64
+                val digit u64 = frac as u64
+                @append(frac_digits, (digit as u8) + 48)
+                frac = frac - (digit as f64)
+                remaining--
+            end
 
-        var idx usize = @len(frac_digits)
-        for idx > 0
-            idx--
-            if frac_digits[idx] != '0'
-                idx++
-                break
+            var idx usize = @len(frac_digits)
+            for idx > 0
+                idx--
+                if frac_digits[idx] != '0'
+                    idx++
+                    break
+                end
+            end
+
+            if idx > 0
+                var k usize = 0
+                for k < idx
+                    @deref(@as_mut(@add(buf, buf_pos))) = frac_digits[k]
+                    buf_pos++
+                    k++
+                end
+            else
+                buf_pos--
             end
         end
-
-        if idx > 0
-            var k usize = 0
-            for k < idx
-                @deref(@as_mut(@add(buf, buf_pos))) = frac_digits[k]
-                buf_pos++
-                k++
-            end
-        else
-            buf_pos--
-        end
-    end
 
     @deref(@as_mut(@add(buf, buf_pos))) = 0
     append_str(output, output_len, buf)
