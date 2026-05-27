@@ -1,5 +1,6 @@
 val os = use("std/os")
 
+pub val scar_version  ref(u8) = "v0.0.1"
 pub val usage_message ref(u8) = \\usage: scar [subcommand] <source.scar> [options]
                                 \\
                                 \\  test         Run the test suite for some given file or directory

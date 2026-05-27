@@ -6,8 +6,6 @@ val collect    = use("std/collections")
 val meta       = use("meta")
 val builds     = use("builds")
 
-val scar_version  ref(u8) = "v0.0.1"
-
 pub def main() void
     val args list[ref(u8)] = @args()
     if @len(args) == 1
@@ -18,7 +16,7 @@ pub def main() void
     end
 
     if @len(args) >= 2 && str.eql(args[1], "-v") || str.eql(args[1], "-version")
-        @print("{s}\n", {scar_version})
+        @print("{s}\n", {meta.scar_version})
         os.exit(0)
     end
     
