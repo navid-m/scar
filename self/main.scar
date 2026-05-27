@@ -14,6 +14,7 @@ val ginst      = use("generics_inst")
 val usage_message ref(u8) = \\usage: scar [subcommand] <source.scar> [options]
                             \\
                             \\  test        Run the test suite for some given file or directory
+                            \\  help        Print this help message
                             \\
                             \\  -emit, -e   Emit the generated IR
                             \\  -o          Choose output file (for -emit or binary)
@@ -318,7 +319,12 @@ def format_usize(vv usize, buf ref(list[u8]))
 end
 
 pub def main() void
-    val args list[ref(u8)] = @args()  
+    val args list[ref(u8)] = @args()
+    if @len(args) >= 2 && str.eql(args[1], "help")
+        @print("{s}", {usage_message})
+        os.exit(0)
+    end
+    
     if @len(args) >= 2 && str.eql(args[1], "test")
         var (
             emit_mode bool           = false
