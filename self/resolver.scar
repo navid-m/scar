@@ -243,7 +243,8 @@ def resolve_module_into(
             variants: prefixed_variants,
             is_pub: false,
             is_extern: td.is_extern,
-            derives: ([] as list[ref(u8)])
+            derives: ([] as list[ref(u8)]),
+            generic_params: td.generic_params
         )
         @append(@deref(resolved_type_defs), prefixed_td)
         ti++

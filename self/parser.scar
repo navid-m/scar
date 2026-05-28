@@ -1681,11 +1681,33 @@ def get_struct_name(expr ast.Expr, arena ref(allocators.Arena)) ref(u8)
                 error _ => return ""
             end
         )
+        ast.Expr.Specialize(sp) => return get_struct_name(@deref(sp.callee), arena)
         _ => return ""
     end
 end
 
-def parse_struct_init(p ref(ast.TokenList), arena ref(allocators.Arena), name ref(u8)) ast.Expr
+def parse_type_arg_list(p ref(ast.TokenList), arena ref(allocators.Arena)) list[ast.Type]
+    advance(p)
+    var type_args list[ast.Type] = []
+    for
+        match p.tokens[p.pos].kind
+            ast.TokenKind.RBracket(_) => break
+            _ => ()
+        end
+        @append(type_args, parse_type(p, arena))
+        match p.tokens[p.pos].kind
+            ast.TokenKind.Comma(_) => advance(p)
+            _ => break
+        end
+    end
+    match p.tokens[p.pos].kind
+        ast.TokenKind.RBracket(_) => advance(p)
+        _ => ()
+    end
+    return type_args
+end
+
+def parse_struct_init(p ref(ast.TokenList), arena ref(allocators.Arena), name ref(u8), type_args list[ast.Type]) ast.Expr
     advance(p)
     consume_newlines(p)
     var fields list[ast.FieldInit] = []
@@ -1722,7 +1744,7 @@ def parse_struct_init(p ref(ast.TokenList), arena ref(allocators.Arena), name re
             var struct_init ref(ast.ExprStructInit) = @bitcast(m, ref(ast.ExprStructInit))
             @deref(struct_init) = ast.ExprStructInit(
                 name: name,
-                type_args: [] as list[ast.Type],
+                type_args: type_args,
                 fields: fields
             )
             return ast.Expr.StructInit(struct_init)
@@ -1736,9 +1758,17 @@ def parse_expr_postfix(p ref(ast.TokenList), arena ref(allocators.Arena)) ast.Ex
     for
         match p.tokens[p.pos].kind
             ast.TokenKind.LParen(_) => (
-                val struct_name ref(u8) = get_struct_name(expr, arena)
+                var struct_name ref(u8) = get_struct_name(expr, arena)
+                var struct_type_args list[ast.Type] = [] as list[ast.Type]
+                match expr
+                    ast.Expr.Specialize(sp) => (
+                        struct_name = get_struct_name(@deref(sp.callee), arena)
+                        struct_type_args = sp.type_args
+                    )
+                    _ => ()
+                end
                 if str.len(struct_name) > 0 && looks_like_struct_init(p)
-                    expr = parse_struct_init(p, arena, struct_name)
+                    expr = parse_struct_init(p, arena, struct_name, struct_type_args)
                 else
                     advance(p)
                     var args list[ast.Expr] = []
@@ -2260,6 +2290,40 @@ def parse_module_use(p ref(ast.TokenList), arena ref(allocators.Arena)) ast.Modu
     return ast.ModuleUse(name: name, path: path)
 end
 
+def parse_generic_params(p ref(ast.TokenList), arena ref(allocators.Arena)) list[ref(u8)]
+    var generic_params list[ref(u8)] = []
+    match p.tokens[p.pos].kind
+        ast.TokenKind.LBracket(_) => (
+            advance(p)
+            for !is_eof(p)
+                match p.tokens[p.pos].kind
+                    ast.TokenKind.RBracket(_) => break
+                    _ => ()
+                end
+                val gname ref(u8) = expect_ident(p, arena)
+                @append(generic_params, gname)
+                match p.tokens[p.pos].kind
+                    ast.TokenKind.Colon(_) => (
+                        advance(p)
+                        parse_type(p, arena)
+                    )
+                    _ => ()
+                end
+                match p.tokens[p.pos].kind
+                    ast.TokenKind.Comma(_) => advance(p)
+                    _ => break
+                end
+            end
+            match p.tokens[p.pos].kind
+                ast.TokenKind.RBracket(_) => advance(p)
+                _ => ()
+            end
+        )
+        _ => ()
+    end
+    return generic_params
+end
+
 def parse_function(p ref(ast.TokenList), arena ref(allocators.Arena), is_pub bool, current_platform ref(u8)) ast.Function
     val line usize = p.tokens[p.pos].line
     val column usize = p.tokens[p.pos].column
@@ -2587,6 +2651,7 @@ end
 def parse_type_def_with_extern(p ref(ast.TokenList), arena ref(allocators.Arena), is_pub_val bool, is_extern_val bool) ast.TypeDef
     advance(p)
     val name ref(u8) = expect_ident(p, arena)
+    val generic_params list[ref(u8)] = parse_generic_params(p, arena)
     var derives list[ref(u8)] = []
     match p.tokens[p.pos].kind
         ast.TokenKind.Colon(_) => (
@@ -2622,7 +2687,8 @@ def parse_type_def_with_extern(p ref(ast.TokenList), arena ref(allocators.Arena)
         variants: ([] as list[ast.VariantDef]),
         is_pub: is_pub_val,
         is_extern: is_extern_val,
-        derives: derives
+        derives: derives,
+        generic_params: generic_params
     )
 end
 
@@ -2637,6 +2703,7 @@ end
 def parse_union_def_inner(p ref(ast.TokenList), arena ref(allocators.Arena), is_pub_val bool, is_extern_val bool) ast.TypeDef
     advance(p)
     val name ref(u8) = expect_ident(p, arena)
+    val generic_params list[ref(u8)] = parse_generic_params(p, arena)
     consume_newlines(p)
     var variants list[ast.VariantDef] = []
     for !is_keyword(p, KW_END) && !is_eof(p)
@@ -2684,13 +2751,15 @@ def parse_union_def_inner(p ref(ast.TokenList), arena ref(allocators.Arena), is_
         variants: variants,
         is_pub: is_pub_val,
         is_extern: is_extern_val,
-        derives: ([] as list[ref(u8)])
+        derives: ([] as list[ref(u8)]),
+        generic_params: generic_params
     )
 end
 
 def parse_enum_def(p ref(ast.TokenList), arena ref(allocators.Arena), is_pub_val bool) ast.TypeDef
     advance(p)
     val name ref(u8) = expect_ident(p, arena)
+    val generic_params list[ref(u8)] = parse_generic_params(p, arena)
     consume_newlines(p)
     var variants list[ast.VariantDef] = []
     for !is_keyword(p, KW_END) && !is_eof(p)
@@ -2714,7 +2783,8 @@ def parse_enum_def(p ref(ast.TokenList), arena ref(allocators.Arena), is_pub_val
         variants: variants,
         is_pub: is_pub_val,
         is_extern: false,
-        derives: ([] as list[ref(u8)])
+        derives: ([] as list[ref(u8)]),
+        generic_params: generic_params
     )
 end
 

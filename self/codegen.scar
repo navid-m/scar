@@ -1136,9 +1136,29 @@ def render_signature(fun ref(ast.Function), info ref(sema.ProgramInfo), arena re
             if i > 0
                 append_str(output, output_len, ", ")
             end
-            append_str(output, output_len, c_type_bare(@addr(fun.params[i].ty), info, arena))
-            append_str(output, output_len, " ")
-            append_str(output, output_len, mangle_local_symbol(fun.params[i].name, arena))
+            match @deref(@addr(fun.params[i].ty))
+                ast.Type.FnPtr(fparams, fret) => (
+                    val ret_str ref(u8) = c_type(fret, info, arena)
+                    append_str(output, output_len, ret_str)
+                    append_str(output, output_len, " (*")
+                    append_str(output, output_len, mangle_local_symbol(fun.params[i].name, arena))
+                    append_str(output, output_len, ")(")
+                    var j usize = 0
+                    for j < @len(fparams)
+                        if j > 0
+                            append_str(output, output_len, ", ")
+                        end
+                        append_str(output, output_len, c_type(@addr(fparams[j]), info, arena))
+                        j++
+                    end
+                    append_str(output, output_len, ")")
+                )
+                _ => (
+                    append_str(output, output_len, c_type_bare(@addr(fun.params[i].ty), info, arena))
+                    append_str(output, output_len, " ")
+                    append_str(output, output_len, mangle_local_symbol(fun.params[i].name, arena))
+                )
+            end
             i++
         end
     end
@@ -2222,7 +2242,6 @@ def append_expr(expr ref(ast.Expr), fun ref(ast.Function), info ref(sema.Program
             end
         )
         ast.Expr.Field(f) => (
-            append_str(output, output_len, "(")
             append_expr(f.base, fun, info, arena, output, output_len)
             var use_arrow bool = false
             val base_ty_for_arrow ref(ast.Type) = get_expr_type(f.base, fun, info)
@@ -2250,14 +2269,19 @@ def append_expr(expr ref(ast.Expr), fun ref(ast.Function), info ref(sema.Program
                                 end
                             end
                         )
+                        ast.Expr.BuiltinCall(bc) => (
+                            if str.eql(bc.name, "add") || str.eql(bc.name, "addr")
+                                use_arrow = true
+                            end
+                        )
                         _ => ()
                     end
                 )
             end
             if use_arrow
-                append_str(output, output_len, ")->")
+                append_str(output, output_len, "->")
             else
-                append_str(output, output_len, ").")
+                append_str(output, output_len, ".")
             end
             append_str(output, output_len, f.field)
         )
@@ -2695,9 +2719,18 @@ def append_builtin_call(bc ref(ast.ExprBuiltinCall), fun ref(ast.Function), info
         append_expr(@addr(bc.args[0]), fun, info, arena, output, output_len)
         append_str(output, output_len, ")")
     elif str.eql(bc.name, "addr")
-        append_str(output, output_len, "(&")
-        append_expr(@addr(bc.args[0]), fun, info, arena, output, output_len)
-        append_str(output, output_len, ")")
+        if is_addressable_expr(@addr(bc.args[0]))
+            append_str(output, output_len, "(&")
+            append_expr(@addr(bc.args[0]), fun, info, arena, output, output_len)
+            append_str(output, output_len, ")")
+        else
+            val addr_inner_ty ref(ast.Type) = get_expr_type(@addr(bc.args[0]), fun, info)
+            append_str(output, output_len, "(&(")
+            append_str(output, output_len, c_type_bare(addr_inner_ty, info, arena))
+            append_str(output, output_len, "){")
+            append_expr(@addr(bc.args[0]), fun, info, arena, output, output_len)
+            append_str(output, output_len, "})")
+        end
     elif str.eql(bc.name, "deref")
         append_str(output, output_len, "(*")
         append_expr(@addr(bc.args[0]), fun, info, arena, output, output_len)
@@ -2989,6 +3022,60 @@ end
 
 def c_type_decl(ty ref(ast.Type), name ref(u8), info ref(sema.ProgramInfo), arena ref(allocators.Arena)) ref(u8)
     match @deref(ty)
+        ast.Type.FnPtr(params, ret) => (
+            val ret_str ref(u8) = c_type(ret, info, arena)
+            val rlen usize = str.len(ret_str)
+            val nlen usize = str.len(name)
+            var total usize = rlen + 3 + nlen + 2
+            var i usize = 0
+            for i < @len(params)
+                if i > 0
+                    total = total + 2
+                end
+                total = total + str.len(c_type(@addr(params[i]), info, arena))
+                i++
+            end
+            val buf_res = allocators.Arena.alloc(arena, total)
+            match buf_res
+                ok m => (
+                    var buf ref(u8) = m as ref(u8)
+                    var off usize = 0
+                    @memcpy(@add(buf, off), ret_str, rlen)
+                    off = off + rlen
+                    @deref(@as_mut(@add(buf, off))) = ' '
+                    off++
+                    @deref(@as_mut(@add(buf, off))) = '('
+                    off++
+                    @deref(@as_mut(@add(buf, off))) = '*'
+                    off++
+                    @memcpy(@add(buf, off), name, nlen)
+                    off = off + nlen
+                    @deref(@as_mut(@add(buf, off))) = ')'
+                    off++
+                    @deref(@as_mut(@add(buf, off))) = '('
+                    off++
+                    i = 0
+                    for i < @len(params)
+                        if i > 0
+                            @deref(@as_mut(@add(buf, off))) = ','
+                            off++
+                            @deref(@as_mut(@add(buf, off))) = ' '
+                            off++
+                        end
+                        val pstr ref(u8) = c_type(@addr(params[i]), info, arena)
+                        val plen usize = str.len(pstr)
+                        @memcpy(@add(buf, off), pstr, plen)
+                        off = off + plen
+                        i++
+                    end
+                    @deref(@as_mut(@add(buf, off))) = ')'
+                    off++
+                    @deref(@as_mut(@add(buf, off))) = 0
+                    return buf
+                )
+                error _ => return "void * error"
+            end
+        )
         ast.Type.StaticArray(size, inner) => (
             val base ref(u8) = c_type_bare(inner, info, arena)
             val base_len usize = str.len(base)
@@ -3894,6 +3981,19 @@ def get_list_element_type(ty ref(ast.Type)) ref(ast.Type)
     match @deref(ty)
         ast.Type.List(inner) => return inner
         _ => return @addr(ast.Type.Void(0))
+    end
+end
+
+def is_addressable_expr(expr ref(ast.Expr)) bool
+    match @deref(expr)
+        ast.Expr.IntLit(_) => return false
+        ast.Expr.FloatLit(_) => return false
+        ast.Expr.BoolLit(_) => return false
+        ast.Expr.CharLit(_) => return false
+        ast.Expr.StrLit(_) => return false
+        ast.Expr.None(_) => return false
+        ast.Expr.ErrorLit(_) => return false
+        _ => return true
     end
 end
 

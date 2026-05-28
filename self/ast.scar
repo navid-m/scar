@@ -395,6 +395,7 @@ pub type TypeDef
     is_pub bool
     is_extern bool
     derives list[ref(u8)]
+    generic_params list[ref(u8)]
 end
 
 pub type GlobalVar
